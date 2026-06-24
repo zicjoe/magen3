@@ -6,8 +6,11 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev": "vite",
+    "dev:frontend": "vite",
+    "dev:backend": "node backend/server.mjs",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:health": "node -e \"fetch('http://localhost:8787/api/health').then(r=>r.json()).then(console.log).catch(console.error)\""
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",

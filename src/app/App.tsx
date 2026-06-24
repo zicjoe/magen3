@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, type ReactElement } from "react";
+import { useState, useEffect, useCallback, useMemo, type ReactElement } from "react";
 import {
   Shield,
   ShieldCheck,
@@ -36,6 +36,7 @@ import {
   ChevronRight,
   Menu,
 } from "lucide-react";
+import { api } from "./lib/api";
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -973,20 +974,34 @@ function Sidebar({
 function TopBar({
   walletConnected,
   walletAddress,
+  apiOnline,
   onConnectWallet,
 }: {
   walletConnected: boolean;
   walletAddress: string;
+  apiOnline: boolean;
   onConnectWallet: () => void;
 }) {
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-[#1E293B] bg-[#050B14]/80 backdrop-blur-sm sticky top-0 z-10">
       {/* Network badge */}
-      <div className="flex items-center gap-2">
-        <div className="w-2 h-2 rounded-full bg-[#FF3B3B] animate-pulse" />
-        <span className="text-xs font-semibold text-[#FF3B3B] uppercase tracking-wider">
-          Casper Testnet
-        </span>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-[#FF3B3B] animate-pulse" />
+          <span className="text-xs font-semibold text-[#FF3B3B] uppercase tracking-wider">
+            Casper Testnet
+          </span>
+        </div>
+        <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full border ${
+          apiOnline
+            ? "bg-[#22C55E]/10 border-[#22C55E]/20 text-[#22C55E]"
+            : "bg-[#F59E0B]/10 border-[#F59E0B]/20 text-[#F59E0B]"
+        }`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#F59E0B]"}`} />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">
+            {apiOnline ? "API Online" : "Local Fallback"}
+          </span>
+        </div>
       </div>
 
       {/* Right */}
@@ -1522,11 +1537,11 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
 function AgentShieldPage({
   agents,
-  setAgents,
+  onRegisterAgent,
   auditLogs,
 }: {
   agents: Agent[];
-  setAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
+  onRegisterAgent: (agent: Omit<Agent, "id" | "status" | "createdAt">) => Promise<void> | void;
   auditLogs: AuditLog[];
 }) {
   const [form, setForm] = useState({
@@ -1536,20 +1551,16 @@ function AgentShieldPage({
     permissionLevel: "Limited Execution" as PermissionLevel,
   });
 
-  const registerAgent = useCallback(() => {
+  const registerAgent = useCallback(async () => {
     if (!form.name.trim()) return;
-    const newAgent: Agent = {
-      id: makeId("MAG-AGENT"),
+    await onRegisterAgent({
       name: form.name,
       type: form.type,
       purpose: form.purpose,
       permissionLevel: form.permissionLevel,
-      status: "No Policy",
-      createdAt: new Date().toISOString(),
-    };
-    setAgents((prev) => [...prev, newAgent]);
+    });
     setForm({ name: "", type: "DeFi Agent", purpose: "", permissionLevel: "Limited Execution" });
-  }, [form, agents.length]);
+  }, [form, onRegisterAgent]);
 
   return (
     <div className="space-y-6">
@@ -1689,16 +1700,12 @@ function AgentShieldPage({
 function PoliciesPage({
   agents,
   policies,
-  setPolicies,
-  setAgents,
-  onAddAuditLog,
+  onCreatePolicy,
   walletAddress,
 }: {
   agents: Agent[];
   policies: Policy[];
-  setPolicies: React.Dispatch<React.SetStateAction<Policy[]>>;
-  setAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
-  onAddAuditLog: (log: AuditLog) => void;
+  onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<void> | void;
   walletAddress: string;
 }) {
   const [form, setForm] = useState({
@@ -1712,10 +1719,9 @@ function PoliciesPage({
     riskMode: "Balanced" as RiskMode,
   });
 
-  const createPolicy = useCallback(() => {
+  const createPolicy = useCallback(async () => {
     if (!form.name.trim() || !form.agentId) return;
-    const newPolicy: Policy = {
-      id: makeId("POL"),
+    await onCreatePolicy({
       name: form.name,
       agentId: form.agentId,
       maxTransaction: Number(form.maxTransaction) || 50,
@@ -1728,33 +1734,6 @@ function PoliciesPage({
       blockedActions: form.blockedActions,
       riskMode: form.riskMode,
       status: "Active",
-      createdAt: new Date().toISOString(),
-      policyHash: makePseudoHash("0xpol"),
-    };
-    setPolicies((prev) => [...prev, newPolicy]);
-    setAgents((prev) =>
-      prev.map((agent) =>
-        agent.id === newPolicy.agentId ? { ...agent, status: "Policy Active" } : agent
-      )
-    );
-    const agent = agents.find((a) => a.id === newPolicy.agentId);
-    onAddAuditLog({
-      id: makeId("AUD"),
-      timestamp: new Date().toISOString(),
-      shield: "Agent Shield",
-      agentId: newPolicy.agentId,
-      agentName: agent?.name || newPolicy.agentId,
-      action: "Policy Activation",
-      amount: 0,
-      target: "Magen3 Policy Registry",
-      targetType: "Trusted Contract",
-      decision: "Allowed",
-      risk: "Low",
-      reason: `Policy "${newPolicy.name}" activated for ${agent?.name || newPolicy.agentId}.`,
-      policyUsed: newPolicy.name,
-      walletAddress,
-      txHash: "",
-      riskScore: 4,
     });
     setForm({
       name: "",
@@ -1766,7 +1745,7 @@ function PoliciesPage({
       blockedActions: [],
       riskMode: "Balanced",
     });
-  }, [agents, form, onAddAuditLog, setAgents, setPolicies, walletAddress]);
+  }, [agents, form, onCreatePolicy, walletAddress]);
 
   const updatePolicy = useCallback(
     (id: string) => {
@@ -1945,13 +1924,17 @@ function ActionReviewPage({
   agents,
   policies,
   auditLogs,
+  onAnalyzeAction,
   onAddAuditLog,
+  onRecordDecision,
   walletAddress,
 }: {
   agents: Agent[];
   policies: Policy[];
   auditLogs: AuditLog[];
-  onAddAuditLog: (log: AuditLog) => void;
+  onAnalyzeAction: (request: ActionRequest) => Promise<DecisionResult> | DecisionResult;
+  onAddAuditLog: (log: AuditLog) => Promise<void> | void;
+  onRecordDecision: (log: AuditLog) => Promise<string> | string;
   walletAddress: string;
 }) {
   const [form, setForm] = useState<ActionRequest>({
@@ -1965,22 +1948,23 @@ function ActionReviewPage({
   const [analyzing, setAnalyzing] = useState(false);
   const [recordedTxHash, setRecordedTxHash] = useState("");
 
-  const analyzeAction = useCallback(() => {
+  const analyzeAction = useCallback(async () => {
     setAnalyzing(true);
     setResult(null);
     setRecordedTxHash("");
-    window.setTimeout(() => {
-      setResult(evaluateAction(form, agents, policies, auditLogs));
+    try {
+      const decision = await onAnalyzeAction(form);
+      setResult(decision);
+    } finally {
       setAnalyzing(false);
-    }, 450);
-  }, [agents, auditLogs, form, policies]);
+    }
+  }, [form, onAnalyzeAction]);
 
-  const recordDecisionOnChain = useCallback(() => {
+  const recordDecisionOnChain = useCallback(async () => {
     if (!result) return;
     const agent = agents.find((a) => a.id === form.agentId);
     const policy = getActivePolicy(policies, form.agentId);
-    const txHash = makePseudoHash("0xcasper");
-    onAddAuditLog({
+    const log: AuditLog = {
       id: makeId("AUD"),
       timestamp: new Date().toISOString(),
       shield: "Agent Shield",
@@ -1995,11 +1979,12 @@ function ActionReviewPage({
       reason: result.reason,
       policyUsed: policy?.name || "No active policy",
       walletAddress,
-      txHash,
+      txHash: "",
       riskScore: result.riskScore,
-    });
+    };
+    const txHash = await onRecordDecision(log);
     setRecordedTxHash(txHash);
-  }, [agents, form, onAddAuditLog, policies, result, walletAddress]);
+  }, [agents, form, onRecordDecision, policies, result, walletAddress]);
 
   const approveOnce = useCallback(() => {
     if (!result) return;
@@ -2014,11 +1999,11 @@ function ActionReviewPage({
     setRecordedTxHash("");
   }, [result]);
 
-  const rejectAction = useCallback(() => {
+  const rejectAction = useCallback(async () => {
     if (!result) return;
     const agent = agents.find((a) => a.id === form.agentId);
     const policy = getActivePolicy(policies, form.agentId);
-    onAddAuditLog({
+    await onAddAuditLog({
       id: makeId("AUD"),
       timestamp: new Date().toISOString(),
       shield: "Agent Shield",
@@ -2328,10 +2313,10 @@ function ActionReviewPage({
 
 function AuditLogPage({
   auditLogs,
-  setAuditLogs,
+  onRecordAuditLog,
 }: {
   auditLogs: AuditLog[];
-  setAuditLogs: React.Dispatch<React.SetStateAction<AuditLog[]>>;
+  onRecordAuditLog: (id: string) => Promise<string> | string;
 }) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
@@ -2353,13 +2338,10 @@ function AuditLogPage({
     return true;
   });
 
-  const recordAuditOnChain = useCallback((logId: string) => {
-    const txHash = makePseudoHash("0xcasper");
-    setAuditLogs((prev) =>
-      prev.map((log) => (log.id === logId ? { ...log, txHash } : log))
-    );
+  const recordAuditOnChain = useCallback(async (logId: string) => {
+    const txHash = await onRecordAuditLog(logId);
     setSelected((prev) => (prev && prev.id === logId ? { ...prev, txHash } : prev));
-  }, [setAuditLogs]);
+  }, [onRecordAuditLog]);
 
   return (
     <div className="space-y-5">
@@ -2798,18 +2780,155 @@ function SettingsPage({
 export default function App() {
   const [page, setPage] = useState<Page>("landing");
   const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress] = useState("casper-test-wallet-01ab...7890");
+  const [walletAddress, setWalletAddress] = useState("casper-test-wallet-01ab...7890");
+  const [apiOnline, setApiOnline] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(mockAgents);
   const [policies, setPolicies] = useState<Policy[]>(mockPolicies);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
 
-  const connectWallet = useCallback(() => {
+  useEffect(() => {
+    let cancelled = false;
+    api.bootstrap()
+      .then((payload) => {
+        if (cancelled) return;
+        if (Array.isArray(payload.agents)) setAgents(payload.agents as Agent[]);
+        if (Array.isArray(payload.policies)) setPolicies(payload.policies as Policy[]);
+        if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
+        setApiOnline(true);
+      })
+      .catch(() => {
+        if (!cancelled) setApiOnline(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const connectWallet = useCallback(async () => {
+    try {
+      const response = await api.connectWallet();
+      setWalletAddress(response.walletAddress);
+      setApiOnline(true);
+    } catch {
+      setApiOnline(false);
+    }
     setWalletConnected(true);
   }, []);
 
-  const onAddAuditLog = useCallback((log: AuditLog) => {
-    setAuditLogs((prev) => [log, ...prev]);
+  const onRegisterAgent = useCallback(async (agent: Omit<Agent, "id" | "status" | "createdAt">) => {
+    const fallbackAgent: Agent = {
+      ...agent,
+      id: makeId("MAG-AGENT"),
+      status: "No Policy",
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      const response = await api.createAgent(agent);
+      setAgents((prev) => [response.agent as Agent, ...prev]);
+      setApiOnline(true);
+    } catch {
+      setAgents((prev) => [fallbackAgent, ...prev]);
+      setApiOnline(false);
+    }
+  }, []);
+
+  const onCreatePolicy = useCallback(async (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => {
+    const fallbackPolicy: Policy = {
+      ...policy,
+      id: makeId("POL"),
+      createdAt: new Date().toISOString(),
+      policyHash: makePseudoHash("0xpol"),
+    };
+    const agent = agents.find((a) => a.id === policy.agentId);
+    const fallbackAudit: AuditLog = {
+      id: makeId("AUD"),
+      timestamp: new Date().toISOString(),
+      shield: "Agent Shield",
+      agentId: policy.agentId,
+      agentName: agent?.name || policy.agentId,
+      action: "Policy Activation",
+      amount: 0,
+      target: "Magen3 Policy Registry",
+      targetType: "Trusted Contract",
+      decision: "Allowed",
+      risk: "Low",
+      reason: `Policy "${policy.name}" activated for ${agent?.name || policy.agentId}.`,
+      policyUsed: policy.name,
+      walletAddress,
+      txHash: "",
+      riskScore: 4,
+    };
+    try {
+      const response = await api.createPolicy({ ...policy, walletAddress });
+      setPolicies((prev) => [response.policy as Policy, ...prev]);
+      if (Array.isArray(response.agents)) setAgents(response.agents as Agent[]);
+      if (response.auditLog) setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
+      setApiOnline(true);
+    } catch {
+      setPolicies((prev) => [fallbackPolicy, ...prev]);
+      setAgents((prev) =>
+        prev.map((item) => item.id === policy.agentId ? { ...item, status: "Policy Active" } : item)
+      );
+      setAuditLogs((prev) => [fallbackAudit, ...prev]);
+      setApiOnline(false);
+    }
+  }, [agents, walletAddress]);
+
+  const onAnalyzeAction = useCallback(async (request: ActionRequest) => {
+    try {
+      const response = await api.analyzeAction(request as unknown as Record<string, unknown>);
+      setApiOnline(true);
+      return response.result as DecisionResult;
+    } catch {
+      setApiOnline(false);
+      return evaluateAction(request, agents, policies, auditLogs);
+    }
+  }, [agents, policies, auditLogs]);
+
+  const onAddAuditLog = useCallback(async (log: AuditLog) => {
+    try {
+      const response = await api.createAuditLog(log as unknown as Record<string, unknown>);
+      setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
+      setApiOnline(true);
+    } catch {
+      setAuditLogs((prev) => [log, ...prev]);
+      setApiOnline(false);
+    }
+  }, []);
+
+  const onRecordDecision = useCallback(async (log: AuditLog) => {
+    try {
+      const created = await api.createAuditLog(log as unknown as Record<string, unknown>);
+      const auditLog = created.auditLog as AuditLog;
+      const recorded = await api.recordAuditLog(auditLog.id);
+      setAuditLogs((prev) => [recorded.auditLog as AuditLog, ...prev]);
+      setApiOnline(true);
+      return String(recorded.txHash);
+    } catch {
+      const txHash = makePseudoHash("0xcasper");
+      setAuditLogs((prev) => [{ ...log, txHash }, ...prev]);
+      setApiOnline(false);
+      return txHash;
+    }
+  }, []);
+
+  const onRecordAuditLog = useCallback(async (id: string) => {
+    try {
+      const response = await api.recordAuditLog(id);
+      setAuditLogs((prev) =>
+        prev.map((log) => (log.id === id ? (response.auditLog as AuditLog) : log))
+      );
+      setApiOnline(true);
+      return String(response.txHash);
+    } catch {
+      const txHash = makePseudoHash("0xcasper");
+      setAuditLogs((prev) =>
+        prev.map((log) => (log.id === id ? { ...log, txHash } : log))
+      );
+      setApiOnline(false);
+      return txHash;
+    }
   }, []);
 
   const navigate = useCallback((p: Page) => {
@@ -2836,7 +2955,7 @@ export default function App() {
     "agent-shield": (
       <AgentShieldPage
         agents={agents}
-        setAgents={setAgents}
+        onRegisterAgent={onRegisterAgent}
         auditLogs={auditLogs}
       />
     ),
@@ -2844,9 +2963,7 @@ export default function App() {
       <PoliciesPage
         agents={agents}
         policies={policies}
-        setPolicies={setPolicies}
-        setAgents={setAgents}
-        onAddAuditLog={onAddAuditLog}
+        onCreatePolicy={onCreatePolicy}
         walletAddress={walletAddress}
       />
     ),
@@ -2855,12 +2972,14 @@ export default function App() {
         agents={agents}
         policies={policies}
         auditLogs={auditLogs}
+        onAnalyzeAction={onAnalyzeAction}
         onAddAuditLog={onAddAuditLog}
+        onRecordDecision={onRecordDecision}
         walletAddress={walletAddress}
       />
     ),
     "audit-log": (
-      <AuditLogPage auditLogs={auditLogs} setAuditLogs={setAuditLogs} />
+      <AuditLogPage auditLogs={auditLogs} onRecordAuditLog={onRecordAuditLog} />
     ),
     settings: (
       <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} />
@@ -2882,6 +3001,7 @@ export default function App() {
         <TopBar
           walletConnected={walletConnected}
           walletAddress={walletAddress}
+          apiOnline={apiOnline}
           onConnectWallet={connectWallet}
         />
         <main className="flex-1 p-6 overflow-auto">
