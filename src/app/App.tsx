@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactElement } from "react";
+import { useState, useCallback, useMemo, type ReactElement } from "react";
 import {
   Shield,
   ShieldCheck,
@@ -75,7 +75,8 @@ type ActionType =
   | "Contract Interaction"
   | "DAO Treasury Payment"
   | "RWA Proof Update"
-  | "Oracle Data Update";
+  | "Oracle Data Update"
+  | "Policy Activation";
 type TargetType =
   | "Trusted Contract"
   | "Unknown Contract"
@@ -456,6 +457,193 @@ function fmtTs(iso: string) {
 function truncate(s: string, n = 16) {
   if (s.length <= n) return s;
   return s.slice(0, 8) + "..." + s.slice(-6);
+}
+
+
+function makeId(prefix: string) {
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
+}
+
+function makePseudoHash(prefix: string) {
+  const body = Array.from({ length: 12 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join("");
+  return `${prefix}${body}`;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+}
+
+function getActivePolicy(policies: Policy[], agentId: string) {
+  return policies.find((p) => p.agentId === agentId && p.status === "Active");
+}
+
+function getDailyUsed(auditLogs: AuditLog[], agentId: string) {
+  const now = new Date();
+  return auditLogs
+    .filter(
+      (log) =>
+        log.agentId === agentId &&
+        log.decision === "Allowed" &&
+        isSameDay(new Date(log.timestamp), now)
+    )
+    .reduce((sum, log) => sum + log.amount, 0);
+}
+
+function targetIsTrusted(request: ActionRequest, policy: Policy) {
+  const normalizedTarget = request.target.trim().toLowerCase();
+  const trustedList = policy.trustedContracts.map((contract) =>
+    contract.trim().toLowerCase()
+  );
+  return (
+    request.targetType === "Trusted Contract" ||
+    Boolean(normalizedTarget && trustedList.includes(normalizedTarget))
+  );
+}
+
+function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): DashboardStats {
+  return {
+    activeShields: policies.some((p) => p.status === "Active") ? 1 : 0,
+    protectedActions: auditLogs.length,
+    blockedActions: auditLogs.filter((log) => log.decision === "Blocked").length,
+    reviewRequired: auditLogs.filter((log) => log.decision === "Review Required").length,
+    casperAuditRecords: auditLogs.filter((log) => Boolean(log.txHash)).length,
+  };
+}
+
+function evaluateAction(
+  request: ActionRequest,
+  agents: Agent[],
+  policies: Policy[],
+  auditLogs: AuditLog[]
+): DecisionResult {
+  const agent = agents.find((a) => a.id === request.agentId);
+  const policy = getActivePolicy(policies, request.agentId);
+  const checksPassed: string[] = [];
+  const checksFailed: string[] = [];
+
+  if (!agent) {
+    return {
+      decision: "Blocked",
+      risk: "High",
+      riskScore: 82,
+      policyChecksPassed: [],
+      policyChecksFailed: ["Selected agent is not registered in Magen3"],
+      reason: "Magen3 cannot allow execution from an unknown agent.",
+      recommendedAction: "Register the agent before allowing any Web3 action.",
+    };
+  }
+
+  if (!policy) {
+    return {
+      decision: "Blocked",
+      risk: "High",
+      riskScore: 78,
+      policyChecksPassed: [`Agent ${agent.name} is registered`],
+      policyChecksFailed: ["No active security policy found for this agent"],
+      reason: "This agent has no active policy, so Magen3 blocks execution by default.",
+      recommendedAction: "Create and activate a policy for this agent first.",
+    };
+  }
+
+  const dailyUsed = getDailyUsed(auditLogs, request.agentId);
+  const dailyAfterAction = dailyUsed + request.amount;
+  const isTrusted = targetIsTrusted(request, policy);
+  const isBlockedAction = policy.blockedActions.includes(request.actionType);
+  const strictMode = policy.riskMode === "Conservative";
+  const relaxedMode = policy.riskMode === "Aggressive";
+  let score = 5;
+
+  checksPassed.push(`Active policy found: ${policy.name}`);
+
+  if (isBlockedAction) {
+    checksFailed.push(`Action type is blocked by policy: ${request.actionType}`);
+    score += 35;
+  } else {
+    checksPassed.push(`Action type is not blocked: ${request.actionType}`);
+  }
+
+  if (request.amount > policy.maxTransaction) {
+    checksFailed.push(
+      `Amount exceeds max transaction limit (${request.amount} > ${policy.maxTransaction} CSPR)`
+    );
+    score += 30;
+  } else {
+    checksPassed.push(
+      `Amount within max transaction limit (${request.amount} ≤ ${policy.maxTransaction} CSPR)`
+    );
+  }
+
+  if (dailyAfterAction > policy.dailyLimit) {
+    checksFailed.push(
+      `Daily limit would be exceeded (${dailyAfterAction} > ${policy.dailyLimit} CSPR)`
+    );
+    score += 25;
+  } else {
+    checksPassed.push(
+      `Daily limit remains valid (${dailyAfterAction} ≤ ${policy.dailyLimit} CSPR)`
+    );
+  }
+
+  if (isTrusted) {
+    checksPassed.push("Target is trusted or policy-approved");
+  } else {
+    checksFailed.push("Target is not in the trusted contract list");
+    score += strictMode ? 35 : 25;
+  }
+
+  if (request.amount > policy.approvalThreshold) {
+    checksFailed.push(
+      `Amount exceeds approval threshold (${request.amount} > ${policy.approvalThreshold} CSPR)`
+    );
+    score += relaxedMode ? 10 : 18;
+  } else {
+    checksPassed.push(
+      `Amount below approval threshold (${request.amount} ≤ ${policy.approvalThreshold} CSPR)`
+    );
+  }
+
+  const hardBlock =
+    isBlockedAction ||
+    request.amount > policy.maxTransaction ||
+    dailyAfterAction > policy.dailyLimit ||
+    (!isTrusted && (strictMode || request.targetType === "Unknown Contract"));
+  const needsReview =
+    !hardBlock &&
+    (request.amount > policy.approvalThreshold || !isTrusted || request.targetType !== "Trusted Contract");
+
+  const decision: Decision = hardBlock
+    ? "Blocked"
+    : needsReview
+    ? "Review Required"
+    : "Allowed";
+  const riskScore = Math.min(99, Math.max(1, score));
+  const risk: Risk =
+    riskScore >= 85 ? "Critical" : riskScore >= 65 ? "High" : riskScore >= 35 ? "Medium" : "Low";
+
+  return {
+    decision,
+    risk,
+    riskScore,
+    policyChecksPassed: checksPassed,
+    policyChecksFailed: checksFailed,
+    reason:
+      decision === "Allowed"
+        ? "This action matches the active policy and can be safely executed."
+        : decision === "Blocked"
+        ? "This action violates one or more hard policy rules and should not execute."
+        : "This action is not fully unsafe, but it needs human approval before execution.",
+    recommendedAction:
+      decision === "Allowed"
+        ? "Proceed with execution and record the decision on Casper."
+        : decision === "Blocked"
+        ? "Do not execute. Update the request or create a stricter review workflow."
+        : "Ask the wallet owner or protocol admin to approve once or reject.",
+  };
 }
 
 // ──────────────────────────────────────────────────────────
@@ -1098,9 +1286,15 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
 function DashboardPage({
   walletConnected,
   onConnectWallet,
+  auditLogs,
+  policies,
+  agents,
 }: {
   walletConnected: boolean;
   onConnectWallet: () => void;
+  auditLogs: AuditLog[];
+  policies: Policy[];
+  agents: Agent[];
 }) {
   if (!walletConnected) {
     return (
@@ -1117,7 +1311,24 @@ function DashboardPage({
     );
   }
 
-  const recentLogs = mockAuditLogs.slice(0, 5);
+  const dashboardStats = deriveDashboardStats(auditLogs, policies);
+  const recentLogs = auditLogs.slice(0, 5);
+  const activePolicy = policies.find((p) => p.status === "Active");
+  const activePolicyAgent = activePolicy
+    ? agents.find((a) => a.id === activePolicy.agentId)
+    : null;
+  const riskOverviewBase = ["Low", "Medium", "High"].map((risk) => ({
+    label: `${risk} Risk`,
+    count: auditLogs.filter((log) =>
+      risk === "High" ? log.risk === "High" || log.risk === "Critical" : log.risk === risk
+    ).length,
+    color: risk === "Low" ? "#22C55E" : risk === "Medium" ? "#F59E0B" : "#EF4444",
+  }));
+  const totalRiskRecords = Math.max(1, riskOverviewBase.reduce((sum, item) => sum + item.count, 0));
+  const riskOverview = riskOverviewBase.map((item) => ({
+    ...item,
+    pct: Math.round((item.count / totalRiskRecords) * 100),
+  }));
 
   return (
     <div className="space-y-6">
@@ -1125,32 +1336,32 @@ function DashboardPage({
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Active Shields"
-          value={mockDashboardStats.activeShields}
+          value={dashboardStats.activeShields}
           icon={<Shield size={20} />}
           color="cyan"
         />
         <StatCard
           label="Protected Actions"
-          value={mockDashboardStats.protectedActions}
+          value={dashboardStats.protectedActions}
           icon={<ShieldCheck size={20} />}
           color="green"
           trend="+12"
         />
         <StatCard
           label="Blocked Actions"
-          value={mockDashboardStats.blockedActions}
+          value={dashboardStats.blockedActions}
           icon={<ShieldX size={20} />}
           color="red"
         />
         <StatCard
           label="Review Required"
-          value={mockDashboardStats.reviewRequired}
+          value={dashboardStats.reviewRequired}
           icon={<Clock size={20} />}
           color="amber"
         />
         <StatCard
           label="Casper Records"
-          value={mockDashboardStats.casperAuditRecords}
+          value={dashboardStats.casperAuditRecords}
           icon={<Database size={20} />}
           color="purple"
         />
@@ -1195,11 +1406,7 @@ function DashboardPage({
         <div className="space-y-4">
           <div className={`${CARD} p-5`}>
             <h2 className={`${SECTION_TITLE} mb-4`}>Risk Overview</h2>
-            {[
-              { label: "Low Risk", count: 89, color: "#22C55E", pct: 70 },
-              { label: "Medium Risk", count: 24, color: "#F59E0B", pct: 19 },
-              { label: "High Risk", count: 14, color: "#EF4444", pct: 11 },
-            ].map((r) => (
+            {riskOverview.map((r) => (
               <div key={r.label} className="mb-3">
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="text-[#94A3B8]">{r.label}</span>
@@ -1223,28 +1430,28 @@ function DashboardPage({
               <div className="flex justify-between">
                 <span className="text-[#94A3B8]">Policy</span>
                 <span className="text-[#F8FAFC] font-medium">
-                  Safe DeFi Policy
+                  {activePolicy?.name || "No active policy"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#94A3B8]">Agent</span>
-                <span className="text-[#F8FAFC]">YieldBot</span>
+                <span className="text-[#F8FAFC]">{activePolicyAgent?.name || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#94A3B8]">Max Tx</span>
-                <span className="text-[#F8FAFC]">50 CSPR</span>
+                <span className="text-[#F8FAFC]">{activePolicy ? `${activePolicy.maxTransaction} CSPR` : "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#94A3B8]">Daily Limit</span>
-                <span className="text-[#F8FAFC]">200 CSPR</span>
+                <span className="text-[#F8FAFC]">{activePolicy ? `${activePolicy.dailyLimit} CSPR` : "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#94A3B8]">Risk Mode</span>
-                <span className="text-[#F59E0B] font-medium">Balanced</span>
+                <span className="text-[#F59E0B] font-medium">{activePolicy?.riskMode || "—"}</span>
               </div>
               <div className="pt-2 border-t border-[#1E293B] flex justify-between">
                 <span className="text-[#94A3B8]">Status</span>
-                <StatusBadge status="Active" />
+                <StatusBadge status={activePolicy?.status || "Inactive"} />
               </div>
             </div>
           </div>
@@ -1313,8 +1520,15 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 // Agent Shield Page
 // ──────────────────────────────────────────────────────────
 
-function AgentShieldPage() {
-  const [agents, setAgents] = useState<Agent[]>(mockAgents);
+function AgentShieldPage({
+  agents,
+  setAgents,
+  auditLogs,
+}: {
+  agents: Agent[];
+  setAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
+  auditLogs: AuditLog[];
+}) {
   const [form, setForm] = useState({
     name: "",
     type: "DeFi Agent" as AgentType,
@@ -1325,7 +1539,7 @@ function AgentShieldPage() {
   const registerAgent = useCallback(() => {
     if (!form.name.trim()) return;
     const newAgent: Agent = {
-      id: `MAG-AGENT-00${agents.length + 1}`,
+      id: makeId("MAG-AGENT"),
       name: form.name,
       type: form.type,
       purpose: form.purpose,
@@ -1445,7 +1659,7 @@ function AgentShieldPage() {
       <div className={`${CARD} p-5`}>
         <h2 className={`${SECTION_TITLE} mb-4`}>Agent Activity Preview</h2>
         <div className="space-y-2">
-          {mockAuditLogs.slice(0, 3).map((log) => (
+          {auditLogs.slice(0, 3).map((log) => (
             <div
               key={log.id}
               className="flex items-center gap-4 p-3 rounded-lg bg-[#0B1220]"
@@ -1472,11 +1686,24 @@ function AgentShieldPage() {
 // Policies Page
 // ──────────────────────────────────────────────────────────
 
-function PoliciesPage() {
-  const [policies, setPolicies] = useState<Policy[]>(mockPolicies);
+function PoliciesPage({
+  agents,
+  policies,
+  setPolicies,
+  setAgents,
+  onAddAuditLog,
+  walletAddress,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  setPolicies: React.Dispatch<React.SetStateAction<Policy[]>>;
+  setAgents: React.Dispatch<React.SetStateAction<Agent[]>>;
+  onAddAuditLog: (log: AuditLog) => void;
+  walletAddress: string;
+}) {
   const [form, setForm] = useState({
     name: "",
-    agentId: mockAgents[0].id,
+    agentId: agents[0]?.id || "",
     maxTransaction: "",
     dailyLimit: "",
     approvalThreshold: "",
@@ -1486,9 +1713,9 @@ function PoliciesPage() {
   });
 
   const createPolicy = useCallback(() => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || !form.agentId) return;
     const newPolicy: Policy = {
-      id: `POL-00${policies.length + 1}`,
+      id: makeId("POL"),
       name: form.name,
       agentId: form.agentId,
       maxTransaction: Number(form.maxTransaction) || 50,
@@ -1502,12 +1729,36 @@ function PoliciesPage() {
       riskMode: form.riskMode,
       status: "Active",
       createdAt: new Date().toISOString(),
-      policyHash: "0xpol...pending",
+      policyHash: makePseudoHash("0xpol"),
     };
     setPolicies((prev) => [...prev, newPolicy]);
+    setAgents((prev) =>
+      prev.map((agent) =>
+        agent.id === newPolicy.agentId ? { ...agent, status: "Policy Active" } : agent
+      )
+    );
+    const agent = agents.find((a) => a.id === newPolicy.agentId);
+    onAddAuditLog({
+      id: makeId("AUD"),
+      timestamp: new Date().toISOString(),
+      shield: "Agent Shield",
+      agentId: newPolicy.agentId,
+      agentName: agent?.name || newPolicy.agentId,
+      action: "Policy Activation",
+      amount: 0,
+      target: "Magen3 Policy Registry",
+      targetType: "Trusted Contract",
+      decision: "Allowed",
+      risk: "Low",
+      reason: `Policy "${newPolicy.name}" activated for ${agent?.name || newPolicy.agentId}.`,
+      policyUsed: newPolicy.name,
+      walletAddress,
+      txHash: "",
+      riskScore: 4,
+    });
     setForm({
       name: "",
-      agentId: mockAgents[0].id,
+      agentId: agents[0]?.id || "",
       maxTransaction: "",
       dailyLimit: "",
       approvalThreshold: "",
@@ -1515,7 +1766,7 @@ function PoliciesPage() {
       blockedActions: [],
       riskMode: "Balanced",
     });
-  }, [form, policies.length]);
+  }, [agents, form, onAddAuditLog, setAgents, setPolicies, walletAddress]);
 
   const updatePolicy = useCallback(
     (id: string) => {
@@ -1550,7 +1801,7 @@ function PoliciesPage() {
               label="Agent"
               value={form.agentId}
               onChange={(v) => setForm((p) => ({ ...p, agentId: v }))}
-              options={mockAgents.map((a) => a.id)}
+              options={agents.map((a) => a.id)}
             />
             <div className="grid grid-cols-2 gap-3">
               <InputField
@@ -1615,7 +1866,7 @@ function PoliciesPage() {
         <div className="lg:col-span-3 space-y-4">
           <h2 className={SECTION_TITLE}>Active Policies</h2>
           {policies.map((pol) => {
-            const agent = mockAgents.find((a) => a.id === pol.agentId);
+            const agent = agents.find((a) => a.id === pol.agentId);
             return (
               <div key={pol.id} className={`${CARD_GLOW} p-5`}>
                 <div className="flex items-start justify-between mb-4">
@@ -1690,9 +1941,21 @@ function PoliciesPage() {
 // Action Review Page
 // ──────────────────────────────────────────────────────────
 
-function ActionReviewPage() {
+function ActionReviewPage({
+  agents,
+  policies,
+  auditLogs,
+  onAddAuditLog,
+  walletAddress,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+  onAddAuditLog: (log: AuditLog) => void;
+  walletAddress: string;
+}) {
   const [form, setForm] = useState<ActionRequest>({
-    agentId: mockAgents[0].id,
+    agentId: agents[0]?.id || "",
     actionType: "Stake",
     amount: 25,
     target: "",
@@ -1700,67 +1963,82 @@ function ActionReviewPage() {
   });
   const [result, setResult] = useState<DecisionResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [recorded, setRecorded] = useState(false);
+  const [recordedTxHash, setRecordedTxHash] = useState("");
 
   const analyzeAction = useCallback(() => {
     setAnalyzing(true);
     setResult(null);
-    setRecorded(false);
-    setTimeout(() => {
-      const ex = mockExamples.find(
-        (e) =>
-          e.agentId === form.agentId &&
-          e.actionType === form.actionType &&
-          e.amount === form.amount
-      );
-      if (ex) {
-        setResult(ex.result);
-      } else {
-        const risk: Risk =
-          form.amount > 100 ? "High" : form.amount > 50 ? "Medium" : "Low";
-        const decision: Decision =
-          form.targetType === "Unknown Contract" || form.amount > 200
-            ? "Blocked"
-            : form.amount > 50
-            ? "Review Required"
-            : "Allowed";
-        setResult({
-          decision,
-          risk,
-          riskScore:
-            decision === "Allowed" ? 10 : decision === "Blocked" ? 85 : 50,
-          policyChecksPassed: decision !== "Blocked" ? ["Target validated"] : [],
-          policyChecksFailed:
-            decision === "Blocked" ? ["Amount exceeds policy limit"] : [],
-          reason:
-            decision === "Allowed"
-              ? "Action is within policy parameters."
-              : decision === "Blocked"
-              ? "Action violates one or more policy rules."
-              : "Action requires manual review before execution.",
-          recommendedAction:
-            decision === "Allowed"
-              ? "Proceed with execution."
-              : decision === "Blocked"
-              ? "Do not execute. Review the action parameters."
-              : "Request human approval before proceeding.",
-        });
-      }
+    setRecordedTxHash("");
+    window.setTimeout(() => {
+      setResult(evaluateAction(form, agents, policies, auditLogs));
       setAnalyzing(false);
-    }, 1200);
-  }, [form]);
+    }, 450);
+  }, [agents, auditLogs, form, policies]);
 
   const recordDecisionOnChain = useCallback(() => {
-    setRecorded(true);
-  }, []);
+    if (!result) return;
+    const agent = agents.find((a) => a.id === form.agentId);
+    const policy = getActivePolicy(policies, form.agentId);
+    const txHash = makePseudoHash("0xcasper");
+    onAddAuditLog({
+      id: makeId("AUD"),
+      timestamp: new Date().toISOString(),
+      shield: "Agent Shield",
+      agentId: form.agentId,
+      agentName: agent?.name || form.agentId,
+      action: form.actionType,
+      amount: form.amount,
+      target: form.target || "No target provided",
+      targetType: form.targetType,
+      decision: result.decision,
+      risk: result.risk,
+      reason: result.reason,
+      policyUsed: policy?.name || "No active policy",
+      walletAddress,
+      txHash,
+      riskScore: result.riskScore,
+    });
+    setRecordedTxHash(txHash);
+  }, [agents, form, onAddAuditLog, policies, result, walletAddress]);
 
   const approveOnce = useCallback(() => {
-    console.log("approveOnce");
-  }, []);
+    if (!result) return;
+    setResult({
+      ...result,
+      decision: "Allowed",
+      risk: result.risk === "High" || result.risk === "Critical" ? "Medium" : result.risk,
+      riskScore: Math.min(result.riskScore, 45),
+      reason: `${result.reason} User approved this action once for the current session.`,
+      recommendedAction: "Record the one-time approval on Casper before execution.",
+    });
+    setRecordedTxHash("");
+  }, [result]);
 
   const rejectAction = useCallback(() => {
+    if (!result) return;
+    const agent = agents.find((a) => a.id === form.agentId);
+    const policy = getActivePolicy(policies, form.agentId);
+    onAddAuditLog({
+      id: makeId("AUD"),
+      timestamp: new Date().toISOString(),
+      shield: "Agent Shield",
+      agentId: form.agentId,
+      agentName: agent?.name || form.agentId,
+      action: form.actionType,
+      amount: form.amount,
+      target: form.target || "No target provided",
+      targetType: form.targetType,
+      decision: "Blocked",
+      risk: result.risk === "Low" ? "Medium" : result.risk,
+      reason: "The user rejected this action after Magen3 review.",
+      policyUsed: policy?.name || "No active policy",
+      walletAddress,
+      txHash: "",
+      riskScore: Math.max(result.riskScore, 55),
+    });
     setResult(null);
-  }, []);
+    setRecordedTxHash("");
+  }, [agents, form, onAddAuditLog, policies, result, walletAddress]);
 
   return (
     <div className="space-y-6">
@@ -1788,7 +2066,7 @@ function ActionReviewPage() {
                 targetType: ex.targetType,
               });
               setResult(null);
-              setRecorded(false);
+              setRecordedTxHash("");
             }}
             className="text-xs px-3 py-1.5 bg-[#1E293B] hover:bg-[#263548] text-[#94A3B8] hover:text-[#F8FAFC] rounded-lg transition-colors"
           >
@@ -1817,7 +2095,7 @@ function ActionReviewPage() {
               label="Agent"
               value={form.agentId}
               onChange={(v) => setForm((p) => ({ ...p, agentId: v }))}
-              options={mockAgents.map((a) => a.id)}
+              options={agents.map((a) => a.id)}
             />
             <SelectField
               label="Action Type"
@@ -2008,10 +2286,10 @@ function ActionReviewPage() {
               </div>
 
               <div className="flex gap-2 flex-wrap">
-                {recorded ? (
-                  <div className="flex items-center gap-2 text-sm text-[#22C55E]">
-                    <CheckCircle size={16} />
-                    Recorded on Casper Testnet
+                {recordedTxHash ? (
+                  <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
+                    <span className="flex items-center gap-2"><CheckCircle size={16} /> Recorded on Casper Testnet</span>
+                    <span className="font-mono text-xs text-[#94A3B8]">{truncate(recordedTxHash, 24)}</span>
                   </div>
                 ) : (
                   <Btn
@@ -2048,14 +2326,20 @@ function ActionReviewPage() {
 // Audit Log Page
 // ──────────────────────────────────────────────────────────
 
-function AuditLogPage() {
+function AuditLogPage({
+  auditLogs,
+  setAuditLogs,
+}: {
+  auditLogs: AuditLog[];
+  setAuditLogs: React.Dispatch<React.SetStateAction<AuditLog[]>>;
+}) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
   const [filterDecision, setFilterDecision] = useState("All");
   const [filterRisk, setFilterRisk] = useState("All");
   const [selected, setSelected] = useState<AuditLog | null>(null);
 
-  const filtered = mockAuditLogs.filter((l) => {
+  const filtered = auditLogs.filter((l) => {
     if (
       search &&
       !l.agentName.toLowerCase().includes(search.toLowerCase()) &&
@@ -2068,6 +2352,14 @@ function AuditLogPage() {
     if (filterRisk !== "All" && l.risk !== filterRisk) return false;
     return true;
   });
+
+  const recordAuditOnChain = useCallback((logId: string) => {
+    const txHash = makePseudoHash("0xcasper");
+    setAuditLogs((prev) =>
+      prev.map((log) => (log.id === logId ? { ...log, txHash } : log))
+    );
+    setSelected((prev) => (prev && prev.id === logId ? { ...prev, txHash } : prev));
+  }, [setAuditLogs]);
 
   return (
     <div className="space-y-5">
@@ -2274,7 +2566,11 @@ function AuditLogPage() {
                 </p>
               </div>
               {!selected.txHash && (
-                <Btn variant="primary" className="w-full justify-center">
+                <Btn
+                  variant="primary"
+                  className="w-full justify-center"
+                  onClick={() => recordAuditOnChain(selected.id)}
+                >
                   <Database size={14} />
                   Record on Casper Testnet
                 </Btn>
@@ -2291,7 +2587,15 @@ function AuditLogPage() {
 // Settings Page
 // ──────────────────────────────────────────────────────────
 
-function SettingsPage() {
+function SettingsPage({
+  agents,
+  policies,
+  auditLogs,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+}) {
   const [devMode, setDevMode] = useState(false);
   const [riskMode, setRiskMode] = useState("Balanced");
   const [notifications, setNotifications] = useState({
@@ -2472,9 +2776,9 @@ function SettingsPage() {
                 {
                   magen3Version: "0.1.0",
                   network: "casper-testnet",
-                  agentCount: mockAgents.length,
-                  policyCount: mockPolicies.length,
-                  auditCount: mockAuditLogs.length,
+                  agentCount: agents.length,
+                  policyCount: policies.length,
+                  auditCount: auditLogs.length,
                 },
                 null,
                 2
@@ -2494,11 +2798,18 @@ function SettingsPage() {
 export default function App() {
   const [page, setPage] = useState<Page>("landing");
   const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress] = useState("0xCasper1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890");
+  const [walletAddress] = useState("casper-test-wallet-01ab...7890");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>(mockAgents);
+  const [policies, setPolicies] = useState<Policy[]>(mockPolicies);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
 
   const connectWallet = useCallback(() => {
     setWalletConnected(true);
+  }, []);
+
+  const onAddAuditLog = useCallback((log: AuditLog) => {
+    setAuditLogs((prev) => [log, ...prev]);
   }, []);
 
   const navigate = useCallback((p: Page) => {
@@ -2516,14 +2827,44 @@ export default function App() {
       <DashboardPage
         walletConnected={walletConnected}
         onConnectWallet={connectWallet}
+        auditLogs={auditLogs}
+        policies={policies}
+        agents={agents}
       />
     ),
     shields: <ShieldsPage onNavigate={navigate} />,
-    "agent-shield": <AgentShieldPage />,
-    policies: <PoliciesPage />,
-    "action-review": <ActionReviewPage />,
-    "audit-log": <AuditLogPage />,
-    settings: <SettingsPage />,
+    "agent-shield": (
+      <AgentShieldPage
+        agents={agents}
+        setAgents={setAgents}
+        auditLogs={auditLogs}
+      />
+    ),
+    policies: (
+      <PoliciesPage
+        agents={agents}
+        policies={policies}
+        setPolicies={setPolicies}
+        setAgents={setAgents}
+        onAddAuditLog={onAddAuditLog}
+        walletAddress={walletAddress}
+      />
+    ),
+    "action-review": (
+      <ActionReviewPage
+        agents={agents}
+        policies={policies}
+        auditLogs={auditLogs}
+        onAddAuditLog={onAddAuditLog}
+        walletAddress={walletAddress}
+      />
+    ),
+    "audit-log": (
+      <AuditLogPage auditLogs={auditLogs} setAuditLogs={setAuditLogs} />
+    ),
+    settings: (
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} />
+    ),
   };
 
   return (
