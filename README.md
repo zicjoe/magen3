@@ -25,6 +25,8 @@ Implemented now:
 - Casper status endpoint and deterministic decision payload builder
 - Casper audit registry smart-contract foundation in `contracts/magen3-audit-registry`
 - Manual deploy-hash confirmation endpoint for the next wallet/contract wiring step
+- Frontend Casper Recorder in the Audit Log drawer
+- Runtime-args preview, payload hash display, copy JSON, mock recording, and real deploy-hash confirmation
 
 Next wiring targets:
 
@@ -70,9 +72,10 @@ Connect wallet
 → Store action review in Postgres when DATABASE_URL exists
 → Decision: Allowed / Blocked / Review Required
 → Prepare deterministic Casper payload
-→ Record decision with mock Casper hash for now
-→ Later replace mock hash with real Casper deploy hash
-→ Audit log updates
+→ Open Casper Recorder from the Audit Log drawer
+→ Preview runtime args and payload hash
+→ Mock record for demo mode or paste a real Casper deploy hash after signing
+→ Audit log updates with the saved deploy hash
 ```
 
 ## Requirements
@@ -201,6 +204,39 @@ When Railway Postgres is connected, the health response should show:
   "storage": "postgres"
 }
 ```
+
+
+## Casper Recorder workflow
+
+After creating or selecting an audit record:
+
+```text
+Audit Log → open record details → Prepare Payload
+```
+
+The drawer shows:
+
+```text
+Network
+Entrypoint
+Payload hash
+Configured contract hash
+Runtime args
+```
+
+For the current demo mode, click:
+
+```text
+Mock Record
+```
+
+When a real Casper deploy has been signed externally or through the next wallet integration step, paste the deploy hash into:
+
+```text
+Real Casper Deploy Hash → Confirm Real Deploy Hash
+```
+
+The backend then saves that deploy hash in `audit_logs.tx_hash`, so the dashboard and audit log count it as a Casper audit record.
 
 ## API endpoints
 

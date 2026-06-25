@@ -165,6 +165,21 @@ interface DecisionResult {
   recommendedAction: string;
 }
 
+interface CasperPreparedPayload {
+  auditLog: AuditLog;
+  payload: Record<string, unknown>;
+  payloadHash: string;
+  casper: {
+    network?: string;
+    rpcUrl?: string;
+    contractHash?: string;
+    recordingMode?: string;
+    contractConfigured?: boolean;
+  };
+  contractEntrypoint: string;
+  runtimeArgs: Record<string, unknown>;
+}
+
 // ──────────────────────────────────────────────────────────
 // Mock Data
 // ──────────────────────────────────────────────────────────
@@ -2314,15 +2329,24 @@ function ActionReviewPage({
 function AuditLogPage({
   auditLogs,
   onRecordAuditLog,
+  onPrepareCasperPayload,
+  onConfirmCasperDeploy,
 }: {
   auditLogs: AuditLog[];
   onRecordAuditLog: (id: string) => Promise<string> | string;
+  onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
+  onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
 }) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
   const [filterDecision, setFilterDecision] = useState("All");
   const [filterRisk, setFilterRisk] = useState("All");
   const [selected, setSelected] = useState<AuditLog | null>(null);
+  const [casperPrepared, setCasperPrepared] = useState<CasperPreparedPayload | null>(null);
+  const [casperLoading, setCasperLoading] = useState(false);
+  const [casperError, setCasperError] = useState("");
+  const [deployHash, setDeployHash] = useState("");
+  const [copiedPayload, setCopiedPayload] = useState(false);
 
   const filtered = auditLogs.filter((l) => {
     if (
@@ -2337,6 +2361,54 @@ function AuditLogPage({
     if (filterRisk !== "All" && l.risk !== filterRisk) return false;
     return true;
   });
+
+  useEffect(() => {
+    setCasperPrepared(null);
+    setCasperError("");
+    setDeployHash("");
+    setCopiedPayload(false);
+  }, [selected?.id]);
+
+  const prepareCasperPayload = useCallback(async (logId: string) => {
+    setCasperLoading(true);
+    setCasperError("");
+    setCopiedPayload(false);
+    try {
+      const prepared = await onPrepareCasperPayload(logId);
+      setCasperPrepared(prepared);
+    } catch (error) {
+      setCasperError(error instanceof Error ? error.message : "Unable to prepare Casper payload");
+    } finally {
+      setCasperLoading(false);
+    }
+  }, [onPrepareCasperPayload]);
+
+  const copyCasperPayload = useCallback(async () => {
+    if (!casperPrepared) return;
+    const body = JSON.stringify(casperPrepared, null, 2);
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopiedPayload(true);
+      setTimeout(() => setCopiedPayload(false), 1500);
+    } catch {
+      setCasperError("Could not copy payload. You can still select and copy it manually.");
+    }
+  }, [casperPrepared]);
+
+  const confirmDeployHash = useCallback(async () => {
+    if (!selected) return;
+    setCasperLoading(true);
+    setCasperError("");
+    try {
+      const updated = await onConfirmCasperDeploy(selected.id, deployHash);
+      setSelected(updated);
+      setDeployHash("");
+    } catch (error) {
+      setCasperError(error instanceof Error ? error.message : "Unable to confirm deploy hash");
+    } finally {
+      setCasperLoading(false);
+    }
+  }, [deployHash, onConfirmCasperDeploy, selected]);
 
   const recordAuditOnChain = useCallback(async (logId: string) => {
     const txHash = await onRecordAuditLog(logId);
@@ -2547,16 +2619,110 @@ function AuditLogPage({
                   {selected.reason}
                 </p>
               </div>
-              {!selected.txHash && (
-                <Btn
-                  variant="primary"
-                  className="w-full justify-center"
-                  onClick={() => recordAuditOnChain(selected.id)}
-                >
-                  <Database size={14} />
-                  Record on Casper Testnet
-                </Btn>
-              )}
+              <div className="border-t border-[#1E293B] pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider">
+                      Casper Recorder
+                    </div>
+                    <p className="text-xs text-[#94A3B8] mt-1">
+                      Prepare the runtime args, then either use mock recording for the demo or paste a real Casper deploy hash after signing.
+                    </p>
+                  </div>
+                  {selected.txHash && <StatusBadge status="Active" />}
+                </div>
+
+                {casperError && (
+                  <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-xs text-[#EF4444]">
+                    {casperError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Btn
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => prepareCasperPayload(selected.id)}
+                    disabled={casperLoading}
+                  >
+                    <Code2 size={14} />
+                    {casperLoading ? "Preparing..." : "Prepare Payload"}
+                  </Btn>
+                  {!selected.txHash && (
+                    <Btn
+                      variant="primary"
+                      size="sm"
+                      onClick={() => recordAuditOnChain(selected.id)}
+                      disabled={casperLoading}
+                    >
+                      <Database size={14} />
+                      Mock Record
+                    </Btn>
+                  )}
+                </div>
+
+                {casperPrepared && (
+                  <div className="space-y-3 rounded-lg bg-[#050B14] border border-[#1E293B] p-3">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Network</span>
+                        <div className="text-[#F8FAFC] mt-1">{casperPrepared.casper.network || "casper-testnet"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Entrypoint</span>
+                        <div className="text-[#F8FAFC] mt-1">{casperPrepared.contractEntrypoint}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Payload Hash</span>
+                        <div className="text-[#22D3EE] font-mono mt-1 break-all">{casperPrepared.payloadHash}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
+                        <div className="text-[#F8FAFC] font-mono mt-1 break-all">
+                          {casperPrepared.casper.contractHash || "Not configured yet"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Runtime Args</span>
+                        <button
+                          onClick={copyCasperPayload}
+                          className="inline-flex items-center gap-1 text-xs text-[#22D3EE] hover:text-[#F8FAFC]"
+                        >
+                          <Copy size={12} />
+                          {copiedPayload ? "Copied" : "Copy JSON"}
+                        </button>
+                      </div>
+                      <pre className="max-h-44 overflow-auto rounded-lg bg-[#0B1220] border border-[#1E293B] p-3 text-xs text-[#94A3B8]">
+                        {JSON.stringify(casperPrepared.runtimeArgs, null, 2)}
+                      </pre>
+                    </div>
+
+                    {!selected.txHash && (
+                      <div className="space-y-2">
+                        <InputField
+                          label="Real Casper Deploy Hash"
+                          value={deployHash}
+                          onChange={setDeployHash}
+                          placeholder="Paste deploy hash after wallet signing"
+                        />
+                        <Btn
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center"
+                          onClick={confirmDeployHash}
+                          disabled={!deployHash.trim() || casperLoading}
+                        >
+                          <CheckCircle size={14} />
+                          Confirm Real Deploy Hash
+                        </Btn>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2913,6 +3079,22 @@ export default function App() {
     }
   }, []);
 
+  const onPrepareCasperPayload = useCallback(async (id: string) => {
+    const response = await api.prepareCasperPayload(id);
+    setApiOnline(true);
+    return response as CasperPreparedPayload;
+  }, []);
+
+  const onConfirmCasperDeploy = useCallback(async (id: string, deployHash: string) => {
+    const response = await api.confirmCasperDeploy(id, deployHash);
+    const updated = response.auditLog as AuditLog;
+    setAuditLogs((prev) =>
+      prev.map((log) => (log.id === id ? updated : log))
+    );
+    setApiOnline(true);
+    return updated;
+  }, []);
+
   const onRecordAuditLog = useCallback(async (id: string) => {
     try {
       const response = await api.recordAuditLog(id);
@@ -2979,7 +3161,12 @@ export default function App() {
       />
     ),
     "audit-log": (
-      <AuditLogPage auditLogs={auditLogs} onRecordAuditLog={onRecordAuditLog} />
+      <AuditLogPage
+        auditLogs={auditLogs}
+        onRecordAuditLog={onRecordAuditLog}
+        onPrepareCasperPayload={onPrepareCasperPayload}
+        onConfirmCasperDeploy={onConfirmCasperDeploy}
+      />
     ),
     settings: (
       <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} />
