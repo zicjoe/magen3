@@ -2,7 +2,7 @@
 
 Magen3 is a Web3 execution firewall for autonomous agents, smart contracts, DAOs, RWA protocols, and oracle-driven actions.
 
-This version is a runnable **Vite + React + TypeScript** app using **pnpm**, plus a lightweight local backend API. It includes the first working product flow: agent registration, policy activation, action analysis, API-backed audit records, and mock Casper transaction hashes.
+This version is a runnable **Vite + React + TypeScript** app using **pnpm**, plus a backend API with an optional **Railway PostgreSQL + Drizzle** persistence layer.
 
 ## Current status
 
@@ -18,14 +18,29 @@ Implemented now:
 - Action Review flow with Allowed / Blocked / Review Required decisions
 - Record Decision flow with mock Casper transaction hash
 - Audit Log backed by API state when backend is running
-- Frontend fallback mode when backend is offline
+- PostgreSQL-ready database layer using Drizzle ORM
+- Automatic database table creation when `DATABASE_URL` is available
+- In-memory fallback when `DATABASE_URL` is missing or unreachable
+- Railway deploy config with health check path
 
 Next wiring targets:
 
-- Persistent database for agents, policies, and audit records
+- Railway-hosted backend API
+- Railway PostgreSQL service using `DATABASE_URL`
 - Real Casper wallet connection
 - Casper Testnet smart contract for policy and decision records
 - Real Casper deploy hashes instead of generated placeholders
+
+## Simple architecture
+
+```text
+Frontend
+  → Backend API
+    → Drizzle ORM
+      → PostgreSQL on Railway
+```
+
+If no database is connected, the backend uses temporary in-memory storage so development can continue.
 
 ## Pages included
 
@@ -44,8 +59,10 @@ Next wiring targets:
 Connect wallet
 → Register agent
 → Create policy
+→ Store policy in Postgres when DATABASE_URL exists
 → Simulate Web3 action
 → Magen3 analyzes policy rules through the API
+→ Store action review in Postgres when DATABASE_URL exists
 → Decision: Allowed / Blocked / Review Required
 → Record decision with mock Casper hash
 → Audit log updates
@@ -63,7 +80,7 @@ corepack enable
 corepack prepare pnpm@10.14.0 --activate
 ```
 
-## Local setup
+## Local setup without database
 
 Install dependencies:
 
@@ -95,11 +112,84 @@ Backend health check:
 http://localhost:8787/api/health
 ```
 
-## Frontend-only fallback
+When no `DATABASE_URL` is set, the health response will show:
 
-The frontend still works if the backend is not running. In that mode, the top bar shows **Local Fallback**, and the app uses in-memory local state.
+```json
+{
+  "storage": "memory"
+}
+```
 
-For the best demo, run both the backend and frontend.
+## Local setup with PostgreSQL
+
+Create `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Add your database URL:
+
+```env
+DATABASE_URL=postgresql://username:password@host:5432/database
+DATABASE_SSL=false
+```
+
+Then run:
+
+```bash
+pnpm dev:backend
+```
+
+The backend will automatically create these tables if they do not exist:
+
+```text
+agents
+policies
+action_reviews
+audit_logs
+```
+
+You can also run the migration command directly:
+
+```bash
+pnpm db:migrate
+```
+
+## Railway setup
+
+Use Railway for both backend and PostgreSQL.
+
+Recommended Railway variables:
+
+```env
+DATABASE_URL=<Railway Postgres connection string>
+DATABASE_SSL=true
+CORS_ORIGIN=<your frontend URL>
+BACKEND_PORT=8787
+```
+
+Railway normally injects `PORT` automatically. The backend supports both `PORT` and `BACKEND_PORT`.
+
+Start command:
+
+```bash
+pnpm start
+```
+
+Health check path:
+
+```text
+/api/health
+```
+
+When Railway Postgres is connected, the health response should show:
+
+```json
+{
+  "storage": "postgres"
+}
+```
 
 ## API endpoints
 

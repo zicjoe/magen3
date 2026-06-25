@@ -1,0 +1,61 @@
+import { doublePrecision, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+export const agentsTable = pgTable("agents", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  purpose: text("purpose").notNull().default(""),
+  permissionLevel: text("permission_level").notNull(),
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const policiesTable = pgTable("policies", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  agentId: text("agent_id").notNull().references(() => agentsTable.id),
+  maxTransaction: doublePrecision("max_transaction").notNull(),
+  dailyLimit: doublePrecision("daily_limit").notNull(),
+  approvalThreshold: doublePrecision("approval_threshold").notNull(),
+  trustedContracts: jsonb("trusted_contracts").notNull().default([]),
+  blockedActions: jsonb("blocked_actions").notNull().default([]),
+  riskMode: text("risk_mode").notNull(),
+  status: text("status").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  policyHash: text("policy_hash").notNull(),
+});
+
+export const actionReviewsTable = pgTable("action_reviews", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  actionType: text("action_type").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  target: text("target").notNull(),
+  targetType: text("target_type").notNull(),
+  decision: text("decision").notNull(),
+  risk: text("risk").notNull(),
+  riskScore: integer("risk_score").notNull(),
+  reason: text("reason").notNull(),
+  checksPassed: jsonb("checks_passed").notNull().default([]),
+  checksFailed: jsonb("checks_failed").notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLogsTable = pgTable("audit_logs", {
+  id: text("id").primaryKey(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
+  shield: text("shield").notNull(),
+  agentId: text("agent_id").notNull(),
+  agentName: text("agent_name").notNull(),
+  action: text("action").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  target: text("target").notNull(),
+  targetType: text("target_type").notNull(),
+  decision: text("decision").notNull(),
+  risk: text("risk").notNull(),
+  reason: text("reason").notNull(),
+  policyUsed: text("policy_used").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  txHash: text("tx_hash").notNull().default(""),
+  riskScore: integer("risk_score").notNull(),
+});

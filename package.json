@@ -10,7 +10,11 @@
     "dev:backend": "node backend/server.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "api:health": "node -e \"fetch('http://localhost:8787/api/health').then(r=>r.json()).then(console.log).catch(console.error)\""
+    "api:health": "node -e \"fetch('http://localhost:8787/api/health').then(r=>r.json()).then(console.log).catch(console.error)\"",
+    "db:migrate": "node backend/db/migrate.mjs",
+    "railway:start": "node backend/server.mjs",
+    "start": "node backend/server.mjs",
+    "backend:start": "node backend/server.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",
@@ -55,7 +59,9 @@
     "sonner": "2.0.7",
     "tailwind-merge": "3.6.0",
     "tw-animate-css": "1.4.0",
-    "vaul": "1.1.2"
+    "vaul": "1.1.2",
+    "drizzle-orm": "0.44.7",
+    "pg": "8.16.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
@@ -64,6 +70,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
     "typescript": "6.0.3",
-    "vite": "8.1.0"
+    "vite": "8.1.0",
+    "drizzle-kit": "0.31.7"
   }
 }
