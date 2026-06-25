@@ -4,6 +4,7 @@ import { pool, db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
 import { actionReviewsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
+import { buildAuditDecisionPayload, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 
 function toDate(value) {
@@ -256,8 +257,19 @@ export async function createPostgresStore() {
       return normalizeAuditLog(auditRow);
     },
 
-    async recordAuditLog(id) {
-      const txHash = makePseudoHash("0xcasper");
+    async prepareCasperPayload(id) {
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      if (rows.length === 0) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const auditLog = normalizeAuditLog(rows[0]);
+      return { auditLog, ...buildAuditDecisionPayload(auditLog) };
+    },
+
+    async confirmCasperDeploy(id, body) {
+      const txHash = validateDeployHash(body?.deployHash);
       const [auditRow] = await db.update(auditLogsTable)
         .set({ txHash })
         .where(eq(auditLogsTable.id, id))
@@ -269,7 +281,25 @@ export async function createPostgresStore() {
         throw err;
       }
 
-      return { auditLog: normalizeAuditLog(auditRow), txHash };
+      return { auditLog: normalizeAuditLog(auditRow), txHash, confirmed: true };
+    },
+
+    async recordAuditLog(id) {
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      if (rows.length === 0) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const auditLog = normalizeAuditLog(rows[0]);
+      const prepared = buildAuditDecisionPayload(auditLog);
+      const txHash = makePseudoHash("0xcasper");
+      const [auditRow] = await db.update(auditLogsTable)
+        .set({ txHash })
+        .where(eq(auditLogsTable.id, id))
+        .returning();
+
+      return { auditLog: normalizeAuditLog(auditRow), txHash, prepared };
     },
   };
 }

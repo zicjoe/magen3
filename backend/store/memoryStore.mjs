@@ -1,5 +1,6 @@
 import { DEFAULT_WALLET, seedAgents, seedAuditLogs, seedPolicies, shieldModules } from "../data/seed.mjs";
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
+import { buildAuditDecisionPayload, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 
 function clone(value) {
@@ -144,8 +145,18 @@ export function createMemoryStore() {
       return auditLog;
     },
 
-    async recordAuditLog(id) {
-      const txHash = makePseudoHash("0xcasper");
+    async prepareCasperPayload(id) {
+      const auditLog = auditLogs.find((log) => log.id === id);
+      if (!auditLog) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      return { auditLog, ...buildAuditDecisionPayload(auditLog) };
+    },
+
+    async confirmCasperDeploy(id, body) {
+      const txHash = validateDeployHash(body?.deployHash);
       auditLogs = auditLogs.map((log) => log.id === id ? { ...log, txHash } : log);
       const auditLog = auditLogs.find((log) => log.id === id);
       if (!auditLog) {
@@ -153,7 +164,20 @@ export function createMemoryStore() {
         err.status = 404;
         throw err;
       }
-      return { auditLog, txHash };
+      return { auditLog, txHash, confirmed: true };
+    },
+
+    async recordAuditLog(id) {
+      const auditLog = auditLogs.find((log) => log.id === id);
+      if (!auditLog) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const prepared = buildAuditDecisionPayload(auditLog);
+      const txHash = makePseudoHash("0xcasper");
+      auditLogs = auditLogs.map((log) => log.id === id ? { ...log, txHash } : log);
+      return { auditLog: { ...auditLog, txHash }, txHash, prepared };
     },
   };
 }

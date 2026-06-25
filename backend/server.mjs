@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createStore } from "./store/index.mjs";
+import { getCasperStatus } from "./casper/auditPayload.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -49,10 +50,16 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "0.3.0",
+        version: "0.4.0",
         storage: store.mode,
+        casper: getCasperStatus(),
         timestamp: new Date().toISOString(),
       });
+    }
+
+
+    if (route === "GET /api/casper/status") {
+      return send(res, 200, { ok: true, casper: getCasperStatus() });
     }
 
     if (route === "GET /api/bootstrap") {
@@ -81,6 +88,18 @@ const server = createServer(async (req, res) => {
     if (route === "POST /api/audit-logs") {
       const body = await readJson(req);
       return send(res, 201, { auditLog: await store.createAuditLog(body) });
+    }
+
+
+    const payloadMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)\/casper-payload$/);
+    if (req.method === "POST" && payloadMatch) {
+      return send(res, 200, await store.prepareCasperPayload(payloadMatch[1]));
+    }
+
+    const confirmMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)\/casper-confirm$/);
+    if (req.method === "POST" && confirmMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.confirmCasperDeploy(confirmMatch[1], body));
     }
 
     const recordMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)\/record$/);

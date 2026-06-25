@@ -2,7 +2,7 @@
 
 Magen3 is a Web3 execution firewall for autonomous agents, smart contracts, DAOs, RWA protocols, and oracle-driven actions.
 
-This version is a runnable **Vite + React + TypeScript** app using **pnpm**, plus a backend API with an optional **Railway PostgreSQL + Drizzle** persistence layer.
+This version is a runnable **Vite + React + TypeScript** app using **pnpm**, plus a backend API with an optional **Railway PostgreSQL + Drizzle** persistence layer and a **Casper Testnet audit-contract foundation**.
 
 ## Current status
 
@@ -22,14 +22,17 @@ Implemented now:
 - Automatic database table creation when `DATABASE_URL` is available
 - In-memory fallback when `DATABASE_URL` is missing or unreachable
 - Railway deploy config with health check path
+- Casper status endpoint and deterministic decision payload builder
+- Casper audit registry smart-contract foundation in `contracts/magen3-audit-registry`
+- Manual deploy-hash confirmation endpoint for the next wallet/contract wiring step
 
 Next wiring targets:
 
-- Railway-hosted backend API
-- Railway PostgreSQL service using `DATABASE_URL`
 - Real Casper wallet connection
-- Casper Testnet smart contract for policy and decision records
-- Real Casper deploy hashes instead of generated placeholders
+- Compile/deploy the Casper audit registry contract to Testnet
+- Add the deployed contract hash as `MAGEN3_CONTRACT_HASH`
+- Replace mock recording with wallet-signed Casper deploys
+- Store real Casper deploy hashes in `audit_logs.tx_hash`
 
 ## Simple architecture
 
@@ -38,6 +41,8 @@ Frontend
   → Backend API
     → Drizzle ORM
       → PostgreSQL on Railway
+    → Casper payload builder
+      → Casper Testnet audit registry
 ```
 
 If no database is connected, the backend uses temporary in-memory storage so development can continue.
@@ -64,7 +69,9 @@ Connect wallet
 → Magen3 analyzes policy rules through the API
 → Store action review in Postgres when DATABASE_URL exists
 → Decision: Allowed / Blocked / Review Required
-→ Record decision with mock Casper hash
+→ Prepare deterministic Casper payload
+→ Record decision with mock Casper hash for now
+→ Later replace mock hash with real Casper deploy hash
 → Audit log updates
 ```
 
@@ -163,10 +170,14 @@ Use Railway for both backend and PostgreSQL.
 Recommended Railway variables:
 
 ```env
-DATABASE_URL=<Railway Postgres connection string>
+DATABASE_URL=${{Postgres.DATABASE_URL}}
 DATABASE_SSL=true
-CORS_ORIGIN=<your frontend URL>
-BACKEND_PORT=8787
+CORS_ORIGIN=*
+NODE_ENV=production
+CASPER_NETWORK=casper-testnet
+CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+CASPER_RECORDING_MODE=mock
+MAGEN3_CONTRACT_HASH=
 ```
 
 Railway normally injects `PORT` automatically. The backend supports both `PORT` and `BACKEND_PORT`.
@@ -202,7 +213,49 @@ POST /api/policies
 POST /api/actions/analyze
 POST /api/audit-logs
 POST /api/audit-logs/:id/record
+GET  /api/casper/status
+POST /api/audit-logs/:id/casper-payload
+POST /api/audit-logs/:id/casper-confirm
 ```
+
+
+## Casper audit-contract foundation
+
+This version includes the first Casper integration layer. The backend can prepare the exact decision payload that should be recorded by the Casper contract.
+
+Check Casper configuration:
+
+```text
+GET /api/casper/status
+```
+
+Prepare a decision payload for a specific audit log:
+
+```text
+POST /api/audit-logs/:id/casper-payload
+```
+
+After a real Casper deploy is submitted, save its deploy hash:
+
+```text
+POST /api/audit-logs/:id/casper-confirm
+```
+
+Body:
+
+```json
+{
+  "deployHash": "real-casper-deploy-hash"
+}
+```
+
+The smart-contract scaffold is here:
+
+```text
+contracts/magen3-audit-registry
+```
+
+For now, `POST /api/audit-logs/:id/record` still creates a safe mock transaction hash so the demo remains usable before the contract is deployed.
 
 ## Production build
 

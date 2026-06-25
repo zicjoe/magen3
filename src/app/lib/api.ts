@@ -22,7 +22,11 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown> }>("/api/health");
+  },
+
+  casperStatus() {
+    return request<{ ok: boolean; casper: Record<string, unknown> }>("/api/casper/status");
   },
 
   bootstrap() {
@@ -68,6 +72,20 @@ export const api = {
     return request<any>(`/api/audit-logs/${id}/record`, {
       method: "POST",
       body: JSON.stringify({}),
+    });
+  },
+
+  prepareCasperPayload(id: string) {
+    return request<any>(`/api/audit-logs/${id}/casper-payload`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
+  confirmCasperDeploy(id: string, deployHash: string) {
+    return request<any>(`/api/audit-logs/${id}/casper-confirm`, {
+      method: "POST",
+      body: JSON.stringify({ deployHash }),
     });
   },
 };
