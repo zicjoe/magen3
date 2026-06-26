@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "0.5.0",
+        version: "0.6.0",
         storage: store.mode,
         casper: getCasperStatus(),
         timestamp: new Date().toISOString(),

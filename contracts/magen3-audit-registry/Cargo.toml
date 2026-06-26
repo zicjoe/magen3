@@ -1,0 +1,29 @@
+[package]
+name = "magen3-audit-registry"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+name = "magen3_audit_registry"
+path = "contract/src/lib.rs"
+
+[dependencies]
+casper-contract = "5.1.1"
+casper-types = "6.1.0"
+# Casper contract builds require an older pinned nightly, but newer transitive
+# RustCrypto releases can require Rust 2024/Cargo 1.85+. Pin base64ct to
+# the pre-Rust-2024 line so the contract builds consistently with the
+# Casper-compatible nightly toolchain.
+base64ct = "=1.6.0"
+# zeroize 1.9.0 moved to Rust 2024 / rust-version 1.85, which breaks
+# the pinned Casper-compatible nightly-2024-08-01 toolchain. Keep this
+# on the pre-Rust-2024 line for deterministic contract builds.
+zeroize = "=1.8.1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true

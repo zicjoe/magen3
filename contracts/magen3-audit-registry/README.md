@@ -55,3 +55,32 @@ CASPER_RECORDING_MODE=manual
 MAGEN3_CONTRACT_HASH=hash-...
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
 ```
+
+
+## Build commands
+
+From the project root:
+
+```bash
+pnpm contract:build
+pnpm contract:check
+```
+
+The compiled Wasm should be generated at:
+
+```text
+contracts/magen3-audit-registry/target/wasm32-unknown-unknown/release/magen3_audit_registry.wasm
+```
+
+## Deployment playbook
+
+See:
+
+```text
+docs/CASPER_DEPLOYMENT_PLAYBOOK.md
+```
+
+
+## Dependency sync note
+
+Magen3 uses `casper-contract = 5.1.1` and `casper-types = 6.1.0` so the contract builds with the current Casper 2.x crate family instead of pulling mismatched Casper type versions.

@@ -25,6 +25,7 @@ Implemented now:
 - Casper status endpoint and deterministic decision payload builder
 - Casper audit registry smart-contract foundation in `contracts/magen3-audit-registry`
 - Manual deploy-hash confirmation endpoint for the next wallet/contract wiring step
+- Casper contract build/deploy helper scripts and deployment playbook
 - Frontend Casper Recorder in the Audit Log drawer
 - Runtime-args preview, payload hash display, copy JSON, mock recording, and real deploy-hash confirmation
 
@@ -178,6 +179,7 @@ DATABASE_SSL=true
 CORS_ORIGIN=*
 NODE_ENV=production
 CASPER_NETWORK=casper-testnet
+CASPER_CHAIN_NAME=casper-test
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
 CASPER_RECORDING_MODE=mock
 MAGEN3_CONTRACT_HASH=
@@ -293,6 +295,26 @@ contracts/magen3-audit-registry
 
 For now, `POST /api/audit-logs/:id/record` still creates a safe mock transaction hash so the demo remains usable before the contract is deployed.
 
+## Casper contract deployment helper scripts
+
+This version includes helper scripts for the manual Casper Testnet deployment path:
+
+```bash
+pnpm contract:build
+pnpm contract:check
+pnpm casper:install:cmd
+pnpm casper:record:cmd -- --payload=./payload.json
+```
+
+Full instructions are in:
+
+```text
+docs/CASPER_DEPLOYMENT_PLAYBOOK.md
+```
+
+The helper scripts do not store private keys. They only print the `casper-client` commands you can run locally. Keep secret keys outside GitHub.
+
+
 ## Production build
 
 ```bash
@@ -322,3 +344,29 @@ Copy-Item .env.example .env
 ## Package manager note
 
 This project intentionally uses pnpm. Do not commit `package-lock.json` or `yarn.lock`. Run dependency commands with `pnpm`.
+
+
+## Casper contract build fix
+
+The contract now uses the current `casper-contract = 5.1.1` and `casper-types = 6.1.0` dependency pair. If you previously saw a Rust error involving `casper-contract-4.0.0` or `#[no_mangle] cannot be used on internal language items`, delete any old `Cargo.lock` inside `contracts/magen3-audit-registry` and rebuild with:
+
+```powershell
+rustup target add wasm32-unknown-unknown
+pnpm contract:build
+pnpm contract:check
+```
+
+See `docs/CASPER_RUST_TROUBLESHOOTING.md` for details.
+
+
+### Casper Rust build note
+
+The Casper contract build is pinned to `nightly-2024-08-01` and `base64ct = =1.6.0` to avoid Rust/Casper dependency drift. Run:
+
+```powershell
+pnpm rust:prepare
+Remove-Item contracts\magen3-audit-registry\Cargo.lock -Force -ErrorAction SilentlyContinue
+Remove-Item contracts\magen3-audit-registry\target -Recurse -Force -ErrorAction SilentlyContinue
+pnpm contract:build
+pnpm contract:check
+```

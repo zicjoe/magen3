@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 export const CASPER_NETWORK = process.env.CASPER_NETWORK || "casper-testnet";
+export const CASPER_CHAIN_NAME = process.env.CASPER_CHAIN_NAME || "casper-test";
 export const CASPER_RPC_URL = process.env.CASPER_RPC_URL || "https://node.testnet.casper.network/rpc";
 export const MAGEN3_CONTRACT_HASH = process.env.MAGEN3_CONTRACT_HASH || "";
 export const CASPER_RECORDING_MODE = process.env.CASPER_RECORDING_MODE || "mock";
@@ -16,6 +17,7 @@ export function shortHash(value, prefix = "0xcasper") {
 export function getCasperStatus() {
   return {
     network: CASPER_NETWORK,
+    chainName: CASPER_CHAIN_NAME,
     rpcUrl: CASPER_RPC_URL,
     contractHash: MAGEN3_CONTRACT_HASH,
     recordingMode: CASPER_RECORDING_MODE,

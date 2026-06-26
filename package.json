@@ -14,7 +14,14 @@
     "db:migrate": "node backend/db/migrate.mjs",
     "railway:start": "node backend/server.mjs",
     "start": "node backend/server.mjs",
-    "backend:start": "node backend/server.mjs"
+    "backend:start": "node backend/server.mjs",
+    "contract:build": "cargo +nightly-2024-08-01 build --manifest-path contracts/magen3-audit-registry/Cargo.toml --target wasm32-unknown-unknown --release",
+    "contract:check": "node scripts/casper/check-contract-wasm.mjs",
+    "casper:install:cmd": "node scripts/casper/print-install-command.mjs",
+    "casper:record:cmd": "node scripts/casper/print-record-command.mjs",
+    "contract:clean": "cargo clean --manifest-path contracts/magen3-audit-registry/Cargo.toml",
+    "contract:doctor": "node scripts/casper/contract-doctor.mjs",
+    "rust:prepare": "rustup toolchain install nightly-2024-08-01 && rustup target add wasm32-unknown-unknown --toolchain nightly-2024-08-01"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",

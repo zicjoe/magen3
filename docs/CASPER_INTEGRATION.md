@@ -2,7 +2,7 @@
 
 Magen3 now has the foundation for real Casper Testnet audit recording.
 
-## Current v4 status
+## Current v6 status
 
 Done:
 
@@ -10,6 +10,7 @@ Done:
 - Backend exposes Casper status and payload endpoints.
 - Backend can save a real Casper deploy hash after a transaction is submitted.
 - Contract source scaffold exists in `contracts/magen3-audit-registry`.
+- Contract Cargo project and helper scripts are available for manual Testnet deployment.
 
 Still to wire next:
 
@@ -54,6 +55,7 @@ Content-Type: application/json
 
 ```env
 CASPER_NETWORK=casper-testnet
+CASPER_CHAIN_NAME=casper-test
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
 CASPER_RECORDING_MODE=mock
 MAGEN3_CONTRACT_HASH=
@@ -65,3 +67,15 @@ After contract deployment:
 CASPER_RECORDING_MODE=manual
 MAGEN3_CONTRACT_HASH=hash-your-deployed-contract-hash
 ```
+
+
+## Deployment helper scripts
+
+```bash
+pnpm contract:build
+pnpm contract:check
+pnpm casper:install:cmd
+pnpm casper:record:cmd -- --payload=./payload.json
+```
+
+See `docs/CASPER_DEPLOYMENT_PLAYBOOK.md` for the full step-by-step process.

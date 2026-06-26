@@ -1,12 +1,23 @@
 #![no_std]
 #![no_main]
 
+#[cfg(not(target_arch = "wasm32"))]
+compile_error!("target arch should be wasm32: compile with '--target wasm32-unknown-unknown'");
+
 extern crate alloc;
 
-use alloc::string::{String, ToString};
-use casper_contract::{contract_api::{runtime, storage}, unwrap_or_revert::UnwrapOrRevert};
+use alloc::{
+    string::{String, ToString},
+    vec,
+};
+use casper_contract::{
+    contract_api::{runtime, storage},
+    unwrap_or_revert::UnwrapOrRevert,
+};
 use casper_types::{
-    CLType, EntryPoint, EntryPointAccess, EntryPointType, EntryPoints, Key, Parameter, RuntimeArgs, URef,
+    addressable_entity::{EntityEntryPoint as EntryPoint, EntryPoints},
+    contracts::NamedKeys,
+    CLType, EntryPointAccess, EntryPointPayment, EntryPointType, Key, Parameter, URef,
 };
 
 const DECISIONS_DICT: &str = "magen3_decisions";
@@ -53,8 +64,7 @@ pub extern "C" fn record_decision() {
     storage::dictionary_put(get_decisions_dict(), &decision_id, value);
 }
 
-#[no_mangle]
-pub extern "C" fn call() {
+fn entry_points() -> EntryPoints {
     let mut entry_points = EntryPoints::new();
 
     entry_points.add_entry_point(EntryPoint::new(
@@ -76,16 +86,27 @@ pub extern "C" fn call() {
         ],
         CLType::Unit,
         EntryPointAccess::Public,
-        EntryPointType::Contract,
+        EntryPointType::Called,
+        EntryPointPayment::Caller,
     ));
 
+    entry_points
+}
+
+#[no_mangle]
+pub extern "C" fn call() {
     let decisions_uref = storage::new_dictionary(DECISIONS_DICT).unwrap_or_revert();
-    runtime::put_key(DECISIONS_DICT, decisions_uref.into());
 
-    let (package_hash, access_uref) = storage::create_contract_package_at_hash();
-    let (contract_hash, _version) = storage::add_contract_version(package_hash, entry_points, Default::default());
+    let mut named_keys = NamedKeys::new();
+    named_keys.insert(DECISIONS_DICT.to_string(), decisions_uref.into());
 
-    runtime::put_key(CONTRACT_PACKAGE_NAME, package_hash.into());
-    runtime::put_key(CONTRACT_ACCESS_UREF, access_uref.into());
+    let (contract_hash, _version) = storage::new_contract(
+        entry_points(),
+        Some(named_keys),
+        Some(CONTRACT_PACKAGE_NAME.to_string()),
+        Some(CONTRACT_ACCESS_UREF.to_string()),
+        None,
+    );
+
     runtime::put_key(CONTRACT_HASH_NAME, contract_hash.into());
 }
