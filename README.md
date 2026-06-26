@@ -370,3 +370,8 @@ Remove-Item contracts\magen3-audit-registry\target -Recurse -Force -ErrorAction 
 pnpm contract:build
 pnpm contract:check
 ```
+
+
+## Railway npm registry note
+
+This project must install packages from the public npm registry on Railway. The `.npmrc` file pins `registry=https://registry.npmjs.org/` and the lockfile must not contain private/internal package tarball URLs. If Railway install fails with a URL containing `applied-caas-gateway` or `artifactory`, regenerate or clean `pnpm-lock.yaml` before redeploying.
