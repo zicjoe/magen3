@@ -22,9 +22,9 @@ if (!payloadFile) {
 const prepared = JSON.parse(readFileSync(payloadFile, "utf8"));
 const runtimeArgs = prepared.runtimeArgs || prepared;
 const contractHash = process.env.MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "hash-PASTE_CONTRACT_HASH";
-const nodeAddress = process.env.CASPER_RPC_URL || prepared?.casper?.rpcUrl || "https://node.testnet.casper.network/rpc";
+const nodeAddress = process.env.CASPER_RPC_URL || prepared?.casper?.rpcUrl || "https://node.testnet.casper.network";
 const chainName = process.env.CASPER_CHAIN_NAME || "casper-test";
-const secretKey = process.env.CASPER_SECRET_KEY_PATH || "./keys/secret_key.pem";
+const secretKey = process.env.CASPER_SECRET_KEY_PATH || "~/magen3-keys/secret_key.pem";
 const paymentAmount = process.env.CASPER_CALL_PAYMENT_MOTES || "5000000000";
 
 const flags = [

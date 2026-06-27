@@ -37,6 +37,12 @@ import {
   Menu,
 } from "lucide-react";
 import { api } from "./lib/api";
+import {
+  connectCasperWallet,
+  disconnectCasperWallet,
+  restoreCasperWalletConnection,
+  isCasperWalletInstalled,
+} from "./lib/casperWallet";
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -991,11 +997,17 @@ function TopBar({
   walletAddress,
   apiOnline,
   onConnectWallet,
+  onDisconnectWallet,
+  walletConnecting,
+  walletError,
 }: {
   walletConnected: boolean;
   walletAddress: string;
   apiOnline: boolean;
   onConnectWallet: () => void;
+  onDisconnectWallet: () => void;
+  walletConnecting: boolean;
+  walletError: string;
 }) {
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-[#1E293B] bg-[#050B14]/80 backdrop-blur-sm sticky top-0 z-10">
@@ -1033,18 +1045,27 @@ function TopBar({
           <Bell size={18} />
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#22D3EE] rounded-full" />
         </button>
+        {walletError && !walletConnected && (
+          <div className="hidden lg:block max-w-[260px] truncate rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-1.5 text-xs text-[#F59E0B]" title={walletError}>
+            {walletError}
+          </div>
+        )}
         {walletConnected ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#111827] border border-[#1E293B] rounded-lg">
+          <button
+            onClick={onDisconnectWallet}
+            className="flex items-center gap-2 px-3 py-1.5 bg-[#111827] border border-[#1E293B] rounded-lg hover:border-[#22D3EE]/40 transition-colors"
+            title="Disconnect Casper Wallet"
+          >
             <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#22D3EE] to-[#0EA5E9]" />
             <span className="text-sm text-[#F8FAFC] font-mono">
               {truncate(walletAddress, 20)}
             </span>
             <ChevronDown size={14} className="text-[#94A3B8]" />
-          </div>
+          </button>
         ) : (
-          <Btn variant="primary" size="sm" onClick={onConnectWallet}>
+          <Btn variant="primary" size="sm" onClick={onConnectWallet} disabled={walletConnecting}>
             <Wallet size={14} />
-            Connect Wallet
+            {walletConnecting ? "Connecting..." : "Connect Wallet"}
           </Btn>
         )}
       </div>
@@ -1316,12 +1337,16 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
 function DashboardPage({
   walletConnected,
   onConnectWallet,
+  walletConnecting,
+  walletError,
   auditLogs,
   policies,
   agents,
 }: {
   walletConnected: boolean;
   onConnectWallet: () => void;
+  walletConnecting: boolean;
+  walletError: string;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1332,10 +1357,20 @@ function DashboardPage({
         title="Connect Your Wallet"
         description="Connect your Casper wallet to access the security dashboard and start protecting your agents."
         action={
-          <Btn variant="primary" size="lg" onClick={onConnectWallet}>
-            <Wallet size={18} />
-            Connect Wallet
-          </Btn>
+          <div className="flex flex-col items-center gap-3">
+            <Btn variant="primary" size="lg" onClick={onConnectWallet} disabled={walletConnecting}>
+              <Wallet size={18} />
+              {walletConnecting ? "Connecting..." : "Connect Wallet"}
+            </Btn>
+            {walletError && (
+              <div className="max-w-xl rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-4 py-3 text-sm text-[#F59E0B]">
+                {walletError}
+              </div>
+            )}
+            <p className="max-w-xl text-center text-xs text-[#94A3B8]">
+              Magen3 now connects to the real Casper Wallet browser extension and uses the active public key for Agent Shield audits.
+            </p>
+          </div>
         }
       />
     );
@@ -2946,7 +2981,9 @@ function SettingsPage({
 export default function App() {
   const [page, setPage] = useState<Page>("landing");
   const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState("casper-test-wallet-01ab...7890");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletConnecting, setWalletConnecting] = useState(false);
+  const [walletError, setWalletError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(mockAgents);
@@ -2971,15 +3008,66 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    restoreCasperWalletConnection()
+      .then((connection) => {
+        if (cancelled || !connection) return;
+        setWalletAddress(connection.publicKey);
+        setWalletConnected(true);
+        setWalletError("");
+      })
+      .catch(() => {
+        // Wallet may be locked, unavailable, or not yet approved for this site.
+        // We keep this silent so users are only prompted when they click Connect.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const connectWallet = useCallback(async () => {
+    setWalletConnecting(true);
+    setWalletError("");
+
     try {
-      const response = await api.connectWallet();
-      setWalletAddress(response.walletAddress);
-      setApiOnline(true);
-    } catch {
-      setApiOnline(false);
+      if (!isCasperWalletInstalled()) {
+        throw new Error(
+          "Casper Wallet extension was not detected. Install Casper Wallet in this browser, unlock it, then refresh Magen3."
+        );
+      }
+
+      const connection = await connectCasperWallet();
+      setWalletAddress(connection.publicKey);
+      setWalletConnected(true);
+
+      // Keep this call only as a backend health check. The wallet address now comes from Casper Wallet, not from backend mock data.
+      try {
+        await api.connectWallet();
+        setApiOnline(true);
+      } catch {
+        setApiOnline(false);
+      }
+    } catch (error) {
+      setWalletConnected(false);
+      setWalletAddress("");
+      setWalletError(error instanceof Error ? error.message : "Unable to connect Casper Wallet.");
+    } finally {
+      setWalletConnecting(false);
     }
-    setWalletConnected(true);
+  }, []);
+
+  const disconnectWallet = useCallback(async () => {
+    try {
+      await disconnectCasperWallet();
+    } catch {
+      // If the extension is unavailable during disconnect, still clear local app state.
+    }
+    setWalletConnected(false);
+    setWalletAddress("");
+    setWalletError("");
   }, []);
 
   const onRegisterAgent = useCallback(async (agent: Omit<Agent, "id" | "status" | "createdAt">) => {
@@ -3128,6 +3216,8 @@ export default function App() {
       <DashboardPage
         walletConnected={walletConnected}
         onConnectWallet={connectWallet}
+        walletConnecting={walletConnecting}
+        walletError={walletError}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -3190,6 +3280,9 @@ export default function App() {
           walletAddress={walletAddress}
           apiOnline={apiOnline}
           onConnectWallet={connectWallet}
+          onDisconnectWallet={disconnectWallet}
+          walletConnecting={walletConnecting}
+          walletError={walletError}
         />
         <main className="flex-1 p-6 overflow-auto">
           {pageComponents[page as Exclude<Page, "landing">]}

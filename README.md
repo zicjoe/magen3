@@ -375,3 +375,9 @@ pnpm contract:check
 ## Railway npm registry note
 
 This project must install packages from the public npm registry on Railway. The `.npmrc` file pins `registry=https://registry.npmjs.org/` and the lockfile must not contain private/internal package tarball URLs. If Railway install fails with a URL containing `applied-caas-gateway` or `artifactory`, regenerate or clean `pnpm-lock.yaml` before redeploying.
+
+## v13 real Casper Wallet connect
+
+Magen3 now connects to the real Casper Wallet browser extension instead of silently using the backend mock wallet. The frontend detects `window.CasperWalletProvider`, requests wallet approval, reads the active public key, and uses that public key as the wallet address across Agent Shield policies, action reviews, and audit logs.
+
+See `docs/CASPER_WALLET_CONNECT.md` for testing instructions.

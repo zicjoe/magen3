@@ -1,0 +1,62 @@
+{
+  "auditLog": {
+    "id": "AUD-MQW7GEPX-E2693A",
+    "timestamp": "2026-06-27T10:16:31.365Z",
+    "shield": "Agent Shield",
+    "agentId": "MAG-AGENT-MQW7DQTO-196C70",
+    "agentName": "joel",
+    "action": "Stake",
+    "amount": 15,
+    "target": "oiuhh",
+    "targetType": "Trusted Contract",
+    "decision": "Allowed",
+    "risk": "Low",
+    "reason": "This action matches the active policy and can be safely executed.",
+    "policyUsed": "move",
+    "walletAddress": "casper-test-wallet-01ab...7890",
+    "txHash": "0xcasper1952a593065879af309b3e7f",
+    "riskScore": 5
+  },
+  "payload": {
+    "decisionId": "AUD-MQW7GEPX-E2693A",
+    "shield": "Agent Shield",
+    "walletAddress": "casper-test-wallet-01ab...7890",
+    "agentId": "MAG-AGENT-MQW7DQTO-196C70",
+    "agentName": "joel",
+    "action": "Stake",
+    "amount": 15,
+    "target": "oiuhh",
+    "targetType": "Trusted Contract",
+    "decision": "Allowed",
+    "risk": "Low",
+    "riskScore": 5,
+    "policyUsed": "move",
+    "reasonHash": "0xb543999ffdd5188834a152828628e3bd702eecb812d420e3bbcb09706042a964",
+    "timestamp": "2026-06-27T10:16:31.365Z"
+  },
+  "payloadHash": "0x992d59419dfd760402fd70024953e23a2e57c1448a691a6c42cd1ab314bef677",
+  "casper": {
+    "network": "casper-testnet",
+    "chainName": "casper-test",
+    "rpcUrl": "https://node.testnet.casper.network/rpc",
+    "contractHash": " hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf",
+    "recordingMode": "mock",
+    "contractConfigured": true
+  },
+  "contractEntrypoint": "record_decision",
+  "runtimeArgs": {
+    "decision_id": "AUD-MQW7GEPX-E2693A",
+    "wallet_address": "casper-test-wallet-01ab...7890",
+    "agent_id": "MAG-AGENT-MQW7DQTO-196C70",
+    "shield": "Agent Shield",
+    "action_type": "Stake",
+    "decision": "Allowed",
+    "risk": "Low",
+    "risk_score": 5,
+    "amount": "15",
+    "target": "oiuhh",
+    "policy_used": "move",
+    "reason_hash": "0xb543999ffdd5188834a152828628e3bd702eecb812d420e3bbcb09706042a964",
+    "payload_hash": "0x992d59419dfd760402fd70024953e23a2e57c1448a691a6c42cd1ab314bef677"
+  }
+}

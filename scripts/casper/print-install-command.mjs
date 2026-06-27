@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const env = process.env;
-const nodeAddress = env.CASPER_RPC_URL || "https://node.testnet.casper.network/rpc";
+const nodeAddress = env.CASPER_RPC_URL || "https://node.testnet.casper.network";
 const chainName = env.CASPER_CHAIN_NAME || "casper-test";
-const secretKey = env.CASPER_SECRET_KEY_PATH || "./keys/secret_key.pem";
+const secretKey = env.CASPER_SECRET_KEY_PATH || "~/magen3-keys/secret_key.pem";
 const paymentAmount = env.CASPER_INSTALL_PAYMENT_MOTES || "150000000000";
 const wasmPath = resolve(env.MAGEN3_WASM_PATH || "contracts/magen3-audit-registry/target/wasm32-unknown-unknown/release/magen3_audit_registry.wasm");
 
