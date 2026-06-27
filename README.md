@@ -240,3 +240,14 @@ Claim 8 CSPR rewards from trusted staking contract
 
 See `docs/AGENT_RUNNER_DEMO.md` for the full demo flow.
 
+
+
+## Agent Gateway API
+
+Magen3 now includes a real Agent Gateway endpoint for external AI agents:
+
+```http
+POST /api/agent-gateway/intents
+```
+
+External agents send structured Web3 intents to this endpoint before wallet signing or contract execution. Magen3 checks the active policy, creates an audit log, and returns a Casper `record_decision` payload. See `docs/AGENT_GATEWAY_API.md`.

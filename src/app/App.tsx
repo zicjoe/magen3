@@ -196,6 +196,28 @@ interface AgentRunnerProposal {
   executionPlan: string[];
 }
 
+interface AgentGatewayResponse {
+  ok: boolean;
+  gatewayRequest: {
+    id: string;
+    source: string;
+    agentId: string;
+    walletAddress: string;
+    actionType: ActionType;
+    amount: number;
+    asset: string;
+    target: string;
+    targetType: TargetType;
+    status: string;
+    auditLogId: string;
+  };
+  result: DecisionResult;
+  auditLog: AuditLog;
+  casperPayload: CasperPreparedPayload;
+  executionApproved: boolean;
+  nextAction: string;
+}
+
 // ──────────────────────────────────────────────────────────
 // Mock Data
 // ──────────────────────────────────────────────────────────
@@ -1034,7 +1056,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "shields", label: "Shields", icon: <Shield size={18} /> },
   { id: "agent-shield", label: "Agent Shield", icon: <Bot size={18} /> },
-  { id: "agent-runner", label: "Agent Runner", icon: <Zap size={18} /> },
+  { id: "agent-runner", label: "Agent Gateway", icon: <Zap size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "action-review", label: "Action Review", icon: <FlaskConical size={18} /> },
   { id: "audit-log", label: "Audit Log", icon: <Scroll size={18} /> },
@@ -2534,19 +2556,15 @@ function ActionReviewPage({
 function AgentRunnerPage({
   agents,
   policies,
-  auditLogs,
-  onAnalyzeAction,
-  onRecordDecision,
   walletAddress,
   onNavigate,
+  onSubmitGatewayIntent,
 }: {
   agents: Agent[];
   policies: Policy[];
-  auditLogs: AuditLog[];
-  onAnalyzeAction: (request: ActionRequest) => Promise<DecisionResult> | DecisionResult;
-  onRecordDecision: (log: AuditLog) => Promise<string> | string;
   walletAddress: string;
   onNavigate: (p: Page) => void;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>) => Promise<AgentGatewayResponse>;
 }) {
   const initialAgentId = pickAgentForRunner(agents, policies, "");
   const [agentId, setAgentId] = useState(initialAgentId);
@@ -2554,7 +2572,9 @@ function AgentRunnerPage({
   const [proposal, setProposal] = useState<AgentRunnerProposal | null>(null);
   const [result, setResult] = useState<DecisionResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [recordedTxHash, setRecordedTxHash] = useState("");
+  const [gatewayResponse, setGatewayResponse] = useState<AgentGatewayResponse | null>(null);
+  const [gatewayError, setGatewayError] = useState("");
+  const [copiedCurl, setCopiedCurl] = useState(false);
 
   useEffect(() => {
     if (!agentId && agents.length > 0) {
@@ -2577,60 +2597,75 @@ function AgentRunnerPage({
     if (!goal.trim() || !agentId) return;
     setProposal(buildAgentRunnerProposal(goal, agentId));
     setResult(null);
-    setRecordedTxHash("");
+    setGatewayResponse(null);
+    setGatewayError("");
   }, [agentId, goal]);
 
+  const gatewayIntent = useMemo(() => {
+    if (!proposal) return null;
+    return {
+      source: "magen3-ui-agent-gateway",
+      agentId: proposal.request.agentId,
+      walletAddress,
+      goal: proposal.rawGoal,
+      reason: proposal.summary,
+      action: {
+        type: proposal.request.actionType,
+        amount: proposal.request.amount,
+        asset: "CSPR",
+        target: proposal.request.target,
+        targetType: proposal.request.targetType,
+      },
+    };
+  }, [proposal, walletAddress]);
+
+  const gatewayCurl = useMemo(() => {
+    if (!gatewayIntent) return "";
+    return `curl -X POST "${api.baseUrl}/api/agent-gateway/intents" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(gatewayIntent)}'`;
+  }, [gatewayIntent]);
+
+  const copyGatewayCurl = useCallback(async () => {
+    if (!gatewayCurl) return;
+    try {
+      await navigator.clipboard.writeText(gatewayCurl);
+      setCopiedCurl(true);
+      setTimeout(() => setCopiedCurl(false), 1500);
+    } catch {
+      setGatewayError("Could not copy the curl command. You can still select it manually.");
+    }
+  }, [gatewayCurl]);
+
   const reviewProposal = useCallback(async () => {
-    if (!proposal) return;
+    if (!gatewayIntent) return;
     setAnalyzing(true);
     setResult(null);
-    setRecordedTxHash("");
+    setGatewayResponse(null);
+    setGatewayError("");
     try {
-      const decision = await onAnalyzeAction(proposal.request);
-      setResult(decision);
+      const response = await onSubmitGatewayIntent(gatewayIntent);
+      setGatewayResponse(response);
+      setResult(response.result);
+    } catch (error) {
+      setGatewayError(error instanceof Error ? error.message : "Agent Gateway request failed");
     } finally {
       setAnalyzing(false);
     }
-  }, [onAnalyzeAction, proposal]);
-
-  const recordAgentDecision = useCallback(async () => {
-    if (!proposal || !result) return;
-    const agent = agents.find((item) => item.id === proposal.request.agentId);
-    const policy = getActivePolicy(policies, proposal.request.agentId);
-    const log: AuditLog = {
-      id: makeId("AUD"),
-      timestamp: new Date().toISOString(),
-      shield: "Agent Shield",
-      agentId: proposal.request.agentId,
-      agentName: agent?.name || proposal.request.agentId,
-      action: proposal.request.actionType,
-      amount: proposal.request.amount,
-      target: proposal.request.target || "No target provided",
-      targetType: proposal.request.targetType,
-      decision: result.decision,
-      risk: result.risk,
-      reason: `Agent Runner goal: "${proposal.rawGoal}". ${result.reason}`,
-      policyUsed: policy?.name || "No active policy",
-      walletAddress,
-      txHash: "",
-      riskScore: result.riskScore,
-    };
-    const txHash = await onRecordDecision(log);
-    setRecordedTxHash(txHash);
-  }, [agents, onRecordDecision, policies, proposal, result, walletAddress]);
+  }, [gatewayIntent, onSubmitGatewayIntent]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#22D3EE] mb-3">
-            <Bot size={13} /> Agent Runner Demo
+            <Bot size={13} /> Agent Gateway API
           </div>
           <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-            Test Magen3 with a goal-driven agent
+            Real agent gateway
           </h1>
           <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
-            Give the agent a Web3 goal. The runner converts it into a structured action request, then Magen3 reviews it before any execution can happen.
+            Use the same API endpoint an external AI agent would call before wallet signing or contract execution. The UI below is only a gateway lab for sending real API requests.
           </p>
         </div>
         <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
@@ -2640,10 +2675,10 @@ function AgentRunnerPage({
 
       <div className="grid md:grid-cols-4 gap-3">
         {[
-          { label: "1. Goal", desc: "Agent receives intent", icon: <Bot size={18} /> },
-          { label: "2. Action", desc: "Intent becomes request", icon: <Zap size={18} /> },
-          { label: "3. Review", desc: "Policy engine decides", icon: <Shield size={18} /> },
-          { label: "4. Proof", desc: "Decision reaches audit log", icon: <Database size={18} /> },
+          { label: "1. Intent", desc: "External agent calls API", icon: <Bot size={18} /> },
+          { label: "2. Gateway", desc: "Magen3 validates request", icon: <Zap size={18} /> },
+          { label: "3. Decision", desc: "Policy engine approves/blocks", icon: <Shield size={18} /> },
+          { label: "4. Proof", desc: "Audit log + Casper payload", icon: <Database size={18} /> },
         ].map((step) => (
           <div key={step.label} className={`${CARD} p-4`}>
             <div className="flex items-center gap-2 text-[#22D3EE] mb-2">
@@ -2657,7 +2692,7 @@ function AgentRunnerPage({
 
       <div className="grid xl:grid-cols-3 gap-6">
         <div className={`${CARD} p-6 xl:col-span-1`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>Agent Goal</h2>
+          <h2 className={`${SECTION_TITLE} mb-5`}>Gateway Test Request</h2>
           <div className="space-y-4">
             <SelectField
               label="Agent"
@@ -2666,7 +2701,8 @@ function AgentRunnerPage({
                 setAgentId(v);
                 setProposal(null);
                 setResult(null);
-                setRecordedTxHash("");
+                setGatewayResponse(null);
+    setGatewayError("");
               }}
               options={agents.map((agent) => agent.id)}
             />
@@ -2684,7 +2720,7 @@ function AgentRunnerPage({
             </div>
 
             <div>
-              <label className={LABEL_CLS}>Goal Prompt</label>
+              <label className={LABEL_CLS}>Agent Goal / Intent</label>
               <textarea
                 className={`${INPUT_CLS} min-h-32 resize-none`}
                 value={goal}
@@ -2692,7 +2728,8 @@ function AgentRunnerPage({
                   setGoal(e.target.value);
                   setProposal(null);
                   setResult(null);
-                  setRecordedTxHash("");
+                  setGatewayResponse(null);
+    setGatewayError("");
                 }}
                 placeholder="Example: Stake 15 CSPR to trusted-validator-demo"
               />
@@ -2706,7 +2743,8 @@ function AgentRunnerPage({
                     setGoal(quickGoal);
                     setProposal(null);
                     setResult(null);
-                    setRecordedTxHash("");
+                    setGatewayResponse(null);
+    setGatewayError("");
                   }}
                   className="rounded-lg bg-[#1E293B] px-3 py-1.5 text-left text-xs text-[#94A3B8] transition-colors hover:bg-[#263548] hover:text-[#F8FAFC]"
                 >
@@ -2716,7 +2754,7 @@ function AgentRunnerPage({
             </div>
 
             <Btn variant="primary" size="lg" className="w-full justify-center" onClick={generateAction} disabled={!agentId || !goal.trim()}>
-              <Zap size={16} /> Generate Agent Action
+              <Zap size={16} /> Build Gateway Request
             </Btn>
           </div>
         </div>
@@ -2725,8 +2763,8 @@ function AgentRunnerPage({
           <div className={`${CARD_GLOW} p-6`}>
             <div className="flex items-center justify-between gap-3 mb-5">
               <div>
-                <h2 className={SECTION_TITLE}>Generated Action Request</h2>
-                <p className="text-xs text-[#94A3B8] mt-1">This is the request Magen3 intercepts before execution.</p>
+                <h2 className={SECTION_TITLE}>Structured Agent Intent</h2>
+                <p className="text-xs text-[#94A3B8] mt-1">This JSON is submitted to the real /api/agent-gateway/intents endpoint.</p>
               </div>
               {proposal && (
                 <span className="rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold text-[#22D3EE]">
@@ -2738,12 +2776,12 @@ function AgentRunnerPage({
             {!proposal ? (
               <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
                 <Bot size={30} className="mx-auto mb-3 text-[#94A3B8]" />
-                <p className="text-sm text-[#94A3B8]">Generate an action from the agent goal to begin the firewall test.</p>
+                <p className="text-sm text-[#94A3B8]">Build the gateway request to begin the real API test.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="rounded-lg bg-[#0B1220] p-4">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Agent Summary</div>
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Gateway Summary</div>
                   <p className="text-sm text-[#F8FAFC]">{proposal.summary}</p>
                 </div>
 
@@ -2763,7 +2801,7 @@ function AgentRunnerPage({
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Agent Reasoning</div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Intent Parsing</div>
                     <ul className="space-y-1.5">
                       {proposal.reasoning.map((item) => (
                         <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
@@ -2774,7 +2812,7 @@ function AgentRunnerPage({
                     </ul>
                   </div>
                   <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Execution Gate</div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Gateway Rules</div>
                     <ul className="space-y-1.5">
                       {proposal.executionPlan.map((item) => (
                         <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
@@ -2786,26 +2824,41 @@ function AgentRunnerPage({
                   </div>
                 </div>
 
+                {gatewayIntent && (
+                  <div className="rounded-lg border border-[#1E293B] bg-[#020617] p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="text-xs text-[#94A3B8] uppercase tracking-wider">External Agent API Call</div>
+                      <button onClick={copyGatewayCurl} className="text-xs text-[#22D3EE] hover:text-[#F8FAFC]">
+                        {copiedCurl ? "Copied" : "Copy curl"}
+                      </button>
+                    </div>
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[#94A3B8]">{gatewayCurl}</pre>
+                  </div>
+                )}
+
                 <Btn variant="primary" size="md" onClick={reviewProposal} disabled={analyzing}>
                   {analyzing ? <Activity size={16} className="animate-spin" /> : <Shield size={16} />}
-                  {analyzing ? "Reviewing with Magen3..." : "Send to Magen3 Review"}
+                  {analyzing ? "Calling Agent Gateway..." : "Submit to Agent Gateway API"}
                 </Btn>
               </div>
             )}
           </div>
 
           <div className={`${CARD_GLOW} p-6`}>
-            <h2 className={`${SECTION_TITLE} mb-5`}>Magen3 Firewall Decision</h2>
+            <h2 className={`${SECTION_TITLE} mb-5`}>Agent Gateway Decision</h2>
+            {gatewayError && (
+              <div className="mb-4 rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{gatewayError}</div>
+            )}
             {!result && !analyzing && (
               <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
                 <Shield size={30} className="mx-auto mb-3 text-[#94A3B8]" />
-                <p className="text-sm text-[#94A3B8]">The generated action has not been reviewed yet.</p>
+                <p className="text-sm text-[#94A3B8]">The gateway request has not been submitted yet.</p>
               </div>
             )}
             {analyzing && (
               <div className="rounded-xl bg-[#0B1220] p-10 text-center">
                 <Activity size={30} className="mx-auto mb-3 animate-spin text-[#22D3EE]" />
-                <p className="text-sm text-[#94A3B8]">Checking policy limits, trusted targets, blocked actions, and daily exposure...</p>
+                <p className="text-sm text-[#94A3B8]">Calling the real backend gateway, checking policy limits, trusted targets, blocked actions, and daily exposure...</p>
               </div>
             )}
             {result && !analyzing && (
@@ -2856,18 +2909,17 @@ function AgentRunnerPage({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 border-t border-[#1E293B] pt-4">
-                  {recordedTxHash ? (
+                  {gatewayResponse?.auditLog ? (
                     <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
-                      <span className="flex items-center gap-2"><CheckCircle size={16} /> Added to audit log</span>
-                      <span className="font-mono text-xs text-[#94A3B8]">{truncate(recordedTxHash, 24)}</span>
+                      <span className="flex items-center gap-2"><CheckCircle size={16} /> Gateway request saved to audit log</span>
+                      <span className="font-mono text-xs text-[#94A3B8]">{gatewayResponse.auditLog.id} · {gatewayResponse.gatewayRequest.status}</span>
+                      <span className="text-xs text-[#94A3B8]">{gatewayResponse.nextAction}</span>
                     </div>
                   ) : (
-                    <Btn variant="primary" size="sm" onClick={recordAgentDecision}>
-                      <Database size={14} /> Record Decision
-                    </Btn>
+                    <span className="text-sm text-[#94A3B8]">Submit the request to create a real audit log.</span>
                   )}
                   <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
-                    View Casper Proof <ExternalLink size={14} />
+                    Open Audit Log / Casper Proof <ExternalLink size={14} />
                   </Btn>
                 </div>
               </div>
@@ -2879,7 +2931,7 @@ function AgentRunnerPage({
       <div className={`${CARD} p-5`}>
         <h2 className={`${SECTION_TITLE} mb-3`}>Why this matters</h2>
         <p className="text-sm text-[#94A3B8] leading-relaxed">
-          This page makes the Magen3 demo feel like a real agent workflow: the agent can form an action from a goal, but it cannot bypass the firewall. Magen3 becomes the checkpoint between autonomous intent and Web3 execution.
+          This page now uses a real backend gateway endpoint. An external AI agent can call the same API with a structured Web3 intent, and Magen3 will approve, block, or pause the action before any wallet signature or contract execution.
         </p>
       </div>
     </div>
@@ -3791,6 +3843,18 @@ export default function App() {
     return updated;
   }, []);
 
+  const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>) => {
+    const response = await api.submitAgentGatewayIntent(intent) as AgentGatewayResponse;
+    if (response.auditLog) {
+      setAuditLogs((prev) => {
+        const exists = prev.some((log) => log.id === response.auditLog.id);
+        return exists ? prev.map((log) => log.id === response.auditLog.id ? response.auditLog : log) : [response.auditLog, ...prev];
+      });
+    }
+    setApiOnline(true);
+    return response;
+  }, []);
+
   const onRecordAuditLog = useCallback(async (id: string) => {
     try {
       const response = await api.recordAuditLog(id);
@@ -3844,11 +3908,9 @@ export default function App() {
       <AgentRunnerPage
         agents={agents}
         policies={policies}
-        auditLogs={auditLogs}
-        onAnalyzeAction={onAnalyzeAction}
-        onRecordDecision={onRecordDecision}
         walletAddress={walletAddress}
         onNavigate={navigate}
+        onSubmitGatewayIntent={onSubmitGatewayIntent}
       />
     ),
     policies: (

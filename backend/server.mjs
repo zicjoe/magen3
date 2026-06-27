@@ -34,6 +34,19 @@ async function readJson(req) {
   }
 }
 
+
+function requireAgentGatewayAuth(req) {
+  const expected = process.env.AGENT_GATEWAY_API_KEY;
+  if (!expected) return;
+  const authorization = req.headers.authorization || "";
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  const headerKey = req.headers["x-magen3-agent-key"] || "";
+  if (bearer === expected || headerKey === expected) return;
+  const err = new Error("Agent Gateway API key is required");
+  err.status = 401;
+  throw err;
+}
+
 const store = await createStore();
 
 const server = createServer(async (req, res) => {
@@ -50,7 +63,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "0.7.0",
+        version: "0.8.0",
         storage: store.mode,
         casper: getCasperStatus(),
         timestamp: new Date().toISOString(),
@@ -60,6 +73,44 @@ const server = createServer(async (req, res) => {
 
     if (route === "GET /api/casper/status") {
       return send(res, 200, { ok: true, casper: getCasperStatus() });
+    }
+
+
+
+    if (route === "GET /api/agent-gateway/spec") {
+      return send(res, 200, {
+        ok: true,
+        name: "Magen3 Agent Gateway API",
+        purpose: "External agents submit structured Web3 action intents to Magen3 before wallet signing or contract execution.",
+        authRequired: Boolean(process.env.AGENT_GATEWAY_API_KEY),
+        endpoint: "POST /api/agent-gateway/intents",
+        requestShape: {
+          source: "external-agent-name",
+          agentId: "MAG-AGENT-001",
+          walletAddress: "casper-public-key-or-wallet",
+          goal: "Stake idle funds safely",
+          reason: "User strategy asks for low-risk staking",
+          action: {
+            type: "Stake",
+            amount: 15,
+            asset: "CSPR",
+            target: "trusted-validator-demo",
+            targetType: "Trusted Contract"
+          }
+        },
+        responseShape: {
+          decision: "Allowed | Blocked | Review Required",
+          executionApproved: "boolean",
+          auditLog: "Stored Magen3 audit record",
+          casperPayload: "Payload to anchor with record_decision on Casper"
+        }
+      });
+    }
+
+    if (route === "POST /api/agent-gateway/intents") {
+      requireAgentGatewayAuth(req);
+      const body = await readJson(req);
+      return send(res, 201, await store.submitAgentGatewayIntent(body));
     }
 
     if (route === "GET /api/bootstrap") {

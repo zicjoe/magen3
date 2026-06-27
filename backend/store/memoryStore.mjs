@@ -2,6 +2,7 @@ import { DEFAULT_WALLET, seedAgents, seedAuditLogs, seedPolicies, shieldModules 
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
+import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -12,6 +13,7 @@ export function createMemoryStore() {
   let policies = clone(seedPolicies);
   let auditLogs = clone(seedAuditLogs);
   const actionReviews = [];
+  let gatewayRequests = [];
 
   function dashboardStats() {
     return {
@@ -143,6 +145,61 @@ export function createMemoryStore() {
       };
       auditLogs = [auditLog, ...auditLogs];
       return auditLog;
+    },
+
+
+
+    async submitAgentGatewayIntent(body) {
+      const intent = normalizeAgentGatewayIntent(body);
+      const request = {
+        agentId: intent.agentId,
+        actionType: intent.actionType,
+        amount: intent.amount,
+        target: intent.target,
+        targetType: intent.targetType,
+      };
+      const result = evaluatePolicy({ request, agents, policies, auditLogs });
+      const agent = agents.find((item) => item.id === intent.agentId);
+      const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
+      const status = gatewayStatusFromDecision(result.decision);
+      const auditLog = {
+        id: makeId("AUD"),
+        timestamp: new Date().toISOString(),
+        shield: "Agent Shield",
+        agentId: intent.agentId,
+        agentName: agent?.name || intent.agentId,
+        action: intent.actionType,
+        amount: intent.amount,
+        target: intent.target,
+        targetType: intent.targetType,
+        decision: result.decision,
+        risk: result.risk,
+        reason: `Agent Gateway request ${intent.id} from ${intent.source}. ${intent.goal ? `Goal: ${intent.goal}. ` : ""}${intent.reason ? `Reason: ${intent.reason}. ` : ""}${result.reason}`,
+        policyUsed: policy?.name || "No active policy",
+        walletAddress: intent.walletAddress,
+        txHash: "",
+        riskScore: Number(result.riskScore || 50),
+      };
+      const gatewayRequest = {
+        ...intent,
+        decision: result.decision,
+        risk: result.risk,
+        riskScore: Number(result.riskScore || 50),
+        status,
+        auditLogId: auditLog.id,
+      };
+      gatewayRequests = [gatewayRequest, ...gatewayRequests];
+      auditLogs = [auditLog, ...auditLogs];
+      const casperPayload = buildAuditDecisionPayload(auditLog);
+      return {
+        ok: true,
+        gatewayRequest,
+        result,
+        auditLog,
+        casperPayload,
+        executionApproved: result.decision === "Allowed",
+        nextAction: gatewayNextAction(result.decision),
+      };
     },
 
     async prepareCasperPayload(id) {

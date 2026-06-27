@@ -33,6 +33,18 @@ export const api = {
     return request<any>("/api/bootstrap");
   },
 
+  agentGatewaySpec() {
+    return request<any>("/api/agent-gateway/spec");
+  },
+
+  submitAgentGatewayIntent(intent: Record<string, unknown>) {
+    return request<any>("/api/agent-gateway/intents", {
+      method: "POST",
+      body: JSON.stringify(intent),
+    });
+  },
+
+
   connectWallet() {
     return request<{ walletAddress: string; network: string; connected: boolean }>(
       "/api/wallet/mock-connect",

@@ -48,6 +48,30 @@ export async function runMigrations() {
     );
   `);
 
+
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_gateway_requests (
+      id TEXT PRIMARY KEY,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      amount DOUBLE PRECISION NOT NULL,
+      asset TEXT NOT NULL DEFAULT 'CSPR',
+      target TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      goal TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      decision TEXT NOT NULL,
+      risk TEXT NOT NULL,
+      risk_score INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      audit_log_id TEXT NOT NULL
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
@@ -73,6 +97,8 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_agent_id ON audit_logs(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_agent_id ON action_reviews(agent_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_agent_id ON agent_gateway_requests(agent_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_received_at ON agent_gateway_requests(received_at DESC);`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

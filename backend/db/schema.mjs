@@ -59,3 +59,24 @@ export const auditLogsTable = pgTable("audit_logs", {
   txHash: text("tx_hash").notNull().default(""),
   riskScore: integer("risk_score").notNull(),
 });
+
+
+export const agentGatewayRequestsTable = pgTable("agent_gateway_requests", {
+  id: text("id").primaryKey(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  source: text("source").notNull(),
+  agentId: text("agent_id").notNull(),
+  walletAddress: text("wallet_address").notNull(),
+  actionType: text("action_type").notNull(),
+  amount: doublePrecision("amount").notNull(),
+  asset: text("asset").notNull().default("CSPR"),
+  target: text("target").notNull(),
+  targetType: text("target_type").notNull(),
+  goal: text("goal").notNull().default(""),
+  reason: text("reason").notNull().default(""),
+  decision: text("decision").notNull(),
+  risk: text("risk").notNull(),
+  riskScore: integer("risk_score").notNull(),
+  status: text("status").notNull(),
+  auditLogId: text("audit_log_id").notNull(),
+});

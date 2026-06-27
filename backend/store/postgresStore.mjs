@@ -2,10 +2,11 @@ import { desc, eq } from "drizzle-orm";
 import { DEFAULT_WALLET, seedAgents, seedAuditLogs, seedPolicies, shieldModules } from "../data/seed.mjs";
 import { pool, db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
-import { actionReviewsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
+import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
+import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -255,6 +256,95 @@ export async function createPostgresStore() {
         riskScore: Number(body.riskScore || 50),
       }).returning();
       return normalizeAuditLog(auditRow);
+    },
+
+
+
+    async submitAgentGatewayIntent(body) {
+      const intent = normalizeAgentGatewayIntent(body);
+      const [agents, policies, auditLogs] = await Promise.all([listAgents(), listPolicies(), listAuditLogs()]);
+      const request = {
+        agentId: intent.agentId,
+        actionType: intent.actionType,
+        amount: intent.amount,
+        target: intent.target,
+        targetType: intent.targetType,
+      };
+      const result = evaluatePolicy({ request, agents, policies, auditLogs });
+      const agent = agents.find((item) => item.id === intent.agentId);
+      const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
+      const status = gatewayStatusFromDecision(result.decision);
+
+      const [auditRow] = await db.insert(auditLogsTable).values({
+        id: makeId("AUD"),
+        timestamp: new Date(),
+        shield: "Agent Shield",
+        agentId: intent.agentId,
+        agentName: agent?.name || intent.agentId,
+        action: intent.actionType,
+        amount: intent.amount,
+        target: intent.target,
+        targetType: intent.targetType,
+        decision: result.decision,
+        risk: result.risk,
+        reason: `Agent Gateway request ${intent.id} from ${intent.source}. ${intent.goal ? `Goal: ${intent.goal}. ` : ""}${intent.reason ? `Reason: ${intent.reason}. ` : ""}${result.reason}`,
+        policyUsed: policy?.name || "No active policy",
+        walletAddress: intent.walletAddress,
+        txHash: "",
+        riskScore: Number(result.riskScore || 50),
+      }).returning();
+
+      const auditLog = normalizeAuditLog(auditRow);
+      const gatewayStatus = status;
+      const [gatewayRow] = await db.insert(agentGatewayRequestsTable).values({
+        id: intent.id,
+        receivedAt: new Date(intent.receivedAt),
+        source: intent.source,
+        agentId: intent.agentId,
+        walletAddress: intent.walletAddress,
+        actionType: intent.actionType,
+        amount: intent.amount,
+        asset: intent.asset,
+        target: intent.target,
+        targetType: intent.targetType,
+        goal: intent.goal,
+        reason: intent.reason,
+        decision: result.decision,
+        risk: result.risk,
+        riskScore: Number(result.riskScore || 50),
+        status: gatewayStatus,
+        auditLogId: auditLog.id,
+      }).returning();
+
+      const gatewayRequest = {
+        id: gatewayRow.id,
+        receivedAt: toDate(gatewayRow.receivedAt).toISOString(),
+        source: gatewayRow.source,
+        agentId: gatewayRow.agentId,
+        walletAddress: gatewayRow.walletAddress,
+        actionType: gatewayRow.actionType,
+        amount: Number(gatewayRow.amount),
+        asset: gatewayRow.asset,
+        target: gatewayRow.target,
+        targetType: gatewayRow.targetType,
+        goal: gatewayRow.goal,
+        reason: gatewayRow.reason,
+        decision: gatewayRow.decision,
+        risk: gatewayRow.risk,
+        riskScore: Number(gatewayRow.riskScore),
+        status: gatewayRow.status,
+        auditLogId: gatewayRow.auditLogId,
+      };
+
+      return {
+        ok: true,
+        gatewayRequest,
+        result,
+        auditLog,
+        casperPayload: buildAuditDecisionPayload(auditLog),
+        executionApproved: result.decision === "Allowed",
+        nextAction: gatewayNextAction(result.decision),
+      };
     },
 
     async prepareCasperPayload(id) {
