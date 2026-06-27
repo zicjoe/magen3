@@ -381,3 +381,7 @@ This project must install packages from the public npm registry on Railway. The 
 Magen3 now connects to the real Casper Wallet browser extension instead of silently using the backend mock wallet. The frontend detects `window.CasperWalletProvider`, requests wallet approval, reads the active public key, and uses that public key as the wallet address across Agent Shield policies, action reviews, and audit logs.
 
 See `docs/CASPER_WALLET_CONNECT.md` for testing instructions.
+
+## v14 Casper Proof
+
+The Audit Log now includes a dedicated Casper Proof section. Real 64-character Casper deploy hashes are shown as on-chain records with a CSPR.live Testnet link. Mock/local records are clearly labeled so the demo can distinguish simulated records from real Casper transactions.

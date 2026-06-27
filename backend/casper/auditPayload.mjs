@@ -67,15 +67,23 @@ export function buildAuditDecisionPayload(auditLog) {
   };
 }
 
+export function normalizeDeployHash(value) {
+  return String(value || "").trim().replace(/^hash-/i, "");
+}
+
+export function isRealDeployHash(value) {
+  return /^[a-f0-9]{64}$/i.test(normalizeDeployHash(value));
+}
+
 export function validateDeployHash(value) {
-  const deployHash = String(value || "").trim();
+  const deployHash = normalizeDeployHash(value);
   if (!deployHash) {
     const err = new Error("Casper deploy hash is required");
     err.status = 400;
     throw err;
   }
-  if (deployHash.length < 20) {
-    const err = new Error("Casper deploy hash looks too short");
+  if (!isRealDeployHash(deployHash)) {
+    const err = new Error("Paste the 64-character Casper deploy hash returned by casper-client, without the hash- prefix.");
     err.status = 400;
     throw err;
   }

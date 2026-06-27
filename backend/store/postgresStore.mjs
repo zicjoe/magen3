@@ -4,7 +4,7 @@ import { pool, db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
 import { actionReviewsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
-import { buildAuditDecisionPayload, validateDeployHash } from "../casper/auditPayload.mjs";
+import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 
 function toDate(value) {
@@ -117,7 +117,7 @@ function deriveDashboardStats(policies, auditLogs) {
     protectedActions: auditLogs.length,
     blockedActions: auditLogs.filter((log) => log.decision === "Blocked").length,
     reviewRequired: auditLogs.filter((log) => log.decision === "Review Required").length,
-    casperAuditRecords: auditLogs.filter((log) => Boolean(log.txHash)).length,
+    casperAuditRecords: auditLogs.filter((log) => isRealDeployHash(log.txHash)).length,
   };
 }
 

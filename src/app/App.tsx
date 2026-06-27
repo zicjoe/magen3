@@ -481,6 +481,26 @@ function truncate(s: string, n = 16) {
   return s.slice(0, 8) + "..." + s.slice(-6);
 }
 
+const CASPER_TESTNET_EXPLORER = "https://testnet.cspr.live";
+
+function normalizeCasperDeployHash(value = "") {
+  return value.trim().replace(/^hash-/i, "");
+}
+
+function isRealCasperDeployHash(value = "") {
+  return /^[a-f0-9]{64}$/i.test(normalizeCasperDeployHash(value));
+}
+
+function casperDeployUrl(value = "") {
+  const hash = normalizeCasperDeployHash(value);
+  return `${CASPER_TESTNET_EXPLORER}/deploy/${hash}`;
+}
+
+function casperProofStatus(txHash = "") {
+  if (!txHash) return { label: "Pending", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
+  if (isRealCasperDeployHash(txHash)) return { label: "Recorded on Casper", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  return { label: "Local Mock", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+}
 
 function makeId(prefix: string) {
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -533,7 +553,7 @@ function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): Dashbo
     protectedActions: auditLogs.length,
     blockedActions: auditLogs.filter((log) => log.decision === "Blocked").length,
     reviewRequired: auditLogs.filter((log) => log.decision === "Review Required").length,
-    casperAuditRecords: auditLogs.filter((log) => Boolean(log.txHash)).length,
+    casperAuditRecords: auditLogs.filter((log) => isRealCasperDeployHash(log.txHash)).length,
   };
 }
 
@@ -2400,9 +2420,9 @@ function AuditLogPage({
   useEffect(() => {
     setCasperPrepared(null);
     setCasperError("");
-    setDeployHash("");
+    setDeployHash(selected?.txHash && isRealCasperDeployHash(selected.txHash) ? normalizeCasperDeployHash(selected.txHash) : "");
     setCopiedPayload(false);
-  }, [selected?.id]);
+  }, [selected?.id, selected?.txHash]);
 
   const prepareCasperPayload = useCallback(async (logId: string) => {
     setCasperLoading(true);
@@ -2432,12 +2452,17 @@ function AuditLogPage({
 
   const confirmDeployHash = useCallback(async () => {
     if (!selected) return;
+    const normalizedDeployHash = normalizeCasperDeployHash(deployHash);
+    if (!isRealCasperDeployHash(normalizedDeployHash)) {
+      setCasperError("Paste the 64-character Casper deploy hash returned by casper-client, without the hash- prefix.");
+      return;
+    }
     setCasperLoading(true);
     setCasperError("");
     try {
-      const updated = await onConfirmCasperDeploy(selected.id, deployHash);
+      const updated = await onConfirmCasperDeploy(selected.id, normalizedDeployHash);
       setSelected(updated);
-      setDeployHash("");
+      setDeployHash(normalizeCasperDeployHash(updated.txHash));
     } catch (error) {
       setCasperError(error instanceof Error ? error.message : "Unable to confirm deploy hash");
     } finally {
@@ -2562,10 +2587,22 @@ function AuditLogPage({
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-[#94A3B8] whitespace-nowrap">
                     {log.txHash ? (
-                      <div className="flex items-center gap-1.5 text-[#22D3EE]">
-                        <span>{truncate(log.txHash)}</span>
-                        <ExternalLink size={11} />
-                      </div>
+                      isRealCasperDeployHash(log.txHash) ? (
+                        <a
+                          href={casperDeployUrl(log.txHash)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                        >
+                          <span>{truncate(normalizeCasperDeployHash(log.txHash))}</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[#F59E0B]">
+                          <span>Mock</span>
+                          <span className="text-[#94A3B8]">{truncate(log.txHash)}</span>
+                        </div>
+                      )
                     ) : (
                       <span className="text-[#94A3B8]/40">Pending</span>
                     )}
@@ -2654,6 +2691,89 @@ function AuditLogPage({
                   {selected.reason}
                 </p>
               </div>
+
+              {(() => {
+                const proof = casperProofStatus(selected.txHash);
+                const realDeploy = isRealCasperDeployHash(selected.txHash);
+                const normalizedTxHash = normalizeCasperDeployHash(selected.txHash);
+                return (
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 space-y-3 shadow-[0_0_20px_rgba(34,211,238,0.04)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
+                          <ShieldCheck size={16} className="text-[#22D3EE]" />
+                          Casper Proof
+                        </div>
+                        <p className="text-xs text-[#94A3B8] mt-1">
+                          Verifies that this Magen3 decision was anchored to Casper Testnet.
+                        </p>
+                      </div>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${proof.className}`}>
+                        {proof.label}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Network</span>
+                        <div className="text-[#F8FAFC] mt-1">Casper Testnet</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Entrypoint</span>
+                        <div className="text-[#F8FAFC] mt-1">record_decision</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Deploy Hash</span>
+                        <div className={`font-mono mt-1 break-all ${realDeploy ? "text-[#22D3EE]" : "text-[#F8FAFC]"}`}>
+                          {selected.txHash ? normalizedTxHash : "Not confirmed yet"}
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
+                        <div className="text-[#F8FAFC] font-mono mt-1 break-all">
+                          {casperPrepared?.casper.contractHash || "Prepare payload to show the configured contract hash"}
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
+                        {realDeploy ? (
+                          <a
+                            href={casperDeployUrl(selected.txHash)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                          >
+                            View deploy on CSPR.live
+                            <ExternalLink size={12} />
+                          </a>
+                        ) : (
+                          <div className="text-[#94A3B8] mt-1">Available after you confirm a real Casper deploy hash.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 border-t border-[#1E293B] pt-3">
+                      <InputField
+                        label={realDeploy ? "Replace Real Casper Deploy Hash" : "Real Casper Deploy Hash"}
+                        value={deployHash}
+                        onChange={setDeployHash}
+                        placeholder="Paste 64-character deploy hash from casper-client"
+                      />
+                      <Btn
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-center"
+                        onClick={confirmDeployHash}
+                        disabled={!deployHash.trim() || casperLoading}
+                      >
+                        <CheckCircle size={14} />
+                        {realDeploy ? "Update Casper Proof" : "Confirm Real Deploy Hash"}
+                      </Btn>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="border-t border-[#1E293B] pt-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -2734,27 +2854,6 @@ function AuditLogPage({
                         {JSON.stringify(casperPrepared.runtimeArgs, null, 2)}
                       </pre>
                     </div>
-
-                    {!selected.txHash && (
-                      <div className="space-y-2">
-                        <InputField
-                          label="Real Casper Deploy Hash"
-                          value={deployHash}
-                          onChange={setDeployHash}
-                          placeholder="Paste deploy hash after wallet signing"
-                        />
-                        <Btn
-                          variant="outline"
-                          size="sm"
-                          className="w-full justify-center"
-                          onClick={confirmDeployHash}
-                          disabled={!deployHash.trim() || casperLoading}
-                        >
-                          <CheckCircle size={14} />
-                          Confirm Real Deploy Hash
-                        </Btn>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
