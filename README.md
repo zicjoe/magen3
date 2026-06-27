@@ -1,97 +1,90 @@
 # Magen3
 
-Magen3 is a Web3 execution firewall for autonomous agents, smart contracts, DAOs, RWA protocols, and oracle-driven actions.
+**Magen3 is a Web3 execution firewall for autonomous agents.**
 
-This version is a runnable **Vite + React + TypeScript** app using **pnpm**, plus a backend API with an optional **Railway PostgreSQL + Drizzle** persistence layer and a **Casper Testnet audit-contract foundation**.
+It checks important Web3 actions before execution, classifies the action as **Allowed**, **Blocked**, or **Review Required**, stores the audit trail in the backend database, and anchors the final decision on **Casper Testnet**.
 
-## Current status
+## Buildathon status
 
-Implemented now:
-
-- Premium Magen3 frontend from the Figma export
-- Local backend API using Node's built-in HTTP server
-- API health check and bootstrap endpoint
-- Mock Casper wallet connection through the backend
-- Register Agent API flow
-- Create / Activate Policy API flow
-- Magen3 rule-based policy decision engine exposed through the API
-- Action Review flow with Allowed / Blocked / Review Required decisions
-- Record Decision flow with mock Casper transaction hash
-- Audit Log backed by API state when backend is running
-- PostgreSQL-ready database layer using Drizzle ORM
-- Automatic database table creation when `DATABASE_URL` is available
-- In-memory fallback when `DATABASE_URL` is missing or unreachable
-- Railway deploy config with health check path
-- Casper status endpoint and deterministic decision payload builder
-- Casper audit registry smart-contract foundation in `contracts/magen3-audit-registry`
-- Manual deploy-hash confirmation endpoint for the next wallet/contract wiring step
-- Casper contract build/deploy helper scripts and deployment playbook
-- Frontend Casper Recorder in the Audit Log drawer
-- Runtime-args preview, payload hash display, copy JSON, mock recording, and real deploy-hash confirmation
-
-Next wiring targets:
-
-- Real Casper wallet connection
-- Compile/deploy the Casper audit registry contract to Testnet
-- Add the deployed contract hash as `MAGEN3_CONTRACT_HASH`
-- Replace mock recording with wallet-signed Casper deploys
-- Store real Casper deploy hashes in `audit_logs.tx_hash`
-
-## Simple architecture
+Magen3 now has the full MVP proof flow working:
 
 ```text
-Frontend
-  → Backend API
-    → Drizzle ORM
-      → PostgreSQL on Railway
-    → Casper payload builder
-      → Casper Testnet audit registry
+Connect real Casper Wallet
+→ Register AI agent
+→ Create Agent Shield policy
+→ Review a Web3 action
+→ Generate a Magen3 risk decision
+→ Store the audit record in PostgreSQL / fallback memory
+→ Deploy Casper audit registry contract
+→ Record a real decision on Casper Testnet
+→ Confirm and display Casper proof in Audit Log
 ```
 
-If no database is connected, the backend uses temporary in-memory storage so development can continue.
+## Live Casper proof
 
-## Pages included
+Deployed Magen3 audit registry contract on Casper Testnet:
 
-- Landing Page
-- Dashboard
-- Shields
-- Agent Shield
-- Policies
-- Action Review
-- Audit Log
-- Settings
+```text
+hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
+```
+
+First real `record_decision` deploy hash:
+
+```text
+c95359f46a5709cc10d4e014dadc29b6b9734629b475b5d58f8ba2fa0394f668
+```
+
+These are public Testnet values. Never commit or share `secret_key.pem`.
+
+## What is implemented
+
+- Premium Vite + React + TypeScript frontend
+- Real Casper Wallet browser-extension connection
+- Agent Shield flow for registering AI agents
+- Policy creation and activation
+- Rule-based Magen3 policy engine
+- Action review flow with Allowed / Blocked / Review Required decisions
+- Audit Log with Casper Proof section
+- Backend API using Node's built-in HTTP server
+- Railway PostgreSQL support through Drizzle ORM
+- Automatic database table creation when `DATABASE_URL` exists
+- In-memory fallback when the database is unavailable
+- Casper Testnet audit contract in `contracts/magen3-audit-registry`
+- Casper deploy helper scripts
+- Manual real deploy-hash confirmation for signed Casper transactions
+- Dashboard demo-readiness checklist
 
 ## Product flow
 
 ```text
-Connect wallet
-→ Register agent
-→ Create policy
-→ Store policy in Postgres when DATABASE_URL exists
-→ Simulate Web3 action
-→ Magen3 analyzes policy rules through the API
-→ Store action review in Postgres when DATABASE_URL exists
-→ Decision: Allowed / Blocked / Review Required
-→ Prepare deterministic Casper payload
-→ Open Casper Recorder from the Audit Log drawer
-→ Preview runtime args and payload hash
-→ Mock record for demo mode or paste a real Casper deploy hash after signing
-→ Audit log updates with the saved deploy hash
+Wallet connects
+→ Agent Shield registers the autonomous agent
+→ Policy defines allowed limits and blocked actions
+→ Action Review simulates a requested Web3 action
+→ Magen3 analyzes policy, amount, target, risk, and permissions
+→ Decision is created
+→ Audit Log stores the decision
+→ Casper payload is prepared
+→ record_decision is sent to Casper Testnet
+→ Audit Log displays the real Casper deploy hash and explorer link
 ```
 
 ## Requirements
 
 - Node.js 20+
 - pnpm 10+
+- Casper Wallet browser extension for real wallet connect
+- Ubuntu / WSL for Casper CLI deploy commands
+- Rust for building the Casper contract
 
-If pnpm is not installed yet, enable it with Corepack:
+Enable pnpm if needed:
 
 ```bash
 corepack enable
 corepack prepare pnpm@10.14.0 --activate
 ```
 
-## Local setup without database
+## Local frontend/backend setup
 
 Install dependencies:
 
@@ -99,13 +92,13 @@ Install dependencies:
 pnpm install
 ```
 
-Start the backend API in terminal 1:
+Start backend API in terminal 1:
 
 ```bash
 pnpm dev:backend
 ```
 
-Start the frontend in terminal 2:
+Start frontend in terminal 2:
 
 ```bash
 pnpm dev
@@ -123,265 +116,103 @@ Backend health check:
 http://localhost:8787/api/health
 ```
 
-When no `DATABASE_URL` is set, the health response will show:
+## Environment variables
 
-```json
-{
-  "storage": "memory"
-}
-```
-
-## Local setup with PostgreSQL
-
-Create `.env`:
+Copy `.env.example` to `.env`:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Add your database URL:
+Important values:
 
 ```env
-DATABASE_URL=postgresql://username:password@host:5432/database
-DATABASE_SSL=false
+VITE_API_URL=http://localhost:8787
+VITE_CASPER_NETWORK=casper-testnet
+VITE_CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+VITE_MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
+
+CASPER_NETWORK=casper-testnet
+CASPER_CHAIN_NAME=casper-test
+CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+CASPER_RECORDING_MODE=mock
+MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
 ```
 
-Then run:
+For Railway, set `DATABASE_URL=${{Postgres.DATABASE_URL}}` and `DATABASE_SSL=true`.
 
-```bash
-pnpm dev:backend
-```
+## Railway backend settings
 
-The backend will automatically create these tables if they do not exist:
+Use these service settings:
 
 ```text
-agents
-policies
-action_reviews
-audit_logs
+Build Command:
+node -e "console.log('Magen3 backend build step skipped')"
+
+Start Command:
+pnpm start
+
+Health Check Path:
+/api/health
 ```
-
-You can also run the migration command directly:
-
-```bash
-pnpm db:migrate
-```
-
-## Railway setup
-
-Use Railway for both backend and PostgreSQL.
 
 Recommended Railway variables:
 
 ```env
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 DATABASE_SSL=true
-CORS_ORIGIN=*
 NODE_ENV=production
+CORS_ORIGIN=*
 CASPER_NETWORK=casper-testnet
 CASPER_CHAIN_NAME=casper-test
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
 CASPER_RECORDING_MODE=mock
-MAGEN3_CONTRACT_HASH=
+MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
 ```
 
-Railway normally injects `PORT` automatically. The backend supports both `PORT` and `BACKEND_PORT`.
+## Casper contract commands
 
-Start command:
+Prepare Rust toolchain:
 
 ```bash
-pnpm start
+pnpm rust:prepare
 ```
 
-Health check path:
-
-```text
-/api/health
-```
-
-When Railway Postgres is connected, the health response should show:
-
-```json
-{
-  "storage": "postgres"
-}
-```
-
-
-## Casper Recorder workflow
-
-After creating or selecting an audit record:
-
-```text
-Audit Log → open record details → Prepare Payload
-```
-
-The drawer shows:
-
-```text
-Network
-Entrypoint
-Payload hash
-Configured contract hash
-Runtime args
-```
-
-For the current demo mode, click:
-
-```text
-Mock Record
-```
-
-When a real Casper deploy has been signed externally or through the next wallet integration step, paste the deploy hash into:
-
-```text
-Real Casper Deploy Hash → Confirm Real Deploy Hash
-```
-
-The backend then saves that deploy hash in `audit_logs.tx_hash`, so the dashboard and audit log count it as a Casper audit record.
-
-## API endpoints
-
-```text
-GET  /api/health
-GET  /api/bootstrap
-POST /api/wallet/mock-connect
-POST /api/agents
-POST /api/policies
-POST /api/actions/analyze
-POST /api/audit-logs
-POST /api/audit-logs/:id/record
-GET  /api/casper/status
-POST /api/audit-logs/:id/casper-payload
-POST /api/audit-logs/:id/casper-confirm
-```
-
-
-## Casper audit-contract foundation
-
-This version includes the first Casper integration layer. The backend can prepare the exact decision payload that should be recorded by the Casper contract.
-
-Check Casper configuration:
-
-```text
-GET /api/casper/status
-```
-
-Prepare a decision payload for a specific audit log:
-
-```text
-POST /api/audit-logs/:id/casper-payload
-```
-
-After a real Casper deploy is submitted, save its deploy hash:
-
-```text
-POST /api/audit-logs/:id/casper-confirm
-```
-
-Body:
-
-```json
-{
-  "deployHash": "real-casper-deploy-hash"
-}
-```
-
-The smart-contract scaffold is here:
-
-```text
-contracts/magen3-audit-registry
-```
-
-For now, `POST /api/audit-logs/:id/record` still creates a safe mock transaction hash so the demo remains usable before the contract is deployed.
-
-## Casper contract deployment helper scripts
-
-This version includes helper scripts for the manual Casper Testnet deployment path:
+Build contract:
 
 ```bash
 pnpm contract:build
 pnpm contract:check
+```
+
+Generate install command:
+
+```bash
 pnpm casper:install:cmd
+```
+
+Generate `record_decision` command from a copied payload:
+
+```bash
 pnpm casper:record:cmd -- --payload=./payload.json
 ```
 
-Full instructions are in:
+## Demo script
+
+Use this route during the demo:
 
 ```text
-docs/CASPER_DEPLOYMENT_PLAYBOOK.md
+1. Open Magen3 landing page
+2. Launch App
+3. Connect real Casper Wallet
+4. Register an AI agent in Agent Shield
+5. Create and activate a policy
+6. Go to Action Review
+7. Simulate a Web3 action
+8. Show Magen3 decision: Allowed / Blocked / Review Required
+9. Open Audit Log
+10. Open the audit record
+11. Show Casper Proof: contract hash, deploy hash, network, explorer link
 ```
 
-The helper scripts do not store private keys. They only print the `casper-client` commands you can run locally. Keep secret keys outside GitHub.
-
-
-## Production build
-
-```bash
-pnpm build
-```
-
-## Preview production build
-
-```bash
-pnpm preview
-```
-
-## Environment variables
-
-Copy `.env.example` to `.env` when wiring live services:
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-## Package manager note
-
-This project intentionally uses pnpm. Do not commit `package-lock.json` or `yarn.lock`. Run dependency commands with `pnpm`.
-
-
-## Casper contract build fix
-
-The contract now uses the current `casper-contract = 5.1.1` and `casper-types = 6.1.0` dependency pair. If you previously saw a Rust error involving `casper-contract-4.0.0` or `#[no_mangle] cannot be used on internal language items`, delete any old `Cargo.lock` inside `contracts/magen3-audit-registry` and rebuild with:
-
-```powershell
-rustup target add wasm32-unknown-unknown
-pnpm contract:build
-pnpm contract:check
-```
-
-See `docs/CASPER_RUST_TROUBLESHOOTING.md` for details.
-
-
-### Casper Rust build note
-
-The Casper contract build is pinned to `nightly-2024-08-01` and `base64ct = =1.6.0` to avoid Rust/Casper dependency drift. Run:
-
-```powershell
-pnpm rust:prepare
-Remove-Item contracts\magen3-audit-registry\Cargo.lock -Force -ErrorAction SilentlyContinue
-Remove-Item contracts\magen3-audit-registry\target -Recurse -Force -ErrorAction SilentlyContinue
-pnpm contract:build
-pnpm contract:check
-```
-
-
-## Railway npm registry note
-
-This project must install packages from the public npm registry on Railway. The `.npmrc` file pins `registry=https://registry.npmjs.org/` and the lockfile must not contain private/internal package tarball URLs. If Railway install fails with a URL containing `applied-caas-gateway` or `artifactory`, regenerate or clean `pnpm-lock.yaml` before redeploying.
-
-## v13 real Casper Wallet connect
-
-Magen3 now connects to the real Casper Wallet browser extension instead of silently using the backend mock wallet. The frontend detects `window.CasperWalletProvider`, requests wallet approval, reads the active public key, and uses that public key as the wallet address across Agent Shield policies, action reviews, and audit logs.
-
-See `docs/CASPER_WALLET_CONNECT.md` for testing instructions.
-
-## v14 Casper Proof
-
-The Audit Log now includes a dedicated Casper Proof section. Real 64-character Casper deploy hashes are shown as on-chain records with a CSPR.live Testnet link. Mock/local records are clearly labeled so the demo can distinguish simulated records from real Casper transactions.
+See `docs/DEMO_WALKTHROUGH.md` and `docs/BUILDATHON_SUBMISSION.md` for the final presentation script and submission copy.

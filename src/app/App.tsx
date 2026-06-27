@@ -482,6 +482,9 @@ function truncate(s: string, n = 16) {
 }
 
 const CASPER_TESTNET_EXPLORER = "https://testnet.cspr.live";
+const DEPLOYED_MAGEN3_CONTRACT_HASH =
+  import.meta.env.VITE_MAGEN3_CONTRACT_HASH ||
+  "hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf";
 
 function normalizeCasperDeployHash(value = "") {
   return value.trim().replace(/^hash-/i, "");
@@ -1176,9 +1179,9 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
           {/* Stats */}
           <div className="mt-20 grid grid-cols-3 gap-8 max-w-2xl mx-auto">
             {[
-              { v: "127+", l: "Protected Actions" },
+              { v: "Live", l: "Casper Wallet" },
               { v: "5", l: "Shield Modules" },
-              { v: "103", l: "Casper Records" },
+              { v: "On-chain", l: "Casper Proof" },
             ].map((s) => (
               <div key={s.l} className="text-center">
                 <div className="text-3xl font-bold text-[#22D3EE] font-['Space_Grotesk']">
@@ -1344,7 +1347,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
       </section>
 
       <footer className="border-t border-[#1E293B] py-8 text-center text-sm text-[#94A3B8]/60">
-        © 2025 Magen3 · Built on Casper Network
+        © 2026 Magen3 · Built on Casper Network
       </footer>
     </div>
   );
@@ -1362,6 +1365,7 @@ function DashboardPage({
   auditLogs,
   policies,
   agents,
+  onNavigate,
 }: {
   walletConnected: boolean;
   onConnectWallet: () => void;
@@ -1370,6 +1374,7 @@ function DashboardPage({
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
+  onNavigate: (p: Page) => void;
 }) {
   if (!walletConnected) {
     return (
@@ -1414,6 +1419,15 @@ function DashboardPage({
     ...item,
     pct: Math.round((item.count / totalRiskRecords) * 100),
   }));
+  const realCasperRecord = auditLogs.some((log) => isRealCasperDeployHash(log.txHash));
+  const demoSteps = [
+    { label: "Real Casper wallet connected", done: walletConnected },
+    { label: "Agent registered", done: agents.length > 0 },
+    { label: "Active policy created", done: Boolean(activePolicy) },
+    { label: "Action reviewed by Magen3", done: auditLogs.length > 0 },
+    { label: "Casper proof confirmed", done: realCasperRecord },
+  ];
+  const completedDemoSteps = demoSteps.filter((step) => step.done).length;
 
   return (
     <div className="space-y-6">
@@ -1450,6 +1464,45 @@ function DashboardPage({
           icon={<Database size={20} />}
           color="purple"
         />
+      </div>
+
+      <div className={`${CARD_GLOW} p-5`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
+              <CheckCircle size={14} />
+              Demo Readiness
+            </div>
+            <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+              {completedDemoSteps}/5 core proof steps complete
+            </h2>
+            <p className="text-sm text-[#94A3B8] mt-1 max-w-3xl">
+              The demo should show a real wallet, an Agent Shield policy decision, database-backed audit history, and a Casper Testnet deploy hash as proof.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Btn variant="secondary" size="sm" onClick={() => onNavigate("action-review")}>
+              Run Action Review
+            </Btn>
+            <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
+              Open Casper Proof
+            </Btn>
+          </div>
+        </div>
+        <div className="mt-4 grid md:grid-cols-5 gap-2">
+          {demoSteps.map((step) => (
+            <div key={step.label} className={`rounded-lg border px-3 py-2 text-xs ${
+              step.done
+                ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"
+                : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8]"
+            }`}>
+              <div className="flex items-center gap-1.5">
+                {step.done ? <CheckCircle size={13} className="text-[#22C55E]" /> : <Clock size={13} />}
+                <span>{step.label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -2731,7 +2784,7 @@ function AuditLogPage({
                       <div className="col-span-2">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
                         <div className="text-[#F8FAFC] font-mono mt-1 break-all">
-                          {casperPrepared?.casper.contractHash || "Prepare payload to show the configured contract hash"}
+                          {casperPrepared?.casper.contractHash || DEPLOYED_MAGEN3_CONTRACT_HASH}
                         </div>
                       </div>
                       <div className="col-span-2">
@@ -3320,6 +3373,7 @@ export default function App() {
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
+        onNavigate={navigate}
       />
     ),
     shields: <ShieldsPage onNavigate={navigate} />,
