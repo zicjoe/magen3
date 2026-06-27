@@ -154,3 +154,29 @@ Use this segment after connecting the wallet and before the audit-log proof.
 Suggested line:
 
 > This is the core of Magen3: the AI agent can create intent, but it cannot bypass the execution firewall. Magen3 reviews the action first and records the decision on Casper.
+
+## Optional real external agent demo
+
+After showing the in-app flow, open a terminal and run:
+
+```bash
+pnpm dev:backend
+pnpm agent:test:safe
+```
+
+Then run:
+
+```bash
+pnpm agent:test:risky
+```
+
+Explain it like this:
+
+> This is an external agent client, not the Magen3 UI. It sends a Web3 action intent to the Magen3 Agent Gateway API. Magen3 checks the action before execution, returns the decision, creates an audit log, and prepares the Casper proof payload.
+
+For a custom goal:
+
+```bash
+pnpm agent:test -- --goal "Stake 15 CSPR to 0xStakingContract123"
+```
+

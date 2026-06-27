@@ -251,3 +251,52 @@ POST /api/agent-gateway/intents
 ```
 
 External agents send structured Web3 intents to this endpoint before wallet signing or contract execution. Magen3 checks the active policy, creates an audit log, and returns a Casper `record_decision` payload. See `docs/AGENT_GATEWAY_API.md`.
+
+## v18: Real External Agent Client
+
+Magen3 now includes a small real external-agent test client:
+
+```text
+examples/real-agent-client
+```
+
+This client does not use the app UI. It sends structured action intents directly to:
+
+```http
+POST /api/agent-gateway/intents
+```
+
+Run it locally:
+
+```bash
+pnpm dev:backend
+pnpm agent:test:safe
+pnpm agent:test:risky
+pnpm agent:test:review
+```
+
+Run a custom goal:
+
+```bash
+pnpm agent:test -- --goal "Stake 15 CSPR to 0xStakingContract123"
+```
+
+This gives the demo a real external-agent flow:
+
+```text
+External agent client → Magen3 Gateway API → decision → audit log → Casper payload
+```
+
+The latest Casper payload is saved to:
+
+```text
+examples/real-agent-client/last-casper-payload.json
+```
+
+Use it with:
+
+```bash
+pnpm casper:record:cmd -- --payload=./examples/real-agent-client/last-casper-payload.json
+```
+
+See `docs/REAL_AGENT_CLIENT.md` for the full test flow.
