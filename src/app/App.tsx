@@ -102,6 +102,7 @@ interface Agent {
   permissionLevel: PermissionLevel;
   status: "Policy Active" | "No Policy" | "Paused";
   createdAt: string;
+  ownerWalletAddress?: string;
 }
 
 interface Policy {
@@ -220,166 +221,24 @@ interface AgentGatewayResponse {
 }
 
 // ──────────────────────────────────────────────────────────
-// Mock Data
+// Static Catalog and Sample Inputs
 // ──────────────────────────────────────────────────────────
 
-const mockAgents: Agent[] = [
-  {
-    id: "MAG-AGENT-001",
-    name: "YieldBot",
-    type: "DeFi Agent",
-    purpose: "Manage staking and yield actions",
-    permissionLevel: "Limited Execution",
-    status: "Policy Active",
-    createdAt: "2025-06-10T09:00:00Z",
-  },
-  {
-    id: "MAG-AGENT-002",
-    name: "TreasuryGuard",
-    type: "Treasury Agent",
-    purpose: "Oversee DAO treasury disbursements",
-    permissionLevel: "Full Execution with Review",
-    status: "Policy Active",
-    createdAt: "2025-06-15T11:30:00Z",
-  },
-];
+const initialAgents: Agent[] = [];
 
-const mockPolicies: Policy[] = [
-  {
-    id: "POL-001",
-    name: "Safe DeFi Policy",
-    agentId: "MAG-AGENT-001",
-    maxTransaction: 50,
-    dailyLimit: 200,
-    approvalThreshold: 100,
-    trustedContracts: [
-      "0xStakingContract123",
-      "0xYieldVault456",
-    ],
-    blockedActions: ["Oracle Data Update", "RWA Proof Update"],
-    riskMode: "Balanced",
-    status: "Active",
-    createdAt: "2025-06-11T10:00:00Z",
-    policyHash: "0xpol...a3f1",
-  },
-  {
-    id: "POL-002",
-    name: "Treasury Conservative",
-    agentId: "MAG-AGENT-002",
-    maxTransaction: 500,
-    dailyLimit: 1000,
-    approvalThreshold: 250,
-    trustedContracts: ["0xDAOTreasury789"],
-    blockedActions: ["Swap", "Contract Interaction"],
-    riskMode: "Conservative",
-    status: "Active",
-    createdAt: "2025-06-16T08:00:00Z",
-    policyHash: "0xpol...b7c2",
-  },
-];
+const initialPolicies: Policy[] = [];
 
-const mockAuditLogs: AuditLog[] = [
-  {
-    id: "AUD-001",
-    timestamp: "2025-06-24T14:32:00Z",
-    shield: "Agent Shield",
-    agentId: "MAG-AGENT-001",
-    agentName: "YieldBot",
-    action: "Stake",
-    amount: 25,
-    target: "0xStakingContract123",
-    targetType: "Trusted Contract",
-    decision: "Allowed",
-    risk: "Low",
-    reason: "Amount is within policy limit and target contract is trusted.",
-    policyUsed: "Safe DeFi Policy",
-    walletAddress: "0xWallet...abc1",
-    txHash: "0xcasper...tx001",
-    riskScore: 8,
-  },
-  {
-    id: "AUD-002",
-    timestamp: "2025-06-24T13:15:00Z",
-    shield: "Agent Shield",
-    agentId: "MAG-AGENT-001",
-    agentName: "YieldBot",
-    action: "Transfer",
-    amount: 500,
-    target: "0xUnknownContract999",
-    targetType: "Unknown Contract",
-    decision: "Blocked",
-    risk: "High",
-    reason: "Amount exceeds max transaction limit and target is not trusted.",
-    policyUsed: "Safe DeFi Policy",
-    walletAddress: "0xWallet...abc1",
-    txHash: "",
-    riskScore: 87,
-  },
-  {
-    id: "AUD-003",
-    timestamp: "2025-06-24T12:00:00Z",
-    shield: "Agent Shield",
-    agentId: "MAG-AGENT-001",
-    agentName: "YieldBot",
-    action: "Deposit to Vault",
-    amount: 120,
-    target: "0xYieldVault456",
-    targetType: "Trusted Contract",
-    decision: "Review Required",
-    risk: "Medium",
-    reason: "Target is trusted, but amount is above approval threshold.",
-    policyUsed: "Safe DeFi Policy",
-    walletAddress: "0xWallet...abc1",
-    txHash: "",
-    riskScore: 52,
-  },
-  {
-    id: "AUD-004",
-    timestamp: "2025-06-24T09:45:00Z",
-    shield: "Agent Shield",
-    agentId: "MAG-AGENT-002",
-    agentName: "TreasuryGuard",
-    action: "DAO Treasury Payment",
-    amount: 300,
-    target: "0xDAOTreasury789",
-    targetType: "DAO Treasury",
-    decision: "Review Required",
-    risk: "Medium",
-    reason: "Treasury payment above threshold requires governance approval.",
-    policyUsed: "Treasury Conservative",
-    walletAddress: "0xWallet...abc1",
-    txHash: "",
-    riskScore: 44,
-  },
-  {
-    id: "AUD-005",
-    timestamp: "2025-06-23T17:20:00Z",
-    shield: "Agent Shield",
-    agentId: "MAG-AGENT-001",
-    agentName: "YieldBot",
-    action: "Claim Rewards",
-    amount: 12,
-    target: "0xStakingContract123",
-    targetType: "Trusted Contract",
-    decision: "Allowed",
-    risk: "Low",
-    reason: "Reward claim is within policy limits from a trusted contract.",
-    policyUsed: "Safe DeFi Policy",
-    walletAddress: "0xWallet...abc1",
-    txHash: "0xcasper...tx002",
-    riskScore: 5,
-  },
-];
+const initialAuditLogs: AuditLog[] = [];
 
-const mockDashboardStats: DashboardStats = {
-  activeShields: 1,
-  protectedActions: 127,
-  blockedActions: 14,
-  reviewRequired: 8,
-  casperAuditRecords: 103,
+const initialDashboardStats: DashboardStats = {
+  activeShields: 0,
+  protectedActions: 0,
+  blockedActions: 0,
+  reviewRequired: 0,
+  casperAuditRecords: 0,
 };
 
-const mockShieldModules: ShieldModule[] = [
+const shieldModulesCatalog: ShieldModule[] = [
   {
     id: "shield-agent",
     name: "Agent Shield",
@@ -427,7 +286,7 @@ const mockShieldModules: ShieldModule[] = [
   },
 ];
 
-const mockExamples = [
+const sampleActionExamples = [
   {
     agentId: "MAG-AGENT-001",
     actionType: "Stake" as ActionType,
@@ -535,7 +394,7 @@ function casperDeployUrl(value = "") {
 function casperProofStatus(txHash = "") {
   if (!txHash) return { label: "Pending", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
   if (isRealCasperDeployHash(txHash)) return { label: "Recorded on Casper", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
-  return { label: "Local Mock", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  return { label: "Unconfirmed", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
 }
 
 function makeId(prefix: string) {
@@ -1416,7 +1275,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
           </p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {mockShieldModules.map((m) => (
+          {shieldModulesCatalog.map((m) => (
             <div
               key={m.id}
               className={`${CARD} p-6 hover:border-[#22D3EE]/30 transition-colors`}
@@ -1736,7 +1595,7 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         </p>
       </div>
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {mockShieldModules.map((m) => (
+        {shieldModulesCatalog.map((m) => (
           <div key={m.id} className={`${CARD_GLOW} p-6 flex flex-col`}>
             <div className="flex items-start justify-between mb-4">
               <div className="p-3 bg-[#22D3EE]/10 rounded-xl">
@@ -2227,7 +2086,7 @@ function ActionReviewPage({
       riskScore: result.riskScore,
     };
     const txHash = await onRecordDecision(log);
-    setRecordedTxHash(txHash);
+    setRecordedTxHash(txHash || "saved");
   }, [agents, form, onRecordDecision, policies, result, walletAddress]);
 
   const approveOnce = useCallback(() => {
@@ -2283,7 +2142,7 @@ function ActionReviewPage({
       {/* Quick examples */}
       <div className="flex gap-3 flex-wrap">
         <span className="text-xs text-[#94A3B8] py-2">Quick examples:</span>
-        {mockExamples.map((ex, i) => (
+        {sampleActionExamples.map((ex, i) => (
           <button
             key={i}
             onClick={() => {
@@ -2517,8 +2376,8 @@ function ActionReviewPage({
               <div className="flex gap-2 flex-wrap">
                 {recordedTxHash ? (
                   <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
-                    <span className="flex items-center gap-2"><CheckCircle size={16} /> Recorded on Casper Testnet</span>
-                    <span className="font-mono text-xs text-[#94A3B8]">{truncate(recordedTxHash, 24)}</span>
+                    <span className="flex items-center gap-2"><CheckCircle size={16} /> Saved to Audit Log</span>
+                    <span className="font-mono text-xs text-[#94A3B8]">Open Audit Log to prepare and confirm real Casper proof.</span>
                   </div>
                 ) : (
                   <Btn
@@ -2527,7 +2386,7 @@ function ActionReviewPage({
                     onClick={recordDecisionOnChain}
                   >
                     <Database size={14} />
-                    Record on Casper
+                    Save Audit Log
                   </Btn>
                 )}
                 {result.decision === "Review Required" && (
@@ -3461,7 +3320,7 @@ function AuditLogPage({
                         </a>
                       ) : (
                         <div className="flex items-center gap-1.5 text-[#F59E0B]">
-                          <span>Mock</span>
+                          <span>Unconfirmed</span>
                           <span className="text-[#94A3B8]">{truncate(log.txHash)}</span>
                         </div>
                       )
@@ -3643,7 +3502,7 @@ function AuditLogPage({
                       Casper Recorder
                     </div>
                     <p className="text-xs text-[#94A3B8] mt-1">
-                      Prepare the runtime args, then either use mock recording for the demo or paste a real Casper deploy hash after signing.
+                      Prepare the runtime args, sign the real Casper deploy, then paste the real deploy hash after signing.
                     </p>
                   </div>
                   {selected.txHash && <StatusBadge status="Active" />}
@@ -3673,7 +3532,7 @@ function AuditLogPage({
                       disabled={casperLoading}
                     >
                       <Database size={14} />
-                      Mock Record
+                      Record Disabled
                     </Btn>
                   )}
                 </div>
@@ -3947,13 +3806,23 @@ export default function App() {
   const [walletError, setWalletError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [agents, setAgents] = useState<Agent[]>(mockAgents);
-  const [policies, setPolicies] = useState<Policy[]>(mockPolicies);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
+  const [agents, setAgents] = useState<Agent[]>(initialAgents);
+  const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
 
   useEffect(() => {
     let cancelled = false;
-    api.bootstrap()
+
+    if (!walletConnected || !walletAddress) {
+      setAgents([]);
+      setPolicies([]);
+      setAuditLogs([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    api.bootstrap(walletAddress)
       .then((payload) => {
         if (cancelled) return;
         if (Array.isArray(payload.agents)) setAgents(payload.agents as Agent[]);
@@ -3962,12 +3831,17 @@ export default function App() {
         setApiOnline(true);
       })
       .catch(() => {
-        if (!cancelled) setApiOnline(false);
+        if (!cancelled) {
+          setApiOnline(false);
+          setAgents([]);
+          setPolicies([]);
+          setAuditLogs([]);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [walletConnected, walletAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4004,9 +3878,9 @@ export default function App() {
       setWalletAddress(connection.publicKey);
       setWalletConnected(true);
 
-      // Keep this call only as a backend health check. The wallet address now comes from Casper Wallet, not from backend mock data.
+      // Keep this call only as a backend health check. The wallet address now comes from Casper Wallet, not from backend session data.
       try {
-        await api.connectWallet();
+        await api.connectWallet(connection.publicKey);
         setApiOnline(true);
       } catch {
         setApiOnline(false);
@@ -4032,101 +3906,82 @@ export default function App() {
   }, []);
 
   const onRegisterAgent = useCallback(async (agent: Omit<Agent, "id" | "status" | "createdAt">) => {
-    const fallbackAgent: Agent = {
-      ...agent,
-      id: makeId("MAG-AGENT"),
-      status: "No Policy",
-      createdAt: new Date().toISOString(),
-    };
+    if (!walletAddress) {
+      setWalletError("Connect Casper Wallet before registering an agent.");
+      return;
+    }
+
     try {
-      const response = await api.createAgent(agent);
+      const response = await api.createAgent({ ...agent, walletAddress, ownerWalletAddress: walletAddress });
       setAgents((prev) => [response.agent as Agent, ...prev]);
       setApiOnline(true);
-    } catch {
-      setAgents((prev) => [fallbackAgent, ...prev]);
+    } catch (error) {
       setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to register agent.");
     }
-  }, []);
+  }, [walletAddress]);
 
   const onCreatePolicy = useCallback(async (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => {
-    const fallbackPolicy: Policy = {
-      ...policy,
-      id: makeId("POL"),
-      createdAt: new Date().toISOString(),
-      policyHash: makePseudoHash("0xpol"),
-    };
-    const agent = agents.find((a) => a.id === policy.agentId);
-    const fallbackAudit: AuditLog = {
-      id: makeId("AUD"),
-      timestamp: new Date().toISOString(),
-      shield: "Agent Shield",
-      agentId: policy.agentId,
-      agentName: agent?.name || policy.agentId,
-      action: "Policy Activation",
-      amount: 0,
-      target: "Magen3 Policy Registry",
-      targetType: "Trusted Contract",
-      decision: "Allowed",
-      risk: "Low",
-      reason: `Policy "${policy.name}" activated for ${agent?.name || policy.agentId}.`,
-      policyUsed: policy.name,
-      walletAddress,
-      txHash: "",
-      riskScore: 4,
-    };
+    if (!walletAddress) {
+      setWalletError("Connect Casper Wallet before creating a policy.");
+      return;
+    }
+
     try {
       const response = await api.createPolicy({ ...policy, walletAddress });
       setPolicies((prev) => [response.policy as Policy, ...prev]);
       if (Array.isArray(response.agents)) setAgents(response.agents as Agent[]);
       if (response.auditLog) setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
       setApiOnline(true);
-    } catch {
-      setPolicies((prev) => [fallbackPolicy, ...prev]);
-      setAgents((prev) =>
-        prev.map((item) => item.id === policy.agentId ? { ...item, status: "Policy Active" } : item)
-      );
-      setAuditLogs((prev) => [fallbackAudit, ...prev]);
+    } catch (error) {
       setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to create policy.");
     }
-  }, [agents, walletAddress]);
+  }, [walletAddress]);
 
   const onAnalyzeAction = useCallback(async (request: ActionRequest) => {
     try {
-      const response = await api.analyzeAction(request as unknown as Record<string, unknown>);
+      const response = await api.analyzeAction({ ...request, walletAddress } as unknown as Record<string, unknown>);
       setApiOnline(true);
       return response.result as DecisionResult;
-    } catch {
+    } catch (error) {
       setApiOnline(false);
-      return evaluateAction(request, agents, policies, auditLogs);
+      return {
+        decision: "Blocked",
+        risk: "High",
+        riskScore: 90,
+        policyChecksPassed: [],
+        policyChecksFailed: ["Magen3 backend could not verify this action"],
+        reason: error instanceof Error ? error.message : "Magen3 could not reach the real policy engine.",
+        recommendedAction: "Do not execute until the Magen3 API is online and the connected wallet is verified.",
+      } as DecisionResult;
     }
-  }, [agents, policies, auditLogs]);
+  }, [walletAddress]);
 
   const onAddAuditLog = useCallback(async (log: AuditLog) => {
     try {
-      const response = await api.createAuditLog(log as unknown as Record<string, unknown>);
+      const response = await api.createAuditLog({ ...log, walletAddress } as unknown as Record<string, unknown>);
       setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
       setApiOnline(true);
-    } catch {
-      setAuditLogs((prev) => [log, ...prev]);
+    } catch (error) {
       setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to save audit log.");
     }
-  }, []);
+  }, [walletAddress]);
 
   const onRecordDecision = useCallback(async (log: AuditLog) => {
     try {
-      const created = await api.createAuditLog(log as unknown as Record<string, unknown>);
+      const created = await api.createAuditLog({ ...log, walletAddress } as unknown as Record<string, unknown>);
       const auditLog = created.auditLog as AuditLog;
-      const recorded = await api.recordAuditLog(auditLog.id);
-      setAuditLogs((prev) => [recorded.auditLog as AuditLog, ...prev]);
+      setAuditLogs((prev) => [auditLog, ...prev]);
       setApiOnline(true);
-      return String(recorded.txHash);
-    } catch {
-      const txHash = makePseudoHash("0xcasper");
-      setAuditLogs((prev) => [{ ...log, txHash }, ...prev]);
+      return "";
+    } catch (error) {
       setApiOnline(false);
-      return txHash;
+      setWalletError(error instanceof Error ? error.message : "Unable to save decision.");
+      return "";
     }
-  }, []);
+  }, [walletAddress]);
 
   const onPrepareCasperPayload = useCallback(async (id: string) => {
     const response = await api.prepareCasperPayload(id);
@@ -4158,19 +4013,13 @@ export default function App() {
 
   const onRecordAuditLog = useCallback(async (id: string) => {
     try {
-      const response = await api.recordAuditLog(id);
-      setAuditLogs((prev) =>
-        prev.map((log) => (log.id === id ? (response.auditLog as AuditLog) : log))
-      );
+      await api.recordAuditLog(id);
       setApiOnline(true);
-      return String(response.txHash);
-    } catch {
-      const txHash = makePseudoHash("0xcasper");
-      setAuditLogs((prev) =>
-        prev.map((log) => (log.id === id ? { ...log, txHash } : log))
-      );
+      return "";
+    } catch (error) {
       setApiOnline(false);
-      return txHash;
+      setWalletError(error instanceof Error ? error.message : "Automatic recording is disabled. Use a real Casper deploy hash.");
+      return "";
     }
   }, []);
 

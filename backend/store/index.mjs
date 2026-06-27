@@ -2,8 +2,12 @@ import { createMemoryStore } from "./memoryStore.mjs";
 
 export async function createStore() {
   if (!process.env.DATABASE_URL) {
-    console.warn("DATABASE_URL not found. Magen3 API is using in-memory storage.");
-    return createMemoryStore();
+    if (process.env.ALLOW_MEMORY_STORE === "true") {
+      console.warn("DATABASE_URL not found. ALLOW_MEMORY_STORE=true, so Magen3 API is using temporary in-memory storage.");
+      return createMemoryStore();
+    }
+
+    throw new Error("DATABASE_URL is required. Magen3 no longer falls back to temporary or mock storage by default.");
   }
 
   try {
@@ -12,8 +16,12 @@ export async function createStore() {
     console.log("Magen3 API connected to PostgreSQL through Drizzle.");
     return store;
   } catch (error) {
-    console.warn("Failed to connect to PostgreSQL. Falling back to in-memory storage.");
-    console.warn(error?.message || error);
-    return createMemoryStore();
+    if (process.env.ALLOW_MEMORY_STORE === "true") {
+      console.warn("Failed to connect to PostgreSQL. ALLOW_MEMORY_STORE=true, so Magen3 API is using temporary in-memory storage.");
+      console.warn(error?.message || error);
+      return createMemoryStore();
+    }
+
+    throw error;
   }
 }

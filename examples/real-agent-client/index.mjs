@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DEFAULT_WALLET = "01ff33ad9195be34ec2b2f2afc2ed9e3d06f82bcb373df2505dbb14c4e1442a670";
 const DEFAULT_API_URL = process.env.MAGEN3_API_URL || process.env.VITE_API_URL || "http://localhost:8787";
 
 function parseArgs(argv) {
@@ -233,9 +232,13 @@ async function main() {
 
   const common = {
     source: String(args.source || process.env.MAGEN3_AGENT_SOURCE || "real-external-agent"),
-    agentId: String(args["agent-id"] || process.env.MAGEN3_AGENT_ID || "MAG-AGENT-001"),
-    wallet: String(args.wallet || process.env.MAGEN3_WALLET || DEFAULT_WALLET),
+    agentId: String(args["agent-id"] || process.env.MAGEN3_AGENT_ID || ""),
+    wallet: String(args.wallet || process.env.MAGEN3_WALLET || ""),
   };
+
+  if (!common.agentId || !common.wallet) {
+    throw new Error("Provide a real registered agent and wallet. Example: pnpm agent:test:safe -- --agent-id MAG-AGENT-... --wallet 01...");
+  }
 
   const scenario = String(args.scenario || process.env.MAGEN3_AGENT_SCENARIO || "safe").toLowerCase();
   const goal = args.goal ? String(args.goal) : "";

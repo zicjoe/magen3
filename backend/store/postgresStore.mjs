@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
-import { DEFAULT_WALLET, seedAgents, seedAuditLogs, seedPolicies, shieldModules } from "../data/seed.mjs";
-import { pool, db } from "../db/client.mjs";
+import { shieldModules } from "../data/seed.mjs";
+import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
 import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
 import { makeId, makePseudoHash } from "../lib/ids.mjs";
@@ -12,6 +12,20 @@ function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
 }
 
+function normalizeWalletAddress(value) {
+  return String(value || "").trim();
+}
+
+function requireWalletAddress(value) {
+  const walletAddress = normalizeWalletAddress(value);
+  if (!walletAddress) {
+    const err = new Error("A real wallet address is required. Connect Casper Wallet first.");
+    err.status = 400;
+    throw err;
+  }
+  return walletAddress;
+}
+
 function normalizeAgent(row) {
   return {
     id: row.id,
@@ -20,6 +34,7 @@ function normalizeAgent(row) {
     purpose: row.purpose,
     permissionLevel: row.permissionLevel,
     status: row.status,
+    ownerWalletAddress: row.ownerWalletAddress || "",
     createdAt: toDate(row.createdAt).toISOString(),
   };
 }
@@ -36,6 +51,7 @@ function normalizePolicy(row) {
     blockedActions: Array.isArray(row.blockedActions) ? row.blockedActions : [],
     riskMode: row.riskMode,
     status: row.status,
+    ownerWalletAddress: row.ownerWalletAddress || "",
     createdAt: toDate(row.createdAt).toISOString(),
     policyHash: row.policyHash,
   };
@@ -80,36 +96,31 @@ function normalizeReview(row) {
   };
 }
 
-async function listAgents() {
-  return (await db.select().from(agentsTable).orderBy(desc(agentsTable.createdAt))).map(normalizeAgent);
+async function listAgents(walletAddress) {
+  const normalizedWallet = normalizeWalletAddress(walletAddress);
+  if (!normalizedWallet) return [];
+  return (await db.select().from(agentsTable)
+    .where(eq(agentsTable.ownerWalletAddress, normalizedWallet))
+    .orderBy(desc(agentsTable.createdAt)))
+    .map(normalizeAgent);
 }
 
-async function listPolicies() {
-  return (await db.select().from(policiesTable).orderBy(desc(policiesTable.createdAt))).map(normalizePolicy);
+async function listPolicies(walletAddress) {
+  const agents = await listAgents(walletAddress);
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  if (agentIds.size === 0) return [];
+  return (await db.select().from(policiesTable).orderBy(desc(policiesTable.createdAt)))
+    .filter((policy) => agentIds.has(policy.agentId))
+    .map(normalizePolicy);
 }
 
-async function listAuditLogs() {
-  return (await db.select().from(auditLogsTable).orderBy(desc(auditLogsTable.timestamp))).map(normalizeAuditLog);
-}
-
-async function seedIfEmpty() {
-  const result = await pool.query("SELECT COUNT(*)::int AS count FROM agents");
-  if (Number(result.rows[0]?.count || 0) > 0) return;
-
-  await db.insert(agentsTable).values(seedAgents.map((agent) => ({
-    ...agent,
-    createdAt: new Date(agent.createdAt),
-  })));
-
-  await db.insert(policiesTable).values(seedPolicies.map((policy) => ({
-    ...policy,
-    createdAt: new Date(policy.createdAt),
-  })));
-
-  await db.insert(auditLogsTable).values(seedAuditLogs.map((log) => ({
-    ...log,
-    timestamp: new Date(log.timestamp),
-  })));
+async function listAuditLogs(walletAddress) {
+  const normalizedWallet = normalizeWalletAddress(walletAddress);
+  if (!normalizedWallet) return [];
+  return (await db.select().from(auditLogsTable)
+    .where(eq(auditLogsTable.walletAddress, normalizedWallet))
+    .orderBy(desc(auditLogsTable.timestamp)))
+    .map(normalizeAuditLog);
 }
 
 function deriveDashboardStats(policies, auditLogs) {
@@ -124,18 +135,22 @@ function deriveDashboardStats(policies, auditLogs) {
 
 export async function createPostgresStore() {
   await runMigrations();
-  await seedIfEmpty();
 
   return {
     mode: "postgres",
 
-    async bootstrap() {
-      const [agents, policies, auditLogs] = await Promise.all([listAgents(), listPolicies(), listAuditLogs()]);
+    async bootstrap(walletAddress) {
+      const normalizedWallet = normalizeWalletAddress(walletAddress);
+      const [agents, policies, auditLogs] = await Promise.all([
+        listAgents(normalizedWallet),
+        listPolicies(normalizedWallet),
+        listAuditLogs(normalizedWallet),
+      ]);
       return { agents, policies, auditLogs, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs) };
     },
 
     async connectWallet() {
-      return { walletAddress: DEFAULT_WALLET, network: "casper-testnet", connected: true };
+      return { network: "casper-testnet", connected: true };
     },
 
     async createAgent(body) {
@@ -144,6 +159,7 @@ export async function createPostgresStore() {
         err.status = 400;
         throw err;
       }
+      const ownerWalletAddress = requireWalletAddress(body.ownerWalletAddress || body.walletAddress);
 
       const [agent] = await db.insert(agentsTable).values({
         id: makeId("MAG-AGENT"),
@@ -152,6 +168,7 @@ export async function createPostgresStore() {
         purpose: body.purpose || "",
         permissionLevel: body.permissionLevel || "Limited Execution",
         status: "No Policy",
+        ownerWalletAddress,
         createdAt: new Date(),
       }).returning();
 
@@ -164,11 +181,13 @@ export async function createPostgresStore() {
         err.status = 400;
         throw err;
       }
+      const walletAddress = requireWalletAddress(body.walletAddress);
 
       const existingAgentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, body.agentId));
-      if (existingAgentRows.length === 0) {
-        const err = new Error("Cannot create policy because the selected agent does not exist");
-        err.status = 400;
+      const ownedAgent = existingAgentRows.find((agent) => agent.ownerWalletAddress === walletAddress);
+      if (!ownedAgent) {
+        const err = new Error("Cannot create policy because this agent is not registered under the connected wallet.");
+        err.status = 403;
         throw err;
       }
 
@@ -183,13 +202,14 @@ export async function createPostgresStore() {
         blockedActions: Array.isArray(body.blockedActions) ? body.blockedActions : [],
         riskMode: body.riskMode || "Balanced",
         status: "Active",
+        ownerWalletAddress: walletAddress,
         createdAt: new Date(),
         policyHash: makePseudoHash("0xpol"),
       }).returning();
 
       await db.update(agentsTable).set({ status: "Policy Active" }).where(eq(agentsTable.id, body.agentId));
       const policy = normalizePolicy(policyRow);
-      const agent = normalizeAgent({ ...existingAgentRows[0], status: "Policy Active" });
+      const agent = normalizeAgent({ ...ownedAgent, status: "Policy Active" });
 
       const [auditRow] = await db.insert(auditLogsTable).values({
         id: makeId("AUD"),
@@ -205,16 +225,17 @@ export async function createPostgresStore() {
         risk: "Low",
         reason: `Policy "${policy.name}" activated for ${agent.name}.`,
         policyUsed: policy.name,
-        walletAddress: body.walletAddress || DEFAULT_WALLET,
+        walletAddress,
         txHash: "",
         riskScore: 4,
       }).returning();
 
-      return { policy, auditLog: normalizeAuditLog(auditRow), agents: await listAgents() };
+      return { policy, auditLog: normalizeAuditLog(auditRow), agents: await listAgents(walletAddress) };
     },
 
     async analyzeAction(body) {
-      const [agents, policies, auditLogs] = await Promise.all([listAgents(), listPolicies(), listAuditLogs()]);
+      const walletAddress = requireWalletAddress(body.walletAddress);
+      const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
       const result = evaluatePolicy({ request: body, agents, policies, auditLogs });
 
       const [reviewRow] = await db.insert(actionReviewsTable).values({
@@ -237,6 +258,7 @@ export async function createPostgresStore() {
     },
 
     async createAuditLog(body) {
+      const walletAddress = requireWalletAddress(body.walletAddress);
       const [auditRow] = await db.insert(auditLogsTable).values({
         id: body.id || makeId("AUD"),
         timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
@@ -251,24 +273,24 @@ export async function createPostgresStore() {
         risk: body.risk || "Medium",
         reason: body.reason || "Magen3 recorded a decision.",
         policyUsed: body.policyUsed || "No active policy",
-        walletAddress: body.walletAddress || DEFAULT_WALLET,
+        walletAddress,
         txHash: body.txHash || "",
         riskScore: Number(body.riskScore || 50),
       }).returning();
       return normalizeAuditLog(auditRow);
     },
 
-
-
     async submitAgentGatewayIntent(body) {
       const intent = normalizeAgentGatewayIntent(body);
-      const [agents, policies, auditLogs] = await Promise.all([listAgents(), listPolicies(), listAuditLogs()]);
+      const walletAddress = requireWalletAddress(intent.walletAddress);
+      const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
         target: intent.target,
         targetType: intent.targetType,
+        walletAddress,
       };
       const result = evaluatePolicy({ request, agents, policies, auditLogs });
       const agent = agents.find((item) => item.id === intent.agentId);
@@ -289,19 +311,18 @@ export async function createPostgresStore() {
         risk: result.risk,
         reason: `Agent Gateway request ${intent.id} from ${intent.source}. ${intent.goal ? `Goal: ${intent.goal}. ` : ""}${intent.reason ? `Reason: ${intent.reason}. ` : ""}${result.reason}`,
         policyUsed: policy?.name || "No active policy",
-        walletAddress: intent.walletAddress,
+        walletAddress,
         txHash: "",
         riskScore: Number(result.riskScore || 50),
       }).returning();
 
       const auditLog = normalizeAuditLog(auditRow);
-      const gatewayStatus = status;
       const [gatewayRow] = await db.insert(agentGatewayRequestsTable).values({
         id: intent.id,
         receivedAt: new Date(intent.receivedAt),
         source: intent.source,
         agentId: intent.agentId,
-        walletAddress: intent.walletAddress,
+        walletAddress,
         actionType: intent.actionType,
         amount: intent.amount,
         asset: intent.asset,
@@ -312,7 +333,7 @@ export async function createPostgresStore() {
         decision: result.decision,
         risk: result.risk,
         riskScore: Number(result.riskScore || 50),
-        status: gatewayStatus,
+        status,
         auditLogId: auditLog.id,
       }).returning();
 
@@ -374,22 +395,10 @@ export async function createPostgresStore() {
       return { auditLog: normalizeAuditLog(auditRow), txHash, confirmed: true };
     },
 
-    async recordAuditLog(id) {
-      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
-      if (rows.length === 0) {
-        const err = new Error("Audit log not found");
-        err.status = 404;
-        throw err;
-      }
-      const auditLog = normalizeAuditLog(rows[0]);
-      const prepared = buildAuditDecisionPayload(auditLog);
-      const txHash = makePseudoHash("0xcasper");
-      const [auditRow] = await db.update(auditLogsTable)
-        .set({ txHash })
-        .where(eq(auditLogsTable.id, id))
-        .returning();
-
-      return { auditLog: normalizeAuditLog(auditRow), txHash, prepared };
+    async recordAuditLog() {
+      const err = new Error("Automatic local recording is disabled. Prepare the Casper payload, sign the real deploy with Casper client, then confirm the real deploy hash.");
+      err.status = 400;
+      throw err;
     },
   };
 }

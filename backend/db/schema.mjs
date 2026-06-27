@@ -7,6 +7,7 @@ export const agentsTable = pgTable("agents", {
   purpose: text("purpose").notNull().default(""),
   permissionLevel: text("permission_level").notNull(),
   status: text("status").notNull(),
+  ownerWalletAddress: text("owner_wallet_address").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -21,6 +22,7 @@ export const policiesTable = pgTable("policies", {
   blockedActions: jsonb("blocked_actions").notNull().default([]),
   riskMode: text("risk_mode").notNull(),
   status: text("status").notNull(),
+  ownerWalletAddress: text("owner_wallet_address").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   policyHash: text("policy_hash").notNull(),
 });

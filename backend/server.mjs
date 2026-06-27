@@ -63,7 +63,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "0.8.0",
+        version: "0.9.0",
         storage: store.mode,
         casper: getCasperStatus(),
         timestamp: new Date().toISOString(),
@@ -114,11 +114,12 @@ const server = createServer(async (req, res) => {
     }
 
     if (route === "GET /api/bootstrap") {
-      return send(res, 200, await store.bootstrap());
+      return send(res, 200, await store.bootstrap(url.searchParams.get("walletAddress")));
     }
 
-    if (route === "POST /api/wallet/mock-connect") {
-      return send(res, 200, await store.connectWallet());
+    if (route === "POST /api/wallet/session") {
+      const body = await readJson(req);
+      return send(res, 200, await store.connectWallet(body));
     }
 
     if (route === "POST /api/agents") {

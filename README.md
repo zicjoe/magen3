@@ -317,3 +317,16 @@ Ask YieldBot to transfer 9000 CSPR to an unknown wallet
 YieldBot calls Magen3 Gateway → Magen3 blocks the action
 Open Audit Log → show the decision and Casper proof section
 ```
+
+## v20: Real data and wallet-scoped activity
+
+Magen3 no longer shows global seeded activity to every user. The connected Casper public key now scopes the product experience:
+
+- a connected wallet only sees its own agents, policies, and audit logs;
+- agents are registered under the connected wallet;
+- policies can only be created for agents owned by that wallet;
+- external agent gateway requests are evaluated against the wallet address sent by the external agent;
+- mock/seed agents, policies, and audit logs are no longer inserted;
+- automatic local mock Casper recording is disabled.
+
+For real demo/production, keep PostgreSQL enabled and do not use temporary memory storage. See `docs/REAL_DATA_WALLET_SCOPING.md`.

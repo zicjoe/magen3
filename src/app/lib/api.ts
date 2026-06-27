@@ -29,8 +29,9 @@ export const api = {
     return request<{ ok: boolean; casper: Record<string, unknown> }>("/api/casper/status");
   },
 
-  bootstrap() {
-    return request<any>("/api/bootstrap");
+  bootstrap(walletAddress?: string) {
+    const query = walletAddress ? `?walletAddress=${encodeURIComponent(walletAddress)}` : "";
+    return request<any>(`/api/bootstrap${query}`);
   },
 
   agentGatewaySpec() {
@@ -46,10 +47,10 @@ export const api = {
   },
 
 
-  connectWallet() {
-    return request<{ walletAddress: string; network: string; connected: boolean }>(
-      "/api/wallet/mock-connect",
-      { method: "POST", body: JSON.stringify({}) }
+  connectWallet(walletAddress: string) {
+    return request<{ network: string; connected: boolean }>(
+      "/api/wallet/session",
+      { method: "POST", body: JSON.stringify({ walletAddress }) }
     );
   },
 
