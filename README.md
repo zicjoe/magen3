@@ -300,3 +300,20 @@ pnpm casper:record:cmd -- --payload=./examples/real-agent-client/last-casper-pay
 ```
 
 See `docs/REAL_AGENT_CLIENT.md` for the full test flow.
+
+## v19: External Agent Demo
+
+v19 adds a customer-facing external agent demo at **External Agent** in the sidebar.
+
+This screen demonstrates the real Magen3 product flow: a user interacts with their own AI agent, the agent calls the Magen3 Gateway API before execution, Magen3 returns Allowed / Blocked / Review Required, and the response is shown back inside the agent chat while Magen3 stores the audit trail and Casper proof.
+
+Demo script:
+
+```text
+Open Magen3 dashboard → confirm the agent and policy
+Open External Agent → ask YieldBot to stake 15 CSPR
+YieldBot calls Magen3 Gateway → Magen3 allows the action
+Ask YieldBot to transfer 9000 CSPR to an unknown wallet
+YieldBot calls Magen3 Gateway → Magen3 blocks the action
+Open Audit Log → show the decision and Casper proof section
+```

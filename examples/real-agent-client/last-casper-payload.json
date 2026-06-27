@@ -1,0 +1,44 @@
+{
+  "payload": {
+    "decisionId": "AUD-MQWREK8X-9CEB19",
+    "shield": "Agent Shield",
+    "walletAddress": "01ff33ad9195be34ec2b2f2afc2ed9e3d06f82bcb373df2505dbb14c4e1442a670",
+    "agentId": "MAG-AGENT-001",
+    "agentName": "YieldBot",
+    "action": "Transfer",
+    "amount": 9000,
+    "target": "unknown-wallet-demo",
+    "targetType": "Unknown Contract",
+    "decision": "Blocked",
+    "risk": "Critical",
+    "riskScore": 99,
+    "policyUsed": "Safe DeFi Policy",
+    "reasonHash": "0x819edcc3f1093c0fabeb245cd83b2bf2d3557fe4a0e29abde9ccb235b98a1853",
+    "timestamp": "2026-06-27T19:34:57.537Z"
+  },
+  "payloadHash": "0x719c34e749b20307915b61db7afcc1a4da24122388c0b350391c89d7b5236921",
+  "casper": {
+    "network": "casper-testnet",
+    "chainName": "casper-test",
+    "rpcUrl": "https://node.testnet.casper.network/rpc",
+    "contractHash": " hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf",
+    "recordingMode": "mock",
+    "contractConfigured": true
+  },
+  "contractEntrypoint": "record_decision",
+  "runtimeArgs": {
+    "decision_id": "AUD-MQWREK8X-9CEB19",
+    "wallet_address": "01ff33ad9195be34ec2b2f2afc2ed9e3d06f82bcb373df2505dbb14c4e1442a670",
+    "agent_id": "MAG-AGENT-001",
+    "shield": "Agent Shield",
+    "action_type": "Transfer",
+    "decision": "Blocked",
+    "risk": "Critical",
+    "risk_score": 99,
+    "amount": "9000",
+    "target": "unknown-wallet-demo",
+    "policy_used": "Safe DeFi Policy",
+    "reason_hash": "0x819edcc3f1093c0fabeb245cd83b2bf2d3557fe4a0e29abde9ccb235b98a1853",
+    "payload_hash": "0x719c34e749b20307915b61db7afcc1a4da24122388c0b350391c89d7b5236921"
+  }
+}

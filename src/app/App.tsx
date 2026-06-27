@@ -54,6 +54,7 @@ type Page =
   | "shields"
   | "agent-shield"
   | "agent-runner"
+  | "external-agent-demo"
   | "policies"
   | "action-review"
   | "audit-log"
@@ -1057,6 +1058,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "shields", label: "Shields", icon: <Shield size={18} /> },
   { id: "agent-shield", label: "Agent Shield", icon: <Bot size={18} /> },
   { id: "agent-runner", label: "Agent Gateway", icon: <Zap size={18} /> },
+  { id: "external-agent-demo", label: "External Agent", icon: <Server size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "action-review", label: "Action Review", icon: <FlaskConical size={18} /> },
   { id: "audit-log", label: "Audit Log", icon: <Scroll size={18} /> },
@@ -2564,7 +2566,7 @@ function AgentRunnerPage({
   policies: Policy[];
   walletAddress: string;
   onNavigate: (p: Page) => void;
-  onSubmitGatewayIntent: (intent: Record<string, unknown>) => Promise<AgentGatewayResponse>;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
 }) {
   const initialAgentId = pickAgentForRunner(agents, policies, "");
   const [agentId, setAgentId] = useState(initialAgentId);
@@ -2933,6 +2935,305 @@ function AgentRunnerPage({
         <p className="text-sm text-[#94A3B8] leading-relaxed">
           This page now uses a real backend gateway endpoint. An external AI agent can call the same API with a structured Web3 intent, and Magen3 will approve, block, or pause the action before any wallet signature or contract execution.
         </p>
+      </div>
+    </div>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────
+// External Agent Demo Page
+// ──────────────────────────────────────────────────────────
+
+type ExternalAgentMessage = {
+  id: string;
+  role: "user" | "agent" | "magen3" | "system";
+  text: string;
+  decision?: Decision;
+  risk?: Risk;
+  auditLogId?: string;
+};
+
+function ExternalAgentDemoPage({
+  agents,
+  policies,
+  walletAddress,
+  onNavigate,
+  onSubmitGatewayIntent,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  walletAddress: string;
+  onNavigate: (p: Page) => void;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
+}) {
+  const initialAgentId = pickAgentForRunner(agents, policies, "");
+  const [agentId, setAgentId] = useState(initialAgentId);
+  const [gatewayUrl] = useState(`${api.baseUrl}/api/agent-gateway/intents`);
+  const [apiKey, setApiKey] = useState("");
+  const [task, setTask] = useState("Stake 15 CSPR to trusted-validator-demo");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [latestResponse, setLatestResponse] = useState<AgentGatewayResponse | null>(null);
+  const [messages, setMessages] = useState<ExternalAgentMessage[]>([
+    {
+      id: makeId("MSG"),
+      role: "agent",
+      text: "YieldBot is connected to Magen3 Gateway. Give me a Web3 task and I will ask Magen3 before I try to execute anything.",
+    },
+  ]);
+
+  useEffect(() => {
+    if (!agentId && agents.length > 0) {
+      setAgentId(pickAgentForRunner(agents, policies, ""));
+    }
+  }, [agentId, agents, policies]);
+
+  const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const activePolicy = getActivePolicy(policies, agentId);
+
+  const quickTasks = [
+    "Stake 15 CSPR to trusted-validator-demo",
+    "Transfer 9000 CSPR to unknown-wallet",
+    "Deposit 75 CSPR into approved yield vault",
+    "Call unknown contract to mint 5000 tokens",
+  ];
+
+  const appendMessage = useCallback((message: Omit<ExternalAgentMessage, "id">) => {
+    setMessages((prev) => [...prev, { id: makeId("MSG"), ...message }]);
+  }, []);
+
+  const submitTask = useCallback(async () => {
+    if (!task.trim() || !agentId) return;
+    setBusy(true);
+    setError("");
+    setLatestResponse(null);
+
+    const proposal = buildAgentRunnerProposal(task, agentId);
+    const intent = {
+      source: selectedAgent?.name || "YieldBot external agent",
+      agentId: proposal.request.agentId,
+      walletAddress,
+      goal: proposal.rawGoal,
+      reason: "External agent user requested this task. The agent is checking Magen3 before execution.",
+      action: {
+        type: proposal.request.actionType,
+        amount: proposal.request.amount,
+        asset: "CSPR",
+        target: proposal.request.target,
+        targetType: proposal.request.targetType,
+      },
+    };
+
+    appendMessage({ role: "user", text: task.trim() });
+    appendMessage({
+      role: "agent",
+      text: `I prepared a ${proposal.request.actionType} action for ${proposal.request.amount} CSPR. Before execution, I am sending it to Magen3 Gateway for policy approval.`,
+    });
+    appendMessage({
+      role: "system",
+      text: `POST ${gatewayUrl} · agentId=${proposal.request.agentId}`,
+    });
+
+    try {
+      const response = await onSubmitGatewayIntent(intent, apiKey.trim() || undefined);
+      setLatestResponse(response);
+      const result = response.result;
+      const agentText =
+        result.decision === "Allowed"
+          ? `Magen3 approved this action. Risk: ${result.risk}. I can continue only after the wallet/execution layer signs the real transaction.`
+          : result.decision === "Blocked"
+          ? `Magen3 blocked this action. Risk: ${result.risk}. I will stop and will not ask the wallet to sign it.`
+          : `Magen3 says this needs human review. Risk: ${result.risk}. I will pause until an admin approves or rejects it.`;
+
+      appendMessage({
+        role: "magen3",
+        decision: result.decision,
+        risk: result.risk,
+        auditLogId: response.auditLog?.id,
+        text: `${result.decision} — ${result.reason}`,
+      });
+      appendMessage({ role: "agent", text: agentText });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not reach Magen3 Gateway.";
+      setError(message);
+      appendMessage({ role: "agent", text: `I could not complete the safety check because Magen3 Gateway returned an error: ${message}` });
+    } finally {
+      setBusy(false);
+    }
+  }, [agentId, apiKey, appendMessage, gatewayUrl, onSubmitGatewayIntent, selectedAgent?.name, task, walletAddress]);
+
+  const messageStyles: Record<ExternalAgentMessage["role"], string> = {
+    user: "ml-auto bg-[#22D3EE] text-[#050B14]",
+    agent: "bg-[#1E293B] text-[#F8FAFC] border border-[#334155]",
+    magen3: "bg-[#0B1220] text-[#F8FAFC] border border-[#22D3EE]/30",
+    system: "bg-[#050B14] text-[#94A3B8] border border-[#1E293B] font-mono text-xs",
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-xs font-semibold mb-3">
+            <Server size={14} /> External Agent Demo
+          </div>
+          <h1 className="text-3xl font-bold text-[#F8FAFC] font-['Space_Grotesk'] mb-2">
+            Customer Agent using Magen3
+          </h1>
+          <p className="text-[#94A3B8] max-w-3xl">
+            This screen behaves like a separate AI agent owned by a customer. The agent receives a task, calls the Magen3 Gateway API, then shows the Magen3 decision inside its own chat before any execution.
+          </p>
+        </div>
+        <Btn variant="outline" onClick={() => onNavigate("audit-log")}>
+          Open Magen3 Audit Log <ExternalLink size={16} />
+        </Btn>
+      </div>
+
+      <div className="grid xl:grid-cols-[380px_1fr] gap-6">
+        <div className="space-y-5">
+          <div className={`${CARD_GLOW} p-5`}>
+            <h2 className={`${SECTION_TITLE} mb-4`}>Agent Connection</h2>
+            <div className="space-y-4">
+              <SelectField
+                label="Registered Magen3 Agent"
+                value={agentId}
+                onChange={setAgentId}
+                options={agents.map((agent) => agent.id)}
+              />
+              <InputField label="Gateway URL" value={gatewayUrl} onChange={() => undefined} />
+              <InputField
+                label="Optional Agent API Key"
+                value={apiKey}
+                onChange={setApiKey}
+                placeholder="Only needed if AGENT_GATEWAY_API_KEY is enabled"
+              />
+              <div className="rounded-lg bg-[#0B1220] border border-[#1E293B] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent</span>
+                  <StatusBadge status={selectedAgent?.status || "No Policy"} />
+                </div>
+                <div className="text-sm text-[#F8FAFC] font-medium">{selectedAgent?.name || "No agent selected"}</div>
+                <div className="text-xs text-[#94A3B8]">{selectedAgent?.purpose || "Register an agent in Magen3 first."}</div>
+                <div className="border-t border-[#1E293B] pt-3">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Active Policy</div>
+                  <div className="text-sm text-[#F8FAFC]">{activePolicy?.name || "No active policy"}</div>
+                  {activePolicy && (
+                    <div className="text-xs text-[#94A3B8] mt-1">
+                      Max {activePolicy.maxTransaction} CSPR · Review above {activePolicy.approvalThreshold} CSPR
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-lg bg-[#050B14] border border-[#1E293B] p-4">
+                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">What this proves</div>
+                <p className="text-sm text-[#94A3B8] leading-relaxed">
+                  The customer is no longer clicking actions inside Magen3. Their own agent calls Magen3 and receives the safety decision back in the agent experience.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {latestResponse && (
+            <div className={`${CARD_GLOW} p-5`}>
+              <h2 className={`${SECTION_TITLE} mb-4`}>Latest Gateway Response</h2>
+              <div className="flex items-center gap-2 mb-4">
+                <DecisionBadge decision={latestResponse.result.decision} />
+                <RiskBadge risk={latestResponse.result.risk} />
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#94A3B8]">Execution approved</span>
+                  <span className={latestResponse.executionApproved ? "text-[#22C55E]" : "text-[#F59E0B]"}>{latestResponse.executionApproved ? "Yes" : "No"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#94A3B8]">Audit ID</span>
+                  <span className="text-[#F8FAFC] font-mono text-xs">{latestResponse.auditLog.id}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-[#94A3B8]">Gateway status</span>
+                  <span className="text-[#F8FAFC] font-mono text-xs">{latestResponse.gatewayRequest.status}</span>
+                </div>
+              </div>
+              <Btn variant="secondary" size="sm" className="mt-4 w-full justify-center" onClick={() => onNavigate("audit-log")}>
+                View audit proof <ExternalLink size={14} />
+              </Btn>
+            </div>
+          )}
+        </div>
+
+        <div className={`${CARD_GLOW} overflow-hidden`}>
+          <div className="border-b border-[#1E293B] p-5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-[#22D3EE]/15 flex items-center justify-center shadow-[0_0_16px_rgba(34,211,238,0.25)]">
+                <Bot size={22} className="text-[#22D3EE]" />
+              </div>
+              <div>
+                <div className="text-lg font-bold text-[#F8FAFC] font-['Space_Grotesk']">{selectedAgent?.name || "YieldBot"}</div>
+                <div className="text-xs text-[#94A3B8]">Customer AI agent · Protected by Magen3 Gateway</div>
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/30 bg-[#22C55E]/10 px-3 py-1 text-xs font-semibold text-[#22C55E]">
+              <span className="h-2 w-2 rounded-full bg-[#22C55E]" /> Connected
+            </span>
+          </div>
+
+          <div className="h-[520px] overflow-y-auto p-5 space-y-4 bg-[#070D18]">
+            {messages.map((message) => (
+              <div key={message.id} className={`max-w-[82%] rounded-2xl px-4 py-3 ${messageStyles[message.role]} ${message.role === "user" ? "rounded-br-sm" : "rounded-bl-sm"}`}>
+                <div className="mb-1 text-[10px] uppercase tracking-wider opacity-70">
+                  {message.role === "user" ? "Customer" : message.role === "magen3" ? "Magen3 Gateway" : message.role === "system" ? "API call" : selectedAgent?.name || "YieldBot"}
+                </div>
+                <div className="text-sm leading-relaxed">{message.text}</div>
+                {message.decision && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <DecisionBadge decision={message.decision} />
+                    {message.risk && <RiskBadge risk={message.risk} />}
+                    {message.auditLogId && <span className="text-xs font-mono text-[#94A3B8]">{message.auditLogId}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+            {busy && (
+              <div className="max-w-[82%] rounded-2xl rounded-bl-sm bg-[#1E293B] border border-[#334155] px-4 py-3 text-[#F8FAFC]">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-[#94A3B8]">{selectedAgent?.name || "YieldBot"}</div>
+                <div className="flex items-center gap-2 text-sm text-[#94A3B8]"><Activity size={14} className="animate-spin text-[#22D3EE]" /> Waiting for Magen3 Gateway decision...</div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-[#1E293B] p-5 bg-[#0B1220]">
+            <div className="flex flex-wrap gap-2 mb-4">
+              {quickTasks.map((quick) => (
+                <button
+                  key={quick}
+                  onClick={() => setTask(quick)}
+                  className="rounded-full border border-[#1E293B] bg-[#111827] px-3 py-1.5 text-xs text-[#94A3B8] hover:border-[#22D3EE]/40 hover:text-[#22D3EE] transition-colors"
+                >
+                  {quick}
+                </button>
+              ))}
+            </div>
+            {error && <div className="mb-3 rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
+            <div className="flex flex-col md:flex-row gap-3">
+              <input
+                className={`${INPUT_CLS} flex-1`}
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="Ask the agent to do a Web3 task..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !busy) submitTask();
+                }}
+              />
+              <Btn variant="primary" onClick={submitTask} disabled={busy || !agentId || !task.trim()}>
+                {busy ? <Activity size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                Send to Agent
+              </Btn>
+            </div>
+            <p className="text-xs text-[#94A3B8] mt-3">
+              The agent never executes directly in this demo. It first asks Magen3, then shows the Magen3 decision back to the customer.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3843,8 +4144,8 @@ export default function App() {
     return updated;
   }, []);
 
-  const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>) => {
-    const response = await api.submitAgentGatewayIntent(intent) as AgentGatewayResponse;
+  const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>, apiKey?: string) => {
+    const response = await api.submitAgentGatewayIntent(intent, apiKey) as AgentGatewayResponse;
     if (response.auditLog) {
       setAuditLogs((prev) => {
         const exists = prev.some((log) => log.id === response.auditLog.id);
@@ -3906,6 +4207,15 @@ export default function App() {
     ),
     "agent-runner": (
       <AgentRunnerPage
+        agents={agents}
+        policies={policies}
+        walletAddress={walletAddress}
+        onNavigate={navigate}
+        onSubmitGatewayIntent={onSubmitGatewayIntent}
+      />
+    ),
+    "external-agent-demo": (
+      <ExternalAgentDemoPage
         agents={agents}
         policies={policies}
         walletAddress={walletAddress}
