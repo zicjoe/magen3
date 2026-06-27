@@ -135,3 +135,22 @@ First real record_decision deploy hash:
 ```text
 c95359f46a5709cc10d4e014dadc29b6b9734629b475b5d58f8ba2fa0394f668
 ```
+
+
+## Agent Runner Demo segment
+
+Use this segment after connecting the wallet and before the audit-log proof.
+
+1. Open **Agent Runner**.
+2. Select the registered agent.
+3. Enter: `Transfer 9000 CSPR to unknown-wallet`.
+4. Click **Generate Agent Action**.
+5. Explain that the agent has converted a goal into a structured Web3 action.
+6. Click **Send to Magen3 Review**.
+7. Show that Magen3 blocks the action before execution.
+8. Click **Record Decision**.
+9. Open **Audit Log** and show the Casper Proof section.
+
+Suggested line:
+
+> This is the core of Magen3: the AI agent can create intent, but it cannot bypass the execution firewall. Magen3 reviews the action first and records the decision on Casper.

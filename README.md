@@ -216,3 +216,27 @@ Use this route during the demo:
 ```
 
 See `docs/DEMO_WALKTHROUGH.md` and `docs/BUILDATHON_SUBMISSION.md` for the final presentation script and submission copy.
+
+## v16: Agent Runner Demo
+
+Magen3 now includes an **Agent Runner** page. This lets the demo show a goal-driven AI agent flow instead of only manual action entry.
+
+Flow:
+
+```text
+Agent goal → Generated Web3 action → Magen3 policy review → Decision → Audit log → Casper proof
+```
+
+The Agent Runner is safe for MVP testing: it does not move funds or execute transactions directly. It creates structured action requests and forces them through Agent Shield before they can be recorded.
+
+Example goals:
+
+```text
+Stake 15 CSPR to trusted-validator-demo
+Transfer 9000 CSPR to unknown-wallet
+Call unknown contract to mint 5000 tokens
+Claim 8 CSPR rewards from trusted staking contract
+```
+
+See `docs/AGENT_RUNNER_DEMO.md` for the full demo flow.
+

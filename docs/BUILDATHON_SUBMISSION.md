@@ -77,3 +77,8 @@ c95359f46a5709cc10d4e014dadc29b6b9734629b475b5d58f8ba2fa0394f668
 - RWA Shield for off-chain proof and registry updates
 - Oracle Shield for oracle-driven action review
 - Multi-policy simulation and team approvals
+
+
+## Agent Runner proof
+
+Magen3 includes an Agent Runner demo that simulates a real autonomous-agent workflow. A user gives the agent a goal, the runner converts it into a structured Web3 action, and Magen3 reviews the action before any execution. The result is stored in the audit log and can be anchored on Casper Testnet as proof.

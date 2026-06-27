@@ -53,6 +53,7 @@ type Page =
   | "dashboard"
   | "shields"
   | "agent-shield"
+  | "agent-runner"
   | "policies"
   | "action-review"
   | "audit-log"
@@ -184,6 +185,15 @@ interface CasperPreparedPayload {
   };
   contractEntrypoint: string;
   runtimeArgs: Record<string, unknown>;
+}
+
+interface AgentRunnerProposal {
+  rawGoal: string;
+  request: ActionRequest;
+  summary: string;
+  reasoning: string[];
+  confidence: number;
+  executionPlan: string[];
 }
 
 // ──────────────────────────────────────────────────────────
@@ -691,6 +701,92 @@ function evaluateAction(
   };
 }
 
+
+function pickAgentForRunner(agents: Agent[], policies: Policy[], currentAgentId: string) {
+  if (currentAgentId) return currentAgentId;
+  const activePolicy = policies.find((policy) => policy.status === "Active");
+  return activePolicy?.agentId || agents[0]?.id || "";
+}
+
+function inferAmountFromGoal(goal: string) {
+  const match = goal.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(?:cspr|token|tokens|pot)?\b/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function inferActionTypeFromGoal(goal: string): ActionType {
+  const lower = goal.toLowerCase();
+  if (/oracle|price feed|feed update|data update/.test(lower)) return "Oracle Data Update";
+  if (/rwa|real world|proof update|asset proof/.test(lower)) return "RWA Proof Update";
+  if (/dao|treasury|payment|grant|payout/.test(lower)) return "DAO Treasury Payment";
+  if (/swap|exchange|trade/.test(lower)) return "Swap";
+  if (/claim|reward/.test(lower)) return "Claim Rewards";
+  if (/deposit|vault|lend|supply/.test(lower)) return "Deposit to Vault";
+  if (/contract|call|execute|mint|upgrade/.test(lower)) return "Contract Interaction";
+  if (/transfer|send|pay/.test(lower)) return "Transfer";
+  if (/stake|delegate|validator/.test(lower)) return "Stake";
+  return "Contract Interaction";
+}
+
+function inferTargetTypeFromGoal(goal: string, actionType: ActionType): TargetType {
+  const lower = goal.toLowerCase();
+  if (/unknown|new wallet|random|external/.test(lower)) return "Unknown Contract";
+  if (/dao|treasury/.test(lower) || actionType === "DAO Treasury Payment") return "DAO Treasury";
+  if (/rwa|registry|proof/.test(lower) || actionType === "RWA Proof Update") return "RWA Registry";
+  if (/oracle|feed|price/.test(lower) || actionType === "Oracle Data Update") return "Oracle Feed";
+  if (/wallet|address|recipient/.test(lower) || actionType === "Transfer") return "Wallet Address";
+  if (/trusted|validator|staking|vault|approved|known/.test(lower)) return "Trusted Contract";
+  return actionType === "Stake" || actionType === "Claim Rewards" ? "Trusted Contract" : "Unknown Contract";
+}
+
+function inferTargetFromGoal(goal: string, actionType: ActionType) {
+  const trimmed = goal.trim();
+  const explicit = trimmed.match(/(?:to|into|from|on|at|with|via)\s+([a-zA-Z0-9_:\-.]{3,})/i);
+  const address = trimmed.match(/(hash-[a-f0-9]{64}|[a-f0-9]{64}|0x[a-fA-F0-9]{6,}|account-[a-zA-Z0-9\-]+)/);
+  if (address?.[1]) return address[1].replace(/[,.]$/, "");
+  if (explicit?.[1]) return explicit[1].replace(/[,.]$/, "");
+  if (actionType === "Stake") return "trusted-validator-demo";
+  if (actionType === "Claim Rewards") return "trusted-staking-contract";
+  if (actionType === "DAO Treasury Payment") return "dao-treasury-demo";
+  if (actionType === "Oracle Data Update") return "oracle-feed-demo";
+  if (actionType === "RWA Proof Update") return "rwa-registry-demo";
+  return "unknown-target-demo";
+}
+
+function buildAgentRunnerProposal(goal: string, agentId: string): AgentRunnerProposal {
+  const cleanGoal = goal.trim();
+  const actionType = inferActionTypeFromGoal(cleanGoal);
+  const amount = inferAmountFromGoal(cleanGoal);
+  const targetType = inferTargetTypeFromGoal(cleanGoal, actionType);
+  const target = inferTargetFromGoal(cleanGoal, actionType);
+  const hasAmount = amount > 0;
+  const confidence = Math.max(62, Math.min(96, 72 + (hasAmount ? 12 : 0) + (target !== "unknown-target-demo" ? 8 : 0)));
+
+  return {
+    rawGoal: cleanGoal,
+    request: {
+      agentId,
+      actionType,
+      amount: hasAmount ? amount : 1,
+      target,
+      targetType,
+    },
+    summary: `Agent intends to ${actionType.toLowerCase()} ${hasAmount ? `${amount} CSPR` : "a small test amount"} ${target ? `against ${target}` : "against the selected target"}.`,
+    reasoning: [
+      `Intent classified as ${actionType}.`,
+      hasAmount ? `Detected amount: ${amount} CSPR.` : "No clear amount detected, so Magen3 uses a conservative 1 CSPR test amount.",
+      `Target classified as ${targetType}: ${target}.`,
+      "Generated action is not executed directly; it must pass Magen3 policy review first.",
+    ],
+    confidence,
+    executionPlan: [
+      "Convert natural-language goal into a structured Web3 action request.",
+      "Send the action request to Agent Shield for policy evaluation.",
+      "Return Allowed, Blocked, or Review Required before any execution.",
+      "Record the security decision in the audit log and anchor proof on Casper.",
+    ],
+  };
+}
+
 // ──────────────────────────────────────────────────────────
 // Design tokens / shared classes
 // ──────────────────────────────────────────────────────────
@@ -938,6 +1034,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "shields", label: "Shields", icon: <Shield size={18} /> },
   { id: "agent-shield", label: "Agent Shield", icon: <Bot size={18} /> },
+  { id: "agent-runner", label: "Agent Runner", icon: <Zap size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "action-review", label: "Action Review", icon: <FlaskConical size={18} /> },
   { id: "audit-log", label: "Audit Log", icon: <Scroll size={18} /> },
@@ -1481,8 +1578,8 @@ function DashboardPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Btn variant="secondary" size="sm" onClick={() => onNavigate("action-review")}>
-              Run Action Review
+            <Btn variant="secondary" size="sm" onClick={() => onNavigate("agent-runner")}>
+              Run Agent Demo
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
               Open Casper Proof
@@ -2425,6 +2522,365 @@ function ActionReviewPage({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// Agent Runner Page
+// ──────────────────────────────────────────────────────────
+
+function AgentRunnerPage({
+  agents,
+  policies,
+  auditLogs,
+  onAnalyzeAction,
+  onRecordDecision,
+  walletAddress,
+  onNavigate,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+  onAnalyzeAction: (request: ActionRequest) => Promise<DecisionResult> | DecisionResult;
+  onRecordDecision: (log: AuditLog) => Promise<string> | string;
+  walletAddress: string;
+  onNavigate: (p: Page) => void;
+}) {
+  const initialAgentId = pickAgentForRunner(agents, policies, "");
+  const [agentId, setAgentId] = useState(initialAgentId);
+  const [goal, setGoal] = useState("Stake 15 CSPR to trusted-validator-demo");
+  const [proposal, setProposal] = useState<AgentRunnerProposal | null>(null);
+  const [result, setResult] = useState<DecisionResult | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [recordedTxHash, setRecordedTxHash] = useState("");
+
+  useEffect(() => {
+    if (!agentId && agents.length > 0) {
+      setAgentId(pickAgentForRunner(agents, policies, ""));
+    }
+  }, [agentId, agents, policies]);
+
+  const activePolicy = getActivePolicy(policies, agentId);
+  const selectedAgent = agents.find((agent) => agent.id === agentId);
+
+  const quickGoals = [
+    "Stake 15 CSPR to trusted-validator-demo",
+    "Transfer 9000 CSPR to unknown-wallet",
+    "Call unknown contract to mint 5000 tokens",
+    "Claim 8 CSPR rewards from trusted staking contract",
+    "Send 300 CSPR DAO treasury payment to contributor-wallet",
+  ];
+
+  const generateAction = useCallback(() => {
+    if (!goal.trim() || !agentId) return;
+    setProposal(buildAgentRunnerProposal(goal, agentId));
+    setResult(null);
+    setRecordedTxHash("");
+  }, [agentId, goal]);
+
+  const reviewProposal = useCallback(async () => {
+    if (!proposal) return;
+    setAnalyzing(true);
+    setResult(null);
+    setRecordedTxHash("");
+    try {
+      const decision = await onAnalyzeAction(proposal.request);
+      setResult(decision);
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [onAnalyzeAction, proposal]);
+
+  const recordAgentDecision = useCallback(async () => {
+    if (!proposal || !result) return;
+    const agent = agents.find((item) => item.id === proposal.request.agentId);
+    const policy = getActivePolicy(policies, proposal.request.agentId);
+    const log: AuditLog = {
+      id: makeId("AUD"),
+      timestamp: new Date().toISOString(),
+      shield: "Agent Shield",
+      agentId: proposal.request.agentId,
+      agentName: agent?.name || proposal.request.agentId,
+      action: proposal.request.actionType,
+      amount: proposal.request.amount,
+      target: proposal.request.target || "No target provided",
+      targetType: proposal.request.targetType,
+      decision: result.decision,
+      risk: result.risk,
+      reason: `Agent Runner goal: "${proposal.rawGoal}". ${result.reason}`,
+      policyUsed: policy?.name || "No active policy",
+      walletAddress,
+      txHash: "",
+      riskScore: result.riskScore,
+    };
+    const txHash = await onRecordDecision(log);
+    setRecordedTxHash(txHash);
+  }, [agents, onRecordDecision, policies, proposal, result, walletAddress]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#22D3EE] mb-3">
+            <Bot size={13} /> Agent Runner Demo
+          </div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+            Test Magen3 with a goal-driven agent
+          </h1>
+          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
+            Give the agent a Web3 goal. The runner converts it into a structured action request, then Magen3 reviews it before any execution can happen.
+          </p>
+        </div>
+        <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
+          Open Audit Log <ArrowRight size={14} />
+        </Btn>
+      </div>
+
+      <div className="grid md:grid-cols-4 gap-3">
+        {[
+          { label: "1. Goal", desc: "Agent receives intent", icon: <Bot size={18} /> },
+          { label: "2. Action", desc: "Intent becomes request", icon: <Zap size={18} /> },
+          { label: "3. Review", desc: "Policy engine decides", icon: <Shield size={18} /> },
+          { label: "4. Proof", desc: "Decision reaches audit log", icon: <Database size={18} /> },
+        ].map((step) => (
+          <div key={step.label} className={`${CARD} p-4`}>
+            <div className="flex items-center gap-2 text-[#22D3EE] mb-2">
+              {step.icon}
+              <span className="text-xs font-semibold uppercase tracking-wider">{step.label}</span>
+            </div>
+            <p className="text-sm text-[#F8FAFC] font-medium">{step.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid xl:grid-cols-3 gap-6">
+        <div className={`${CARD} p-6 xl:col-span-1`}>
+          <h2 className={`${SECTION_TITLE} mb-5`}>Agent Goal</h2>
+          <div className="space-y-4">
+            <SelectField
+              label="Agent"
+              value={agentId}
+              onChange={(v) => {
+                setAgentId(v);
+                setProposal(null);
+                setResult(null);
+                setRecordedTxHash("");
+              }}
+              options={agents.map((agent) => agent.id)}
+            />
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+              <div className="flex items-center justify-between gap-3 text-xs mb-2">
+                <span className="text-[#94A3B8] uppercase tracking-wider">Selected Agent</span>
+                <StatusBadge status={selectedAgent?.status || "No Policy"} />
+              </div>
+              <div className="text-sm text-[#F8FAFC] font-semibold">{selectedAgent?.name || "No agent selected"}</div>
+              <div className="text-xs text-[#94A3B8] mt-1">{selectedAgent?.type || "Register an agent first"}</div>
+              <div className="mt-3 border-t border-[#1E293B] pt-3 text-xs text-[#94A3B8]">
+                Active policy: <span className="text-[#F8FAFC]">{activePolicy?.name || "None"}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className={LABEL_CLS}>Goal Prompt</label>
+              <textarea
+                className={`${INPUT_CLS} min-h-32 resize-none`}
+                value={goal}
+                onChange={(e) => {
+                  setGoal(e.target.value);
+                  setProposal(null);
+                  setResult(null);
+                  setRecordedTxHash("");
+                }}
+                placeholder="Example: Stake 15 CSPR to trusted-validator-demo"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {quickGoals.map((quickGoal) => (
+                <button
+                  key={quickGoal}
+                  onClick={() => {
+                    setGoal(quickGoal);
+                    setProposal(null);
+                    setResult(null);
+                    setRecordedTxHash("");
+                  }}
+                  className="rounded-lg bg-[#1E293B] px-3 py-1.5 text-left text-xs text-[#94A3B8] transition-colors hover:bg-[#263548] hover:text-[#F8FAFC]"
+                >
+                  {quickGoal}
+                </button>
+              ))}
+            </div>
+
+            <Btn variant="primary" size="lg" className="w-full justify-center" onClick={generateAction} disabled={!agentId || !goal.trim()}>
+              <Zap size={16} /> Generate Agent Action
+            </Btn>
+          </div>
+        </div>
+
+        <div className="xl:col-span-2 space-y-6">
+          <div className={`${CARD_GLOW} p-6`}>
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div>
+                <h2 className={SECTION_TITLE}>Generated Action Request</h2>
+                <p className="text-xs text-[#94A3B8] mt-1">This is the request Magen3 intercepts before execution.</p>
+              </div>
+              {proposal && (
+                <span className="rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold text-[#22D3EE]">
+                  {proposal.confidence}% confidence
+                </span>
+              )}
+            </div>
+
+            {!proposal ? (
+              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
+                <Bot size={30} className="mx-auto mb-3 text-[#94A3B8]" />
+                <p className="text-sm text-[#94A3B8]">Generate an action from the agent goal to begin the firewall test.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-[#0B1220] p-4">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Agent Summary</div>
+                  <p className="text-sm text-[#F8FAFC]">{proposal.summary}</p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                  {[
+                    ["Action Type", proposal.request.actionType],
+                    ["Amount", `${proposal.request.amount} CSPR`],
+                    ["Target", proposal.request.target],
+                    ["Target Type", proposal.request.targetType],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[11px] text-[#94A3B8] uppercase tracking-wider mb-1">{label}</div>
+                      <div className="font-mono text-[#F8FAFC] break-all">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Agent Reasoning</div>
+                    <ul className="space-y-1.5">
+                      {proposal.reasoning.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
+                          <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-[#22D3EE]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Execution Gate</div>
+                    <ul className="space-y-1.5">
+                      {proposal.executionPlan.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
+                          <ShieldCheck size={14} className="mt-0.5 flex-shrink-0 text-[#22C55E]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <Btn variant="primary" size="md" onClick={reviewProposal} disabled={analyzing}>
+                  {analyzing ? <Activity size={16} className="animate-spin" /> : <Shield size={16} />}
+                  {analyzing ? "Reviewing with Magen3..." : "Send to Magen3 Review"}
+                </Btn>
+              </div>
+            )}
+          </div>
+
+          <div className={`${CARD_GLOW} p-6`}>
+            <h2 className={`${SECTION_TITLE} mb-5`}>Magen3 Firewall Decision</h2>
+            {!result && !analyzing && (
+              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
+                <Shield size={30} className="mx-auto mb-3 text-[#94A3B8]" />
+                <p className="text-sm text-[#94A3B8]">The generated action has not been reviewed yet.</p>
+              </div>
+            )}
+            {analyzing && (
+              <div className="rounded-xl bg-[#0B1220] p-10 text-center">
+                <Activity size={30} className="mx-auto mb-3 animate-spin text-[#22D3EE]" />
+                <p className="text-sm text-[#94A3B8]">Checking policy limits, trusted targets, blocked actions, and daily exposure...</p>
+              </div>
+            )}
+            {result && !analyzing && (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <DecisionBadge decision={result.decision} />
+                    <RiskBadge risk={result.risk} />
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Risk Score</div>
+                    <div className="text-3xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{result.riskScore}<span className="text-sm text-[#94A3B8]">/100</span></div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-[#0B1220] p-4">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Decision Reason</div>
+                  <p className="text-sm text-[#F8FAFC]">{result.reason}</p>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Passed</div>
+                    <ul className="space-y-1.5">
+                      {result.policyChecksPassed.length === 0 ? (
+                        <li className="text-sm text-[#94A3B8]">No passing checks.</li>
+                      ) : result.policyChecksPassed.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
+                          <CheckCircle size={14} className="mt-0.5 flex-shrink-0 text-[#22C55E]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Failed / Review Flags</div>
+                    <ul className="space-y-1.5">
+                      {result.policyChecksFailed.length === 0 ? (
+                        <li className="text-sm text-[#94A3B8]">No failed checks.</li>
+                      ) : result.policyChecksFailed.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
+                          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-[#F59E0B]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t border-[#1E293B] pt-4">
+                  {recordedTxHash ? (
+                    <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
+                      <span className="flex items-center gap-2"><CheckCircle size={16} /> Added to audit log</span>
+                      <span className="font-mono text-xs text-[#94A3B8]">{truncate(recordedTxHash, 24)}</span>
+                    </div>
+                  ) : (
+                    <Btn variant="primary" size="sm" onClick={recordAgentDecision}>
+                      <Database size={14} /> Record Decision
+                    </Btn>
+                  )}
+                  <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
+                    View Casper Proof <ExternalLink size={14} />
+                  </Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <h2 className={`${SECTION_TITLE} mb-3`}>Why this matters</h2>
+        <p className="text-sm text-[#94A3B8] leading-relaxed">
+          This page makes the Magen3 demo feel like a real agent workflow: the agent can form an action from a goal, but it cannot bypass the firewall. Magen3 becomes the checkpoint between autonomous intent and Web3 execution.
+        </p>
       </div>
     </div>
   );
@@ -3382,6 +3838,17 @@ export default function App() {
         agents={agents}
         onRegisterAgent={onRegisterAgent}
         auditLogs={auditLogs}
+      />
+    ),
+    "agent-runner": (
+      <AgentRunnerPage
+        agents={agents}
+        policies={policies}
+        auditLogs={auditLogs}
+        onAnalyzeAction={onAnalyzeAction}
+        onRecordDecision={onRecordDecision}
+        walletAddress={walletAddress}
+        onNavigate={navigate}
       />
     ),
     policies: (

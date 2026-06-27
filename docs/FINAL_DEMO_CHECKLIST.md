@@ -53,3 +53,13 @@ c95359f46a5709cc10d4e014dadc29b6b9734629b475b5d58f8ba2fa0394f668
 - private keys
 - Railway database password
 - raw `.env` values containing secrets
+
+
+## Agent Runner checks
+
+- [ ] Agent Runner page opens from the sidebar.
+- [ ] A natural-language goal generates a structured action request.
+- [ ] Safe goal returns an Allowed/Low-risk style decision when policy permits it.
+- [ ] Risky goal such as `Transfer 9000 CSPR to unknown-wallet` returns Blocked/High-risk.
+- [ ] Record Decision adds the generated agent action to Audit Log.
+- [ ] Audit Log Casper Proof can be used for the recorded agent decision.
