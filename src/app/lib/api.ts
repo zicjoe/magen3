@@ -102,4 +102,11 @@ export const api = {
       body: JSON.stringify({ deployHash }),
     });
   },
+
+  confirmExecutionDeploy(id: string, deployHash: string, signedBy?: string, note?: string) {
+    return request<any>(`/api/audit-logs/${id}/execution-confirm`, {
+      method: "POST",
+      body: JSON.stringify({ deployHash, signedBy, note }),
+    });
+  },
 };

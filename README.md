@@ -335,3 +335,14 @@ For real demo/production, keep PostgreSQL enabled and do not use temporary memor
 ## v21 Railway migration health fix
 
 This version keeps the real-data wallet scoping from v20 and adds compatibility migrations for Railway databases that were created by older Magen3 versions. It adds missing `owner_wallet_address`, `wallet_address`, and `tx_hash` columns before startup queries run, preventing Railway health checks from failing during the v20 upgrade.
+
+### Approved Execution Proof
+
+Magen3 now separates the audit trail into two real-world proofs:
+
+- **Decision Proof**: the Magen3 policy decision recorded on Casper through `record_decision`.
+- **Execution Proof**: the real Casper deploy hash from the approved transaction after the wallet owner signs.
+
+For demo purposes, the External Agent page now behaves like a customer-owned agent: it asks Magen3 for permission first, receives Allowed / Blocked / Review Required feedback, and only Allowed actions can receive an execution deploy hash. Blocked and Review Required actions cannot be marked as executed.
+
+See `docs/APPROVED_EXECUTION_FLOW.md`.

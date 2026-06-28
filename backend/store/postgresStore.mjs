@@ -74,6 +74,11 @@ function normalizeAuditLog(row) {
     policyUsed: row.policyUsed,
     walletAddress: row.walletAddress,
     txHash: row.txHash || "",
+    executionStatus: row.executionStatus || "not_submitted",
+    executionTxHash: row.executionTxHash || "",
+    executionSignedBy: row.executionSignedBy || "",
+    executionNote: row.executionNote || "",
+    executionUpdatedAt: row.executionUpdatedAt ? toDate(row.executionUpdatedAt).toISOString() : "",
     riskScore: Number(row.riskScore),
   };
 }
@@ -121,6 +126,13 @@ async function listAuditLogs(walletAddress) {
     .where(eq(auditLogsTable.walletAddress, normalizedWallet))
     .orderBy(desc(auditLogsTable.timestamp)))
     .map(normalizeAuditLog);
+}
+
+function initialExecutionStatus(decision) {
+  if (decision === "Allowed") return "approved_pending_signature";
+  if (decision === "Blocked") return "blocked_not_submitted";
+  if (decision === "Review Required") return "review_required_not_submitted";
+  return "not_submitted";
 }
 
 function deriveDashboardStats(policies, auditLogs) {
@@ -227,6 +239,11 @@ export async function createPostgresStore() {
         policyUsed: policy.name,
         walletAddress,
         txHash: "",
+        executionStatus: "not_required",
+        executionTxHash: "",
+        executionSignedBy: "",
+        executionNote: "Policy activation does not execute an external Web3 transaction.",
+        executionUpdatedAt: null,
         riskScore: 4,
       }).returning();
 
@@ -275,6 +292,11 @@ export async function createPostgresStore() {
         policyUsed: body.policyUsed || "No active policy",
         walletAddress,
         txHash: body.txHash || "",
+        executionStatus: body.executionStatus || initialExecutionStatus(body.decision),
+        executionTxHash: body.executionTxHash || "",
+        executionSignedBy: body.executionSignedBy || "",
+        executionNote: body.executionNote || "",
+        executionUpdatedAt: body.executionUpdatedAt ? new Date(body.executionUpdatedAt) : null,
         riskScore: Number(body.riskScore || 50),
       }).returning();
       return normalizeAuditLog(auditRow);
@@ -313,6 +335,11 @@ export async function createPostgresStore() {
         policyUsed: policy?.name || "No active policy",
         walletAddress,
         txHash: "",
+        executionStatus: initialExecutionStatus(result.decision),
+        executionTxHash: "",
+        executionSignedBy: "",
+        executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
+        executionUpdatedAt: null,
         riskScore: Number(result.riskScore || 50),
       }).returning();
 
@@ -394,6 +421,39 @@ export async function createPostgresStore() {
 
       return { auditLog: normalizeAuditLog(auditRow), txHash, confirmed: true };
     },
+
+    async confirmExecutionDeploy(id, body) {
+      const executionTxHash = validateDeployHash(body?.deployHash || body?.executionTxHash);
+      const executionSignedBy = normalizeWalletAddress(body?.signedBy || body?.walletAddress || "");
+      const executionNote = String(body?.note || "Real execution transaction signed after Magen3 approval.").trim();
+
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      if (current.decision !== "Allowed") {
+        const err = new Error("Execution hash can only be attached to an Allowed Magen3 decision.");
+        err.status = 400;
+        throw err;
+      }
+
+      const [auditRow] = await db.update(auditLogsTable)
+        .set({
+          executionStatus: "executed",
+          executionTxHash,
+          executionSignedBy,
+          executionNote,
+          executionUpdatedAt: new Date(),
+        })
+        .where(eq(auditLogsTable.id, id))
+        .returning();
+
+      return { auditLog: normalizeAuditLog(auditRow), executionTxHash, confirmed: true };
+    },
+
 
     async recordAuditLog() {
       const err = new Error("Automatic local recording is disabled. Prepare the Casper payload, sign the real deploy with Casper client, then confirm the real deploy hash.");

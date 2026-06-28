@@ -32,6 +32,7 @@ import {
   Eye,
   TrendingUp,
   Server,
+  Send,
   Code2,
   ChevronRight,
   Menu,
@@ -136,6 +137,11 @@ interface AuditLog {
   policyUsed: string;
   walletAddress: string;
   txHash: string;
+  executionStatus?: string;
+  executionTxHash?: string;
+  executionSignedBy?: string;
+  executionNote?: string;
+  executionUpdatedAt?: string;
   riskScore: number;
 }
 
@@ -395,6 +401,15 @@ function casperProofStatus(txHash = "") {
   if (!txHash) return { label: "Pending", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
   if (isRealCasperDeployHash(txHash)) return { label: "Recorded on Casper", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
   return { label: "Unconfirmed", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+}
+
+function executionProofStatus(status = "", txHash = "") {
+  if (isRealCasperDeployHash(txHash)) return { label: "Executed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (status === "approved_pending_signature") return { label: "Waiting for signature", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (status === "blocked_not_submitted") return { label: "Blocked before execution", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
+  if (status === "review_required_not_submitted") return { label: "Review required", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (status === "not_required") return { label: "Not required", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
+  return { label: "Not submitted", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
 }
 
 function makeId(prefix: string) {
@@ -2819,12 +2834,14 @@ function ExternalAgentDemoPage({
   walletAddress,
   onNavigate,
   onSubmitGatewayIntent,
+  onConfirmExecutionDeploy,
 }: {
   agents: Agent[];
   policies: Policy[];
   walletAddress: string;
   onNavigate: (p: Page) => void;
   onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
+  onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
 }) {
   const initialAgentId = pickAgentForRunner(agents, policies, "");
   const [agentId, setAgentId] = useState(initialAgentId);
@@ -2834,6 +2851,8 @@ function ExternalAgentDemoPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [latestResponse, setLatestResponse] = useState<AgentGatewayResponse | null>(null);
+  const [executionHash, setExecutionHash] = useState("");
+  const [executionSaving, setExecutionSaving] = useState(false);
   const [messages, setMessages] = useState<ExternalAgentMessage[]>([
     {
       id: makeId("MSG"),
@@ -2867,6 +2886,7 @@ function ExternalAgentDemoPage({
     setBusy(true);
     setError("");
     setLatestResponse(null);
+    setExecutionHash("");
 
     const proposal = buildAgentRunnerProposal(task, agentId);
     const intent = {
@@ -2900,7 +2920,7 @@ function ExternalAgentDemoPage({
       const result = response.result;
       const agentText =
         result.decision === "Allowed"
-          ? `Magen3 approved this action. Risk: ${result.risk}. I can continue only after the wallet/execution layer signs the real transaction.`
+          ? `Magen3 approved this action. Risk: ${result.risk}. I am now waiting for the wallet owner to sign the real transaction. After signing, I will attach the execution hash back to Magen3.`
           : result.decision === "Blocked"
           ? `Magen3 blocked this action. Risk: ${result.risk}. I will stop and will not ask the wallet to sign it.`
           : `Magen3 says this needs human review. Risk: ${result.risk}. I will pause until an admin approves or rejects it.`;
@@ -2921,6 +2941,36 @@ function ExternalAgentDemoPage({
       setBusy(false);
     }
   }, [agentId, apiKey, appendMessage, gatewayUrl, onSubmitGatewayIntent, selectedAgent?.name, task, walletAddress]);
+
+  const attachExecutionHash = useCallback(async () => {
+    if (!latestResponse?.auditLog?.id) return;
+    const normalized = normalizeCasperDeployHash(executionHash);
+    if (!isRealCasperDeployHash(normalized)) {
+      setError("Paste the real 64-character Casper execution deploy hash returned after the wallet signs.");
+      return;
+    }
+    setExecutionSaving(true);
+    setError("");
+    try {
+      const updated = await onConfirmExecutionDeploy(
+        latestResponse.auditLog.id,
+        normalized,
+        walletAddress,
+        "External agent action executed after Magen3 approval."
+      );
+      setLatestResponse((prev) => prev ? { ...prev, auditLog: updated } : prev);
+      appendMessage({
+        role: "agent",
+        text: `Execution hash attached to Magen3 audit: ${truncate(normalized, 18)}. The audit now shows both the Magen3 decision proof and the real execution proof.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not attach execution hash.";
+      setError(message);
+      appendMessage({ role: "agent", text: `I could not attach the execution hash to Magen3: ${message}` });
+    } finally {
+      setExecutionSaving(false);
+    }
+  }, [appendMessage, executionHash, latestResponse?.auditLog?.id, onConfirmExecutionDeploy, walletAddress]);
 
   const messageStyles: Record<ExternalAgentMessage["role"], string> = {
     user: "ml-auto bg-[#22D3EE] text-[#050B14]",
@@ -3013,6 +3063,45 @@ function ExternalAgentDemoPage({
                   <span className="text-[#F8FAFC] font-mono text-xs">{latestResponse.gatewayRequest.status}</span>
                 </div>
               </div>
+              {latestResponse.executionApproved && (
+                <div className="mt-5 rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle size={16} className="mt-0.5 text-[#22C55E]" />
+                    <div>
+                      <div className="text-sm font-semibold text-[#F8FAFC]">Approved Execution</div>
+                      <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
+                        Magen3 approved the intent. The agent should now request a wallet signature outside Magen3. Paste the returned Casper deploy hash here so the audit shows the real execution too.
+                      </p>
+                    </div>
+                  </div>
+                  <InputField
+                    label="Execution Deploy Hash"
+                    value={executionHash}
+                    onChange={setExecutionHash}
+                    placeholder="Paste real Casper deploy hash after wallet signing"
+                  />
+                  <Btn
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center"
+                    onClick={attachExecutionHash}
+                    disabled={executionSaving || !executionHash.trim()}
+                  >
+                    {executionSaving ? <Activity size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                    Attach Execution Hash
+                  </Btn>
+                  {latestResponse.auditLog.executionTxHash && (
+                    <a
+                      href={casperDeployUrl(latestResponse.auditLog.executionTxHash)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-[#22D3EE] hover:text-[#F8FAFC]"
+                    >
+                      View execution on CSPR.live <ExternalLink size={12} />
+                    </a>
+                  )}
+                </div>
+              )}
               <Btn variant="secondary" size="sm" className="mt-4 w-full justify-center" onClick={() => onNavigate("audit-log")}>
                 View audit proof <ExternalLink size={14} />
               </Btn>
@@ -3089,7 +3178,7 @@ function ExternalAgentDemoPage({
               </Btn>
             </div>
             <p className="text-xs text-[#94A3B8] mt-3">
-              The agent never executes directly in this demo. It first asks Magen3, then shows the Magen3 decision back to the customer.
+              The agent first asks Magen3. If approved, the wallet owner signs the real transaction and the execution hash is attached to the Magen3 audit.
             </p>
           </div>
         </div>
@@ -3107,11 +3196,13 @@ function AuditLogPage({
   onRecordAuditLog,
   onPrepareCasperPayload,
   onConfirmCasperDeploy,
+  onConfirmExecutionDeploy,
 }: {
   auditLogs: AuditLog[];
   onRecordAuditLog: (id: string) => Promise<string> | string;
   onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
+  onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
 }) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
@@ -3122,6 +3213,7 @@ function AuditLogPage({
   const [casperLoading, setCasperLoading] = useState(false);
   const [casperError, setCasperError] = useState("");
   const [deployHash, setDeployHash] = useState("");
+  const [executionHash, setExecutionHash] = useState("");
   const [copiedPayload, setCopiedPayload] = useState(false);
 
   const filtered = auditLogs.filter((l) => {
@@ -3142,8 +3234,9 @@ function AuditLogPage({
     setCasperPrepared(null);
     setCasperError("");
     setDeployHash(selected?.txHash && isRealCasperDeployHash(selected.txHash) ? normalizeCasperDeployHash(selected.txHash) : "");
+    setExecutionHash(selected?.executionTxHash && isRealCasperDeployHash(selected.executionTxHash) ? normalizeCasperDeployHash(selected.executionTxHash) : "");
     setCopiedPayload(false);
-  }, [selected?.id, selected?.txHash]);
+  }, [selected?.id, selected?.txHash, selected?.executionTxHash]);
 
   const prepareCasperPayload = useCallback(async (logId: string) => {
     setCasperLoading(true);
@@ -3190,6 +3283,31 @@ function AuditLogPage({
       setCasperLoading(false);
     }
   }, [deployHash, onConfirmCasperDeploy, selected]);
+
+  const confirmExecutionHash = useCallback(async () => {
+    if (!selected) return;
+    const normalizedDeployHash = normalizeCasperDeployHash(executionHash);
+    if (!isRealCasperDeployHash(normalizedDeployHash)) {
+      setCasperError("Paste the 64-character Casper execution deploy hash returned after wallet signing.");
+      return;
+    }
+    setCasperLoading(true);
+    setCasperError("");
+    try {
+      const updated = await onConfirmExecutionDeploy(
+        selected.id,
+        normalizedDeployHash,
+        selected.walletAddress,
+        "Execution transaction signed after Magen3 approval."
+      );
+      setSelected(updated);
+      setExecutionHash(normalizeCasperDeployHash(updated.executionTxHash || ""));
+    } catch (error) {
+      setCasperError(error instanceof Error ? error.message : "Unable to confirm execution hash");
+    } finally {
+      setCasperLoading(false);
+    }
+  }, [executionHash, onConfirmExecutionDeploy, selected]);
 
   const recordAuditOnChain = useCallback(async (logId: string) => {
     const txHash = await onRecordAuditLog(logId);
@@ -3267,7 +3385,8 @@ function AuditLogPage({
                   "Amount",
                   "Decision",
                   "Risk",
-                  "Tx Hash",
+                  "Decision Proof",
+                  "Execution",
                   "",
                 ].map((h) => (
                   <th
@@ -3328,6 +3447,21 @@ function AuditLogPage({
                       <span className="text-[#94A3B8]/40">Pending</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
+                    {log.executionTxHash && isRealCasperDeployHash(log.executionTxHash) ? (
+                      <a
+                        href={casperDeployUrl(log.executionTxHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-[#22C55E] hover:text-[#F8FAFC]"
+                      >
+                        <span>{truncate(normalizeCasperDeployHash(log.executionTxHash))}</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    ) : (
+                      <span className="text-[#94A3B8]/40">{executionProofStatus(log.executionStatus || "", log.executionTxHash || "").label}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => setSelected(log)}
@@ -3340,7 +3474,7 @@ function AuditLogPage({
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-[#94A3B8]">
+                  <td colSpan={10} className="px-4 py-12 text-center text-[#94A3B8]">
                     No audit records match your filters.
                   </td>
                 </tr>
@@ -3491,6 +3625,94 @@ function AuditLogPage({
                         {realDeploy ? "Update Casper Proof" : "Confirm Real Deploy Hash"}
                       </Btn>
                     </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const executionStatus = executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "");
+                const realExecution = isRealCasperDeployHash(selected.executionTxHash || "");
+                const canAttachExecution = selected.decision === "Allowed";
+                return (
+                  <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3 shadow-[0_0_20px_rgba(34,197,94,0.04)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
+                          <Send size={16} className="text-[#22C55E]" />
+                          Execution Proof
+                        </div>
+                        <p className="text-xs text-[#94A3B8] mt-1">
+                          Shows whether the approved action was actually signed and submitted after Magen3 allowed it.
+                        </p>
+                      </div>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${executionStatus.className}`}>
+                        {executionStatus.label}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Execution Status</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionStatus || "not_submitted"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Signed By</span>
+                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.executionSignedBy || "Waiting for wallet signature"}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Execution Deploy Hash</span>
+                        <div className={`font-mono mt-1 break-all ${realExecution ? "text-[#22C55E]" : "text-[#F8FAFC]"}`}>
+                          {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "Not executed yet"}
+                        </div>
+                      </div>
+                      {selected.executionNote && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">Execution Note</span>
+                          <div className="text-[#F8FAFC] mt-1">{selected.executionNote}</div>
+                        </div>
+                      )}
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
+                        {realExecution ? (
+                          <a
+                            href={casperDeployUrl(selected.executionTxHash || "")}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex items-center gap-1.5 text-[#22C55E] hover:text-[#F8FAFC]"
+                          >
+                            View execution on CSPR.live
+                            <ExternalLink size={12} />
+                          </a>
+                        ) : (
+                          <div className="text-[#94A3B8] mt-1">Available after a real approved transaction is signed and submitted.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {canAttachExecution ? (
+                      <div className="space-y-2 border-t border-[#1E293B] pt-3">
+                        <InputField
+                          label={realExecution ? "Replace Execution Deploy Hash" : "Execution Deploy Hash"}
+                          value={executionHash}
+                          onChange={setExecutionHash}
+                          placeholder="Paste the real transaction/deploy hash after wallet signing"
+                        />
+                        <Btn
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center"
+                          onClick={confirmExecutionHash}
+                          disabled={!executionHash.trim() || casperLoading}
+                        >
+                          <ShieldCheck size={14} />
+                          {realExecution ? "Update Execution Proof" : "Attach Execution Hash"}
+                        </Btn>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">
+                        Execution is disabled because Magen3 did not approve this action.
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -3999,6 +4221,16 @@ export default function App() {
     return updated;
   }, []);
 
+  const onConfirmExecutionDeploy = useCallback(async (id: string, deployHash: string, signedBy?: string, note?: string) => {
+    const response = await api.confirmExecutionDeploy(id, deployHash, signedBy || walletAddress, note);
+    const updated = response.auditLog as AuditLog;
+    setAuditLogs((prev) =>
+      prev.map((log) => (log.id === id ? updated : log))
+    );
+    setApiOnline(true);
+    return updated;
+  }, [walletAddress]);
+
   const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>, apiKey?: string) => {
     const response = await api.submitAgentGatewayIntent(intent, apiKey) as AgentGatewayResponse;
     if (response.auditLog) {
@@ -4070,6 +4302,7 @@ export default function App() {
         walletAddress={walletAddress}
         onNavigate={navigate}
         onSubmitGatewayIntent={onSubmitGatewayIntent}
+        onConfirmExecutionDeploy={onConfirmExecutionDeploy}
       />
     ),
     policies: (
@@ -4097,6 +4330,7 @@ export default function App() {
         onRecordAuditLog={onRecordAuditLog}
         onPrepareCasperPayload={onPrepareCasperPayload}
         onConfirmCasperDeploy={onConfirmCasperDeploy}
+        onConfirmExecutionDeploy={onConfirmExecutionDeploy}
       />
     ),
     settings: (

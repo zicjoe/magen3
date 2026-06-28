@@ -91,6 +91,11 @@ export async function runMigrations() {
       policy_used TEXT NOT NULL,
       wallet_address TEXT NOT NULL,
       tx_hash TEXT NOT NULL DEFAULT '',
+      execution_status TEXT NOT NULL DEFAULT 'not_submitted',
+      execution_tx_hash TEXT NOT NULL DEFAULT '',
+      execution_signed_by TEXT NOT NULL DEFAULT '',
+      execution_note TEXT NOT NULL DEFAULT '',
+      execution_updated_at TIMESTAMPTZ,
       risk_score INTEGER NOT NULL
     );
   `);
@@ -103,6 +108,11 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tx_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_status TEXT NOT NULL DEFAULT 'not_submitted';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_tx_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_signed_by TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_note TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_updated_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_owner_wallet_address ON agents(owner_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_policies_owner_wallet_address ON policies(owner_wallet_address);`);
@@ -130,6 +140,7 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_agent_id ON audit_logs(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_wallet_address ON audit_logs(wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_tx_hash ON audit_logs(execution_tx_hash);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_agent_id ON action_reviews(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_agent_id ON agent_gateway_requests(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_wallet_address ON agent_gateway_requests(wallet_address);`);

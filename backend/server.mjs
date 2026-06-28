@@ -101,8 +101,10 @@ const server = createServer(async (req, res) => {
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
+          nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record",
-          casperPayload: "Payload to anchor with record_decision on Casper"
+          casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",
+          execution: "Approved actions can later attach the real execution deploy hash"
         }
       });
     }
@@ -152,6 +154,14 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && confirmMatch) {
       const body = await readJson(req);
       return send(res, 200, await store.confirmCasperDeploy(confirmMatch[1], body));
+    }
+
+
+
+    const executionConfirmMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)\/execution-confirm$/);
+    if (req.method === "POST" && executionConfirmMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.confirmExecutionDeploy(executionConfirmMatch[1], body));
     }
 
     const recordMatch = url.pathname.match(/^\/api\/audit-logs\/([^/]+)\/record$/);

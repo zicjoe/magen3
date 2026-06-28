@@ -59,6 +59,11 @@ export const auditLogsTable = pgTable("audit_logs", {
   policyUsed: text("policy_used").notNull(),
   walletAddress: text("wallet_address").notNull(),
   txHash: text("tx_hash").notNull().default(""),
+  executionStatus: text("execution_status").notNull().default("not_submitted"),
+  executionTxHash: text("execution_tx_hash").notNull().default(""),
+  executionSignedBy: text("execution_signed_by").notNull().default(""),
+  executionNote: text("execution_note").notNull().default(""),
+  executionUpdatedAt: timestamp("execution_updated_at", { withTimezone: true }),
   riskScore: integer("risk_score").notNull(),
 });
 

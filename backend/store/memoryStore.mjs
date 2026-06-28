@@ -18,6 +18,13 @@ function requireWalletAddress(value) {
   return walletAddress;
 }
 
+function initialExecutionStatus(decision) {
+  if (decision === "Allowed") return "approved_pending_signature";
+  if (decision === "Blocked") return "blocked_not_submitted";
+  if (decision === "Review Required") return "review_required_not_submitted";
+  return "not_submitted";
+}
+
 export function createMemoryStore() {
   let agents = [];
   let policies = [];
@@ -139,6 +146,11 @@ export function createMemoryStore() {
         policyUsed: policy.name,
         walletAddress,
         txHash: "",
+        executionStatus: "not_required",
+        executionTxHash: "",
+        executionSignedBy: "",
+        executionNote: "Policy activation does not execute an external Web3 transaction.",
+        executionUpdatedAt: "",
         riskScore: 4,
       };
       auditLogs = [auditLog, ...auditLogs];
@@ -185,6 +197,11 @@ export function createMemoryStore() {
         policyUsed: body.policyUsed || "No active policy",
         walletAddress,
         txHash: body.txHash || "",
+        executionStatus: body.executionStatus || initialExecutionStatus(body.decision),
+        executionTxHash: body.executionTxHash || "",
+        executionSignedBy: body.executionSignedBy || "",
+        executionNote: body.executionNote || "",
+        executionUpdatedAt: body.executionUpdatedAt || "",
         riskScore: Number(body.riskScore || 50),
       };
       auditLogs = [auditLog, ...auditLogs];
@@ -222,6 +239,11 @@ export function createMemoryStore() {
         policyUsed: policy?.name || "No active policy",
         walletAddress,
         txHash: "",
+        executionStatus: initialExecutionStatus(result.decision),
+        executionTxHash: "",
+        executionSignedBy: "",
+        executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
+        executionUpdatedAt: "",
         riskScore: Number(result.riskScore || 50),
       };
       const gatewayRequest = {
@@ -267,6 +289,30 @@ export function createMemoryStore() {
         throw err;
       }
       return { auditLog, txHash, confirmed: true };
+    },
+
+    async confirmExecutionDeploy(id, body) {
+      const executionTxHash = validateDeployHash(body?.deployHash || body?.executionTxHash);
+      const auditLog = auditLogs.find((log) => log.id === id);
+      if (!auditLog) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      if (auditLog.decision !== "Allowed") {
+        const err = new Error("Execution hash can only be attached to an Allowed Magen3 decision.");
+        err.status = 400;
+        throw err;
+      }
+      auditLogs = auditLogs.map((log) => log.id === id ? {
+        ...log,
+        executionStatus: "executed",
+        executionTxHash,
+        executionSignedBy: normalizeWalletAddress(body?.signedBy || body?.walletAddress || ""),
+        executionNote: String(body?.note || "Real execution transaction signed after Magen3 approval.").trim(),
+        executionUpdatedAt: new Date().toISOString(),
+      } : log);
+      return { auditLog: auditLogs.find((log) => log.id === id), executionTxHash, confirmed: true };
     },
 
     async recordAuditLog() {
