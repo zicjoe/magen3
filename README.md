@@ -330,3 +330,8 @@ Magen3 no longer shows global seeded activity to every user. The connected Caspe
 - automatic local mock Casper recording is disabled.
 
 For real demo/production, keep PostgreSQL enabled and do not use temporary memory storage. See `docs/REAL_DATA_WALLET_SCOPING.md`.
+
+
+## v21 Railway migration health fix
+
+This version keeps the real-data wallet scoping from v20 and adds compatibility migrations for Railway databases that were created by older Magen3 versions. It adds missing `owner_wallet_address`, `wallet_address`, and `tx_hash` columns before startup queries run, preventing Railway health checks from failing during the v20 upgrade.

@@ -95,8 +95,17 @@ export async function runMigrations() {
     );
   `);
 
+  // v21 compatibility migration:
+  // Earlier Magen3 versions created these tables before wallet-scoped ownership existed.
+  // Railway databases that already have those old tables need ALTER TABLE before any UPDATE
+  // references owner_wallet_address, otherwise the API crashes at startup and health checks fail.
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tx_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_owner_wallet_address ON agents(owner_wallet_address);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_policies_owner_wallet_address ON policies(owner_wallet_address);`);
   await pool.query(`
     UPDATE agents
     SET owner_wallet_address = latest.wallet_address
