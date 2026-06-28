@@ -109,4 +109,11 @@ export const api = {
       body: JSON.stringify({ deployHash, signedBy, note }),
     });
   },
+
+  sendSignedCasperDeploy(signedDeploy: unknown) {
+    return request<{ ok: boolean; deployHash: string; casper: Record<string, unknown> }>("/api/casper/send-deploy", {
+      method: "POST",
+      body: JSON.stringify({ signedDeploy }),
+    });
+  },
 };

@@ -11,7 +11,7 @@ function send(res, status, body) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-magen3-agent-key",
   });
   res.end(payload);
 }
@@ -34,6 +34,70 @@ async function readJson(req) {
   }
 }
 
+function normalizeRpcUrl(value = "") {
+  const rpcUrl = String(value || "https://node.testnet.casper.network/rpc").trim();
+  return rpcUrl.endsWith("/rpc") ? rpcUrl : `${rpcUrl.replace(/\/$/, "")}/rpc`;
+}
+
+function extractSignedDeploy(candidate) {
+  const signedDeploy = candidate?.signedDeploy ?? candidate;
+  if (!signedDeploy || typeof signedDeploy !== "object") {
+    const err = new Error("Signed Casper deploy JSON is required");
+    err.status = 400;
+    throw err;
+  }
+
+  if (signedDeploy.deploy) return signedDeploy.deploy;
+  if (signedDeploy.hash && signedDeploy.header && signedDeploy.payment && signedDeploy.session && signedDeploy.approvals) return signedDeploy;
+
+  const err = new Error("Invalid signed Casper deploy shape. Expected deploy JSON returned by Casper Wallet signing.");
+  err.status = 400;
+  throw err;
+}
+
+async function submitSignedDeployToCasper(body) {
+  const deploy = extractSignedDeploy(body);
+  const rpcUrl = normalizeRpcUrl(process.env.CASPER_RPC_URL);
+  const rpcPayload = {
+    jsonrpc: "2.0",
+    id: Date.now(),
+    method: "account_put_deploy",
+    params: { deploy },
+  };
+
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rpcPayload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || result.error) {
+    const err = new Error(result?.error?.message || `Casper node rejected deploy: HTTP ${response.status}`);
+    err.status = 502;
+    err.details = result.error;
+    throw err;
+  }
+
+  const deployHash = result?.result?.deploy_hash || result?.result?.transaction_hash || deploy.hash;
+  if (!deployHash) {
+    const err = new Error("Casper node accepted the request but did not return a deploy hash");
+    err.status = 502;
+    throw err;
+  }
+
+  return {
+    ok: true,
+    deployHash,
+    casper: {
+      rpcUrl,
+      network: process.env.CASPER_NETWORK || "casper-testnet",
+      chainName: process.env.CASPER_CHAIN_NAME || "casper-test",
+    },
+    raw: result.result,
+  };
+}
 
 function requireAgentGatewayAuth(req) {
   const expected = process.env.AGENT_GATEWAY_API_KEY;
@@ -73,6 +137,11 @@ const server = createServer(async (req, res) => {
 
     if (route === "GET /api/casper/status") {
       return send(res, 200, { ok: true, casper: getCasperStatus() });
+    }
+
+    if (route === "POST /api/casper/send-deploy") {
+      const body = await readJson(req);
+      return send(res, 200, await submitSignedDeployToCasper(body));
     }
 
 
@@ -173,6 +242,7 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     return send(res, error.status || 500, {
       error: error.message || "Internal server error",
+      details: error.details,
     });
   }
 });

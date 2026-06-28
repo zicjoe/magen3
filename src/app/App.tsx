@@ -44,6 +44,7 @@ import {
   restoreCasperWalletConnection,
   isCasperWalletInstalled,
 } from "./lib/casperWallet";
+import { signApprovedExecutionProof } from "./lib/casperExecution";
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -2835,6 +2836,7 @@ function ExternalAgentDemoPage({
   onNavigate,
   onSubmitGatewayIntent,
   onConfirmExecutionDeploy,
+  onSignApprovedExecution,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -2842,6 +2844,7 @@ function ExternalAgentDemoPage({
   onNavigate: (p: Page) => void;
   onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
   onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
+  onSignApprovedExecution: (response: AgentGatewayResponse) => Promise<AuditLog>;
 }) {
   const initialAgentId = pickAgentForRunner(agents, policies, "");
   const [agentId, setAgentId] = useState(initialAgentId);
@@ -2853,6 +2856,7 @@ function ExternalAgentDemoPage({
   const [latestResponse, setLatestResponse] = useState<AgentGatewayResponse | null>(null);
   const [executionHash, setExecutionHash] = useState("");
   const [executionSaving, setExecutionSaving] = useState(false);
+  const [executionSigning, setExecutionSigning] = useState(false);
   const [messages, setMessages] = useState<ExternalAgentMessage[]>([
     {
       id: makeId("MSG"),
@@ -2972,6 +2976,41 @@ function ExternalAgentDemoPage({
     }
   }, [appendMessage, executionHash, latestResponse?.auditLog?.id, onConfirmExecutionDeploy, walletAddress]);
 
+  const signApprovedExecution = useCallback(async () => {
+    if (!latestResponse?.executionApproved) return;
+    if (!walletAddress) {
+      setError("Connect Casper Wallet before signing approved execution.");
+      return;
+    }
+
+    setExecutionSigning(true);
+    setError("");
+    appendMessage({
+      role: "agent",
+      text: "Magen3 approved this intent. I am now requesting the connected Casper Wallet to sign the approved execution proof.",
+    });
+
+    try {
+      const updated = await onSignApprovedExecution(latestResponse);
+      setLatestResponse((prev) => prev ? { ...prev, auditLog: updated } : prev);
+      const hash = normalizeCasperDeployHash(updated.executionTxHash || "");
+      setExecutionHash(hash);
+      appendMessage({
+        role: "agent",
+        text: `Wallet signature complete. Casper returned execution deploy hash ${truncate(hash, 18)} and Magen3 attached it to the audit record.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Wallet signing or Casper submission failed.";
+      setError(message);
+      appendMessage({
+        role: "agent",
+        text: `I could not complete the wallet-signed execution proof: ${message}`,
+      });
+    } finally {
+      setExecutionSigning(false);
+    }
+  }, [appendMessage, latestResponse, onSignApprovedExecution, walletAddress]);
+
   const messageStyles: Record<ExternalAgentMessage["role"], string> = {
     user: "ml-auto bg-[#22D3EE] text-[#050B14]",
     agent: "bg-[#1E293B] text-[#F8FAFC] border border-[#334155]",
@@ -3070,26 +3109,41 @@ function ExternalAgentDemoPage({
                     <div>
                       <div className="text-sm font-semibold text-[#F8FAFC]">Approved Execution</div>
                       <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
-                        Magen3 approved the intent. The agent should now request a wallet signature outside Magen3. Paste the returned Casper deploy hash here so the audit shows the real execution too.
+                        Magen3 approved the intent. The same connected Casper Wallet can now sign an on-chain execution proof. The deploy hash is submitted to Casper and attached to this audit automatically.
                       </p>
                     </div>
                   </div>
-                  <InputField
-                    label="Execution Deploy Hash"
-                    value={executionHash}
-                    onChange={setExecutionHash}
-                    placeholder="Paste real Casper deploy hash after wallet signing"
-                  />
                   <Btn
                     variant="primary"
                     size="sm"
                     className="w-full justify-center"
-                    onClick={attachExecutionHash}
-                    disabled={executionSaving || !executionHash.trim()}
+                    onClick={signApprovedExecution}
+                    disabled={executionSigning || Boolean(latestResponse.auditLog.executionTxHash)}
                   >
-                    {executionSaving ? <Activity size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                    Attach Execution Hash
+                    {executionSigning ? <Activity size={14} className="animate-spin" /> : <Wallet size={14} />}
+                    {latestResponse.auditLog.executionTxHash ? "Execution Signed" : "Sign with Connected Casper Wallet"}
                   </Btn>
+                  <div className="border-t border-[#1E293B] pt-3 space-y-3">
+                    <p className="text-xs text-[#94A3B8] leading-relaxed">
+                      Manual fallback: if wallet signing fails, submit the approved execution with CLI and paste the returned deploy hash below.
+                    </p>
+                    <InputField
+                      label="Manual Execution Deploy Hash"
+                      value={executionHash}
+                      onChange={setExecutionHash}
+                      placeholder="Paste real Casper deploy hash after wallet/CLI signing"
+                    />
+                    <Btn
+                      variant="secondary"
+                      size="sm"
+                      className="w-full justify-center"
+                      onClick={attachExecutionHash}
+                      disabled={executionSaving || !executionHash.trim()}
+                    >
+                      {executionSaving ? <Activity size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                      Attach Manual Hash
+                    </Btn>
+                  </div>
                   {latestResponse.auditLog.executionTxHash && (
                     <a
                       href={casperDeployUrl(latestResponse.auditLog.executionTxHash)}
@@ -4231,6 +4285,37 @@ export default function App() {
     return updated;
   }, [walletAddress]);
 
+  const onSignApprovedExecution = useCallback(async (response: AgentGatewayResponse) => {
+    if (!walletAddress) {
+      throw new Error("Connect Casper Wallet before signing approved execution.");
+    }
+    if (!response.executionApproved || response.result.decision !== "Allowed") {
+      throw new Error("Only Magen3-approved actions can request wallet signing.");
+    }
+
+    const signed = await signApprovedExecutionProof({
+      auditLog: response.auditLog,
+      casperPayload: response.casperPayload,
+      walletAddress,
+      contractHashFallback: DEPLOYED_MAGEN3_CONTRACT_HASH,
+    });
+
+    const submitted = await api.sendSignedCasperDeploy(signed.signedDeploy);
+    const updatedResponse = await api.confirmExecutionDeploy(
+      response.auditLog.id,
+      submitted.deployHash,
+      walletAddress,
+      `Connected Casper Wallet signed execution proof ${signed.executionId}.`,
+    );
+    const updated = updatedResponse.auditLog as AuditLog;
+
+    setAuditLogs((prev) =>
+      prev.map((log) => (log.id === updated.id ? updated : log))
+    );
+    setApiOnline(true);
+    return updated;
+  }, [walletAddress]);
+
   const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>, apiKey?: string) => {
     const response = await api.submitAgentGatewayIntent(intent, apiKey) as AgentGatewayResponse;
     if (response.auditLog) {
@@ -4303,6 +4388,7 @@ export default function App() {
         onNavigate={navigate}
         onSubmitGatewayIntent={onSubmitGatewayIntent}
         onConfirmExecutionDeploy={onConfirmExecutionDeploy}
+        onSignApprovedExecution={onSignApprovedExecution}
       />
     ),
     policies: (

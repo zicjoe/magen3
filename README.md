@@ -346,3 +346,9 @@ Magen3 now separates the audit trail into two real-world proofs:
 For demo purposes, the External Agent page now behaves like a customer-owned agent: it asks Magen3 for permission first, receives Allowed / Blocked / Review Required feedback, and only Allowed actions can receive an execution deploy hash. Blocked and Review Required actions cannot be marked as executed.
 
 See `docs/APPROVED_EXECUTION_FLOW.md`.
+
+### v23 connected wallet execution proof
+
+After Magen3 approves an external-agent action, the same connected Casper Wallet can now sign an on-chain execution proof. The signed deploy is submitted through the backend and the returned Casper deploy hash is attached to the audit log as execution proof. Blocked and review-required actions cannot request signing.
+
+See `docs/CONNECTED_WALLET_EXECUTION.md`.

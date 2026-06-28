@@ -10,6 +10,7 @@ type CasperWalletProviderInstance = {
   getActivePublicKey: () => Promise<string>;
   isConnected?: () => Promise<boolean>;
   disconnectFromSite?: () => Promise<boolean>;
+  sign?: (deployJson: string, publicKey: string) => Promise<unknown>;
 };
 
 type CasperWalletProviderConstructor = (options?: {
