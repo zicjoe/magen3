@@ -44,7 +44,6 @@ import {
   restoreCasperWalletConnection,
   isCasperWalletInstalled,
 } from "./lib/casperWallet";
-import { signApprovedExecutionProof } from "./lib/casperExecution";
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -55,8 +54,7 @@ type Page =
   | "dashboard"
   | "shields"
   | "agent-shield"
-  | "agent-runner"
-  | "external-agent-demo"
+  | "gateway-integration"
   | "policies"
   | "action-review"
   | "audit-log"
@@ -931,9 +929,8 @@ function EmptyState({
 const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
   { id: "shields", label: "Shields", icon: <Shield size={18} /> },
-  { id: "agent-shield", label: "Agent Shield", icon: <Bot size={18} /> },
-  { id: "agent-runner", label: "Agent Gateway", icon: <Zap size={18} /> },
-  { id: "external-agent-demo", label: "External Agent", icon: <Server size={18} /> },
+  { id: "agent-shield", label: "Agent Registry", icon: <Bot size={18} /> },
+  { id: "gateway-integration", label: "Gateway Integration", icon: <Server size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "action-review", label: "Action Review", icon: <FlaskConical size={18} /> },
   { id: "audit-log", label: "Audit Log", icon: <Scroll size={18} /> },
@@ -1477,8 +1474,8 @@ function DashboardPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Btn variant="secondary" size="sm" onClick={() => onNavigate("agent-runner")}>
-              Run Agent Demo
+            <Btn variant="secondary" size="sm" onClick={() => onNavigate("gateway-integration")}>
+              Open Gateway Setup
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
               Open Casper Proof
@@ -2421,6 +2418,210 @@ function ActionReviewPage({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────
+// Gateway Integration Page
+// ──────────────────────────────────────────────────────────
+
+function GatewayIntegrationPage({
+  agents,
+  policies,
+  auditLogs,
+  walletAddress,
+  apiOnline,
+  onNavigate,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+  walletAddress: string;
+  apiOnline: boolean;
+  onNavigate: (p: Page) => void;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [casperStatus, setCasperStatus] = useState<Record<string, unknown> | null>(null);
+  const activeAgent = agents[0];
+  const activePolicy = activeAgent ? getActivePolicy(policies, activeAgent.id) : undefined;
+  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
+  const lastRequest = auditLogs.find((log) => log.shield === "Agent Shield" && log.agentId === activeAgent?.id) || auditLogs[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    api.casperStatus()
+      .then((response) => {
+        if (!cancelled) setCasperStatus(response.casper || null);
+      })
+      .catch(() => {
+        if (!cancelled) setCasperStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const copyText = useCallback(async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1400);
+    } catch {
+      setCopied(null);
+    }
+  }, []);
+
+  const snippet = `const response = await fetch("${gatewayUrl}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "x-magen3-agent-key": process.env.MAGEN3_AGENT_KEY || ""\n  },\n  body: JSON.stringify({\n    source: "yieldbot-ai",\n    agentId: "${activeAgent?.id || "MAG-AGENT-..."}",\n    walletAddress: "${walletAddress || "CASPER_PUBLIC_KEY"}",\n    goal: "Stake 15 CSPR to trusted-validator-demo",\n    action: {\n      type: "Stake",\n      amount: 15,\n      asset: "CSPR",\n      target: "trusted-validator-demo",\n      targetType: "Trusted Contract"\n    }\n  })\n});\n\nconst decision = await response.json();\nif (!decision.executionApproved) {\n  throw new Error(decision.result.reason);\n}\n// Only now should the external agent request wallet signing.`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
+            <Server size={14} /> External Agent Integration
+          </div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+            Gateway Integration
+          </h1>
+          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
+            Magen3 is now the admin and security gateway. External agents such as YieldBot connect here through API, then ask Magen3 before signing or executing Web3 actions.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Btn variant="secondary" onClick={() => onNavigate("agent-shield")}>
+            <Bot size={16} /> Register Agent
+          </Btn>
+          <Btn variant="primary" onClick={() => onNavigate("policies")}>
+            <ShieldCheck size={16} /> Manage Policy
+          </Btn>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div className={`${CARD_GLOW} p-5 space-y-4`}>
+          <div className="flex items-center justify-between">
+            <h2 className={SECTION_TITLE}>Connection Status</h2>
+            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${apiOnline ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"}`}>
+              {apiOnline ? "API Online" : "API Offline"}
+            </span>
+          </div>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Owner Wallet</div>
+              <div className="mt-1 font-mono text-[#F8FAFC] break-all">{walletAddress || "Connect Casper Wallet"}</div>
+            </div>
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Registered Agents</div>
+              <div className="mt-1 text-[#F8FAFC]">{agents.length}</div>
+            </div>
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Active Policy</div>
+              <div className="mt-1 text-[#F8FAFC]">{activePolicy?.name || "No active policy yet"}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className={`${CARD_GLOW} p-5 lg:col-span-2 space-y-4`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className={SECTION_TITLE}>Gateway Details</h2>
+              <p className="text-xs text-[#94A3B8] mt-1">Copy these into an external agent app like YieldBot AI.</p>
+            </div>
+            <Btn variant="outline" size="sm" onClick={() => copyText("snippet", snippet)}>
+              <Copy size={14} /> {copied === "snippet" ? "Copied" : "Copy Code"}
+            </Btn>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway URL</span>
+                <button className="text-[#22D3EE]" onClick={() => copyText("gateway", gatewayUrl)}><Copy size={13} /></button>
+              </div>
+              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{gatewayUrl}</div>
+            </div>
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent ID</span>
+                {activeAgent && <button className="text-[#22D3EE]" onClick={() => copyText("agent", activeAgent.id)}><Copy size={13} /></button>}
+              </div>
+              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{activeAgent?.id || "Register an agent first"}</div>
+            </div>
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Casper Contract</div>
+              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{String(casperStatus?.contractHash || DEPLOYED_MAGEN3_CONTRACT_HASH || "Not configured")}</div>
+            </div>
+            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
+              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway Rule</div>
+              <div className="mt-1 text-xs text-[#F8FAFC]">External agents must stop unless Magen3 returns <span className="text-[#22C55E]">Allowed</span>.</div>
+            </div>
+          </div>
+          {copied && <div className="text-xs text-[#22C55E]">Copied {copied} to clipboard.</div>}
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className={`${CARD} p-5`}>
+          <h2 className={`${SECTION_TITLE} mb-4`}>External Agent Handshake</h2>
+          <div className="space-y-3">
+            {[
+              ["1", "External agent prepares action", "YieldBot decides it wants to stake, swap, transfer, or call a contract."],
+              ["2", "Agent calls Magen3 Gateway", "Magen3 checks wallet ownership, registered agent, policy, amount, target, and risk."],
+              ["3", "Magen3 returns decision", "Allowed actions can request wallet signing. Blocked/review actions must stop."],
+              ["4", "Audit and proof update", "Magen3 stores the decision, Casper proof, and later the execution hash."],
+            ].map(([step, title, desc]) => (
+              <div key={step} className="flex gap-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#22D3EE]/10 text-[#22D3EE] text-xs font-bold">{step}</div>
+                <div>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">{title}</div>
+                  <div className="text-xs text-[#94A3B8] mt-1">{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className={`${CARD} p-5`}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className={SECTION_TITLE}>Latest Gateway Activity</h2>
+            <Btn variant="ghost" size="sm" onClick={() => onNavigate("audit-log")}>
+              View Audit Log <ChevronRight size={14} />
+            </Btn>
+          </div>
+          {lastRequest ? (
+            <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-[#F8FAFC]">{lastRequest.agentName}</div>
+                  <div className="text-xs text-[#94A3B8]">{fmtTs(lastRequest.timestamp)} · {lastRequest.action}</div>
+                </div>
+                <DecisionBadge decision={lastRequest.decision} />
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><span className="text-[#94A3B8]">Amount</span><div className="text-[#F8FAFC]">{lastRequest.amount} CSPR</div></div>
+                <div><span className="text-[#94A3B8]">Risk</span><div><RiskBadge risk={lastRequest.risk} /></div></div>
+                <div className="col-span-2"><span className="text-[#94A3B8]">Target</span><div className="text-[#F8FAFC] break-all">{lastRequest.target}</div></div>
+              </div>
+            </div>
+          ) : (
+            <EmptyState
+              title="No gateway requests yet"
+              description="Connect an external agent like YieldBot AI. Its requests will appear here and in Audit Log."
+              action={<Btn variant="secondary" onClick={() => onNavigate("agent-shield")}>Register Agent</Btn>}
+            />
+          )}
+        </div>
+      </div>
+
+      <div className={`${CARD_GLOW} p-5`}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className={SECTION_TITLE}>Integration Code</h2>
+          <Btn variant="secondary" size="sm" onClick={() => copyText("code", snippet)}>
+            <Copy size={14} /> {copied === "code" ? "Copied" : "Copy"}
+          </Btn>
+        </div>
+        <pre className="overflow-x-auto rounded-xl bg-[#050B14] border border-[#1E293B] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
       </div>
     </div>
   );
@@ -3661,24 +3862,29 @@ function AuditLogPage({
                       </div>
                     </div>
 
-                    <div className="space-y-2 border-t border-[#1E293B] pt-3">
-                      <InputField
-                        label={realDeploy ? "Replace Real Casper Deploy Hash" : "Real Casper Deploy Hash"}
-                        value={deployHash}
-                        onChange={setDeployHash}
-                        placeholder="Paste 64-character deploy hash from casper-client"
-                      />
-                      <Btn
-                        variant="outline"
-                        size="sm"
-                        className="w-full justify-center"
-                        onClick={confirmDeployHash}
-                        disabled={!deployHash.trim() || casperLoading}
-                      >
-                        <CheckCircle size={14} />
-                        {realDeploy ? "Update Casper Proof" : "Confirm Real Deploy Hash"}
-                      </Btn>
-                    </div>
+                    <details className="border-t border-[#1E293B] pt-3">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22D3EE]">
+                        Advanced manual Casper proof fallback
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        <InputField
+                          label={realDeploy ? "Replace Real Casper Deploy Hash" : "Real Casper Deploy Hash"}
+                          value={deployHash}
+                          onChange={setDeployHash}
+                          placeholder="Paste 64-character deploy hash from casper-client"
+                        />
+                        <Btn
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center"
+                          onClick={confirmDeployHash}
+                          disabled={!deployHash.trim() || casperLoading}
+                        >
+                          <CheckCircle size={14} />
+                          {realDeploy ? "Update Casper Proof" : "Confirm Real Deploy Hash"}
+                        </Btn>
+                      </div>
+                    </details>
                   </div>
                 );
               })()}
@@ -3744,24 +3950,29 @@ function AuditLogPage({
                     </div>
 
                     {canAttachExecution ? (
-                      <div className="space-y-2 border-t border-[#1E293B] pt-3">
-                        <InputField
-                          label={realExecution ? "Replace Execution Deploy Hash" : "Execution Deploy Hash"}
-                          value={executionHash}
-                          onChange={setExecutionHash}
-                          placeholder="Paste the real transaction/deploy hash after wallet signing"
-                        />
-                        <Btn
-                          variant="outline"
-                          size="sm"
-                          className="w-full justify-center"
-                          onClick={confirmExecutionHash}
-                          disabled={!executionHash.trim() || casperLoading}
-                        >
-                          <ShieldCheck size={14} />
-                          {realExecution ? "Update Execution Proof" : "Attach Execution Hash"}
-                        </Btn>
-                      </div>
+                      <details className="border-t border-[#1E293B] pt-3">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22C55E]">
+                          Advanced manual execution hash fallback
+                        </summary>
+                        <div className="mt-3 space-y-2">
+                          <InputField
+                            label={realExecution ? "Replace Execution Deploy Hash" : "Execution Deploy Hash"}
+                            value={executionHash}
+                            onChange={setExecutionHash}
+                            placeholder="Paste the real transaction/deploy hash after wallet signing"
+                          />
+                          <Btn
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-center"
+                            onClick={confirmExecutionHash}
+                            disabled={!executionHash.trim() || casperLoading}
+                          >
+                            <ShieldCheck size={14} />
+                            {realExecution ? "Update Execution Proof" : "Attach Execution Hash"}
+                          </Btn>
+                        </div>
+                      </details>
                     ) : (
                       <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">
                         Execution is disabled because Magen3 did not approve this action.
@@ -4285,37 +4496,6 @@ export default function App() {
     return updated;
   }, [walletAddress]);
 
-  const onSignApprovedExecution = useCallback(async (response: AgentGatewayResponse) => {
-    if (!walletAddress) {
-      throw new Error("Connect Casper Wallet before signing approved execution.");
-    }
-    if (!response.executionApproved || response.result.decision !== "Allowed") {
-      throw new Error("Only Magen3-approved actions can request wallet signing.");
-    }
-
-    const signed = await signApprovedExecutionProof({
-      auditLog: response.auditLog,
-      casperPayload: response.casperPayload,
-      walletAddress,
-      contractHashFallback: DEPLOYED_MAGEN3_CONTRACT_HASH,
-    });
-
-    const submitted = await api.sendSignedCasperDeploy(signed.signedDeploy);
-    const updatedResponse = await api.confirmExecutionDeploy(
-      response.auditLog.id,
-      submitted.deployHash,
-      walletAddress,
-      `Connected Casper Wallet signed execution proof ${signed.executionId}.`,
-    );
-    const updated = updatedResponse.auditLog as AuditLog;
-
-    setAuditLogs((prev) =>
-      prev.map((log) => (log.id === updated.id ? updated : log))
-    );
-    setApiOnline(true);
-    return updated;
-  }, [walletAddress]);
-
   const onSubmitGatewayIntent = useCallback(async (intent: Record<string, unknown>, apiKey?: string) => {
     const response = await api.submitAgentGatewayIntent(intent, apiKey) as AgentGatewayResponse;
     if (response.auditLog) {
@@ -4371,24 +4551,14 @@ export default function App() {
         auditLogs={auditLogs}
       />
     ),
-    "agent-runner": (
-      <AgentRunnerPage
+    "gateway-integration": (
+      <GatewayIntegrationPage
         agents={agents}
         policies={policies}
+        auditLogs={auditLogs}
         walletAddress={walletAddress}
+        apiOnline={apiOnline}
         onNavigate={navigate}
-        onSubmitGatewayIntent={onSubmitGatewayIntent}
-      />
-    ),
-    "external-agent-demo": (
-      <ExternalAgentDemoPage
-        agents={agents}
-        policies={policies}
-        walletAddress={walletAddress}
-        onNavigate={navigate}
-        onSubmitGatewayIntent={onSubmitGatewayIntent}
-        onConfirmExecutionDeploy={onConfirmExecutionDeploy}
-        onSignApprovedExecution={onSignApprovedExecution}
       />
     ),
     policies: (

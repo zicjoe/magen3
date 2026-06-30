@@ -29,6 +29,10 @@ export const api = {
     return request<{ ok: boolean; casper: Record<string, unknown> }>("/api/casper/status");
   },
 
+  publicConfig() {
+    return request<{ ok: boolean; apiBaseUrl: string; casper: Record<string, unknown>; gateway: Record<string, unknown> }>("/api/public-config");
+  },
+
   bootstrap(walletAddress?: string) {
     const query = walletAddress ? `?walletAddress=${encodeURIComponent(walletAddress)}` : "";
     return request<any>(`/api/bootstrap${query}`);

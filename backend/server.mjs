@@ -139,6 +139,23 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { ok: true, casper: getCasperStatus() });
     }
 
+
+    if (route === "GET /api/public-config") {
+      const casper = getCasperStatus();
+      return send(res, 200, {
+        ok: true,
+        service: "magen3-api",
+        apiBaseUrl: process.env.PUBLIC_API_BASE_URL || "",
+        casper,
+        gateway: {
+          endpoint: "/api/agent-gateway/intents",
+          authRequired: Boolean(process.env.AGENT_GATEWAY_API_KEY),
+          decisionModel: "Allowed | Blocked | Review Required",
+          executionRule: "External agents may request wallet signing only after Magen3 returns Allowed."
+        }
+      });
+    }
+
     if (route === "POST /api/casper/send-deploy") {
       const body = await readJson(req);
       return send(res, 200, await submitSignedDeployToCasper(body));
