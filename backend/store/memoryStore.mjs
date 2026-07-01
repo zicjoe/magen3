@@ -1,5 +1,5 @@
 import { shieldModules } from "../data/seed.mjs";
-import { makeId, makePseudoHash } from "../lib/ids.mjs";
+import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
@@ -25,6 +25,10 @@ function initialExecutionStatus(decision) {
   return "not_submitted";
 }
 
+function normalizeAgentStatus(status) {
+  return status === "Revoked" ? "Revoked" : "Active";
+}
+
 export function createMemoryStore() {
   let agents = [];
   let policies = [];
@@ -32,13 +36,24 @@ export function createMemoryStore() {
   const actionReviews = [];
   let gatewayRequests = [];
 
+  function publicAgent(agent, extra = {}) {
+    if (!agent) return agent;
+    const { apiKeyHash, ...safeAgent } = agent;
+    return { ...safeAgent, status: normalizeAgentStatus(safeAgent.status), ...extra };
+  }
+
   function scopedAgents(walletAddress) {
+    const wallet = normalizeWalletAddress(walletAddress);
+    return wallet ? agents.filter((agent) => agent.ownerWalletAddress === wallet).map((agent) => publicAgent(agent)) : [];
+  }
+
+  function scopedAgentRecords(walletAddress) {
     const wallet = normalizeWalletAddress(walletAddress);
     return wallet ? agents.filter((agent) => agent.ownerWalletAddress === wallet) : [];
   }
 
   function scopedPolicies(walletAddress) {
-    const agentIds = new Set(scopedAgents(walletAddress).map((agent) => agent.id));
+    const agentIds = new Set(scopedAgentRecords(walletAddress).map((agent) => agent.id));
     return policies.filter((policy) => agentIds.has(policy.agentId));
   }
 
@@ -83,6 +98,8 @@ export function createMemoryStore() {
         throw err;
       }
       const ownerWalletAddress = requireWalletAddress(body.ownerWalletAddress || body.walletAddress);
+      const apiKey = makeApiKey();
+      const now = new Date().toISOString();
 
       const agent = {
         id: makeId("MAG-AGENT"),
@@ -90,12 +107,50 @@ export function createMemoryStore() {
         type: body.type || "Custom Agent",
         purpose: body.purpose || "",
         permissionLevel: body.permissionLevel || "Limited Execution",
-        status: "No Policy",
+        status: "Active",
         ownerWalletAddress,
-        createdAt: new Date().toISOString(),
+        apiKeyHash: hashSecret(apiKey),
+        apiKeyPreview: apiKeyPreview(apiKey),
+        apiKeyIssuedAt: now,
+        apiKeyRotatedAt: "",
+        revokedAt: "",
+        createdAt: now,
       };
       agents = [agent, ...agents];
-      return agent;
+      return publicAgent(agent, { apiKey });
+    },
+
+    async rotateAgentApiKey(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const agent = agents.find((item) => item.id === id && item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+      const apiKey = makeApiKey();
+      const now = new Date().toISOString();
+      agents = agents.map((item) => item.id === id ? {
+        ...item,
+        apiKeyHash: hashSecret(apiKey),
+        apiKeyPreview: apiKeyPreview(apiKey),
+        apiKeyIssuedAt: item.apiKeyIssuedAt || now,
+        apiKeyRotatedAt: now,
+      } : item);
+      return publicAgent(agents.find((item) => item.id === id), { apiKey });
+    },
+
+    async revokeAgent(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const agent = agents.find((item) => item.id === id && item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+      const now = new Date().toISOString();
+      agents = agents.map((item) => item.id === id ? { ...item, status: "Revoked", revokedAt: now } : item);
+      return publicAgent(agents.find((item) => item.id === id));
     },
 
     async createPolicy(body) {
@@ -128,7 +183,6 @@ export function createMemoryStore() {
         policyHash: makePseudoHash("0xpol"),
       };
       policies = [policy, ...policies];
-      agents = agents.map((item) => item.id === policy.agentId ? { ...item, status: "Policy Active" } : item);
 
       const auditLog = {
         id: makeId("AUD"),
@@ -208,9 +262,25 @@ export function createMemoryStore() {
       return auditLog;
     },
 
-    async submitAgentGatewayIntent(body) {
+    async submitAgentGatewayIntent(body, context = {}) {
       const intent = normalizeAgentGatewayIntent(body);
       const walletAddress = requireWalletAddress(intent.walletAddress);
+      const agentRecord = scopedAgentRecords(walletAddress).find((item) => item.id === intent.agentId);
+      if (!agentRecord) {
+        const err = new Error("Agent Gateway request rejected because this agent is not registered under the supplied wallet.");
+        err.status = 403;
+        throw err;
+      }
+      if (agentRecord.status === "Revoked") {
+        const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
+        err.status = 403;
+        throw err;
+      }
+      if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
+        const err = new Error("Agent Gateway request rejected because the API key does not match this connected agent.");
+        err.status = 401;
+        throw err;
+      }
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
@@ -220,7 +290,7 @@ export function createMemoryStore() {
         walletAddress,
       };
       const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });
-      const agent = scopedAgents(walletAddress).find((item) => item.id === intent.agentId);
+      const agent = publicAgent(agentRecord);
       const policy = scopedPolicies(walletAddress).find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
       const auditLog = {

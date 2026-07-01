@@ -10,6 +10,11 @@ export async function runMigrations() {
       permission_level TEXT NOT NULL,
       status TEXT NOT NULL,
       owner_wallet_address TEXT NOT NULL DEFAULT '',
+      api_key_hash TEXT NOT NULL DEFAULT '',
+      api_key_preview TEXT NOT NULL DEFAULT '',
+      api_key_issued_at TIMESTAMPTZ,
+      api_key_rotated_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -105,6 +110,12 @@ export async function runMigrations() {
   // Railway databases that already have those old tables need ALTER TABLE before any UPDATE
   // references owner_wallet_address, otherwise the API crashes at startup and health checks fail.
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_preview TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_issued_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_rotated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;`);
+  await pool.query(`UPDATE agents SET status = 'Active' WHERE status IN ('No Policy', 'Policy Active', 'Paused');`);
   await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tx_hash TEXT NOT NULL DEFAULT '';`);
@@ -115,6 +126,7 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_updated_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_owner_wallet_address ON agents(owner_wallet_address);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_api_key_hash ON agents(api_key_hash);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_policies_owner_wallet_address ON policies(owner_wallet_address);`);
   await pool.query(`
     UPDATE agents

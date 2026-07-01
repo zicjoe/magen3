@@ -33,10 +33,10 @@ User connects Casper Wallet to Magen3
 
 - Real Casper Wallet browser-extension connection
 - Wallet-scoped agents, policies, and audit logs
-- Agent Registry for external autonomous agents
+- Connected Agents for registered external autonomous agents
 - Policy Management for Agent Shield rules
 - Agent Gateway API for external agents
-- Gateway Integration page with API details and copyable code snippet
+- Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
 - Audit Log with Decision Proof and Execution Proof sections
 - Manual proof fallback hidden under Advanced sections
 - Backend API using Node's built-in HTTP server
@@ -47,7 +47,7 @@ User connects Casper Wallet to Magen3
 
 ## Removed from the main Magen3 app
 
-The in-app Agent Runner and External Agent demo pages were removed from the sidebar. Those flows now belong in a separate standalone agent app such as YieldBot AI. Magen3 now stays focused on being the security gateway.
+The in-app Agent Runner, External Agent demo, and standalone Gateway Integration pages were removed from the main product flow. Those flows now belong in a separate standalone agent app such as YieldBot AI, while gateway setup lives inside each Connected Agents record. Magen3 now stays focused on being the security gateway.
 
 ## Live Casper proof
 
@@ -237,7 +237,7 @@ pnpm casper:record:cmd -- --payload=./payload.json
 2. Connect real Casper Wallet
 3. Register external agent
 4. Create policy for that agent
-5. Open Gateway Integration and copy Agent ID / Gateway URL
+5. Open Connected Agents and copy Agent ID / Gateway URL / API key
 6. Open YieldBot AI on its own domain
 7. Connect YieldBot to Magen3
 8. Ask YieldBot to perform a safe action
@@ -247,4 +247,3 @@ pnpm casper:record:cmd -- --payload=./payload.json
 12. Return to Magen3 Audit Log
 13. Show wallet-scoped audit history, Casper proof, and execution proof
 ```
-

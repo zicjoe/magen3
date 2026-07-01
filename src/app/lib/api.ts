@@ -65,6 +65,20 @@ export const api = {
     });
   },
 
+  rotateAgentApiKey(id: string, walletAddress: string) {
+    return request<any>(`/api/agents/${encodeURIComponent(id)}/rotate-key`, {
+      method: "POST",
+      body: JSON.stringify({ walletAddress }),
+    });
+  },
+
+  revokeAgent(id: string, walletAddress: string) {
+    return request<any>(`/api/agents/${encodeURIComponent(id)}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({ walletAddress }),
+    });
+  },
+
   createPolicy(policy: Record<string, unknown>) {
     return request<any>("/api/policies", {
       method: "POST",

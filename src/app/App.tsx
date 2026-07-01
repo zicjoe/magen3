@@ -52,11 +52,8 @@ import {
 type Page =
   | "landing"
   | "dashboard"
-  | "shields"
-  | "agent-shield"
-  | "gateway-integration"
+  | "connected-agents"
   | "policies"
-  | "action-review"
   | "audit-log"
   | "settings";
 
@@ -100,10 +97,17 @@ interface Agent {
   type: AgentType;
   purpose: string;
   permissionLevel: PermissionLevel;
-  status: "Policy Active" | "No Policy" | "Paused";
+  status: "Active" | "Revoked";
   createdAt: string;
   ownerWalletAddress?: string;
+  apiKey?: string;
+  apiKeyPreview?: string;
+  apiKeyIssuedAt?: string;
+  apiKeyRotatedAt?: string;
+  revokedAt?: string;
 }
+
+type AgentRegistrationDraft = Pick<Agent, "name" | "type" | "purpose" | "permissionLevel">;
 
 interface Policy {
   id: string;
@@ -740,7 +744,7 @@ function RiskBadge({ risk }: { risk: Risk }) {
 function StatusBadge({
   status,
 }: {
-  status: "Available" | "Preview" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused";
+  status: "Available" | "Preview" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused" | "Revoked";
 }) {
   const map: Record<string, string> = {
     Available: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
@@ -751,6 +755,7 @@ function StatusBadge({
     Inactive: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20",
     "No Policy": "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20",
     Paused: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20",
+    Revoked: "bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30",
   };
   return (
     <span
@@ -928,12 +933,9 @@ function EmptyState({
 
 const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { id: "shields", label: "Shields", icon: <Shield size={18} /> },
-  { id: "agent-shield", label: "Agent Registry", icon: <Bot size={18} /> },
-  { id: "gateway-integration", label: "Gateway Integration", icon: <Server size={18} /> },
+  { id: "connected-agents", label: "Connected Agents", icon: <Bot size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
-  { id: "action-review", label: "Action Review", icon: <FlaskConical size={18} /> },
-  { id: "audit-log", label: "Audit Log", icon: <Scroll size={18} /> },
+  { id: "audit-log", label: "Audit Logs", icon: <Scroll size={18} /> },
   { id: "settings", label: "Settings", icon: <Settings size={18} /> },
 ];
 
@@ -1474,8 +1476,8 @@ function DashboardPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Btn variant="secondary" size="sm" onClick={() => onNavigate("gateway-integration")}>
-              Open Gateway Setup
+            <Btn variant="secondary" size="sm" onClick={() => onNavigate("connected-agents")}>
+              Open Connected Agents
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
               Open Casper Proof
@@ -1630,7 +1632,7 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 <Btn
                   variant="primary"
                   size="sm"
-                  onClick={() => onNavigate("agent-shield")}
+                  onClick={() => onNavigate("connected-agents")}
                 >
                   Open Shield
                 </Btn>
@@ -1648,17 +1650,25 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// Agent Shield Page
+// Connected Agents Page
 // ──────────────────────────────────────────────────────────
 
-function AgentShieldPage({
+function ConnectedAgentsPage({
   agents,
+  policies,
   onRegisterAgent,
+  onRotateAgentApiKey,
+  onRevokeAgent,
   auditLogs,
+  walletAddress,
 }: {
   agents: Agent[];
-  onRegisterAgent: (agent: Omit<Agent, "id" | "status" | "createdAt">) => Promise<void> | void;
+  policies: Policy[];
+  onRegisterAgent: (agent: AgentRegistrationDraft) => Promise<Agent | undefined> | Agent | undefined;
+  onRotateAgentApiKey: (id: string) => Promise<Agent | undefined> | Agent | undefined;
+  onRevokeAgent: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   auditLogs: AuditLog[];
+  walletAddress: string;
 }) {
   const [form, setForm] = useState({
     name: "",
@@ -1666,33 +1676,150 @@ function AgentShieldPage({
     purpose: "",
     permissionLevel: "Limited Execution" as PermissionLevel,
   });
+  const [latestCredentials, setLatestCredentials] = useState<Agent | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [copied, setCopied] = useState("");
+
+  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) || agents[0];
+
+  useEffect(() => {
+    if (!selectedAgentId && agents[0]?.id) {
+      setSelectedAgentId(agents[0].id);
+    }
+  }, [agents, selectedAgentId]);
+
+  const copyText = useCallback(async (label: string, value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      setTimeout(() => setCopied(""), 1400);
+    } catch {
+      setCopied("");
+    }
+  }, []);
+
+  const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const response = await fetch("${gatewayUrl}", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-magen3-agent-key": process.env.MAGEN3_AGENT_KEY || "${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE"}"
+  },
+  body: JSON.stringify({
+    source: "${agent.name}",
+    agentId: "${agent.id}",
+    walletAddress: "${walletAddress || "CASPER_PUBLIC_KEY"}",
+    goal: "Describe the Web3 action the external agent wants to execute",
+    action: {
+      type: "Stake",
+      amount: 15,
+      asset: "CSPR",
+      target: "trusted-validator-demo",
+      targetType: "Trusted Contract"
+    }
+  })
+});
+
+const decision = await response.json();
+if (!decision.executionApproved) {
+  throw new Error(decision.result?.reason || "Magen3 did not approve execution");
+}
+// Only after this should the external agent request Casper Wallet signing.`, [gatewayUrl, walletAddress]);
 
   const registerAgent = useCallback(async () => {
     if (!form.name.trim()) return;
-    await onRegisterAgent({
+    const created = await onRegisterAgent({
       name: form.name,
       type: form.type,
       purpose: form.purpose,
       permissionLevel: form.permissionLevel,
     });
+    if (created) {
+      setLatestCredentials(created);
+      setSelectedAgentId(created.id);
+    }
     setForm({ name: "", type: "DeFi Agent", purpose: "", permissionLevel: "Limited Execution" });
   }, [form, onRegisterAgent]);
 
+  const rotateKey = useCallback(async (agentId: string) => {
+    const rotated = await onRotateAgentApiKey(agentId);
+    if (rotated) {
+      setLatestCredentials(rotated);
+      setSelectedAgentId(rotated.id);
+    }
+  }, [onRotateAgentApiKey]);
+
+  const revokeAgent = useCallback(async (agentId: string) => {
+    const revoked = await onRevokeAgent(agentId);
+    if (revoked) {
+      setLatestCredentials(null);
+    }
+  }, [onRevokeAgent]);
+
+  const agentAuditLogs = selectedAgent
+    ? auditLogs.filter((log) => log.agentId === selectedAgent.id).slice(0, 5)
+    : [];
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-          Agent Shield
-        </h1>
-        <p className="text-[#94A3B8] text-sm mt-1">
-          Register and manage AI agents under Magen3 protection.
-        </p>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+            Connected Agents
+          </h1>
+          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
+            Register external agents that are allowed to call Magen3. Magen3 stays the safety gateway, policy admin, and audit platform.
+          </p>
+        </div>
+        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
+          Owner wallet: <span className="font-mono text-[#F8FAFC]">{truncate(walletAddress, 22)}</span>
+        </div>
       </div>
 
+      {latestCredentials?.apiKey && (
+        <div className={`${CARD_GLOW} p-5 border-[#22C55E]/30`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/30 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E] mb-3">
+                <CheckCircle size={13} /> External Agent Registered
+              </div>
+              <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+                Copy these details into your external agent
+              </h2>
+              <p className="text-sm text-[#94A3B8] mt-1">
+                This API key is shown once. Store it in the external agent app, then use Rotate API Key if you need a replacement.
+              </p>
+            </div>
+            <Btn
+              variant="secondary"
+              size="sm"
+              onClick={() => copyText("all details", `Agent ID: ${latestCredentials.id}\nGateway URL: ${gatewayUrl}\nAPI Key: ${latestCredentials.apiKey}`)}
+            >
+              <Copy size={14} /> {copied === "all details" ? "Copied" : "Copy Details"}
+            </Btn>
+          </div>
+          <div className="mt-4 grid lg:grid-cols-3 gap-3">
+            {[
+              ["Agent ID", latestCredentials.id],
+              ["Gateway URL", gatewayUrl],
+              ["API Key", latestCredentials.apiKey],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
+                  <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
+                </div>
+                <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Registration Form */}
         <div className={`${CARD} p-6 lg:col-span-1`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>Register Agent</h2>
+          <h2 className={`${SECTION_TITLE} mb-5`}>Register External Agent</h2>
           <div className="space-y-4">
             <InputField
               label="Agent Name"
@@ -1742,51 +1869,112 @@ function AgentShieldPage({
             />
             <Btn variant="primary" className="w-full justify-center" onClick={registerAgent}>
               <Plus size={16} />
-              Register Agent
+              Register External Agent
             </Btn>
           </div>
         </div>
 
-        {/* Agent List */}
         <div className="lg:col-span-2 space-y-4">
-          <h2 className={SECTION_TITLE}>Protected Agents</h2>
-          {agents.map((agent) => (
-            <div key={agent.id} className={`${CARD_GLOW} p-5`}>
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
-                      {agent.name}
-                    </h3>
-                    <StatusBadge status={agent.status} />
+          <h2 className={SECTION_TITLE}>Registered External Agents</h2>
+          {agents.length === 0 ? (
+            <EmptyState
+              title="No connected agents yet"
+              description="Register the external app or AI agent that will call Magen3 before execution."
+            />
+          ) : agents.map((agent) => {
+            const assignedPolicy = getActivePolicy(policies, agent.id);
+            const latestLog = auditLogs.find((log) => log.agentId === agent.id);
+            const snippet = integrationSnippet(agent, latestCredentials?.id === agent.id ? latestCredentials.apiKey : undefined);
+            return (
+              <div key={agent.id} className={`${CARD_GLOW} p-5 space-y-5`}>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
+                        {agent.name}
+                      </h3>
+                      <StatusBadge status={agent.status} />
+                      <StatusBadge status={assignedPolicy ? "Active" : "Inactive"} />
+                    </div>
+                    <div className="text-xs text-[#94A3B8]">
+                      {agent.id} · {agent.type} · {agent.permissionLevel}
+                    </div>
+                    <p className="text-sm text-[#94A3B8] mt-2">{agent.purpose || "No purpose added yet."}</p>
                   </div>
-                  <div className="text-xs text-[#94A3B8]">
-                    {agent.id} · {agent.type}
+                  <div className="flex flex-wrap gap-2">
+                    <Btn variant="ghost" size="sm" onClick={() => setSelectedAgentId(agent.id)}>
+                      <Eye size={14} /> Details
+                    </Btn>
+                    <Btn variant="secondary" size="sm" onClick={() => rotateKey(agent.id)} disabled={agent.status === "Revoked"}>
+                      <Lock size={14} /> Rotate API Key
+                    </Btn>
+                    <Btn variant="danger" size="sm" onClick={() => revokeAgent(agent.id)} disabled={agent.status === "Revoked"}>
+                      <XCircle size={14} /> Revoke
+                    </Btn>
                   </div>
                 </div>
-                <Btn variant="ghost" size="sm">
-                  <Settings size={14} />
-                </Btn>
+
+                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                  {[
+                    ["Assigned Policy", assignedPolicy?.name || "No active policy"],
+                    ["Last Request", latestLog ? fmtTs(latestLog.timestamp) : "No requests yet"],
+                    ["Last Decision", latestLog?.decision || "None"],
+                    ["API Key Status", agent.apiKeyPreview ? `Issued: ${agent.apiKeyPreview}` : "Rotate key to issue"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[11px] text-[#94A3B8] uppercase tracking-wider mb-1">{label}</div>
+                      <div className="text-[#F8FAFC] break-all">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#F8FAFC]">Integration Details</h4>
+                      <p className="text-xs text-[#94A3B8] mt-1">Gateway setup belongs here, inside the connected agent record.</p>
+                    </div>
+                    <Btn variant="outline" size="sm" onClick={() => copyText(`${agent.id} snippet`, snippet)}>
+                      <Copy size={14} /> {copied === `${agent.id} snippet` ? "Copied" : "Copy Code"}
+                    </Btn>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3 mb-3">
+                    <div className="rounded-lg bg-[#0B1220] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway URL</span>
+                        <button className="text-[#22D3EE]" onClick={() => copyText("gateway url", gatewayUrl)}><Copy size={13} /></button>
+                      </div>
+                      <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{gatewayUrl}</div>
+                    </div>
+                    <div className="rounded-lg bg-[#0B1220] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent ID</span>
+                        <button className="text-[#22D3EE]" onClick={() => copyText("agent id", agent.id)}><Copy size={13} /></button>
+                      </div>
+                      <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{agent.id}</div>
+                    </div>
+                  </div>
+                  <pre className="overflow-x-auto rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
+                </div>
               </div>
-              <p className="text-sm text-[#94A3B8] mb-3">{agent.purpose}</p>
-              <div className="flex items-center gap-3 pt-3 border-t border-[#1E293B]">
-                <span className="text-xs bg-[#0B1220] text-[#94A3B8] px-2.5 py-1 rounded-full">
-                  {agent.permissionLevel}
-                </span>
-                <span className="text-xs text-[#94A3B8]">
-                  Registered {fmtTs(agent.createdAt)}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* Activity Preview */}
       <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-4`}>Agent Activity Preview</h2>
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between mb-4">
+          <h2 className={SECTION_TITLE}>Agent-Specific Audit Activity</h2>
+          <div className="text-xs text-[#94A3B8]">
+            {selectedAgent ? `${selectedAgent.name} · ${selectedAgent.id}` : "Select an agent"}
+          </div>
+        </div>
         <div className="space-y-2">
-          {auditLogs.slice(0, 3).map((log) => (
+          {agentAuditLogs.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-6 text-center text-sm text-[#94A3B8]">
+              No gateway activity for this agent yet.
+            </div>
+          ) : agentAuditLogs.map((log) => (
             <div
               key={log.id}
               className="flex items-center gap-4 p-3 rounded-lg bg-[#0B1220]"
@@ -2491,7 +2679,7 @@ function GatewayIntegrationPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Btn variant="secondary" onClick={() => onNavigate("agent-shield")}>
+          <Btn variant="secondary" onClick={() => onNavigate("connected-agents")}>
             <Bot size={16} /> Register Agent
           </Btn>
           <Btn variant="primary" onClick={() => onNavigate("policies")}>
@@ -2608,7 +2796,7 @@ function GatewayIntegrationPage({
             <EmptyState
               title="No gateway requests yet"
               description="Connect an external agent like YieldBot AI. Its requests will appear here and in Audit Log."
-              action={<Btn variant="secondary" onClick={() => onNavigate("agent-shield")}>Register Agent</Btn>}
+              action={<Btn variant="secondary" onClick={() => onNavigate("connected-agents")}>Register Agent</Btn>}
             />
           )}
         </div>
@@ -4392,19 +4580,60 @@ export default function App() {
     setWalletError("");
   }, []);
 
-  const onRegisterAgent = useCallback(async (agent: Omit<Agent, "id" | "status" | "createdAt">) => {
+  const onRegisterAgent = useCallback(async (agent: AgentRegistrationDraft) => {
     if (!walletAddress) {
       setWalletError("Connect Casper Wallet before registering an agent.");
-      return;
+      return undefined;
     }
 
     try {
       const response = await api.createAgent({ ...agent, walletAddress, ownerWalletAddress: walletAddress });
-      setAgents((prev) => [response.agent as Agent, ...prev]);
+      const created = response.agent as Agent;
+      setAgents((prev) => [created, ...prev]);
       setApiOnline(true);
+      return created;
     } catch (error) {
       setApiOnline(false);
       setWalletError(error instanceof Error ? error.message : "Unable to register agent.");
+      return undefined;
+    }
+  }, [walletAddress]);
+
+  const onRotateAgentApiKey = useCallback(async (id: string) => {
+    if (!walletAddress) {
+      setWalletError("Connect Casper Wallet before rotating an agent API key.");
+      return undefined;
+    }
+
+    try {
+      const response = await api.rotateAgentApiKey(id, walletAddress);
+      const updated = response.agent as Agent;
+      setAgents((prev) => prev.map((agent) => agent.id === updated.id ? updated : agent));
+      setApiOnline(true);
+      return updated;
+    } catch (error) {
+      setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to rotate agent API key.");
+      return undefined;
+    }
+  }, [walletAddress]);
+
+  const onRevokeAgent = useCallback(async (id: string) => {
+    if (!walletAddress) {
+      setWalletError("Connect Casper Wallet before revoking an agent.");
+      return undefined;
+    }
+
+    try {
+      const response = await api.revokeAgent(id, walletAddress);
+      const updated = response.agent as Agent;
+      setAgents((prev) => prev.map((agent) => agent.id === updated.id ? updated : agent));
+      setApiOnline(true);
+      return updated;
+    } catch (error) {
+      setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to revoke agent.");
+      return undefined;
     }
   }, [walletAddress]);
 
@@ -4543,22 +4772,15 @@ export default function App() {
         onNavigate={navigate}
       />
     ),
-    shields: <ShieldsPage onNavigate={navigate} />,
-    "agent-shield": (
-      <AgentShieldPage
-        agents={agents}
-        onRegisterAgent={onRegisterAgent}
-        auditLogs={auditLogs}
-      />
-    ),
-    "gateway-integration": (
-      <GatewayIntegrationPage
+    "connected-agents": (
+      <ConnectedAgentsPage
         agents={agents}
         policies={policies}
+        onRegisterAgent={onRegisterAgent}
+        onRotateAgentApiKey={onRotateAgentApiKey}
+        onRevokeAgent={onRevokeAgent}
         auditLogs={auditLogs}
         walletAddress={walletAddress}
-        apiOnline={apiOnline}
-        onNavigate={navigate}
       />
     ),
     policies: (
@@ -4566,17 +4788,6 @@ export default function App() {
         agents={agents}
         policies={policies}
         onCreatePolicy={onCreatePolicy}
-        walletAddress={walletAddress}
-      />
-    ),
-    "action-review": (
-      <ActionReviewPage
-        agents={agents}
-        policies={policies}
-        auditLogs={auditLogs}
-        onAnalyzeAction={onAnalyzeAction}
-        onAddAuditLog={onAddAuditLog}
-        onRecordDecision={onRecordDecision}
         walletAddress={walletAddress}
       />
     ),

@@ -99,13 +99,12 @@ async function submitSignedDeployToCasper(body) {
   };
 }
 
-function requireAgentGatewayAuth(req) {
-  const expected = process.env.AGENT_GATEWAY_API_KEY;
-  if (!expected) return;
+function readAgentGatewayKey(req) {
   const authorization = req.headers.authorization || "";
   const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   const headerKey = req.headers["x-magen3-agent-key"] || "";
-  if (bearer === expected || headerKey === expected) return;
+  const apiKey = bearer || headerKey;
+  if (apiKey) return apiKey;
   const err = new Error("Agent Gateway API key is required");
   err.status = 401;
   throw err;
@@ -149,7 +148,7 @@ const server = createServer(async (req, res) => {
         casper,
         gateway: {
           endpoint: "/api/agent-gateway/intents",
-          authRequired: Boolean(process.env.AGENT_GATEWAY_API_KEY),
+          authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
           executionRule: "External agents may request wallet signing only after Magen3 returns Allowed."
         }
@@ -168,7 +167,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         name: "Magen3 Agent Gateway API",
         purpose: "External agents submit structured Web3 action intents to Magen3 before wallet signing or contract execution.",
-        authRequired: Boolean(process.env.AGENT_GATEWAY_API_KEY),
+        authRequired: true,
         endpoint: "POST /api/agent-gateway/intents",
         requestShape: {
           source: "external-agent-name",
@@ -196,9 +195,9 @@ const server = createServer(async (req, res) => {
     }
 
     if (route === "POST /api/agent-gateway/intents") {
-      requireAgentGatewayAuth(req);
+      const apiKey = readAgentGatewayKey(req);
       const body = await readJson(req);
-      return send(res, 201, await store.submitAgentGatewayIntent(body));
+      return send(res, 201, await store.submitAgentGatewayIntent(body, { apiKey }));
     }
 
     if (route === "GET /api/bootstrap") {
@@ -213,6 +212,18 @@ const server = createServer(async (req, res) => {
     if (route === "POST /api/agents") {
       const body = await readJson(req);
       return send(res, 201, { agent: await store.createAgent(body) });
+    }
+
+    const rotateAgentKeyMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/rotate-key$/);
+    if (req.method === "POST" && rotateAgentKeyMatch) {
+      const body = await readJson(req);
+      return send(res, 200, { agent: await store.rotateAgentApiKey(rotateAgentKeyMatch[1], body) });
+    }
+
+    const revokeAgentMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/revoke$/);
+    if (req.method === "POST" && revokeAgentMatch) {
+      const body = await readJson(req);
+      return send(res, 200, { agent: await store.revokeAgent(revokeAgentMatch[1], body) });
     }
 
     if (route === "POST /api/policies") {

@@ -3,7 +3,7 @@ import { shieldModules } from "../data/seed.mjs";
 import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
 import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
-import { makeId, makePseudoHash } from "../lib/ids.mjs";
+import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
@@ -26,6 +26,10 @@ function requireWalletAddress(value) {
   return walletAddress;
 }
 
+function normalizeAgentStatus(status) {
+  return status === "Revoked" ? "Revoked" : "Active";
+}
+
 function normalizeAgent(row) {
   return {
     id: row.id,
@@ -33,8 +37,12 @@ function normalizeAgent(row) {
     type: row.type,
     purpose: row.purpose,
     permissionLevel: row.permissionLevel,
-    status: row.status,
+    status: normalizeAgentStatus(row.status),
     ownerWalletAddress: row.ownerWalletAddress || "",
+    apiKeyPreview: row.apiKeyPreview || "",
+    apiKeyIssuedAt: row.apiKeyIssuedAt ? toDate(row.apiKeyIssuedAt).toISOString() : "",
+    apiKeyRotatedAt: row.apiKeyRotatedAt ? toDate(row.apiKeyRotatedAt).toISOString() : "",
+    revokedAt: row.revokedAt ? toDate(row.revokedAt).toISOString() : "",
     createdAt: toDate(row.createdAt).toISOString(),
   };
 }
@@ -172,6 +180,8 @@ export async function createPostgresStore() {
         throw err;
       }
       const ownerWalletAddress = requireWalletAddress(body.ownerWalletAddress || body.walletAddress);
+      const apiKey = makeApiKey();
+      const now = new Date();
 
       const [agent] = await db.insert(agentsTable).values({
         id: makeId("MAG-AGENT"),
@@ -179,12 +189,58 @@ export async function createPostgresStore() {
         type: body.type || "Custom Agent",
         purpose: body.purpose || "",
         permissionLevel: body.permissionLevel || "Limited Execution",
-        status: "No Policy",
+        status: "Active",
         ownerWalletAddress,
-        createdAt: new Date(),
+        apiKeyHash: hashSecret(apiKey),
+        apiKeyPreview: apiKeyPreview(apiKey),
+        apiKeyIssuedAt: now,
+        createdAt: now,
       }).returning();
 
-      return normalizeAgent(agent);
+      return { ...normalizeAgent(agent), apiKey };
+    },
+
+    async rotateAgentApiKey(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const rows = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+      const agent = rows.find((item) => item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+
+      const apiKey = makeApiKey();
+      const now = new Date();
+      const [updated] = await db.update(agentsTable)
+        .set({
+          apiKeyHash: hashSecret(apiKey),
+          apiKeyPreview: apiKeyPreview(apiKey),
+          apiKeyIssuedAt: agent.apiKeyIssuedAt || now,
+          apiKeyRotatedAt: now,
+        })
+        .where(eq(agentsTable.id, id))
+        .returning();
+
+      return { ...normalizeAgent(updated), apiKey };
+    },
+
+    async revokeAgent(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const rows = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+      const agent = rows.find((item) => item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+
+      const [updated] = await db.update(agentsTable)
+        .set({ status: "Revoked", revokedAt: new Date() })
+        .where(eq(agentsTable.id, id))
+        .returning();
+
+      return normalizeAgent(updated);
     },
 
     async createPolicy(body) {
@@ -219,9 +275,8 @@ export async function createPostgresStore() {
         policyHash: makePseudoHash("0xpol"),
       }).returning();
 
-      await db.update(agentsTable).set({ status: "Policy Active" }).where(eq(agentsTable.id, body.agentId));
       const policy = normalizePolicy(policyRow);
-      const agent = normalizeAgent({ ...ownedAgent, status: "Policy Active" });
+      const agent = normalizeAgent(ownedAgent);
 
       const [auditRow] = await db.insert(auditLogsTable).values({
         id: makeId("AUD"),
@@ -302,10 +357,31 @@ export async function createPostgresStore() {
       return normalizeAuditLog(auditRow);
     },
 
-    async submitAgentGatewayIntent(body) {
+    async submitAgentGatewayIntent(body, context = {}) {
       const intent = normalizeAgentGatewayIntent(body);
       const walletAddress = requireWalletAddress(intent.walletAddress);
-      const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
+      const [agents, policies, auditLogs, agentRows] = await Promise.all([
+        listAgents(walletAddress),
+        listPolicies(walletAddress),
+        listAuditLogs(walletAddress),
+        db.select().from(agentsTable).where(eq(agentsTable.id, intent.agentId)),
+      ]);
+      const agentRecord = agentRows.find((item) => item.ownerWalletAddress === walletAddress);
+      if (!agentRecord) {
+        const err = new Error("Agent Gateway request rejected because this agent is not registered under the supplied wallet.");
+        err.status = 403;
+        throw err;
+      }
+      if (agentRecord.status === "Revoked") {
+        const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
+        err.status = 403;
+        throw err;
+      }
+      if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
+        const err = new Error("Agent Gateway request rejected because the API key does not match this connected agent.");
+        err.status = 401;
+        throw err;
+      }
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,

@@ -8,6 +8,11 @@ export const agentsTable = pgTable("agents", {
   permissionLevel: text("permission_level").notNull(),
   status: text("status").notNull(),
   ownerWalletAddress: text("owner_wallet_address").notNull().default(""),
+  apiKeyHash: text("api_key_hash").notNull().default(""),
+  apiKeyPreview: text("api_key_preview").notNull().default(""),
+  apiKeyIssuedAt: timestamp("api_key_issued_at", { withTimezone: true }),
+  apiKeyRotatedAt: timestamp("api_key_rotated_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
