@@ -1,4 +1,3 @@
-import { DEFAULT_WALLET } from "../data/seed.mjs";
 import { makeId } from "./ids.mjs";
 
 const ACTION_ALIASES = {
@@ -82,7 +81,10 @@ export function normalizeAgentGatewayIntent(body = {}) {
     id: makeId("GW"),
     source: cleanString(body.source || body.client || body.agentName || body.agent_name, "external-agent"),
     agentId,
-    walletAddress: cleanString(body.walletAddress || body.wallet_address || body.wallet, DEFAULT_WALLET),
+    executionWalletAddress: requireField(
+      body.executionWalletAddress || body.execution_wallet_address || body.walletAddress || body.wallet_address || body.wallet,
+      "executionWalletAddress"
+    ),
     actionType,
     amount,
     asset: cleanString(action.asset || body.asset, "CSPR"),

@@ -148,6 +148,7 @@ const server = createServer(async (req, res) => {
         casper,
         gateway: {
           endpoint: "/api/agent-gateway/intents",
+          verifyEndpoint: "/api/agent-gateway/me",
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
           executionRule: "External agents may request wallet signing only after Magen3 returns Allowed."
@@ -168,11 +169,14 @@ const server = createServer(async (req, res) => {
         name: "Magen3 Agent Gateway API",
         purpose: "External agents submit structured Web3 action intents to Magen3 before wallet signing or contract execution.",
         authRequired: true,
+        verifyEndpoint: "GET /api/agent-gateway/me?agentId=MAG-AGENT-001",
         endpoint: "POST /api/agent-gateway/intents",
+        identityModel: "External agents identify with agentId plus x-magen3-agent-key or Authorization Bearer. The request wallet is the execution wallet and does not need to match the Magen3 owner wallet.",
         requestShape: {
           source: "external-agent-name",
           agentId: "MAG-AGENT-001",
-          walletAddress: "casper-public-key-or-wallet",
+          walletAddress: "execution-wallet-public-key",
+          executionWalletAddress: "execution-wallet-public-key",
           goal: "Stake idle funds safely",
           reason: "User strategy asks for low-risk staking",
           action: {
@@ -192,6 +196,15 @@ const server = createServer(async (req, res) => {
           execution: "Approved actions can later attach the real execution deploy hash"
         }
       });
+    }
+
+    if (route === "GET /api/agent-gateway/me") {
+      const agentId = String(url.searchParams.get("agentId") || "").trim();
+      if (!agentId) {
+        return send(res, 400, { error: "agentId query parameter is required" });
+      }
+      const apiKey = readAgentGatewayKey(req);
+      return send(res, 200, await store.getAgentGatewayIdentity(agentId, { apiKey }));
     }
 
     if (route === "POST /api/agent-gateway/intents") {

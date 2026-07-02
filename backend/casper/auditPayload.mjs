@@ -30,6 +30,8 @@ export function buildAuditDecisionPayload(auditLog) {
     decisionId: auditLog.id,
     shield: auditLog.shield,
     walletAddress: auditLog.walletAddress,
+    agentOwnerWalletAddress: auditLog.agentOwnerWalletAddress || auditLog.walletAddress,
+    executionWalletAddress: auditLog.executionWalletAddress || auditLog.walletAddress,
     agentId: auditLog.agentId,
     agentName: auditLog.agentName,
     action: auditLog.action,

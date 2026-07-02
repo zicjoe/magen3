@@ -1,48 +1,85 @@
 # Magen3 Agent Gateway API
 
-Magen3 is not the agent. Magen3 is the security gate that a real external agent calls before asking a wallet or execution layer to sign a Web3 action.
+Magen3 is not the agent. Magen3 is the security gateway that an external agent calls before asking an execution wallet to sign a Web3 action.
 
-## Endpoint
+## Identity Model
+
+External agents identify themselves with:
+
+- `agentId`
+- `x-magen3-agent-key` or `Authorization: Bearer <api-key>`
+
+The wallet submitted in an intent is the execution wallet. It can be any Casper Wallet and does not need to match the Magen3 owner/admin wallet that registered the agent.
+
+Magen3 uses the registered agent's owner wallet internally to find the active policy and to scope the admin dashboard audit logs.
+
+## Sync / Verify Endpoint
+
+```http
+GET /api/agent-gateway/me?agentId=MAG-AGENT-...
+```
+
+Headers:
+
+```http
+x-magen3-agent-key: magen3_live_...
+```
+
+Ready response:
+
+```json
+{
+  "ok": true,
+  "agent": {
+    "id": "MAG-AGENT-...",
+    "name": "YieldBot AI",
+    "status": "Active",
+    "apiKeyPreview": "magen3_live...abc123"
+  },
+  "activePolicy": {
+    "id": "POL-...",
+    "name": "Safe Yield Policy",
+    "status": "Active"
+  },
+  "gatewayReady": true,
+  "endpoint": "/api/agent-gateway/intents"
+}
+```
+
+If the agent has no active policy:
+
+```json
+{
+  "ok": true,
+  "agent": { "id": "MAG-AGENT-...", "status": "Active" },
+  "activePolicy": null,
+  "gatewayReady": false,
+  "endpoint": "/api/agent-gateway/intents",
+  "reason": "No active policy assigned to this agent."
+}
+```
+
+Wrong or missing keys return `401`. Unknown agent IDs return `404`.
+
+## Intent Endpoint
 
 ```http
 POST /api/agent-gateway/intents
 ```
 
-The endpoint receives a structured action intent, runs the existing Magen3 policy engine, stores a real audit log, and returns a Casper `record_decision` payload that can be anchored on Casper Testnet.
-
-## Optional production auth
-
-Set this Railway variable to require an agent API key:
-
-```env
-AGENT_GATEWAY_API_KEY=replace-with-a-long-random-secret
-```
-
-Then external agents must send either:
-
-```http
-Authorization: Bearer <key>
-```
-
-or:
-
-```http
-x-magen3-agent-key: <key>
-```
-
-If `AGENT_GATEWAY_API_KEY` is empty, the gateway stays open for local/demo testing.
-
-## Example request
+Example:
 
 ```bash
-curl -X POST "http://localhost:8787/api/agent-gateway/intents" \
+curl -X POST "https://your-magen3-api.up.railway.app/api/agent-gateway/intents" \
   -H "Content-Type: application/json" \
+  -H "x-magen3-agent-key: magen3_live_..." \
   -d '{
-    "source": "external-yield-agent",
-    "agentId": "MAG-AGENT-001",
-    "walletAddress": "01ff33ad9195be34ec2b2f2afc2ed9e3d06f82bcb373df2505dbb14c4e1442a670",
-    "goal": "Stake idle funds safely",
-    "reason": "User strategy allows low-risk staking",
+    "source": "YieldBot-AI",
+    "agentId": "MAG-AGENT-...",
+    "walletAddress": "execution-wallet-public-key",
+    "executionWalletAddress": "execution-wallet-public-key",
+    "goal": "Stake 15 CSPR to trusted-validator-demo",
+    "reason": "YieldBot prepared this action and is requesting approval before execution.",
     "action": {
       "type": "Stake",
       "amount": 15,
@@ -53,16 +90,13 @@ curl -X POST "http://localhost:8787/api/agent-gateway/intents" \
   }'
 ```
 
-## Response meaning
-
-The response includes:
+## Response Meaning
 
 - `result.decision`: `Allowed`, `Blocked`, or `Review Required`
 - `executionApproved`: true only when Magen3 says the action is allowed
-- `auditLog`: the stored Magen3 decision record
-- `casperPayload`: the exact payload to pass into the Casper `record_decision` flow
+- `auditLog.agentOwnerWalletAddress`: wallet that registered and controls the connected agent in Magen3
+- `auditLog.executionWalletAddress`: wallet that the external agent will ask to sign execution
+- `casperPayload`: payload for the Casper decision proof flow
 - `nextAction`: plain-English instruction for the external agent
 
-## Production rule
-
-Even if the decision is `Allowed`, Magen3 does not move funds by itself. The agent still needs the normal wallet/signing layer or execution system to perform the actual transaction. Magen3 decides whether the action is safe enough to continue.
+Even when the decision is `Allowed`, Magen3 does not move funds by itself. The external agent must still request a real signature from the execution wallet and attach the execution deploy hash back to Magen3.

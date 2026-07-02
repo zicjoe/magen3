@@ -81,6 +81,8 @@ function normalizeAuditLog(row) {
     reason: row.reason,
     policyUsed: row.policyUsed,
     walletAddress: row.walletAddress,
+    agentOwnerWalletAddress: row.agentOwnerWalletAddress || row.walletAddress,
+    executionWalletAddress: row.executionWalletAddress || row.walletAddress,
     txHash: row.txHash || "",
     executionStatus: row.executionStatus || "not_submitted",
     executionTxHash: row.executionTxHash || "",
@@ -243,6 +245,38 @@ export async function createPostgresStore() {
       return normalizeAgent(updated);
     },
 
+    async getAgentGatewayIdentity(agentId, context = {}) {
+      const rows = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      const agentRecord = rows[0];
+      if (!agentRecord) {
+        const err = new Error("Connected agent not found for this Agent ID.");
+        err.status = 404;
+        throw err;
+      }
+      if (agentRecord.status === "Revoked") {
+        const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
+        err.status = 403;
+        throw err;
+      }
+      if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
+        const err = new Error("Agent Gateway API key is missing or does not match this connected agent.");
+        err.status = 401;
+        throw err;
+      }
+
+      const activePolicy = (await listPolicies(agentRecord.ownerWalletAddress))
+        .find((item) => item.agentId === agentRecord.id && item.status === "Active") || null;
+
+      return {
+        ok: true,
+        agent: normalizeAgent(agentRecord),
+        activePolicy,
+        gatewayReady: Boolean(activePolicy),
+        endpoint: "/api/agent-gateway/intents",
+        ...(!activePolicy ? { reason: "No active policy assigned to this agent." } : {}),
+      };
+    },
+
     async createPolicy(body) {
       if (!body.name || !body.agentId) {
         const err = new Error("Policy name and agentId are required");
@@ -293,6 +327,8 @@ export async function createPostgresStore() {
         reason: `Policy "${policy.name}" activated for ${agent.name}.`,
         policyUsed: policy.name,
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress: walletAddress,
         txHash: "",
         executionStatus: "not_required",
         executionTxHash: "",
@@ -331,6 +367,8 @@ export async function createPostgresStore() {
 
     async createAuditLog(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
+      const agentOwnerWalletAddress = normalizeWalletAddress(body.agentOwnerWalletAddress || walletAddress);
+      const executionWalletAddress = normalizeWalletAddress(body.executionWalletAddress || body.execution_wallet_address || body.walletAddress || walletAddress);
       const [auditRow] = await db.insert(auditLogsTable).values({
         id: body.id || makeId("AUD"),
         timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
@@ -346,6 +384,8 @@ export async function createPostgresStore() {
         reason: body.reason || "Magen3 recorded a decision.",
         policyUsed: body.policyUsed || "No active policy",
         walletAddress,
+        agentOwnerWalletAddress,
+        executionWalletAddress,
         txHash: body.txHash || "",
         executionStatus: body.executionStatus || initialExecutionStatus(body.decision),
         executionTxHash: body.executionTxHash || "",
@@ -359,17 +399,11 @@ export async function createPostgresStore() {
 
     async submitAgentGatewayIntent(body, context = {}) {
       const intent = normalizeAgentGatewayIntent(body);
-      const walletAddress = requireWalletAddress(intent.walletAddress);
-      const [agents, policies, auditLogs, agentRows] = await Promise.all([
-        listAgents(walletAddress),
-        listPolicies(walletAddress),
-        listAuditLogs(walletAddress),
-        db.select().from(agentsTable).where(eq(agentsTable.id, intent.agentId)),
-      ]);
-      const agentRecord = agentRows.find((item) => item.ownerWalletAddress === walletAddress);
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, intent.agentId));
+      const agentRecord = agentRows[0];
       if (!agentRecord) {
-        const err = new Error("Agent Gateway request rejected because this agent is not registered under the supplied wallet.");
-        err.status = 403;
+        const err = new Error("Connected agent not found for this Agent ID.");
+        err.status = 404;
         throw err;
       }
       if (agentRecord.status === "Revoked") {
@@ -378,17 +412,24 @@ export async function createPostgresStore() {
         throw err;
       }
       if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
-        const err = new Error("Agent Gateway request rejected because the API key does not match this connected agent.");
+        const err = new Error("Agent Gateway API key is missing or does not match this connected agent.");
         err.status = 401;
         throw err;
       }
+      const walletAddress = requireWalletAddress(agentRecord.ownerWalletAddress);
+      const executionWalletAddress = requireWalletAddress(intent.executionWalletAddress);
+      const [agents, policies, auditLogs] = await Promise.all([
+        listAgents(walletAddress),
+        listPolicies(walletAddress),
+        listAuditLogs(walletAddress),
+      ]);
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
         target: intent.target,
         targetType: intent.targetType,
-        walletAddress,
+        walletAddress: executionWalletAddress,
       };
       const result = evaluatePolicy({ request, agents, policies, auditLogs });
       const agent = agents.find((item) => item.id === intent.agentId);
@@ -410,6 +451,8 @@ export async function createPostgresStore() {
         reason: `Agent Gateway request ${intent.id} from ${intent.source}. ${intent.goal ? `Goal: ${intent.goal}. ` : ""}${intent.reason ? `Reason: ${intent.reason}. ` : ""}${result.reason}`,
         policyUsed: policy?.name || "No active policy",
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress,
         txHash: "",
         executionStatus: initialExecutionStatus(result.decision),
         executionTxHash: "",
@@ -426,6 +469,8 @@ export async function createPostgresStore() {
         source: intent.source,
         agentId: intent.agentId,
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress,
         actionType: intent.actionType,
         amount: intent.amount,
         asset: intent.asset,
@@ -446,6 +491,8 @@ export async function createPostgresStore() {
         source: gatewayRow.source,
         agentId: gatewayRow.agentId,
         walletAddress: gatewayRow.walletAddress,
+        agentOwnerWalletAddress: gatewayRow.agentOwnerWalletAddress || gatewayRow.walletAddress,
+        executionWalletAddress: gatewayRow.executionWalletAddress || gatewayRow.walletAddress,
         actionType: gatewayRow.actionType,
         amount: Number(gatewayRow.amount),
         asset: gatewayRow.asset,

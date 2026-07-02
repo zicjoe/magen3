@@ -20,9 +20,10 @@ YieldBot AI or any external agent
 User connects Casper Wallet to Magen3
 → registers an external agent
 → creates a policy for that agent
-→ copies Gateway URL / Agent ID into the external agent
+→ copies Gateway URL / Agent ID / API key into the external agent
 → external agent receives a user task
-→ external agent sends the intended action to Magen3 Gateway API
+→ external agent identifies with Agent ID + API key
+→ external agent sends the intended action plus its connected execution wallet to Magen3 Gateway API
 → Magen3 returns Allowed / Blocked / Review Required
 → blocked/review actions stop
 → allowed actions may request wallet signing in the external agent
@@ -36,6 +37,7 @@ User connects Casper Wallet to Magen3
 - Connected Agents for registered external autonomous agents
 - Policy Management for Agent Shield rules
 - Agent Gateway API for external agents
+- Gateway sync endpoint for external agents: `GET /api/agent-gateway/me?agentId=...`
 - Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
 - Audit Log with Decision Proof and Execution Proof sections
 - Manual proof fallback hidden under Advanced sections
@@ -180,8 +182,20 @@ Health Check Path:
 External agents call:
 
 ```http
+GET /api/agent-gateway/me?agentId=MAG-AGENT-...
+```
+
+to verify Agent ID + API key and confirm that an active policy exists.
+
+Then they submit action intents to:
+
+```http
 POST /api/agent-gateway/intents
 ```
+
+Agent identity comes from `agentId` plus `x-magen3-agent-key` or `Authorization: Bearer <api-key>`.
+
+The `walletAddress` / `executionWalletAddress` in the request is the execution wallet connected inside the external agent. It does not need to match the Magen3 owner wallet that registered the agent.
 
 Example payload:
 
@@ -189,8 +203,10 @@ Example payload:
 {
   "source": "yieldbot-ai",
   "agentId": "MAG-AGENT-...",
-  "walletAddress": "CASPER_PUBLIC_KEY",
+  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
   "goal": "Stake 15 CSPR to trusted-validator-demo",
+  "reason": "YieldBot prepared this action and is requesting approval before execution.",
   "action": {
     "type": "Stake",
     "amount": 15,

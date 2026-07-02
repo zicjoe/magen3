@@ -42,6 +42,12 @@ export const api = {
     return request<any>("/api/agent-gateway/spec");
   },
 
+  agentGatewayMe(agentId: string, apiKey: string) {
+    return request<any>(`/api/agent-gateway/me?agentId=${encodeURIComponent(agentId)}`, {
+      headers: { "x-magen3-agent-key": apiKey },
+    });
+  },
+
   submitAgentGatewayIntent(intent: Record<string, unknown>, apiKey?: string) {
     return request<any>("/api/agent-gateway/intents", {
       method: "POST",

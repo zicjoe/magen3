@@ -52,6 +52,10 @@ export function createMemoryStore() {
     return wallet ? agents.filter((agent) => agent.ownerWalletAddress === wallet) : [];
   }
 
+  function findAgentRecord(agentId) {
+    return agents.find((agent) => agent.id === agentId);
+  }
+
   function scopedPolicies(walletAddress) {
     const agentIds = new Set(scopedAgentRecords(walletAddress).map((agent) => agent.id));
     return policies.filter((policy) => agentIds.has(policy.agentId));
@@ -59,7 +63,27 @@ export function createMemoryStore() {
 
   function scopedAuditLogs(walletAddress) {
     const wallet = normalizeWalletAddress(walletAddress);
-    return wallet ? auditLogs.filter((log) => log.walletAddress === wallet) : [];
+    return wallet ? auditLogs.filter((log) => log.walletAddress === wallet || log.agentOwnerWalletAddress === wallet) : [];
+  }
+
+  function requireGatewayAgent(agentId, apiKey) {
+    const agentRecord = findAgentRecord(agentId);
+    if (!agentRecord) {
+      const err = new Error("Connected agent not found for this Agent ID.");
+      err.status = 404;
+      throw err;
+    }
+    if (agentRecord.status === "Revoked") {
+      const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
+      err.status = 403;
+      throw err;
+    }
+    if (!secretMatches(apiKey, agentRecord.apiKeyHash)) {
+      const err = new Error("Agent Gateway API key is missing or does not match this connected agent.");
+      err.status = 401;
+      throw err;
+    }
+    return agentRecord;
   }
 
   function dashboardStats(walletAddress) {
@@ -153,6 +177,20 @@ export function createMemoryStore() {
       return publicAgent(agents.find((item) => item.id === id));
     },
 
+    async getAgentGatewayIdentity(agentId, context = {}) {
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const ownerWalletAddress = agentRecord.ownerWalletAddress;
+      const activePolicy = scopedPolicies(ownerWalletAddress).find((item) => item.agentId === agentRecord.id && item.status === "Active") || null;
+      return {
+        ok: true,
+        agent: publicAgent(agentRecord),
+        activePolicy,
+        gatewayReady: Boolean(activePolicy),
+        endpoint: "/api/agent-gateway/intents",
+        ...(!activePolicy ? { reason: "No active policy assigned to this agent." } : {}),
+      };
+    },
+
     async createPolicy(body) {
       if (!body.name || !body.agentId) {
         const err = new Error("Policy name and agentId are required");
@@ -199,6 +237,8 @@ export function createMemoryStore() {
         reason: `Policy "${policy.name}" activated for ${agent.name}.`,
         policyUsed: policy.name,
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress: walletAddress,
         txHash: "",
         executionStatus: "not_required",
         executionTxHash: "",
@@ -235,6 +275,8 @@ export function createMemoryStore() {
 
     async createAuditLog(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
+      const agentOwnerWalletAddress = normalizeWalletAddress(body.agentOwnerWalletAddress || walletAddress);
+      const executionWalletAddress = normalizeWalletAddress(body.executionWalletAddress || body.execution_wallet_address || body.walletAddress || walletAddress);
       const auditLog = {
         id: body.id || makeId("AUD"),
         timestamp: body.timestamp || new Date().toISOString(),
@@ -250,6 +292,8 @@ export function createMemoryStore() {
         reason: body.reason || "Magen3 recorded a decision.",
         policyUsed: body.policyUsed || "No active policy",
         walletAddress,
+        agentOwnerWalletAddress,
+        executionWalletAddress,
         txHash: body.txHash || "",
         executionStatus: body.executionStatus || initialExecutionStatus(body.decision),
         executionTxHash: body.executionTxHash || "",
@@ -264,30 +308,16 @@ export function createMemoryStore() {
 
     async submitAgentGatewayIntent(body, context = {}) {
       const intent = normalizeAgentGatewayIntent(body);
-      const walletAddress = requireWalletAddress(intent.walletAddress);
-      const agentRecord = scopedAgentRecords(walletAddress).find((item) => item.id === intent.agentId);
-      if (!agentRecord) {
-        const err = new Error("Agent Gateway request rejected because this agent is not registered under the supplied wallet.");
-        err.status = 403;
-        throw err;
-      }
-      if (agentRecord.status === "Revoked") {
-        const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
-        err.status = 403;
-        throw err;
-      }
-      if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
-        const err = new Error("Agent Gateway request rejected because the API key does not match this connected agent.");
-        err.status = 401;
-        throw err;
-      }
+      const agentRecord = requireGatewayAgent(intent.agentId, context.apiKey);
+      const walletAddress = requireWalletAddress(agentRecord.ownerWalletAddress);
+      const executionWalletAddress = requireWalletAddress(intent.executionWalletAddress);
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
         target: intent.target,
         targetType: intent.targetType,
-        walletAddress,
+        walletAddress: executionWalletAddress,
       };
       const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });
       const agent = publicAgent(agentRecord);
@@ -308,6 +338,8 @@ export function createMemoryStore() {
         reason: `Agent Gateway request ${intent.id} from ${intent.source}. ${intent.goal ? `Goal: ${intent.goal}. ` : ""}${intent.reason ? `Reason: ${intent.reason}. ` : ""}${result.reason}`,
         policyUsed: policy?.name || "No active policy",
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress,
         txHash: "",
         executionStatus: initialExecutionStatus(result.decision),
         executionTxHash: "",
@@ -319,6 +351,8 @@ export function createMemoryStore() {
       const gatewayRequest = {
         ...intent,
         walletAddress,
+        agentOwnerWalletAddress: walletAddress,
+        executionWalletAddress,
         decision: result.decision,
         risk: result.risk,
         riskScore: Number(result.riskScore || 50),

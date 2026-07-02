@@ -139,6 +139,8 @@ interface AuditLog {
   reason: string;
   policyUsed: string;
   walletAddress: string;
+  agentOwnerWalletAddress?: string;
+  executionWalletAddress?: string;
   txHash: string;
   executionStatus?: string;
   executionTxHash?: string;
@@ -214,6 +216,8 @@ interface AgentGatewayResponse {
     source: string;
     agentId: string;
     walletAddress: string;
+    agentOwnerWalletAddress?: string;
+    executionWalletAddress?: string;
     actionType: ActionType;
     amount: number;
     asset: string;
@@ -1681,6 +1685,7 @@ function ConnectedAgentsPage({
   const [copied, setCopied] = useState("");
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
+  const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) || agents[0];
 
   useEffect(() => {
@@ -1700,17 +1705,31 @@ function ConnectedAgentsPage({
     }
   }, []);
 
-  const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const response = await fetch("${gatewayUrl}", {
+  const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const agentId = "${agent.id}";
+const agentApiKey = process.env.MAGEN3_AGENT_KEY || "${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE"}";
+const executionWalletAddress = await getConnectedCasperWalletPublicKey();
+
+const verify = await fetch("${gatewayVerifyUrl}?agentId=" + encodeURIComponent(agentId), {
+  headers: { "x-magen3-agent-key": agentApiKey }
+});
+const gatewayStatus = await verify.json();
+if (!gatewayStatus.gatewayReady) {
+  throw new Error(gatewayStatus.reason || "Magen3 gateway is not ready for this agent");
+}
+
+const response = await fetch("${gatewayUrl}", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "x-magen3-agent-key": process.env.MAGEN3_AGENT_KEY || "${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE"}"
+    "x-magen3-agent-key": agentApiKey
   },
   body: JSON.stringify({
     source: "${agent.name}",
-    agentId: "${agent.id}",
-    walletAddress: "${walletAddress || "CASPER_PUBLIC_KEY"}",
+    agentId,
+    walletAddress: executionWalletAddress,
+    executionWalletAddress,
     goal: "Describe the Web3 action the external agent wants to execute",
+    reason: "External agent prepared this action and is requesting approval before execution.",
     action: {
       type: "Stake",
       amount: 15,
@@ -1725,7 +1744,7 @@ const decision = await response.json();
 if (!decision.executionApproved) {
   throw new Error(decision.result?.reason || "Magen3 did not approve execution");
 }
-// Only after this should the external agent request Casper Wallet signing.`, [gatewayUrl, walletAddress]);
+// Only after this should the external agent request the execution wallet signature.`, [gatewayUrl, gatewayVerifyUrl]);
 
   const registerAgent = useCallback(async () => {
     if (!form.name.trim()) return;
@@ -1769,7 +1788,7 @@ if (!decision.executionApproved) {
             Connected Agents
           </h1>
           <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
-            Register external agents that are allowed to call Magen3. Magen3 stays the safety gateway, policy admin, and audit platform.
+            Register external agents that are allowed to call Magen3. Agent identity is Agent ID plus API key; the execution wallet is submitted later by the external agent and can be any Casper Wallet.
           </p>
         </div>
         <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
@@ -1794,15 +1813,16 @@ if (!decision.executionApproved) {
             <Btn
               variant="secondary"
               size="sm"
-              onClick={() => copyText("all details", `Agent ID: ${latestCredentials.id}\nGateway URL: ${gatewayUrl}\nAPI Key: ${latestCredentials.apiKey}`)}
+              onClick={() => copyText("all details", `Agent ID: ${latestCredentials.id}\nGateway URL: ${gatewayUrl}\nVerify URL: ${gatewayVerifyUrl}?agentId=${latestCredentials.id}\nAPI Key: ${latestCredentials.apiKey}`)}
             >
               <Copy size={14} /> {copied === "all details" ? "Copied" : "Copy Details"}
             </Btn>
           </div>
-          <div className="mt-4 grid lg:grid-cols-3 gap-3">
+          <div className="mt-4 grid lg:grid-cols-2 xl:grid-cols-4 gap-3">
             {[
               ["Agent ID", latestCredentials.id],
               ["Gateway URL", gatewayUrl],
+              ["Verify URL", `${gatewayVerifyUrl}?agentId=${latestCredentials.id}`],
               ["API Key", latestCredentials.apiKey],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
@@ -1932,7 +1952,9 @@ if (!decision.executionApproved) {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
                     <div>
                       <h4 className="text-sm font-semibold text-[#F8FAFC]">Integration Details</h4>
-                      <p className="text-xs text-[#94A3B8] mt-1">Gateway setup belongs here, inside the connected agent record.</p>
+                      <p className="text-xs text-[#94A3B8] mt-1">
+                        Magen3 authenticates this agent with Agent ID + API key. YieldBot sends its connected Casper Wallet as the execution wallet in each request.
+                      </p>
                     </div>
                     <Btn variant="outline" size="sm" onClick={() => copyText(`${agent.id} snippet`, snippet)}>
                       <Copy size={14} /> {copied === `${agent.id} snippet` ? "Copied" : "Copy Code"}
@@ -3442,7 +3464,7 @@ function ExternalAgentDemoPage({
                 label="Optional Agent API Key"
                 value={apiKey}
                 onChange={setApiKey}
-                placeholder="Only needed if AGENT_GATEWAY_API_KEY is enabled"
+                placeholder="Paste this agent's Magen3 API key"
               />
               <div className="rounded-lg bg-[#0B1220] border border-[#1E293B] p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -3740,7 +3762,7 @@ function AuditLogPage({
       const updated = await onConfirmExecutionDeploy(
         selected.id,
         normalizedDeployHash,
-        selected.walletAddress,
+        selected.executionWalletAddress || selected.walletAddress,
         "Execution transaction signed after Magen3 approval."
       );
       setSelected(updated);
@@ -3958,7 +3980,8 @@ function AuditLogPage({
               </div>
               {[
                 ["Decision ID", selected.id],
-                ["Wallet Address", selected.walletAddress],
+                ["Agent Owner Wallet", selected.agentOwnerWalletAddress || selected.walletAddress],
+                ["Execution Wallet", selected.executionWalletAddress || selected.walletAddress],
                 ["Agent ID", selected.agentId],
                 ["Policy Used", selected.policyUsed],
                 ["Shield Type", selected.shield],
