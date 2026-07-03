@@ -412,6 +412,22 @@ function executionProofStatus(status = "", txHash = "") {
   return { label: "Not submitted", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
 }
 
+function executionProofExplanation(log: AuditLog) {
+  if (isRealCasperDeployHash(log.executionTxHash || "")) {
+    return "The approved action was signed and submitted. The execution deploy hash is the real Casper transaction footprint.";
+  }
+  if (log.executionStatus === "blocked_not_submitted" || log.decision === "Blocked") {
+    return "No execution hash exists because Magen3 blocked this action before wallet signing.";
+  }
+  if (log.executionStatus === "review_required_not_submitted" || log.decision === "Review Required") {
+    return "No execution hash exists yet because Magen3 required human review before wallet signing.";
+  }
+  if (log.executionStatus === "approved_pending_signature" || log.decision === "Allowed") {
+    return "Magen3 approved this action. The execution hash appears only after the execution wallet signs and submits the real Casper transaction.";
+  }
+  return "Execution proof is not required for this record.";
+}
+
 function makeId(prefix: string) {
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
@@ -1088,7 +1104,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
             {[
               { v: "Live", l: "Casper Wallet" },
               { v: "5", l: "Shield Modules" },
-              { v: "On-chain", l: "Casper Proof" },
+              { v: "On-chain", l: "Decision Proof" },
             ].map((s) => (
               <div key={s.l} className="text-center">
                 <div className="text-3xl font-bold text-[#22D3EE] font-['Space_Grotesk']">
@@ -1392,7 +1408,7 @@ function DashboardPage({
               Open Connected Agents
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
-              Open Casper Proof
+              Open Decision Proof
             </Btn>
           </div>
         </div>
@@ -1595,6 +1611,7 @@ function ConnectedAgentsPage({
   const [showRegister, setShowRegister] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Revoked" | "No Policy">("All");
+  const [skillTarget, setSkillTarget] = useState<"Claude" | "Codex" | "Custom Agent" | ".env" | "API Snippet">("Claude");
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
   const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
@@ -1616,6 +1633,19 @@ function ConnectedAgentsPage({
     } catch {
       setCopied("");
     }
+  }, []);
+
+  const downloadText = useCallback((filename: string, value: string) => {
+    if (!value) return;
+    const blob = new Blob([value], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }, []);
 
   const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const agentId = "${agent.id}";
@@ -1659,7 +1689,27 @@ if (!decision.executionApproved) {
 }
 // Only after this should the external agent request the execution wallet signature.`, [gatewayUrl, gatewayVerifyUrl]);
 
-  const integrationKit = useCallback((agent: Agent, apiKeyValue?: string) => `# Magen3 Agent Skill
+  const envTemplate = useCallback((agent: Agent, apiKeyValue?: string) => `MAGEN3_AGENT_ID=${agent.id}
+MAGEN3_AGENT_KEY=${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE_OR_ROTATE_KEY_IN_MAGEN3"}
+MAGEN3_GATEWAY_URL=${gatewayUrl}
+MAGEN3_VERIFY_URL=${gatewayVerifyUrl}
+MAGEN3_AGENT_NAME="${agent.name}"
+`, [gatewayUrl, gatewayVerifyUrl]);
+
+  const agentSkillKit = useCallback((agent: Agent, apiKeyValue: string | undefined, target: typeof skillTarget, snippet: string) => {
+    if (target === ".env") return envTemplate(agent, apiKeyValue);
+    if (target === "API Snippet") return snippet;
+
+    const installNote =
+      target === "Claude"
+        ? "Paste this into Claude Project instructions, a Claude chat, or the external agent instructions that Claude will follow."
+        : target === "Codex"
+        ? "Save this as SKILL.md inside a Codex skill folder, or paste it into the agent instructions for this project."
+        : "Use this as a system/developer instruction block for the external agent runtime.";
+
+    return `# Magen3 Agent Skill
+
+${installNote}
 
 Use this skill when acting as the external agent "${agent.name}".
 
@@ -1700,7 +1750,18 @@ Use this skill when acting as the external agent "${agent.name}".
 \`\`\`
 
 Store the raw API key securely. ${apiKeyValue ? `Current one-time key: ${apiKeyValue}` : "If the raw API key is no longer visible, rotate the key in Magen3 Connected Agents."}
-`, [gatewayUrl, gatewayVerifyUrl]);
+
+## Environment
+\`\`\`env
+${envTemplate(agent, apiKeyValue).trim()}
+\`\`\`
+
+## JavaScript Fetch Example
+\`\`\`js
+${snippet}
+\`\`\`
+`;
+  }, [envTemplate, gatewayUrl, gatewayVerifyUrl]);
 
   const registerAgent = useCallback(async () => {
     if (!form.name.trim()) return;
@@ -1904,7 +1965,13 @@ Store the raw API key securely. ${apiKeyValue ? `Current one-time key: ${apiKeyV
             const latestLog = auditLogs.find((log) => log.agentId === selectedAgent.id);
             const rawKey = latestCredentials?.id === selectedAgent.id ? latestCredentials.apiKey : undefined;
             const snippet = integrationSnippet(selectedAgent, rawKey);
-            const skill = integrationKit(selectedAgent, rawKey);
+            const skill = agentSkillKit(selectedAgent, rawKey, skillTarget, snippet);
+            const skillFilename =
+              skillTarget === ".env"
+                ? `magen3-${selectedAgent.id.toLowerCase()}.env`
+                : skillTarget === "API Snippet"
+                ? `magen3-${selectedAgent.id.toLowerCase()}-gateway.js`
+                : "SKILL.md";
             return (
               <div className="space-y-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1946,22 +2013,58 @@ Store the raw API key securely. ${apiKeyValue ? `Current one-time key: ${apiKeyV
                   ))}
                 </div>
 
-                <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
+                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 shadow-[0_0_18px_rgba(34,211,238,0.04)]">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Integration Code</h3>
-                      <p className="text-xs text-[#94A3B8] mt-1">Agent identity uses Agent ID + API key. The execution wallet comes from YieldBot or another external agent.</p>
+                      <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE] mb-3">
+                        <Code2 size={13} /> Agent Skill Kit
+                      </div>
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Export instructions for external AI tools</h3>
+                      <p className="text-xs text-[#94A3B8] mt-1 max-w-2xl">
+                        Give Claude, Codex, YieldBot AI, or a custom agent the exact rules for calling Magen3 before wallet signing. Agent identity is Agent ID plus API key; the execution wallet is supplied by the external agent.
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Btn variant="outline" size="sm" onClick={() => copyText("code", snippet)}>
-                        <Copy size={14} /> {copied === "code" ? "Copied" : "Copy Code"}
+                      <Btn variant="outline" size="sm" onClick={() => copyText("agent skill", skill)}>
+                        <Copy size={14} /> {copied === "agent skill" ? "Copied" : `Copy ${skillTarget}`}
                       </Btn>
-                      <Btn variant="secondary" size="sm" onClick={() => copyText("agent skill", skill)}>
-                        <Code2 size={14} /> {copied === "agent skill" ? "Copied" : "Copy Skill"}
+                      <Btn variant="secondary" size="sm" onClick={() => downloadText(skillFilename, skill)}>
+                        <FileText size={14} /> Download {skillFilename}
                       </Btn>
                     </div>
                   </div>
-                  <pre className="max-h-72 overflow-auto rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {(["Claude", "Codex", "Custom Agent", ".env", "API Snippet"] as const).map((target) => (
+                      <button
+                        key={target}
+                        onClick={() => setSkillTarget(target)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          skillTarget === target
+                            ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
+                            : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
+                        }`}
+                      >
+                        {target}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mb-4 grid md:grid-cols-3 gap-3 text-xs">
+                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[#94A3B8] uppercase tracking-wider">Use in</div>
+                      <div className="mt-1 text-[#F8FAFC]">
+                        {skillTarget === "Claude" ? "Claude Project / chat" : skillTarget === "Codex" ? "Codex SKILL.md" : skillTarget === "Custom Agent" ? "System instructions" : skillTarget === ".env" ? "Agent secrets" : "Agent source code"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[#94A3B8] uppercase tracking-wider">Policy status</div>
+                      <div className="mt-1 text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</div>
+                    </div>
+                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[#94A3B8] uppercase tracking-wider">API key</div>
+                      <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Included once" : "Use preview or rotate key"}</div>
+                    </div>
+                  </div>
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{skill}</code></pre>
                 </div>
               </div>
             );
@@ -2815,12 +2918,14 @@ function ActionReviewPage({
 
 function AuditLogPage({
   auditLogs,
+  policies,
   onRecordAuditLog,
   onPrepareCasperPayload,
   onConfirmCasperDeploy,
   onConfirmExecutionDeploy,
 }: {
   auditLogs: AuditLog[];
+  policies: Policy[];
   onRecordAuditLog: (id: string) => Promise<string> | string;
   onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
@@ -2851,6 +2956,10 @@ function AuditLogPage({
     if (filterRisk !== "All" && l.risk !== filterRisk) return false;
     return true;
   });
+  const selectedPolicy = selected
+    ? policies.find((policy) => policy.agentId === selected.agentId && policy.name === selected.policyUsed) ||
+      policies.find((policy) => policy.agentId === selected.agentId)
+    : undefined;
 
   useEffect(() => {
     setCasperPrepared(null);
@@ -3007,8 +3116,8 @@ function AuditLogPage({
                   "Amount",
                   "Decision",
                   "Risk",
-                  "Decision Proof",
-                  "Execution",
+                  "Decision Proof Hash",
+                  "Execution Proof",
                   "",
                 ].map((h) => (
                   <th
@@ -3066,7 +3175,7 @@ function AuditLogPage({
                         </div>
                       )
                     ) : (
-                      <span className="text-[#94A3B8]/40">Pending</span>
+                      <span className="text-[#94A3B8]/40">Pending decision proof</span>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
@@ -3135,12 +3244,34 @@ function AuditLogPage({
                 <DecisionBadge decision={selected.decision} />
                 <RiskBadge risk={selected.risk} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-3">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Decision Proof Hash</div>
+                  <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">
+                    {selected.txHash ? normalizeCasperDeployHash(selected.txHash) : "Pending Casper record"}
+                  </div>
+                  <div className="mt-2 text-xs text-[#94A3B8]">
+                    Exists for Allowed, Blocked, and Review Required decisions.
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-3">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Execution Hash</div>
+                  <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">
+                    {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "None"}
+                  </div>
+                  <div className="mt-2 text-xs text-[#94A3B8]">
+                    Only appears after an approved action is actually signed and submitted.
+                  </div>
+                </div>
+              </div>
               {[
                 ["Decision ID", selected.id],
                 ["Agent Owner Wallet", selected.agentOwnerWalletAddress || selected.walletAddress],
                 ["Execution Wallet", selected.executionWalletAddress || selected.walletAddress],
                 ["Agent ID", selected.agentId],
                 ["Policy Used", selected.policyUsed],
+                ["Policy ID", selectedPolicy?.id || "Not available on this audit record"],
+                ["Policy Hash", selectedPolicy?.policyHash || "Not available on this audit record"],
                 ["Shield Type", selected.shield],
                 ["Action Type", selected.action],
                 ["Target", selected.target],
@@ -3148,7 +3279,7 @@ function AuditLogPage({
                 ["Risk Score", `${selected.riskScore}/100`],
                 ["Timestamp", fmtTs(selected.timestamp)],
                 [
-                  "Transaction Hash",
+                  "Decision Proof Hash",
                   selected.txHash || "Not yet recorded on-chain",
                 ],
               ].map(([k, v]) => (
@@ -3170,6 +3301,23 @@ function AuditLogPage({
                 </p>
               </div>
 
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-3">Proof Timeline</div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  {[
+                    ["Intent received", "Complete", "text-[#22C55E]"],
+                    ["Magen3 decision", selected.decision, selected.decision === "Blocked" ? "text-[#EF4444]" : selected.decision === "Review Required" ? "text-[#F59E0B]" : "text-[#22C55E]"],
+                    ["Casper decision proof", isRealCasperDeployHash(selected.txHash) ? "Recorded" : "Pending", isRealCasperDeployHash(selected.txHash) ? "text-[#22C55E]" : "text-[#F59E0B]"],
+                    ["Execution proof", executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "").label, isRealCasperDeployHash(selected.executionTxHash || "") ? "text-[#22C55E]" : "text-[#94A3B8]"],
+                  ].map(([label, value, color]) => (
+                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[#94A3B8]">{label}</div>
+                      <div className={`mt-1 font-semibold ${color}`}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {(() => {
                 const proof = casperProofStatus(selected.txHash);
                 const realDeploy = isRealCasperDeployHash(selected.txHash);
@@ -3180,10 +3328,10 @@ function AuditLogPage({
                       <div>
                         <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
                           <ShieldCheck size={16} className="text-[#22D3EE]" />
-                          Casper Proof
+                          Decision Proof on Casper
                         </div>
                         <p className="text-xs text-[#94A3B8] mt-1">
-                          Verifies that this Magen3 decision was anchored to Casper Testnet.
+                          Verifies that Magen3 reviewed this intent and anchored the decision to Casper Testnet.
                         </p>
                       </div>
                       <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${proof.className}`}>
@@ -3201,11 +3349,17 @@ function AuditLogPage({
                         <div className="text-[#F8FAFC] mt-1">record_decision</div>
                       </div>
                       <div className="col-span-2">
-                        <span className="text-[#94A3B8] uppercase tracking-wider">Deploy Hash</span>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Decision Deploy Hash</span>
                         <div className={`font-mono mt-1 break-all ${realDeploy ? "text-[#22D3EE]" : "text-[#F8FAFC]"}`}>
                           {selected.txHash ? normalizedTxHash : "Not confirmed yet"}
                         </div>
                       </div>
+                      {casperPrepared?.payloadHash && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">Decision Payload Hash</span>
+                          <div className="text-[#22D3EE] font-mono mt-1 break-all">{casperPrepared.payloadHash}</div>
+                        </div>
+                      )}
                       <div className="col-span-2">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
                         <div className="text-[#F8FAFC] font-mono mt-1 break-all">
@@ -3221,25 +3375,25 @@ function AuditLogPage({
                             rel="noreferrer"
                             className="mt-1 inline-flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
                           >
-                            View deploy on CSPR.live
+                            View decision proof on CSPR.live
                             <ExternalLink size={12} />
                           </a>
                         ) : (
-                          <div className="text-[#94A3B8] mt-1">Available after you confirm a real Casper deploy hash.</div>
+                          <div className="text-[#94A3B8] mt-1">Available after you confirm a real Casper decision deploy hash.</div>
                         )}
                       </div>
                     </div>
 
                     <details className="border-t border-[#1E293B] pt-3">
                       <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22D3EE]">
-                        Advanced manual Casper proof fallback
+                        Advanced manual decision proof fallback
                       </summary>
                       <div className="mt-3 space-y-2">
                         <InputField
-                          label={realDeploy ? "Replace Real Casper Deploy Hash" : "Real Casper Deploy Hash"}
+                          label={realDeploy ? "Replace Decision Deploy Hash" : "Decision Deploy Hash"}
                           value={deployHash}
                           onChange={setDeployHash}
-                          placeholder="Paste 64-character deploy hash from casper-client"
+                          placeholder="Paste 64-character record_decision deploy hash from Casper"
                         />
                         <Btn
                           variant="outline"
@@ -3249,7 +3403,7 @@ function AuditLogPage({
                           disabled={!deployHash.trim() || casperLoading}
                         >
                           <CheckCircle size={14} />
-                          {realDeploy ? "Update Casper Proof" : "Confirm Real Deploy Hash"}
+                          {realDeploy ? "Update Decision Proof" : "Confirm Decision Proof Hash"}
                         </Btn>
                       </div>
                     </details>
@@ -3270,7 +3424,7 @@ function AuditLogPage({
                           Execution Proof
                         </div>
                         <p className="text-xs text-[#94A3B8] mt-1">
-                          Shows whether the approved action was actually signed and submitted after Magen3 allowed it.
+                          Shows whether the execution wallet actually signed and submitted the approved action.
                         </p>
                       </div>
                       <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${executionStatus.className}`}>
@@ -3290,8 +3444,12 @@ function AuditLogPage({
                       <div className="col-span-2">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Execution Deploy Hash</span>
                         <div className={`font-mono mt-1 break-all ${realExecution ? "text-[#22C55E]" : "text-[#F8FAFC]"}`}>
-                          {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "Not executed yet"}
+                          {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "None"}
                         </div>
+                      </div>
+                      <div className="col-span-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Why</span>
+                        <div className="text-[#F8FAFC] mt-1">{executionProofExplanation(selected)}</div>
                       </div>
                       {selected.executionNote && (
                         <div className="col-span-2">
@@ -3312,7 +3470,11 @@ function AuditLogPage({
                             <ExternalLink size={12} />
                           </a>
                         ) : (
-                          <div className="text-[#94A3B8] mt-1">Available after a real approved transaction is signed and submitted.</div>
+                          <div className="text-[#94A3B8] mt-1">
+                            {selected.decision === "Allowed"
+                              ? "Available after the execution wallet signs and submits the approved Casper transaction."
+                              : "No execution explorer link is expected because this action was not approved for execution."}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -3354,10 +3516,10 @@ function AuditLogPage({
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-xs text-[#94A3B8] uppercase tracking-wider">
-                      Casper Recorder
+                      Decision Proof Recorder
                     </div>
                     <p className="text-xs text-[#94A3B8] mt-1">
-                      Prepare the runtime args, sign the real Casper deploy, then paste the real deploy hash after signing.
+                      Prepare the record_decision runtime args, sign the Casper decision deploy, then confirm the returned decision proof hash.
                     </p>
                   </div>
                   {selected.txHash && <StatusBadge status="Active" />}
@@ -3377,7 +3539,7 @@ function AuditLogPage({
                     disabled={casperLoading}
                   >
                     <Code2 size={14} />
-                    {casperLoading ? "Preparing..." : "Prepare Payload"}
+                    {casperLoading ? "Preparing..." : "Prepare Decision Payload"}
                   </Btn>
                   {!selected.txHash && (
                     <Btn
@@ -3387,7 +3549,7 @@ function AuditLogPage({
                       disabled={casperLoading}
                     >
                       <Database size={14} />
-                      Record Disabled
+                      Auto Record Disabled
                     </Btn>
                   )}
                 </div>
@@ -3404,7 +3566,7 @@ function AuditLogPage({
                         <div className="text-[#F8FAFC] mt-1">{casperPrepared.contractEntrypoint}</div>
                       </div>
                       <div className="col-span-2">
-                        <span className="text-[#94A3B8] uppercase tracking-wider">Payload Hash</span>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Decision Payload Hash</span>
                         <div className="text-[#22D3EE] font-mono mt-1 break-all">{casperPrepared.payloadHash}</div>
                       </div>
                       <div className="col-span-2">
@@ -3993,6 +4155,7 @@ export default function App() {
     "audit-log": (
       <AuditLogPage
         auditLogs={auditLogs}
+        policies={policies}
         onRecordAuditLog={onRecordAuditLog}
         onPrepareCasperPayload={onPrepareCasperPayload}
         onConfirmCasperDeploy={onConfirmCasperDeploy}

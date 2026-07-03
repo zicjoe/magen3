@@ -15,6 +15,20 @@ Magen3 is the safety, policy, approval, API, and audit gateway. The external age
 
 Store API keys in secrets or environment variables. Do not put raw API keys in prompts, logs, commits, or public docs.
 
+## In The Magen3 App
+
+Open **Connected Agents**, select an agent, then use **Agent Skill Kit**.
+
+Available exports:
+
+- **Claude**: paste into Claude Project instructions or a Claude chat that controls an external agent.
+- **Codex**: download or copy as `SKILL.md` for a Codex skill folder.
+- **Custom Agent**: paste into system/developer instructions for another agent runtime.
+- **.env**: copy into the external agent's local secret configuration.
+- **API Snippet**: copy into the external agent's source code.
+
+The kit is generated per connected agent, so it includes that agent's ID, gateway URLs, API key status, and Magen3 execution rules.
+
 ## Rules For External Agents
 
 1. Identify to Magen3 with Agent ID plus API key.
@@ -25,6 +39,10 @@ Store API keys in secrets or environment variables. Do not put raw API keys in p
 6. Stop when Magen3 returns `Blocked`.
 7. Pause for human/admin approval when Magen3 returns `Review Required`.
 8. After real execution, send the real Casper deploy hash back to Magen3 audit.
+
+## Proof Rule
+
+Magen3 can record every decision on Casper as a Decision Proof Hash. Only execute and return an Execution Deploy Hash when Magen3 returns `Allowed`. If Magen3 returns `Blocked` or `Review Required`, do not ask the execution wallet to sign.
 
 ## Verify The Agent
 

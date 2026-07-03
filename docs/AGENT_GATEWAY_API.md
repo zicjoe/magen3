@@ -100,3 +100,14 @@ curl -X POST "https://your-magen3-api.up.railway.app/api/agent-gateway/intents" 
 - `nextAction`: plain-English instruction for the external agent
 
 Even when the decision is `Allowed`, Magen3 does not move funds by itself. The external agent must still request a real signature from the execution wallet and attach the execution deploy hash back to Magen3.
+
+## Casper Proof Model
+
+Magen3 uses two separate proof fields:
+
+| Field | UI label | Meaning |
+| --- | --- | --- |
+| `auditLog.txHash` | Decision Proof Hash | Casper deploy hash for the Magen3 `record_decision` proof. Can exist for Allowed, Blocked, or Review Required. |
+| `auditLog.executionTxHash` | Execution Deploy Hash | Casper deploy hash for the real wallet-signed execution. Should exist only after an Allowed action is actually submitted. |
+
+For blocked actions, `executionApproved` is false and `executionStatus` should be `blocked_not_submitted`. A blocked action may still have a Decision Proof Hash, but it should not have an Execution Deploy Hash.

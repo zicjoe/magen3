@@ -39,7 +39,7 @@ User connects Casper Wallet to Magen3
 - Agent Gateway API for external agents
 - Gateway sync endpoint for external agents: `GET /api/agent-gateway/me?agentId=...`
 - Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
-- Copyable Magen3 Agent Skill guidance for Claude, Codex, YieldBot AI, and other external agents
+- Agent Skill Kit exports for Claude, Codex `SKILL.md`, custom agents, `.env`, and API snippets
 - Audit Log with Decision Proof and Execution Proof sections
 - Manual proof fallback hidden under Advanced sections
 - Backend API using Node's built-in HTTP server
@@ -53,6 +53,17 @@ User connects Casper Wallet to Magen3
 The in-app Agent Runner, External Agent demo, and standalone Gateway Integration pages were removed from the main product flow. Those flows now belong in a separate standalone agent app such as YieldBot AI, while gateway setup lives inside each Connected Agents record. Magen3 now stays focused on being the security gateway.
 
 ## Live Casper proof
+
+## Decision proof vs execution proof
+
+Magen3 tracks two different Casper footprints:
+
+| Proof | Meaning | Blocked action | Allowed action |
+| --- | --- | --- | --- |
+| Decision Proof Hash | Casper deploy hash proving Magen3 reviewed the intent and recorded Allowed / Blocked / Review Required | Yes | Yes |
+| Execution Deploy Hash | Casper deploy hash proving the execution wallet actually signed/submitted the approved action | No | Only after signing |
+
+Blocked and review-required actions should not have execution hashes. They can still have decision proof hashes because Magen3 can prove what it stopped.
 
 Magen3 audit registry contract on Casper Testnet:
 
