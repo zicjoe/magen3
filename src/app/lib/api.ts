@@ -92,6 +92,13 @@ export const api = {
     });
   },
 
+  updatePolicy(id: string, policy: Record<string, unknown>) {
+    return request<any>(`/api/policies/${encodeURIComponent(id)}/update`, {
+      method: "POST",
+      body: JSON.stringify(policy),
+    });
+  },
+
   analyzeAction(action: Record<string, unknown>) {
     return request<any>("/api/actions/analyze", {
       method: "POST",

@@ -251,6 +251,37 @@ export function createMemoryStore() {
       return { policy, auditLog, agents: scopedAgents(walletAddress) };
     },
 
+    async updatePolicy(id, body) {
+      const walletAddress = requireWalletAddress(body.walletAddress);
+      const current = policies.find((policy) => policy.id === id && policy.ownerWalletAddress === walletAddress);
+      if (!current) {
+        const err = new Error("Policy not found for the connected wallet.");
+        err.status = 404;
+        throw err;
+      }
+      const agent = agents.find((item) => item.id === current.agentId && item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Cannot update policy because this agent is not registered under the connected wallet.");
+        err.status = 403;
+        throw err;
+      }
+
+      const updatedPolicy = {
+        ...current,
+        name: body.name ? String(body.name).trim() : current.name,
+        maxTransaction: Number(body.maxTransaction ?? current.maxTransaction),
+        dailyLimit: Number(body.dailyLimit ?? current.dailyLimit),
+        approvalThreshold: Number(body.approvalThreshold ?? current.approvalThreshold),
+        trustedContracts: Array.isArray(body.trustedContracts) ? body.trustedContracts : current.trustedContracts,
+        blockedActions: Array.isArray(body.blockedActions) ? body.blockedActions : current.blockedActions,
+        riskMode: body.riskMode || current.riskMode,
+        status: body.status || current.status,
+      };
+
+      policies = policies.map((policy) => policy.id === id ? updatedPolicy : policy);
+      return { policy: updatedPolicy, agents: scopedAgents(walletAddress) };
+    },
+
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const result = evaluatePolicy({ request: body, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });

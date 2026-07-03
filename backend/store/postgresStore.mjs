@@ -341,6 +341,41 @@ export async function createPostgresStore() {
       return { policy, auditLog: normalizeAuditLog(auditRow), agents: await listAgents(walletAddress) };
     },
 
+    async updatePolicy(id, body) {
+      const walletAddress = requireWalletAddress(body.walletAddress);
+      const rows = await db.select().from(policiesTable).where(eq(policiesTable.id, id));
+      const current = rows.find((policy) => policy.ownerWalletAddress === walletAddress);
+      if (!current) {
+        const err = new Error("Policy not found for the connected wallet.");
+        err.status = 404;
+        throw err;
+      }
+
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, current.agentId));
+      const ownedAgent = agentRows.find((agent) => agent.ownerWalletAddress === walletAddress);
+      if (!ownedAgent) {
+        const err = new Error("Cannot update policy because this agent is not registered under the connected wallet.");
+        err.status = 403;
+        throw err;
+      }
+
+      const [policyRow] = await db.update(policiesTable)
+        .set({
+          name: body.name ? String(body.name).trim() : current.name,
+          maxTransaction: Number(body.maxTransaction ?? current.maxTransaction),
+          dailyLimit: Number(body.dailyLimit ?? current.dailyLimit),
+          approvalThreshold: Number(body.approvalThreshold ?? current.approvalThreshold),
+          trustedContracts: Array.isArray(body.trustedContracts) ? body.trustedContracts : current.trustedContracts,
+          blockedActions: Array.isArray(body.blockedActions) ? body.blockedActions : current.blockedActions,
+          riskMode: body.riskMode || current.riskMode,
+          status: body.status || current.status,
+        })
+        .where(eq(policiesTable.id, id))
+        .returning();
+
+      return { policy: normalizePolicy(policyRow), agents: await listAgents(walletAddress) };
+    },
+
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);

@@ -39,6 +39,7 @@ User connects Casper Wallet to Magen3
 - Agent Gateway API for external agents
 - Gateway sync endpoint for external agents: `GET /api/agent-gateway/me?agentId=...`
 - Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
+- Copyable Magen3 Agent Skill guidance for Claude, Codex, YieldBot AI, and other external agents
 - Audit Log with Decision Proof and Execution Proof sections
 - Manual proof fallback hidden under Advanced sections
 - Backend API using Node's built-in HTTP server

@@ -200,14 +200,7 @@ interface CasperPreparedPayload {
   runtimeArgs: Record<string, unknown>;
 }
 
-interface AgentRunnerProposal {
-  rawGoal: string;
-  request: ActionRequest;
-  summary: string;
-  reasoning: string[];
-  confidence: number;
-  executionPlan: string[];
-}
+
 
 interface AgentGatewayResponse {
   ok: boolean;
@@ -605,91 +598,6 @@ function evaluateAction(
   };
 }
 
-
-function pickAgentForRunner(agents: Agent[], policies: Policy[], currentAgentId: string) {
-  if (currentAgentId) return currentAgentId;
-  const activePolicy = policies.find((policy) => policy.status === "Active");
-  return activePolicy?.agentId || agents[0]?.id || "";
-}
-
-function inferAmountFromGoal(goal: string) {
-  const match = goal.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(?:cspr|token|tokens|pot)?\b/i);
-  return match ? Number(match[1]) : 0;
-}
-
-function inferActionTypeFromGoal(goal: string): ActionType {
-  const lower = goal.toLowerCase();
-  if (/oracle|price feed|feed update|data update/.test(lower)) return "Oracle Data Update";
-  if (/rwa|real world|proof update|asset proof/.test(lower)) return "RWA Proof Update";
-  if (/dao|treasury|payment|grant|payout/.test(lower)) return "DAO Treasury Payment";
-  if (/swap|exchange|trade/.test(lower)) return "Swap";
-  if (/claim|reward/.test(lower)) return "Claim Rewards";
-  if (/deposit|vault|lend|supply/.test(lower)) return "Deposit to Vault";
-  if (/contract|call|execute|mint|upgrade/.test(lower)) return "Contract Interaction";
-  if (/transfer|send|pay/.test(lower)) return "Transfer";
-  if (/stake|delegate|validator/.test(lower)) return "Stake";
-  return "Contract Interaction";
-}
-
-function inferTargetTypeFromGoal(goal: string, actionType: ActionType): TargetType {
-  const lower = goal.toLowerCase();
-  if (/unknown|new wallet|random|external/.test(lower)) return "Unknown Contract";
-  if (/dao|treasury/.test(lower) || actionType === "DAO Treasury Payment") return "DAO Treasury";
-  if (/rwa|registry|proof/.test(lower) || actionType === "RWA Proof Update") return "RWA Registry";
-  if (/oracle|feed|price/.test(lower) || actionType === "Oracle Data Update") return "Oracle Feed";
-  if (/wallet|address|recipient/.test(lower) || actionType === "Transfer") return "Wallet Address";
-  if (/trusted|validator|staking|vault|approved|known/.test(lower)) return "Trusted Contract";
-  return actionType === "Stake" || actionType === "Claim Rewards" ? "Trusted Contract" : "Unknown Contract";
-}
-
-function inferTargetFromGoal(goal: string, actionType: ActionType) {
-  const trimmed = goal.trim();
-  const explicit = trimmed.match(/(?:to|into|from|on|at|with|via)\s+([a-zA-Z0-9_:\-.]{3,})/i);
-  const address = trimmed.match(/(hash-[a-f0-9]{64}|[a-f0-9]{64}|0x[a-fA-F0-9]{6,}|account-[a-zA-Z0-9\-]+)/);
-  if (address?.[1]) return address[1].replace(/[,.]$/, "");
-  if (explicit?.[1]) return explicit[1].replace(/[,.]$/, "");
-  if (actionType === "Stake") return "trusted-validator-demo";
-  if (actionType === "Claim Rewards") return "trusted-staking-contract";
-  if (actionType === "DAO Treasury Payment") return "dao-treasury-demo";
-  if (actionType === "Oracle Data Update") return "oracle-feed-demo";
-  if (actionType === "RWA Proof Update") return "rwa-registry-demo";
-  return "unknown-target-demo";
-}
-
-function buildAgentRunnerProposal(goal: string, agentId: string): AgentRunnerProposal {
-  const cleanGoal = goal.trim();
-  const actionType = inferActionTypeFromGoal(cleanGoal);
-  const amount = inferAmountFromGoal(cleanGoal);
-  const targetType = inferTargetTypeFromGoal(cleanGoal, actionType);
-  const target = inferTargetFromGoal(cleanGoal, actionType);
-  const hasAmount = amount > 0;
-  const confidence = Math.max(62, Math.min(96, 72 + (hasAmount ? 12 : 0) + (target !== "unknown-target-demo" ? 8 : 0)));
-
-  return {
-    rawGoal: cleanGoal,
-    request: {
-      agentId,
-      actionType,
-      amount: hasAmount ? amount : 1,
-      target,
-      targetType,
-    },
-    summary: `Agent intends to ${actionType.toLowerCase()} ${hasAmount ? `${amount} CSPR` : "a small test amount"} ${target ? `against ${target}` : "against the selected target"}.`,
-    reasoning: [
-      `Intent classified as ${actionType}.`,
-      hasAmount ? `Detected amount: ${amount} CSPR.` : "No clear amount detected, so Magen3 uses a conservative 1 CSPR test amount.",
-      `Target classified as ${targetType}: ${target}.`,
-      "Generated action is not executed directly; it must pass Magen3 policy review first.",
-    ],
-    confidence,
-    executionPlan: [
-      "Convert natural-language goal into a structured Web3 action request.",
-      "Send the action request to Agent Shield for policy evaluation.",
-      "Return Allowed, Blocked, or Review Required before any execution.",
-      "Record the security decision in the audit log and anchor proof on Casper.",
-    ],
-  };
-}
 
 // ──────────────────────────────────────────────────────────
 // Design tokens / shared classes
@@ -1594,6 +1502,7 @@ function DashboardPage({
           </div>
         </div>
       </div>
+
     </div>
   );
 }
@@ -1683,10 +1592,14 @@ function ConnectedAgentsPage({
   const [latestCredentials, setLatestCredentials] = useState<Agent | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [copied, setCopied] = useState("");
+  const [showRegister, setShowRegister] = useState(false);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Revoked" | "No Policy">("All");
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
   const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) || agents[0];
+  const selectedPolicy = selectedAgent ? getActivePolicy(policies, selectedAgent.id) : undefined;
 
   useEffect(() => {
     if (!selectedAgentId && agents[0]?.id) {
@@ -1746,6 +1659,49 @@ if (!decision.executionApproved) {
 }
 // Only after this should the external agent request the execution wallet signature.`, [gatewayUrl, gatewayVerifyUrl]);
 
+  const integrationKit = useCallback((agent: Agent, apiKeyValue?: string) => `# Magen3 Agent Skill
+
+Use this skill when acting as the external agent "${agent.name}".
+
+## Identity
+- Agent ID: ${agent.id}
+- API key env var: MAGEN3_AGENT_KEY
+- API key preview: ${agent.apiKeyPreview || "shown once after registration or rotation"}
+- Gateway verify URL: ${gatewayVerifyUrl}?agentId=${agent.id}
+- Gateway intent URL: ${gatewayUrl}
+
+## Rules
+1. Never execute a Web3 action before asking Magen3.
+2. Identify with Agent ID and the Magen3 API key.
+3. Treat the wallet connected inside the external agent as the execution wallet.
+4. The execution wallet does not need to match the Magen3 owner/admin wallet.
+5. If Magen3 returns Allowed, request the execution wallet signature.
+6. If Magen3 returns Blocked, stop.
+7. If Magen3 returns Review Required, pause for human/admin approval.
+8. After real execution, send the real Casper deploy hash back to Magen3 audit.
+
+## Example Intent
+\`\`\`json
+{
+  "source": "${agent.name}",
+  "agentId": "${agent.id}",
+  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "goal": "Stake 15 CSPR to trusted-validator-demo",
+  "reason": "External agent prepared this action and is requesting approval before execution.",
+  "action": {
+    "type": "Stake",
+    "amount": 15,
+    "asset": "CSPR",
+    "target": "trusted-validator-demo",
+    "targetType": "Trusted Contract"
+  }
+}
+\`\`\`
+
+Store the raw API key securely. ${apiKeyValue ? `Current one-time key: ${apiKeyValue}` : "If the raw API key is no longer visible, rotate the key in Magen3 Connected Agents."}
+`, [gatewayUrl, gatewayVerifyUrl]);
+
   const registerAgent = useCallback(async () => {
     if (!form.name.trim()) return;
     const created = await onRegisterAgent({
@@ -1757,6 +1713,7 @@ if (!decision.executionApproved) {
     if (created) {
       setLatestCredentials(created);
       setSelectedAgentId(created.id);
+      setShowRegister(false);
     }
     setForm({ name: "", type: "DeFi Agent", purpose: "", permissionLevel: "Limited Execution" });
   }, [form, onRegisterAgent]);
@@ -1779,6 +1736,19 @@ if (!decision.executionApproved) {
   const agentAuditLogs = selectedAgent
     ? auditLogs.filter((log) => log.agentId === selectedAgent.id).slice(0, 5)
     : [];
+  const filteredAgents = agents.filter((agent) => {
+    const policy = getActivePolicy(policies, agent.id);
+    const query = agentSearch.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      agent.name.toLowerCase().includes(query) ||
+      agent.id.toLowerCase().includes(query) ||
+      agent.type.toLowerCase().includes(query);
+    const matchesStatus =
+      statusFilter === "All" ||
+      (statusFilter === "No Policy" ? !policy : agent.status === statusFilter);
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <div className="space-y-6">
@@ -1791,8 +1761,13 @@ if (!decision.executionApproved) {
             Register external agents that are allowed to call Magen3. Agent identity is Agent ID plus API key; the execution wallet is submitted later by the external agent and can be any Casper Wallet.
           </p>
         </div>
-        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
-          Owner wallet: <span className="font-mono text-[#F8FAFC]">{truncate(walletAddress, 22)}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
+            Owner wallet: <span className="font-mono text-[#F8FAFC]">{truncate(walletAddress, 22)}</span>
+          </div>
+          <Btn variant="primary" onClick={() => setShowRegister(true)}>
+            <Plus size={16} /> Register Agent
+          </Btn>
         </div>
       </div>
 
@@ -1837,113 +1812,136 @@ if (!decision.executionApproved) {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className={`${CARD} p-6 lg:col-span-1`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>Register External Agent</h2>
-          <div className="space-y-4">
-            <InputField
-              label="Agent Name"
-              value={form.name}
-              onChange={(v) => setForm((p) => ({ ...p, name: v }))}
-              placeholder="e.g. YieldBot"
-            />
-            <SelectField
-              label="Agent Type"
-              value={form.type}
-              onChange={(v) => setForm((p) => ({ ...p, type: v as AgentType }))}
-              options={[
-                "DeFi Agent",
-                "Trading Agent",
-                "Treasury Agent",
-                "RWA Agent",
-                "Oracle Agent",
-                "Custom Agent",
-              ]}
-            />
-            <div>
-              <label className={LABEL_CLS}>Agent Purpose</label>
-              <textarea
-                className={`${INPUT_CLS} resize-none`}
-                rows={3}
-                value={form.purpose}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, purpose: e.target.value }))
-                }
-                placeholder="Describe what this agent does..."
+      <div className="grid xl:grid-cols-[minmax(360px,0.95fr)_1.35fr] gap-6">
+        <div className={`${CARD} overflow-hidden`}>
+          <div className="border-b border-[#1E293B] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className={SECTION_TITLE}>Agents</h2>
+              <span className="rounded-full bg-[#0B1220] px-2.5 py-1 text-xs text-[#94A3B8]">
+                {filteredAgents.length}/{agents.length}
+              </span>
+            </div>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+              <input
+                className={`${INPUT_CLS} pl-9`}
+                value={agentSearch}
+                onChange={(e) => setAgentSearch(e.target.value)}
+                placeholder="Search by name, ID, or type"
               />
             </div>
-            <SelectField
-              label="Permission Level"
-              value={form.permissionLevel}
-              onChange={(v) =>
-                setForm((p) => ({
-                  ...p,
-                  permissionLevel: v as PermissionLevel,
-                }))
-              }
-              options={[
-                "Read Only",
-                "Limited Execution",
-                "Full Execution with Review",
-              ]}
-            />
-            <Btn variant="primary" className="w-full justify-center" onClick={registerAgent}>
-              <Plus size={16} />
-              Register External Agent
-            </Btn>
+            <div className="flex flex-wrap gap-2">
+              {(["All", "Active", "Revoked", "No Policy"] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    statusFilter === status
+                      ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
+                      : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-h-[620px] overflow-y-auto p-3 space-y-2">
+            {filteredAgents.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center">
+                <Bot size={28} className="mx-auto mb-3 text-[#94A3B8]" />
+                <p className="text-sm text-[#94A3B8]">No agents match this view.</p>
+              </div>
+            ) : filteredAgents.map((agent) => {
+              const assignedPolicy = getActivePolicy(policies, agent.id);
+              const latestLog = auditLogs.find((log) => log.agentId === agent.id);
+              const active = selectedAgent?.id === agent.id;
+              return (
+                <button
+                  key={agent.id}
+                  onClick={() => setSelectedAgentId(agent.id)}
+                  className={`w-full rounded-xl border p-4 text-left transition-all ${
+                    active
+                      ? "border-[#22D3EE]/40 bg-[#22D3EE]/10"
+                      : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate font-semibold text-[#F8FAFC] font-['Space_Grotesk']">{agent.name}</h3>
+                        <StatusBadge status={agent.status} />
+                      </div>
+                      <div className="mt-1 truncate text-xs text-[#94A3B8]">{agent.id}</div>
+                    </div>
+                    <StatusBadge status={assignedPolicy ? "Active" : "Inactive"} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-[#050B14] p-2">
+                      <div className="text-[#94A3B8]">Type</div>
+                      <div className="truncate text-[#F8FAFC]">{agent.type}</div>
+                    </div>
+                    <div className="rounded-lg bg-[#050B14] p-2">
+                      <div className="text-[#94A3B8]">Last Decision</div>
+                      <div className="truncate text-[#F8FAFC]">{latestLog?.decision || "None"}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className={SECTION_TITLE}>Registered External Agents</h2>
-          {agents.length === 0 ? (
+        <div className={`${CARD_GLOW} p-5 min-h-[520px]`}>
+          {!selectedAgent ? (
             <EmptyState
-              title="No connected agents yet"
-              description="Register the external app or AI agent that will call Magen3 before execution."
+              title="Select an agent"
+              description="Choose a connected agent to view integration details, API status, audit activity, and the agent skill kit."
+              action={<Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>}
             />
-          ) : agents.map((agent) => {
-            const assignedPolicy = getActivePolicy(policies, agent.id);
-            const latestLog = auditLogs.find((log) => log.agentId === agent.id);
-            const snippet = integrationSnippet(agent, latestCredentials?.id === agent.id ? latestCredentials.apiKey : undefined);
+          ) : (() => {
+            const latestLog = auditLogs.find((log) => log.agentId === selectedAgent.id);
+            const rawKey = latestCredentials?.id === selectedAgent.id ? latestCredentials.apiKey : undefined;
+            const snippet = integrationSnippet(selectedAgent, rawKey);
+            const skill = integrationKit(selectedAgent, rawKey);
             return (
-              <div key={agent.id} className={`${CARD_GLOW} p-5 space-y-5`}>
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
-                        {agent.name}
-                      </h3>
-                      <StatusBadge status={agent.status} />
-                      <StatusBadge status={assignedPolicy ? "Active" : "Inactive"} />
+                      <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{selectedAgent.name}</h2>
+                      <StatusBadge status={selectedAgent.status} />
+                      <StatusBadge status={selectedPolicy ? "Active" : "Inactive"} />
                     </div>
-                    <div className="text-xs text-[#94A3B8]">
-                      {agent.id} · {agent.type} · {agent.permissionLevel}
-                    </div>
-                    <p className="text-sm text-[#94A3B8] mt-2">{agent.purpose || "No purpose added yet."}</p>
+                    <p className="text-sm text-[#94A3B8]">{selectedAgent.purpose || "No purpose added yet."}</p>
+                    <div className="mt-2 text-xs text-[#94A3B8]">{selectedAgent.type} · {selectedAgent.permissionLevel}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Btn variant="ghost" size="sm" onClick={() => setSelectedAgentId(agent.id)}>
-                      <Eye size={14} /> Details
-                    </Btn>
-                    <Btn variant="secondary" size="sm" onClick={() => rotateKey(agent.id)} disabled={agent.status === "Revoked"}>
+                    <Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
                       <Lock size={14} /> Rotate API Key
                     </Btn>
-                    <Btn variant="danger" size="sm" onClick={() => revokeAgent(agent.id)} disabled={agent.status === "Revoked"}>
+                    <Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
                       <XCircle size={14} /> Revoke
                     </Btn>
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                <div className="grid md:grid-cols-2 gap-3">
                   {[
-                    ["Assigned Policy", assignedPolicy?.name || "No active policy"],
+                    ["Agent ID", selectedAgent.id],
+                    ["Gateway URL", gatewayUrl],
+                    ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`],
+                    ["API Key Status", selectedAgent.apiKeyPreview ? `Issued: ${selectedAgent.apiKeyPreview}` : "Rotate key to issue"],
+                    ["Assigned Policy", selectedPolicy?.name || "No active policy"],
                     ["Last Request", latestLog ? fmtTs(latestLog.timestamp) : "No requests yet"],
-                    ["Last Decision", latestLog?.decision || "None"],
-                    ["API Key Status", agent.apiKeyPreview ? `Issued: ${agent.apiKeyPreview}` : "Rotate key to issue"],
                   ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="text-[11px] text-[#94A3B8] uppercase tracking-wider mb-1">{label}</div>
-                      <div className="text-[#F8FAFC] break-all">{value}</div>
+                    <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
+                        <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
+                      </div>
+                      <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
                     </div>
                   ))}
                 </div>
@@ -1951,36 +1949,23 @@ if (!decision.executionApproved) {
                 <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-[#F8FAFC]">Integration Details</h4>
-                      <p className="text-xs text-[#94A3B8] mt-1">
-                        Magen3 authenticates this agent with Agent ID + API key. YieldBot sends its connected Casper Wallet as the execution wallet in each request.
-                      </p>
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Integration Code</h3>
+                      <p className="text-xs text-[#94A3B8] mt-1">Agent identity uses Agent ID + API key. The execution wallet comes from YieldBot or another external agent.</p>
                     </div>
-                    <Btn variant="outline" size="sm" onClick={() => copyText(`${agent.id} snippet`, snippet)}>
-                      <Copy size={14} /> {copied === `${agent.id} snippet` ? "Copied" : "Copy Code"}
-                    </Btn>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-3 mb-3">
-                    <div className="rounded-lg bg-[#0B1220] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway URL</span>
-                        <button className="text-[#22D3EE]" onClick={() => copyText("gateway url", gatewayUrl)}><Copy size={13} /></button>
-                      </div>
-                      <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{gatewayUrl}</div>
-                    </div>
-                    <div className="rounded-lg bg-[#0B1220] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent ID</span>
-                        <button className="text-[#22D3EE]" onClick={() => copyText("agent id", agent.id)}><Copy size={13} /></button>
-                      </div>
-                      <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{agent.id}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <Btn variant="outline" size="sm" onClick={() => copyText("code", snippet)}>
+                        <Copy size={14} /> {copied === "code" ? "Copied" : "Copy Code"}
+                      </Btn>
+                      <Btn variant="secondary" size="sm" onClick={() => copyText("agent skill", skill)}>
+                        <Code2 size={14} /> {copied === "agent skill" ? "Copied" : "Copy Skill"}
+                      </Btn>
                     </div>
                   </div>
-                  <pre className="overflow-x-auto rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
+                  <pre className="max-h-72 overflow-auto rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
                 </div>
               </div>
             );
-          })}
+          })()}
         </div>
       </div>
 
@@ -2015,6 +2000,77 @@ if (!decision.executionApproved) {
           ))}
         </div>
       </div>
+
+      {showRegister && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRegister(false)} />
+          <div className={`${CARD_GLOW} relative w-full max-w-xl p-6`}>
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Register External Agent</h2>
+                <p className="text-sm text-[#94A3B8] mt-1">
+                  Add the external app or autonomous agent that will call Magen3 before execution.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRegister(false)}
+                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <InputField
+                label="Agent Name"
+                value={form.name}
+                onChange={(v) => setForm((p) => ({ ...p, name: v }))}
+                placeholder="e.g. YieldBot AI"
+              />
+              <SelectField
+                label="Agent Type"
+                value={form.type}
+                onChange={(v) => setForm((p) => ({ ...p, type: v as AgentType }))}
+                options={[
+                  "DeFi Agent",
+                  "Trading Agent",
+                  "Treasury Agent",
+                  "RWA Agent",
+                  "Oracle Agent",
+                  "Custom Agent",
+                ]}
+              />
+              <div>
+                <label className={LABEL_CLS}>Agent Purpose</label>
+                <textarea
+                  className={`${INPUT_CLS} resize-none`}
+                  rows={3}
+                  value={form.purpose}
+                  onChange={(e) => setForm((p) => ({ ...p, purpose: e.target.value }))}
+                  placeholder="Describe what this external agent does..."
+                />
+              </div>
+              <SelectField
+                label="Permission Level"
+                value={form.permissionLevel}
+                onChange={(v) => setForm((p) => ({ ...p, permissionLevel: v as PermissionLevel }))}
+                options={[
+                  "Read Only",
+                  "Limited Execution",
+                  "Full Execution with Review",
+                ]}
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <Btn variant="secondary" onClick={() => setShowRegister(false)}>
+                  Cancel
+                </Btn>
+                <Btn variant="primary" onClick={registerAgent}>
+                  <Plus size={16} /> Register Agent
+                </Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2027,11 +2083,13 @@ function PoliciesPage({
   agents,
   policies,
   onCreatePolicy,
+  onUpdatePolicy,
   walletAddress,
 }: {
   agents: Agent[];
   policies: Policy[];
   onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<void> | void;
+  onUpdatePolicy: (id: string, policy: Partial<Policy>) => Promise<void> | void;
   walletAddress: string;
 }) {
   const [form, setForm] = useState({
@@ -2043,6 +2101,17 @@ function PoliciesPage({
     trustedContracts: "",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
+  });
+  const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    maxTransaction: "",
+    dailyLimit: "",
+    approvalThreshold: "",
+    trustedContracts: "",
+    blockedActions: [] as string[],
+    riskMode: "Balanced" as RiskMode,
+    status: "Active" as "Active" | "Inactive",
   });
 
   const createPolicy = useCallback(async () => {
@@ -2073,12 +2142,37 @@ function PoliciesPage({
     });
   }, [agents, form, onCreatePolicy, walletAddress]);
 
-  const updatePolicy = useCallback(
-    (id: string) => {
-      console.log("updatePolicy", id);
-    },
-    []
-  );
+  const openPolicyEditor = useCallback((policy: Policy) => {
+    setEditingPolicy(policy);
+    setEditForm({
+      name: policy.name,
+      maxTransaction: String(policy.maxTransaction),
+      dailyLimit: String(policy.dailyLimit),
+      approvalThreshold: String(policy.approvalThreshold),
+      trustedContracts: policy.trustedContracts.join("\n"),
+      blockedActions: policy.blockedActions,
+      riskMode: policy.riskMode,
+      status: policy.status,
+    });
+  }, []);
+
+  const savePolicyEdit = useCallback(async () => {
+    if (!editingPolicy || !editForm.name.trim()) return;
+    await onUpdatePolicy(editingPolicy.id, {
+      name: editForm.name,
+      maxTransaction: Number(editForm.maxTransaction) || editingPolicy.maxTransaction,
+      dailyLimit: Number(editForm.dailyLimit) || editingPolicy.dailyLimit,
+      approvalThreshold: Number(editForm.approvalThreshold) || editingPolicy.approvalThreshold,
+      trustedContracts: editForm.trustedContracts
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      blockedActions: editForm.blockedActions,
+      riskMode: editForm.riskMode,
+      status: editForm.status,
+    });
+    setEditingPolicy(null);
+  }, [editForm, editingPolicy, onUpdatePolicy]);
 
   return (
     <div className="space-y-6">
@@ -2189,7 +2283,7 @@ function PoliciesPage({
                   <Btn
                     variant="ghost"
                     size="sm"
-                    onClick={() => updatePolicy(pol.id)}
+                    onClick={() => openPolicyEditor(pol)}
                   >
                     Edit
                   </Btn>
@@ -2238,6 +2332,87 @@ function PoliciesPage({
           })}
         </div>
       </div>
+
+      {editingPolicy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingPolicy(null)} />
+          <div className={`${CARD_GLOW} relative w-full max-w-2xl p-6`}>
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Edit Policy</h2>
+                <p className="text-sm text-[#94A3B8] mt-1">
+                  Update limits and policy posture for the connected external agent.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingPolicy(null)}
+                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <InputField
+                label="Policy Name"
+                value={editForm.name}
+                onChange={(v) => setEditForm((p) => ({ ...p, name: v }))}
+              />
+              <div className="grid md:grid-cols-3 gap-3">
+                <InputField
+                  label="Max Tx (CSPR)"
+                  value={editForm.maxTransaction}
+                  onChange={(v) => setEditForm((p) => ({ ...p, maxTransaction: v }))}
+                  type="number"
+                />
+                <InputField
+                  label="Daily Limit (CSPR)"
+                  value={editForm.dailyLimit}
+                  onChange={(v) => setEditForm((p) => ({ ...p, dailyLimit: v }))}
+                  type="number"
+                />
+                <InputField
+                  label="Approval Above"
+                  value={editForm.approvalThreshold}
+                  onChange={(v) => setEditForm((p) => ({ ...p, approvalThreshold: v }))}
+                  type="number"
+                />
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Trusted Contracts</label>
+                <textarea
+                  className={`${INPUT_CLS} resize-none`}
+                  rows={3}
+                  value={editForm.trustedContracts}
+                  onChange={(e) => setEditForm((p) => ({ ...p, trustedContracts: e.target.value }))}
+                  placeholder="One contract address per line"
+                />
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <SelectField
+                  label="Risk Mode"
+                  value={editForm.riskMode}
+                  onChange={(v) => setEditForm((p) => ({ ...p, riskMode: v as RiskMode }))}
+                  options={["Conservative", "Balanced", "Aggressive"]}
+                />
+                <SelectField
+                  label="Status"
+                  value={editForm.status}
+                  onChange={(v) => setEditForm((p) => ({ ...p, status: v as "Active" | "Inactive" }))}
+                  options={["Active", "Inactive"]}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Btn variant="secondary" onClick={() => setEditingPolicy(null)}>
+                  Cancel
+                </Btn>
+                <Btn variant="primary" onClick={savePolicyEdit}>
+                  Save Policy
+                </Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2633,1024 +2808,6 @@ function ActionReviewPage({
   );
 }
 
-
-// ──────────────────────────────────────────────────────────
-// Gateway Integration Page
-// ──────────────────────────────────────────────────────────
-
-function GatewayIntegrationPage({
-  agents,
-  policies,
-  auditLogs,
-  walletAddress,
-  apiOnline,
-  onNavigate,
-}: {
-  agents: Agent[];
-  policies: Policy[];
-  auditLogs: AuditLog[];
-  walletAddress: string;
-  apiOnline: boolean;
-  onNavigate: (p: Page) => void;
-}) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const [casperStatus, setCasperStatus] = useState<Record<string, unknown> | null>(null);
-  const activeAgent = agents[0];
-  const activePolicy = activeAgent ? getActivePolicy(policies, activeAgent.id) : undefined;
-  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
-  const lastRequest = auditLogs.find((log) => log.shield === "Agent Shield" && log.agentId === activeAgent?.id) || auditLogs[0];
-
-  useEffect(() => {
-    let cancelled = false;
-    api.casperStatus()
-      .then((response) => {
-        if (!cancelled) setCasperStatus(response.casper || null);
-      })
-      .catch(() => {
-        if (!cancelled) setCasperStatus(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const copyText = useCallback(async (label: string, value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(label);
-      setTimeout(() => setCopied(null), 1400);
-    } catch {
-      setCopied(null);
-    }
-  }, []);
-
-  const snippet = `const response = await fetch("${gatewayUrl}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "x-magen3-agent-key": process.env.MAGEN3_AGENT_KEY || ""\n  },\n  body: JSON.stringify({\n    source: "yieldbot-ai",\n    agentId: "${activeAgent?.id || "MAG-AGENT-..."}",\n    walletAddress: "${walletAddress || "CASPER_PUBLIC_KEY"}",\n    goal: "Stake 15 CSPR to trusted-validator-demo",\n    action: {\n      type: "Stake",\n      amount: 15,\n      asset: "CSPR",\n      target: "trusted-validator-demo",\n      targetType: "Trusted Contract"\n    }\n  })\n});\n\nconst decision = await response.json();\nif (!decision.executionApproved) {\n  throw new Error(decision.result.reason);\n}\n// Only now should the external agent request wallet signing.`;
-
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
-            <Server size={14} /> External Agent Integration
-          </div>
-          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-            Gateway Integration
-          </h1>
-          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
-            Magen3 is now the admin and security gateway. External agents such as YieldBot connect here through API, then ask Magen3 before signing or executing Web3 actions.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Btn variant="secondary" onClick={() => onNavigate("connected-agents")}>
-            <Bot size={16} /> Register Agent
-          </Btn>
-          <Btn variant="primary" onClick={() => onNavigate("policies")}>
-            <ShieldCheck size={16} /> Manage Policy
-          </Btn>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-5">
-        <div className={`${CARD_GLOW} p-5 space-y-4`}>
-          <div className="flex items-center justify-between">
-            <h2 className={SECTION_TITLE}>Connection Status</h2>
-            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${apiOnline ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"}`}>
-              {apiOnline ? "API Online" : "API Offline"}
-            </span>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Owner Wallet</div>
-              <div className="mt-1 font-mono text-[#F8FAFC] break-all">{walletAddress || "Connect Casper Wallet"}</div>
-            </div>
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Registered Agents</div>
-              <div className="mt-1 text-[#F8FAFC]">{agents.length}</div>
-            </div>
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Active Policy</div>
-              <div className="mt-1 text-[#F8FAFC]">{activePolicy?.name || "No active policy yet"}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`${CARD_GLOW} p-5 lg:col-span-2 space-y-4`}>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className={SECTION_TITLE}>Gateway Details</h2>
-              <p className="text-xs text-[#94A3B8] mt-1">Copy these into an external agent app like YieldBot AI.</p>
-            </div>
-            <Btn variant="outline" size="sm" onClick={() => copyText("snippet", snippet)}>
-              <Copy size={14} /> {copied === "snippet" ? "Copied" : "Copy Code"}
-            </Btn>
-          </div>
-          <div className="grid md:grid-cols-2 gap-3">
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway URL</span>
-                <button className="text-[#22D3EE]" onClick={() => copyText("gateway", gatewayUrl)}><Copy size={13} /></button>
-              </div>
-              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{gatewayUrl}</div>
-            </div>
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent ID</span>
-                {activeAgent && <button className="text-[#22D3EE]" onClick={() => copyText("agent", activeAgent.id)}><Copy size={13} /></button>}
-              </div>
-              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{activeAgent?.id || "Register an agent first"}</div>
-            </div>
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Casper Contract</div>
-              <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">{String(casperStatus?.contractHash || DEPLOYED_MAGEN3_CONTRACT_HASH || "Not configured")}</div>
-            </div>
-            <div className="rounded-xl bg-[#050B14] border border-[#1E293B] p-3">
-              <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Gateway Rule</div>
-              <div className="mt-1 text-xs text-[#F8FAFC]">External agents must stop unless Magen3 returns <span className="text-[#22C55E]">Allowed</span>.</div>
-            </div>
-          </div>
-          {copied && <div className="text-xs text-[#22C55E]">Copied {copied} to clipboard.</div>}
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-5">
-        <div className={`${CARD} p-5`}>
-          <h2 className={`${SECTION_TITLE} mb-4`}>External Agent Handshake</h2>
-          <div className="space-y-3">
-            {[
-              ["1", "External agent prepares action", "YieldBot decides it wants to stake, swap, transfer, or call a contract."],
-              ["2", "Agent calls Magen3 Gateway", "Magen3 checks wallet ownership, registered agent, policy, amount, target, and risk."],
-              ["3", "Magen3 returns decision", "Allowed actions can request wallet signing. Blocked/review actions must stop."],
-              ["4", "Audit and proof update", "Magen3 stores the decision, Casper proof, and later the execution hash."],
-            ].map(([step, title, desc]) => (
-              <div key={step} className="flex gap-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#22D3EE]/10 text-[#22D3EE] text-xs font-bold">{step}</div>
-                <div>
-                  <div className="text-sm font-semibold text-[#F8FAFC]">{title}</div>
-                  <div className="text-xs text-[#94A3B8] mt-1">{desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className={`${CARD} p-5`}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className={SECTION_TITLE}>Latest Gateway Activity</h2>
-            <Btn variant="ghost" size="sm" onClick={() => onNavigate("audit-log")}>
-              View Audit Log <ChevronRight size={14} />
-            </Btn>
-          </div>
-          {lastRequest ? (
-            <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold text-[#F8FAFC]">{lastRequest.agentName}</div>
-                  <div className="text-xs text-[#94A3B8]">{fmtTs(lastRequest.timestamp)} · {lastRequest.action}</div>
-                </div>
-                <DecisionBadge decision={lastRequest.decision} />
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div><span className="text-[#94A3B8]">Amount</span><div className="text-[#F8FAFC]">{lastRequest.amount} CSPR</div></div>
-                <div><span className="text-[#94A3B8]">Risk</span><div><RiskBadge risk={lastRequest.risk} /></div></div>
-                <div className="col-span-2"><span className="text-[#94A3B8]">Target</span><div className="text-[#F8FAFC] break-all">{lastRequest.target}</div></div>
-              </div>
-            </div>
-          ) : (
-            <EmptyState
-              title="No gateway requests yet"
-              description="Connect an external agent like YieldBot AI. Its requests will appear here and in Audit Log."
-              action={<Btn variant="secondary" onClick={() => onNavigate("connected-agents")}>Register Agent</Btn>}
-            />
-          )}
-        </div>
-      </div>
-
-      <div className={`${CARD_GLOW} p-5`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className={SECTION_TITLE}>Integration Code</h2>
-          <Btn variant="secondary" size="sm" onClick={() => copyText("code", snippet)}>
-            <Copy size={14} /> {copied === "code" ? "Copied" : "Copy"}
-          </Btn>
-        </div>
-        <pre className="overflow-x-auto rounded-xl bg-[#050B14] border border-[#1E293B] p-4 text-xs text-[#94A3B8]"><code>{snippet}</code></pre>
-      </div>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────
-// Agent Runner Page
-// ──────────────────────────────────────────────────────────
-
-function AgentRunnerPage({
-  agents,
-  policies,
-  walletAddress,
-  onNavigate,
-  onSubmitGatewayIntent,
-}: {
-  agents: Agent[];
-  policies: Policy[];
-  walletAddress: string;
-  onNavigate: (p: Page) => void;
-  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
-}) {
-  const initialAgentId = pickAgentForRunner(agents, policies, "");
-  const [agentId, setAgentId] = useState(initialAgentId);
-  const [goal, setGoal] = useState("Stake 15 CSPR to trusted-validator-demo");
-  const [proposal, setProposal] = useState<AgentRunnerProposal | null>(null);
-  const [result, setResult] = useState<DecisionResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [gatewayResponse, setGatewayResponse] = useState<AgentGatewayResponse | null>(null);
-  const [gatewayError, setGatewayError] = useState("");
-  const [copiedCurl, setCopiedCurl] = useState(false);
-
-  useEffect(() => {
-    if (!agentId && agents.length > 0) {
-      setAgentId(pickAgentForRunner(agents, policies, ""));
-    }
-  }, [agentId, agents, policies]);
-
-  const activePolicy = getActivePolicy(policies, agentId);
-  const selectedAgent = agents.find((agent) => agent.id === agentId);
-
-  const quickGoals = [
-    "Stake 15 CSPR to trusted-validator-demo",
-    "Transfer 9000 CSPR to unknown-wallet",
-    "Call unknown contract to mint 5000 tokens",
-    "Claim 8 CSPR rewards from trusted staking contract",
-    "Send 300 CSPR DAO treasury payment to contributor-wallet",
-  ];
-
-  const generateAction = useCallback(() => {
-    if (!goal.trim() || !agentId) return;
-    setProposal(buildAgentRunnerProposal(goal, agentId));
-    setResult(null);
-    setGatewayResponse(null);
-    setGatewayError("");
-  }, [agentId, goal]);
-
-  const gatewayIntent = useMemo(() => {
-    if (!proposal) return null;
-    return {
-      source: "magen3-ui-agent-gateway",
-      agentId: proposal.request.agentId,
-      walletAddress,
-      goal: proposal.rawGoal,
-      reason: proposal.summary,
-      action: {
-        type: proposal.request.actionType,
-        amount: proposal.request.amount,
-        asset: "CSPR",
-        target: proposal.request.target,
-        targetType: proposal.request.targetType,
-      },
-    };
-  }, [proposal, walletAddress]);
-
-  const gatewayCurl = useMemo(() => {
-    if (!gatewayIntent) return "";
-    return `curl -X POST "${api.baseUrl}/api/agent-gateway/intents" \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify(gatewayIntent)}'`;
-  }, [gatewayIntent]);
-
-  const copyGatewayCurl = useCallback(async () => {
-    if (!gatewayCurl) return;
-    try {
-      await navigator.clipboard.writeText(gatewayCurl);
-      setCopiedCurl(true);
-      setTimeout(() => setCopiedCurl(false), 1500);
-    } catch {
-      setGatewayError("Could not copy the curl command. You can still select it manually.");
-    }
-  }, [gatewayCurl]);
-
-  const reviewProposal = useCallback(async () => {
-    if (!gatewayIntent) return;
-    setAnalyzing(true);
-    setResult(null);
-    setGatewayResponse(null);
-    setGatewayError("");
-    try {
-      const response = await onSubmitGatewayIntent(gatewayIntent);
-      setGatewayResponse(response);
-      setResult(response.result);
-    } catch (error) {
-      setGatewayError(error instanceof Error ? error.message : "Agent Gateway request failed");
-    } finally {
-      setAnalyzing(false);
-    }
-  }, [gatewayIntent, onSubmitGatewayIntent]);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#22D3EE] mb-3">
-            <Bot size={13} /> Agent Gateway API
-          </div>
-          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-            Real agent gateway
-          </h1>
-          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
-            Use the same API endpoint an external AI agent would call before wallet signing or contract execution. The UI below is only a gateway lab for sending real API requests.
-          </p>
-        </div>
-        <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
-          Open Audit Log <ArrowRight size={14} />
-        </Btn>
-      </div>
-
-      <div className="grid md:grid-cols-4 gap-3">
-        {[
-          { label: "1. Intent", desc: "External agent calls API", icon: <Bot size={18} /> },
-          { label: "2. Gateway", desc: "Magen3 validates request", icon: <Zap size={18} /> },
-          { label: "3. Decision", desc: "Policy engine approves/blocks", icon: <Shield size={18} /> },
-          { label: "4. Proof", desc: "Audit log + Casper payload", icon: <Database size={18} /> },
-        ].map((step) => (
-          <div key={step.label} className={`${CARD} p-4`}>
-            <div className="flex items-center gap-2 text-[#22D3EE] mb-2">
-              {step.icon}
-              <span className="text-xs font-semibold uppercase tracking-wider">{step.label}</span>
-            </div>
-            <p className="text-sm text-[#F8FAFC] font-medium">{step.desc}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid xl:grid-cols-3 gap-6">
-        <div className={`${CARD} p-6 xl:col-span-1`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>Gateway Test Request</h2>
-          <div className="space-y-4">
-            <SelectField
-              label="Agent"
-              value={agentId}
-              onChange={(v) => {
-                setAgentId(v);
-                setProposal(null);
-                setResult(null);
-                setGatewayResponse(null);
-    setGatewayError("");
-              }}
-              options={agents.map((agent) => agent.id)}
-            />
-
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-              <div className="flex items-center justify-between gap-3 text-xs mb-2">
-                <span className="text-[#94A3B8] uppercase tracking-wider">Selected Agent</span>
-                <StatusBadge status={selectedAgent?.status || "No Policy"} />
-              </div>
-              <div className="text-sm text-[#F8FAFC] font-semibold">{selectedAgent?.name || "No agent selected"}</div>
-              <div className="text-xs text-[#94A3B8] mt-1">{selectedAgent?.type || "Register an agent first"}</div>
-              <div className="mt-3 border-t border-[#1E293B] pt-3 text-xs text-[#94A3B8]">
-                Active policy: <span className="text-[#F8FAFC]">{activePolicy?.name || "None"}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className={LABEL_CLS}>Agent Goal / Intent</label>
-              <textarea
-                className={`${INPUT_CLS} min-h-32 resize-none`}
-                value={goal}
-                onChange={(e) => {
-                  setGoal(e.target.value);
-                  setProposal(null);
-                  setResult(null);
-                  setGatewayResponse(null);
-    setGatewayError("");
-                }}
-                placeholder="Example: Stake 15 CSPR to trusted-validator-demo"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {quickGoals.map((quickGoal) => (
-                <button
-                  key={quickGoal}
-                  onClick={() => {
-                    setGoal(quickGoal);
-                    setProposal(null);
-                    setResult(null);
-                    setGatewayResponse(null);
-    setGatewayError("");
-                  }}
-                  className="rounded-lg bg-[#1E293B] px-3 py-1.5 text-left text-xs text-[#94A3B8] transition-colors hover:bg-[#263548] hover:text-[#F8FAFC]"
-                >
-                  {quickGoal}
-                </button>
-              ))}
-            </div>
-
-            <Btn variant="primary" size="lg" className="w-full justify-center" onClick={generateAction} disabled={!agentId || !goal.trim()}>
-              <Zap size={16} /> Build Gateway Request
-            </Btn>
-          </div>
-        </div>
-
-        <div className="xl:col-span-2 space-y-6">
-          <div className={`${CARD_GLOW} p-6`}>
-            <div className="flex items-center justify-between gap-3 mb-5">
-              <div>
-                <h2 className={SECTION_TITLE}>Structured Agent Intent</h2>
-                <p className="text-xs text-[#94A3B8] mt-1">This JSON is submitted to the real /api/agent-gateway/intents endpoint.</p>
-              </div>
-              {proposal && (
-                <span className="rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold text-[#22D3EE]">
-                  {proposal.confidence}% confidence
-                </span>
-              )}
-            </div>
-
-            {!proposal ? (
-              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
-                <Bot size={30} className="mx-auto mb-3 text-[#94A3B8]" />
-                <p className="text-sm text-[#94A3B8]">Build the gateway request to begin the real API test.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-[#0B1220] p-4">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Gateway Summary</div>
-                  <p className="text-sm text-[#F8FAFC]">{proposal.summary}</p>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-3 text-sm">
-                  {[
-                    ["Action Type", proposal.request.actionType],
-                    ["Amount", `${proposal.request.amount} CSPR`],
-                    ["Target", proposal.request.target],
-                    ["Target Type", proposal.request.targetType],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="text-[11px] text-[#94A3B8] uppercase tracking-wider mb-1">{label}</div>
-                      <div className="font-mono text-[#F8FAFC] break-all">{value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Intent Parsing</div>
-                    <ul className="space-y-1.5">
-                      {proposal.reasoning.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
-                          <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-[#22D3EE]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Gateway Rules</div>
-                    <ul className="space-y-1.5">
-                      {proposal.executionPlan.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
-                          <ShieldCheck size={14} className="mt-0.5 flex-shrink-0 text-[#22C55E]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                {gatewayIntent && (
-                  <div className="rounded-lg border border-[#1E293B] bg-[#020617] p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <div className="text-xs text-[#94A3B8] uppercase tracking-wider">External Agent API Call</div>
-                      <button onClick={copyGatewayCurl} className="text-xs text-[#22D3EE] hover:text-[#F8FAFC]">
-                        {copiedCurl ? "Copied" : "Copy curl"}
-                      </button>
-                    </div>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-[#94A3B8]">{gatewayCurl}</pre>
-                  </div>
-                )}
-
-                <Btn variant="primary" size="md" onClick={reviewProposal} disabled={analyzing}>
-                  {analyzing ? <Activity size={16} className="animate-spin" /> : <Shield size={16} />}
-                  {analyzing ? "Calling Agent Gateway..." : "Submit to Agent Gateway API"}
-                </Btn>
-              </div>
-            )}
-          </div>
-
-          <div className={`${CARD_GLOW} p-6`}>
-            <h2 className={`${SECTION_TITLE} mb-5`}>Agent Gateway Decision</h2>
-            {gatewayError && (
-              <div className="mb-4 rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{gatewayError}</div>
-            )}
-            {!result && !analyzing && (
-              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-10 text-center">
-                <Shield size={30} className="mx-auto mb-3 text-[#94A3B8]" />
-                <p className="text-sm text-[#94A3B8]">The gateway request has not been submitted yet.</p>
-              </div>
-            )}
-            {analyzing && (
-              <div className="rounded-xl bg-[#0B1220] p-10 text-center">
-                <Activity size={30} className="mx-auto mb-3 animate-spin text-[#22D3EE]" />
-                <p className="text-sm text-[#94A3B8]">Calling the real backend gateway, checking policy limits, trusted targets, blocked actions, and daily exposure...</p>
-              </div>
-            )}
-            {result && !analyzing && (
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <DecisionBadge decision={result.decision} />
-                    <RiskBadge risk={result.risk} />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Risk Score</div>
-                    <div className="text-3xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{result.riskScore}<span className="text-sm text-[#94A3B8]">/100</span></div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-[#0B1220] p-4">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Decision Reason</div>
-                  <p className="text-sm text-[#F8FAFC]">{result.reason}</p>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Passed</div>
-                    <ul className="space-y-1.5">
-                      {result.policyChecksPassed.length === 0 ? (
-                        <li className="text-sm text-[#94A3B8]">No passing checks.</li>
-                      ) : result.policyChecksPassed.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
-                          <CheckCircle size={14} className="mt-0.5 flex-shrink-0 text-[#22C55E]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">Failed / Review Flags</div>
-                    <ul className="space-y-1.5">
-                      {result.policyChecksFailed.length === 0 ? (
-                        <li className="text-sm text-[#94A3B8]">No failed checks.</li>
-                      ) : result.policyChecksFailed.map((item) => (
-                        <li key={item} className="flex items-start gap-2 text-sm text-[#94A3B8]">
-                          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-[#F59E0B]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 border-t border-[#1E293B] pt-4">
-                  {gatewayResponse?.auditLog ? (
-                    <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
-                      <span className="flex items-center gap-2"><CheckCircle size={16} /> Gateway request saved to audit log</span>
-                      <span className="font-mono text-xs text-[#94A3B8]">{gatewayResponse.auditLog.id} · {gatewayResponse.gatewayRequest.status}</span>
-                      <span className="text-xs text-[#94A3B8]">{gatewayResponse.nextAction}</span>
-                    </div>
-                  ) : (
-                    <span className="text-sm text-[#94A3B8]">Submit the request to create a real audit log.</span>
-                  )}
-                  <Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}>
-                    Open Audit Log / Casper Proof <ExternalLink size={14} />
-                  </Btn>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-3`}>Why this matters</h2>
-        <p className="text-sm text-[#94A3B8] leading-relaxed">
-          This page now uses a real backend gateway endpoint. An external AI agent can call the same API with a structured Web3 intent, and Magen3 will approve, block, or pause the action before any wallet signature or contract execution.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-
-// ──────────────────────────────────────────────────────────
-// External Agent Demo Page
-// ──────────────────────────────────────────────────────────
-
-type ExternalAgentMessage = {
-  id: string;
-  role: "user" | "agent" | "magen3" | "system";
-  text: string;
-  decision?: Decision;
-  risk?: Risk;
-  auditLogId?: string;
-};
-
-function ExternalAgentDemoPage({
-  agents,
-  policies,
-  walletAddress,
-  onNavigate,
-  onSubmitGatewayIntent,
-  onConfirmExecutionDeploy,
-  onSignApprovedExecution,
-}: {
-  agents: Agent[];
-  policies: Policy[];
-  walletAddress: string;
-  onNavigate: (p: Page) => void;
-  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
-  onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
-  onSignApprovedExecution: (response: AgentGatewayResponse) => Promise<AuditLog>;
-}) {
-  const initialAgentId = pickAgentForRunner(agents, policies, "");
-  const [agentId, setAgentId] = useState(initialAgentId);
-  const [gatewayUrl] = useState(`${api.baseUrl}/api/agent-gateway/intents`);
-  const [apiKey, setApiKey] = useState("");
-  const [task, setTask] = useState("Stake 15 CSPR to trusted-validator-demo");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [latestResponse, setLatestResponse] = useState<AgentGatewayResponse | null>(null);
-  const [executionHash, setExecutionHash] = useState("");
-  const [executionSaving, setExecutionSaving] = useState(false);
-  const [executionSigning, setExecutionSigning] = useState(false);
-  const [messages, setMessages] = useState<ExternalAgentMessage[]>([
-    {
-      id: makeId("MSG"),
-      role: "agent",
-      text: "YieldBot is connected to Magen3 Gateway. Give me a Web3 task and I will ask Magen3 before I try to execute anything.",
-    },
-  ]);
-
-  useEffect(() => {
-    if (!agentId && agents.length > 0) {
-      setAgentId(pickAgentForRunner(agents, policies, ""));
-    }
-  }, [agentId, agents, policies]);
-
-  const selectedAgent = agents.find((agent) => agent.id === agentId);
-  const activePolicy = getActivePolicy(policies, agentId);
-
-  const quickTasks = [
-    "Stake 15 CSPR to trusted-validator-demo",
-    "Transfer 9000 CSPR to unknown-wallet",
-    "Deposit 75 CSPR into approved yield vault",
-    "Call unknown contract to mint 5000 tokens",
-  ];
-
-  const appendMessage = useCallback((message: Omit<ExternalAgentMessage, "id">) => {
-    setMessages((prev) => [...prev, { id: makeId("MSG"), ...message }]);
-  }, []);
-
-  const submitTask = useCallback(async () => {
-    if (!task.trim() || !agentId) return;
-    setBusy(true);
-    setError("");
-    setLatestResponse(null);
-    setExecutionHash("");
-
-    const proposal = buildAgentRunnerProposal(task, agentId);
-    const intent = {
-      source: selectedAgent?.name || "YieldBot external agent",
-      agentId: proposal.request.agentId,
-      walletAddress,
-      goal: proposal.rawGoal,
-      reason: "External agent user requested this task. The agent is checking Magen3 before execution.",
-      action: {
-        type: proposal.request.actionType,
-        amount: proposal.request.amount,
-        asset: "CSPR",
-        target: proposal.request.target,
-        targetType: proposal.request.targetType,
-      },
-    };
-
-    appendMessage({ role: "user", text: task.trim() });
-    appendMessage({
-      role: "agent",
-      text: `I prepared a ${proposal.request.actionType} action for ${proposal.request.amount} CSPR. Before execution, I am sending it to Magen3 Gateway for policy approval.`,
-    });
-    appendMessage({
-      role: "system",
-      text: `POST ${gatewayUrl} · agentId=${proposal.request.agentId}`,
-    });
-
-    try {
-      const response = await onSubmitGatewayIntent(intent, apiKey.trim() || undefined);
-      setLatestResponse(response);
-      const result = response.result;
-      const agentText =
-        result.decision === "Allowed"
-          ? `Magen3 approved this action. Risk: ${result.risk}. I am now waiting for the wallet owner to sign the real transaction. After signing, I will attach the execution hash back to Magen3.`
-          : result.decision === "Blocked"
-          ? `Magen3 blocked this action. Risk: ${result.risk}. I will stop and will not ask the wallet to sign it.`
-          : `Magen3 says this needs human review. Risk: ${result.risk}. I will pause until an admin approves or rejects it.`;
-
-      appendMessage({
-        role: "magen3",
-        decision: result.decision,
-        risk: result.risk,
-        auditLogId: response.auditLog?.id,
-        text: `${result.decision} — ${result.reason}`,
-      });
-      appendMessage({ role: "agent", text: agentText });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not reach Magen3 Gateway.";
-      setError(message);
-      appendMessage({ role: "agent", text: `I could not complete the safety check because Magen3 Gateway returned an error: ${message}` });
-    } finally {
-      setBusy(false);
-    }
-  }, [agentId, apiKey, appendMessage, gatewayUrl, onSubmitGatewayIntent, selectedAgent?.name, task, walletAddress]);
-
-  const attachExecutionHash = useCallback(async () => {
-    if (!latestResponse?.auditLog?.id) return;
-    const normalized = normalizeCasperDeployHash(executionHash);
-    if (!isRealCasperDeployHash(normalized)) {
-      setError("Paste the real 64-character Casper execution deploy hash returned after the wallet signs.");
-      return;
-    }
-    setExecutionSaving(true);
-    setError("");
-    try {
-      const updated = await onConfirmExecutionDeploy(
-        latestResponse.auditLog.id,
-        normalized,
-        walletAddress,
-        "External agent action executed after Magen3 approval."
-      );
-      setLatestResponse((prev) => prev ? { ...prev, auditLog: updated } : prev);
-      appendMessage({
-        role: "agent",
-        text: `Execution hash attached to Magen3 audit: ${truncate(normalized, 18)}. The audit now shows both the Magen3 decision proof and the real execution proof.`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not attach execution hash.";
-      setError(message);
-      appendMessage({ role: "agent", text: `I could not attach the execution hash to Magen3: ${message}` });
-    } finally {
-      setExecutionSaving(false);
-    }
-  }, [appendMessage, executionHash, latestResponse?.auditLog?.id, onConfirmExecutionDeploy, walletAddress]);
-
-  const signApprovedExecution = useCallback(async () => {
-    if (!latestResponse?.executionApproved) return;
-    if (!walletAddress) {
-      setError("Connect Casper Wallet before signing approved execution.");
-      return;
-    }
-
-    setExecutionSigning(true);
-    setError("");
-    appendMessage({
-      role: "agent",
-      text: "Magen3 approved this intent. I am now requesting the connected Casper Wallet to sign the approved execution proof.",
-    });
-
-    try {
-      const updated = await onSignApprovedExecution(latestResponse);
-      setLatestResponse((prev) => prev ? { ...prev, auditLog: updated } : prev);
-      const hash = normalizeCasperDeployHash(updated.executionTxHash || "");
-      setExecutionHash(hash);
-      appendMessage({
-        role: "agent",
-        text: `Wallet signature complete. Casper returned execution deploy hash ${truncate(hash, 18)} and Magen3 attached it to the audit record.`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Wallet signing or Casper submission failed.";
-      setError(message);
-      appendMessage({
-        role: "agent",
-        text: `I could not complete the wallet-signed execution proof: ${message}`,
-      });
-    } finally {
-      setExecutionSigning(false);
-    }
-  }, [appendMessage, latestResponse, onSignApprovedExecution, walletAddress]);
-
-  const messageStyles: Record<ExternalAgentMessage["role"], string> = {
-    user: "ml-auto bg-[#22D3EE] text-[#050B14]",
-    agent: "bg-[#1E293B] text-[#F8FAFC] border border-[#334155]",
-    magen3: "bg-[#0B1220] text-[#F8FAFC] border border-[#22D3EE]/30",
-    system: "bg-[#050B14] text-[#94A3B8] border border-[#1E293B] font-mono text-xs",
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#22D3EE]/10 border border-[#22D3EE]/20 text-[#22D3EE] text-xs font-semibold mb-3">
-            <Server size={14} /> External Agent Demo
-          </div>
-          <h1 className="text-3xl font-bold text-[#F8FAFC] font-['Space_Grotesk'] mb-2">
-            Customer Agent using Magen3
-          </h1>
-          <p className="text-[#94A3B8] max-w-3xl">
-            This screen behaves like a separate AI agent owned by a customer. The agent receives a task, calls the Magen3 Gateway API, then shows the Magen3 decision inside its own chat before any execution.
-          </p>
-        </div>
-        <Btn variant="outline" onClick={() => onNavigate("audit-log")}>
-          Open Magen3 Audit Log <ExternalLink size={16} />
-        </Btn>
-      </div>
-
-      <div className="grid xl:grid-cols-[380px_1fr] gap-6">
-        <div className="space-y-5">
-          <div className={`${CARD_GLOW} p-5`}>
-            <h2 className={`${SECTION_TITLE} mb-4`}>Agent Connection</h2>
-            <div className="space-y-4">
-              <SelectField
-                label="Registered Magen3 Agent"
-                value={agentId}
-                onChange={setAgentId}
-                options={agents.map((agent) => agent.id)}
-              />
-              <InputField label="Gateway URL" value={gatewayUrl} onChange={() => undefined} />
-              <InputField
-                label="Optional Agent API Key"
-                value={apiKey}
-                onChange={setApiKey}
-                placeholder="Paste this agent's Magen3 API key"
-              />
-              <div className="rounded-lg bg-[#0B1220] border border-[#1E293B] p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Agent</span>
-                  <StatusBadge status={selectedAgent?.status || "No Policy"} />
-                </div>
-                <div className="text-sm text-[#F8FAFC] font-medium">{selectedAgent?.name || "No agent selected"}</div>
-                <div className="text-xs text-[#94A3B8]">{selectedAgent?.purpose || "Register an agent in Magen3 first."}</div>
-                <div className="border-t border-[#1E293B] pt-3">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">Active Policy</div>
-                  <div className="text-sm text-[#F8FAFC]">{activePolicy?.name || "No active policy"}</div>
-                  {activePolicy && (
-                    <div className="text-xs text-[#94A3B8] mt-1">
-                      Max {activePolicy.maxTransaction} CSPR · Review above {activePolicy.approvalThreshold} CSPR
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="rounded-lg bg-[#050B14] border border-[#1E293B] p-4">
-                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">What this proves</div>
-                <p className="text-sm text-[#94A3B8] leading-relaxed">
-                  The customer is no longer clicking actions inside Magen3. Their own agent calls Magen3 and receives the safety decision back in the agent experience.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {latestResponse && (
-            <div className={`${CARD_GLOW} p-5`}>
-              <h2 className={`${SECTION_TITLE} mb-4`}>Latest Gateway Response</h2>
-              <div className="flex items-center gap-2 mb-4">
-                <DecisionBadge decision={latestResponse.result.decision} />
-                <RiskBadge risk={latestResponse.result.risk} />
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between gap-3">
-                  <span className="text-[#94A3B8]">Execution approved</span>
-                  <span className={latestResponse.executionApproved ? "text-[#22C55E]" : "text-[#F59E0B]"}>{latestResponse.executionApproved ? "Yes" : "No"}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-[#94A3B8]">Audit ID</span>
-                  <span className="text-[#F8FAFC] font-mono text-xs">{latestResponse.auditLog.id}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-[#94A3B8]">Gateway status</span>
-                  <span className="text-[#F8FAFC] font-mono text-xs">{latestResponse.gatewayRequest.status}</span>
-                </div>
-              </div>
-              {latestResponse.executionApproved && (
-                <div className="mt-5 rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle size={16} className="mt-0.5 text-[#22C55E]" />
-                    <div>
-                      <div className="text-sm font-semibold text-[#F8FAFC]">Approved Execution</div>
-                      <p className="text-xs text-[#94A3B8] mt-1 leading-relaxed">
-                        Magen3 approved the intent. The same connected Casper Wallet can now sign an on-chain execution proof. The deploy hash is submitted to Casper and attached to this audit automatically.
-                      </p>
-                    </div>
-                  </div>
-                  <Btn
-                    variant="primary"
-                    size="sm"
-                    className="w-full justify-center"
-                    onClick={signApprovedExecution}
-                    disabled={executionSigning || Boolean(latestResponse.auditLog.executionTxHash)}
-                  >
-                    {executionSigning ? <Activity size={14} className="animate-spin" /> : <Wallet size={14} />}
-                    {latestResponse.auditLog.executionTxHash ? "Execution Signed" : "Sign with Connected Casper Wallet"}
-                  </Btn>
-                  <div className="border-t border-[#1E293B] pt-3 space-y-3">
-                    <p className="text-xs text-[#94A3B8] leading-relaxed">
-                      Manual fallback: if wallet signing fails, submit the approved execution with CLI and paste the returned deploy hash below.
-                    </p>
-                    <InputField
-                      label="Manual Execution Deploy Hash"
-                      value={executionHash}
-                      onChange={setExecutionHash}
-                      placeholder="Paste real Casper deploy hash after wallet/CLI signing"
-                    />
-                    <Btn
-                      variant="secondary"
-                      size="sm"
-                      className="w-full justify-center"
-                      onClick={attachExecutionHash}
-                      disabled={executionSaving || !executionHash.trim()}
-                    >
-                      {executionSaving ? <Activity size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                      Attach Manual Hash
-                    </Btn>
-                  </div>
-                  {latestResponse.auditLog.executionTxHash && (
-                    <a
-                      href={casperDeployUrl(latestResponse.auditLog.executionTxHash)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-[#22D3EE] hover:text-[#F8FAFC]"
-                    >
-                      View execution on CSPR.live <ExternalLink size={12} />
-                    </a>
-                  )}
-                </div>
-              )}
-              <Btn variant="secondary" size="sm" className="mt-4 w-full justify-center" onClick={() => onNavigate("audit-log")}>
-                View audit proof <ExternalLink size={14} />
-              </Btn>
-            </div>
-          )}
-        </div>
-
-        <div className={`${CARD_GLOW} overflow-hidden`}>
-          <div className="border-b border-[#1E293B] p-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[#22D3EE]/15 flex items-center justify-center shadow-[0_0_16px_rgba(34,211,238,0.25)]">
-                <Bot size={22} className="text-[#22D3EE]" />
-              </div>
-              <div>
-                <div className="text-lg font-bold text-[#F8FAFC] font-['Space_Grotesk']">{selectedAgent?.name || "YieldBot"}</div>
-                <div className="text-xs text-[#94A3B8]">Customer AI agent · Protected by Magen3 Gateway</div>
-              </div>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/30 bg-[#22C55E]/10 px-3 py-1 text-xs font-semibold text-[#22C55E]">
-              <span className="h-2 w-2 rounded-full bg-[#22C55E]" /> Connected
-            </span>
-          </div>
-
-          <div className="h-[520px] overflow-y-auto p-5 space-y-4 bg-[#070D18]">
-            {messages.map((message) => (
-              <div key={message.id} className={`max-w-[82%] rounded-2xl px-4 py-3 ${messageStyles[message.role]} ${message.role === "user" ? "rounded-br-sm" : "rounded-bl-sm"}`}>
-                <div className="mb-1 text-[10px] uppercase tracking-wider opacity-70">
-                  {message.role === "user" ? "Customer" : message.role === "magen3" ? "Magen3 Gateway" : message.role === "system" ? "API call" : selectedAgent?.name || "YieldBot"}
-                </div>
-                <div className="text-sm leading-relaxed">{message.text}</div>
-                {message.decision && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <DecisionBadge decision={message.decision} />
-                    {message.risk && <RiskBadge risk={message.risk} />}
-                    {message.auditLogId && <span className="text-xs font-mono text-[#94A3B8]">{message.auditLogId}</span>}
-                  </div>
-                )}
-              </div>
-            ))}
-            {busy && (
-              <div className="max-w-[82%] rounded-2xl rounded-bl-sm bg-[#1E293B] border border-[#334155] px-4 py-3 text-[#F8FAFC]">
-                <div className="mb-1 text-[10px] uppercase tracking-wider text-[#94A3B8]">{selectedAgent?.name || "YieldBot"}</div>
-                <div className="flex items-center gap-2 text-sm text-[#94A3B8]"><Activity size={14} className="animate-spin text-[#22D3EE]" /> Waiting for Magen3 Gateway decision...</div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-[#1E293B] p-5 bg-[#0B1220]">
-            <div className="flex flex-wrap gap-2 mb-4">
-              {quickTasks.map((quick) => (
-                <button
-                  key={quick}
-                  onClick={() => setTask(quick)}
-                  className="rounded-full border border-[#1E293B] bg-[#111827] px-3 py-1.5 text-xs text-[#94A3B8] hover:border-[#22D3EE]/40 hover:text-[#22D3EE] transition-colors"
-                >
-                  {quick}
-                </button>
-              ))}
-            </div>
-            {error && <div className="mb-3 rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
-            <div className="flex flex-col md:flex-row gap-3">
-              <input
-                className={`${INPUT_CLS} flex-1`}
-                value={task}
-                onChange={(e) => setTask(e.target.value)}
-                placeholder="Ask the agent to do a Web3 task..."
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !busy) submitTask();
-                }}
-              />
-              <Btn variant="primary" onClick={submitTask} disabled={busy || !agentId || !task.trim()}>
-                {busy ? <Activity size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-                Send to Agent
-              </Btn>
-            </div>
-            <p className="text-xs text-[#94A3B8] mt-3">
-              The agent first asks Magen3. If approved, the wallet owner signs the real transaction and the execution hash is attached to the Magen3 audit.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ──────────────────────────────────────────────────────────
 // Audit Log Page
@@ -4678,6 +3835,24 @@ export default function App() {
     }
   }, [walletAddress]);
 
+  const onUpdatePolicy = useCallback(async (id: string, policy: Partial<Policy>) => {
+    if (!walletAddress) {
+      setWalletError("Connect Casper Wallet before updating a policy.");
+      return;
+    }
+
+    try {
+      const response = await api.updatePolicy(id, { ...policy, walletAddress });
+      const updated = response.policy as Policy;
+      setPolicies((prev) => prev.map((item) => item.id === updated.id ? updated : item));
+      if (Array.isArray(response.agents)) setAgents(response.agents as Agent[]);
+      setApiOnline(true);
+    } catch (error) {
+      setApiOnline(false);
+      setWalletError(error instanceof Error ? error.message : "Unable to update policy.");
+    }
+  }, [walletAddress]);
+
   const onAnalyzeAction = useCallback(async (request: ActionRequest) => {
     try {
       const response = await api.analyzeAction({ ...request, walletAddress } as unknown as Record<string, unknown>);
@@ -4811,6 +3986,7 @@ export default function App() {
         agents={agents}
         policies={policies}
         onCreatePolicy={onCreatePolicy}
+        onUpdatePolicy={onUpdatePolicy}
         walletAddress={walletAddress}
       />
     ),

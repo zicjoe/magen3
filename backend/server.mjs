@@ -244,6 +244,12 @@ const server = createServer(async (req, res) => {
       return send(res, 201, await store.createPolicy(body));
     }
 
+    const updatePolicyMatch = url.pathname.match(/^\/api\/policies\/([^/]+)\/update$/);
+    if (req.method === "POST" && updatePolicyMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.updatePolicy(updatePolicyMatch[1], body));
+    }
+
     if (route === "POST /api/actions/analyze") {
       const body = await readJson(req);
       return send(res, 200, await store.analyzeAction(body));
