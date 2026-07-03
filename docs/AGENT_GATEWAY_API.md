@@ -101,6 +101,8 @@ curl -X POST "https://your-magen3-api.up.railway.app/api/agent-gateway/intents" 
 
 Even when the decision is `Allowed`, Magen3 does not move funds by itself. The external agent must still request a real signature from the execution wallet and attach the execution deploy hash back to Magen3.
 
+Policy trust is based on the target value, not only the target type. A `Transfer` to `targetType: "Wallet Address"` can be `Allowed` when the wallet address is listed in the policy's trusted targets, the amount is within the max transaction, daily, and approval-threshold limits, and `Transfer` is not blocked. Untrusted or unknown wallet-address transfers remain subject to review or blocking based on the policy risk mode.
+
 ## Casper Proof Model
 
 Magen3 uses two separate proof fields:

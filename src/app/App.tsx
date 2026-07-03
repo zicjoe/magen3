@@ -573,7 +573,7 @@ function evaluateAction(
   if (isTrusted) {
     checksPassed.push("Target is trusted or policy-approved");
   } else {
-    checksFailed.push("Target is not in the trusted contract list");
+    checksFailed.push("Target is not in the trusted target list");
     score += strictMode ? 35 : 25;
   }
 
@@ -595,7 +595,7 @@ function evaluateAction(
     (!isTrusted && (strictMode || request.targetType === "Unknown Contract"));
   const needsReview =
     !hardBlock &&
-    (request.amount > policy.approvalThreshold || !isTrusted || request.targetType !== "Trusted Contract");
+    (request.amount > policy.approvalThreshold || !isTrusted);
 
   const decision: Decision = hardBlock
     ? "Blocked"
@@ -2344,7 +2344,7 @@ function PoliciesPage({
               type="number"
             />
             <div>
-              <label className={LABEL_CLS}>Trusted Contracts</label>
+              <label className={LABEL_CLS}>Trusted Targets</label>
               <textarea
                 className={`${INPUT_CLS} resize-none`}
                 rows={3}
@@ -2355,7 +2355,7 @@ function PoliciesPage({
                     trustedContracts: e.target.value,
                   }))
                 }
-                placeholder="One contract address per line"
+                placeholder="One contract or wallet address per line"
               />
             </div>
             <SelectField
@@ -2494,13 +2494,13 @@ function PoliciesPage({
                 />
               </div>
               <div>
-                <label className={LABEL_CLS}>Trusted Contracts</label>
+                <label className={LABEL_CLS}>Trusted Targets</label>
                 <textarea
                   className={`${INPUT_CLS} resize-none`}
                   rows={3}
                   value={editForm.trustedContracts}
                   onChange={(e) => setEditForm((p) => ({ ...p, trustedContracts: e.target.value }))}
-                  placeholder="One contract address per line"
+                  placeholder="One contract or wallet address per line"
                 />
               </div>
               <div className="grid md:grid-cols-2 gap-3">

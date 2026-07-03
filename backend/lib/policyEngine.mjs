@@ -80,7 +80,7 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
   if (isTrusted) {
     checksPassed.push("Target is trusted or policy-approved");
   } else {
-    checksFailed.push("Target is not in the trusted contract list");
+    checksFailed.push("Target is not in the trusted target list");
     score += strictMode ? 35 : 25;
   }
 
@@ -96,7 +96,7 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     amount > Number(policy.maxTransaction) ||
     dailyAfterAction > Number(policy.dailyLimit) ||
     (!isTrusted && (strictMode || request.targetType === "Unknown Contract"));
-  const needsReview = !hardBlock && (amount > Number(policy.approvalThreshold) || !isTrusted || request.targetType !== "Trusted Contract");
+  const needsReview = !hardBlock && (amount > Number(policy.approvalThreshold) || !isTrusted);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));

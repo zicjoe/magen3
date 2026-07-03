@@ -243,6 +243,8 @@ Agent identity comes from `agentId` plus `x-magen3-agent-key` or `Authorization:
 
 The `walletAddress` / `executionWalletAddress` in the request is the execution wallet connected inside the external agent. It does not need to match the Magen3 owner wallet that registered the agent.
 
+For transfer intents, `targetType: "Wallet Address"` is supported. Add trusted recipient wallet addresses to the policy's trusted targets list when those transfers should be allowed automatically within the policy limits. Unknown or untrusted wallet recipients still require review or are blocked depending on risk mode.
+
 Example payload:
 
 ```json
