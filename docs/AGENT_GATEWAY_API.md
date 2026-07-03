@@ -111,3 +111,5 @@ Magen3 uses two separate proof fields:
 | `auditLog.executionTxHash` | Execution Deploy Hash | Casper deploy hash for the real wallet-signed execution. Should exist only after an Allowed action is actually submitted. |
 
 For blocked actions, `executionApproved` is false and `executionStatus` should be `blocked_not_submitted`. A blocked action may still have a Decision Proof Hash, but it should not have an Execution Deploy Hash.
+
+Every Agent Gateway decision is recordable. Magen3 automatically queues or attempts `record_decision` for every gateway audit record. If the relayer succeeds, `auditLog.txHash` contains the real Casper Decision Proof Hash. If the relayer is not configured or fails, `auditLog.decisionProofStatus`, `auditLog.decisionProofPayloadHash`, and `auditLog.decisionProofError` explain the state without faking a deploy hash.

@@ -4,7 +4,7 @@ export const CASPER_NETWORK = process.env.CASPER_NETWORK || "casper-testnet";
 export const CASPER_CHAIN_NAME = process.env.CASPER_CHAIN_NAME || "casper-test";
 export const CASPER_RPC_URL = process.env.CASPER_RPC_URL || "https://node.testnet.casper.network/rpc";
 export const MAGEN3_CONTRACT_HASH = process.env.MAGEN3_CONTRACT_HASH || "";
-export const CASPER_RECORDING_MODE = process.env.CASPER_RECORDING_MODE || "manual-real-deploy";
+export const CASPER_RECORDING_MODE = process.env.CASPER_RECORDING_MODE || "relayer";
 
 export function hashJson(value) {
   return `0x${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
@@ -22,6 +22,13 @@ export function getCasperStatus() {
     contractHash: MAGEN3_CONTRACT_HASH,
     recordingMode: CASPER_RECORDING_MODE,
     contractConfigured: Boolean(MAGEN3_CONTRACT_HASH),
+    autoRecordDecisions: CASPER_RECORDING_MODE === "relayer" || process.env.CASPER_AUTO_RECORD_DECISIONS === "true",
+    relayerConfigured: Boolean(
+      process.env.CASPER_RELAYER_SECRET_KEY_PATH ||
+      process.env.CASPER_SECRET_KEY_PATH ||
+      process.env.CASPER_RELAYER_SECRET_KEY_B64 ||
+      process.env.CASPER_RELAYER_SECRET_KEY_PEM
+    ),
   };
 }
 

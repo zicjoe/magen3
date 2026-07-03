@@ -44,6 +44,8 @@ The kit is generated per connected agent, so it includes that agent's ID, gatewa
 
 Magen3 can record every decision on Casper as a Decision Proof Hash. Only execute and return an Execution Deploy Hash when Magen3 returns `Allowed`. If Magen3 returns `Blocked` or `Review Required`, do not ask the execution wallet to sign.
 
+Magen3 automatically queues or attempts decision proof recording for every Agent Gateway decision. External agents do not need to trigger proof recording separately.
+
 ## Verify The Agent
 
 ```js

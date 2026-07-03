@@ -71,6 +71,11 @@ export const auditLogsTable = pgTable("audit_logs", {
   executionSignedBy: text("execution_signed_by").notNull().default(""),
   executionNote: text("execution_note").notNull().default(""),
   executionUpdatedAt: timestamp("execution_updated_at", { withTimezone: true }),
+  decisionProofStatus: text("decision_proof_status").notNull().default("queued"),
+  decisionProofPayloadHash: text("decision_proof_payload_hash").notNull().default(""),
+  decisionProofError: text("decision_proof_error").notNull().default(""),
+  decisionProofMode: text("decision_proof_mode").notNull().default(""),
+  decisionProofUpdatedAt: timestamp("decision_proof_updated_at", { withTimezone: true }),
   riskScore: integer("risk_score").notNull(),
 });
 

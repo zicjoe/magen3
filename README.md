@@ -65,6 +65,22 @@ Magen3 tracks two different Casper footprints:
 
 Blocked and review-required actions should not have execution hashes. They can still have decision proof hashes because Magen3 can prove what it stopped.
 
+## Automatic decision proof recording
+
+Every Agent Gateway decision is recordable. Magen3 does not use a "recommended events only" rule.
+
+When an external agent submits an intent, Magen3:
+
+```text
+validates Agent ID + API key
+checks the assigned policy
+creates the database audit record
+queues/attempts the Casper record_decision proof
+stores the returned Decision Proof Hash when the relayer succeeds
+```
+
+If the backend relayer is not configured, the audit record stays queued with a decision payload hash and relayer note. Magen3 does not create fake deploy hashes.
+
 Magen3 audit registry contract on Casper Testnet:
 
 ```text
@@ -155,7 +171,7 @@ ALLOW_MEMORY_STORE=false
 CASPER_NETWORK=casper-testnet
 CASPER_CHAIN_NAME=casper-test
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
-CASPER_RECORDING_MODE=manual-real-deploy
+CASPER_RECORDING_MODE=relayer
 MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
 ```
 
@@ -170,10 +186,28 @@ CORS_ORIGIN=*
 CASPER_NETWORK=casper-testnet
 CASPER_CHAIN_NAME=casper-test
 CASPER_RPC_URL=https://node.testnet.casper.network/rpc
-CASPER_RECORDING_MODE=manual-real-deploy
+CASPER_RECORDING_MODE=relayer
 MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
+CASPER_CLIENT_BIN=casper-client
+CASPER_RELAYER_SECRET_KEY_B64=
+CASPER_RELAYER_SECRET_KEY_PEM=
+CASPER_RELAYER_SECRET_KEY_PATH=
+CASPER_CALL_PAYMENT_MOTES=5000000000
 NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 PNPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+```
+
+Use exactly one relayer key source. Keep it backend-only and fund the relayer account with Casper Testnet CSPR.
+
+Relayer options:
+
+```env
+CASPER_RECORDING_MODE=relayer
+CASPER_CLIENT_BIN=casper-client
+CASPER_RELAYER_SECRET_KEY_B64=
+CASPER_RELAYER_SECRET_KEY_PEM=
+CASPER_RELAYER_SECRET_KEY_PATH=
+CASPER_CALL_PAYMENT_MOTES=5000000000
 ```
 
 ## Railway backend settings

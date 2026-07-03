@@ -5,6 +5,7 @@ import { runMigrations } from "../db/migrate.mjs";
 import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
 import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
+import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 
@@ -89,6 +90,11 @@ function normalizeAuditLog(row) {
     executionSignedBy: row.executionSignedBy || "",
     executionNote: row.executionNote || "",
     executionUpdatedAt: row.executionUpdatedAt ? toDate(row.executionUpdatedAt).toISOString() : "",
+    decisionProofStatus: row.decisionProofStatus || "queued",
+    decisionProofPayloadHash: row.decisionProofPayloadHash || "",
+    decisionProofError: row.decisionProofError || "",
+    decisionProofMode: row.decisionProofMode || "",
+    decisionProofUpdatedAt: row.decisionProofUpdatedAt ? toDate(row.decisionProofUpdatedAt).toISOString() : "",
     riskScore: Number(row.riskScore),
   };
 }
@@ -312,7 +318,7 @@ export async function createPostgresStore() {
       const policy = normalizePolicy(policyRow);
       const agent = normalizeAgent(ownedAgent);
 
-      const [auditRow] = await db.insert(auditLogsTable).values({
+      const auditValues = {
         id: makeId("AUD"),
         timestamp: new Date(),
         shield: "Agent Shield",
@@ -336,6 +342,18 @@ export async function createPostgresStore() {
         executionNote: "Policy activation does not execute an external Web3 transaction.",
         executionUpdatedAt: null,
         riskScore: 4,
+      };
+      const initialProof = initialDecisionProofState({
+        ...auditValues,
+        timestamp: auditValues.timestamp.toISOString(),
+      });
+      const [auditRow] = await db.insert(auditLogsTable).values({
+        ...auditValues,
+        decisionProofStatus: initialProof.decisionProofStatus,
+        decisionProofPayloadHash: initialProof.decisionProofPayloadHash,
+        decisionProofError: initialProof.decisionProofError,
+        decisionProofMode: initialProof.decisionProofMode,
+        decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
       }).returning();
 
       return { policy, auditLog: normalizeAuditLog(auditRow), agents: await listAgents(walletAddress) };
@@ -404,7 +422,7 @@ export async function createPostgresStore() {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const agentOwnerWalletAddress = normalizeWalletAddress(body.agentOwnerWalletAddress || walletAddress);
       const executionWalletAddress = normalizeWalletAddress(body.executionWalletAddress || body.execution_wallet_address || body.walletAddress || walletAddress);
-      const [auditRow] = await db.insert(auditLogsTable).values({
+      const auditValues = {
         id: body.id || makeId("AUD"),
         timestamp: body.timestamp ? new Date(body.timestamp) : new Date(),
         shield: body.shield || "Agent Shield",
@@ -428,8 +446,33 @@ export async function createPostgresStore() {
         executionNote: body.executionNote || "",
         executionUpdatedAt: body.executionUpdatedAt ? new Date(body.executionUpdatedAt) : null,
         riskScore: Number(body.riskScore || 50),
+      };
+      const initialProof = initialDecisionProofState({
+        ...auditValues,
+        timestamp: auditValues.timestamp.toISOString(),
+        createdAt: undefined,
+      });
+      const [auditRow] = await db.insert(auditLogsTable).values({
+        ...auditValues,
+        decisionProofStatus: initialProof.decisionProofStatus,
+        decisionProofPayloadHash: initialProof.decisionProofPayloadHash,
+        decisionProofError: initialProof.decisionProofError,
+        decisionProofMode: initialProof.decisionProofMode,
+        decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
       }).returning();
-      return normalizeAuditLog(auditRow);
+      const proof = await recordDecisionProof(normalizeAuditLog(auditRow));
+      const [updatedRow] = await db.update(auditLogsTable)
+        .set({
+          ...(proof.txHash ? { txHash: proof.txHash } : {}),
+          decisionProofStatus: proof.decisionProofStatus,
+          decisionProofPayloadHash: proof.decisionProofPayloadHash,
+          decisionProofError: proof.decisionProofError,
+          decisionProofMode: proof.decisionProofMode,
+          decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+        })
+        .where(eq(auditLogsTable.id, auditRow.id))
+        .returning();
+      return normalizeAuditLog(updatedRow || auditRow);
     },
 
     async submitAgentGatewayIntent(body, context = {}) {
@@ -471,7 +514,7 @@ export async function createPostgresStore() {
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
 
-      const [auditRow] = await db.insert(auditLogsTable).values({
+      const auditValues = {
         id: makeId("AUD"),
         timestamp: new Date(),
         shield: "Agent Shield",
@@ -495,6 +538,18 @@ export async function createPostgresStore() {
         executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
         executionUpdatedAt: null,
         riskScore: Number(result.riskScore || 50),
+      };
+      const initialProof = initialDecisionProofState({
+        ...auditValues,
+        timestamp: auditValues.timestamp.toISOString(),
+      });
+      const [auditRow] = await db.insert(auditLogsTable).values({
+        ...auditValues,
+        decisionProofStatus: initialProof.decisionProofStatus,
+        decisionProofPayloadHash: initialProof.decisionProofPayloadHash,
+        decisionProofError: initialProof.decisionProofError,
+        decisionProofMode: initialProof.decisionProofMode,
+        decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
       }).returning();
 
       const auditLog = normalizeAuditLog(auditRow);
@@ -519,6 +574,19 @@ export async function createPostgresStore() {
         status,
         auditLogId: auditLog.id,
       }).returning();
+      const proof = await recordDecisionProof(auditLog);
+      const [recordedAuditRow] = await db.update(auditLogsTable)
+        .set({
+          ...(proof.txHash ? { txHash: proof.txHash } : {}),
+          decisionProofStatus: proof.decisionProofStatus,
+          decisionProofPayloadHash: proof.decisionProofPayloadHash,
+          decisionProofError: proof.decisionProofError,
+          decisionProofMode: proof.decisionProofMode,
+          decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+        })
+        .where(eq(auditLogsTable.id, auditLog.id))
+        .returning();
+      const recordedAuditLog = normalizeAuditLog(recordedAuditRow || auditRow);
 
       const gatewayRequest = {
         id: gatewayRow.id,
@@ -546,8 +614,8 @@ export async function createPostgresStore() {
         ok: true,
         gatewayRequest,
         result,
-        auditLog,
-        casperPayload: buildAuditDecisionPayload(auditLog),
+        auditLog: recordedAuditLog,
+        casperPayload: buildAuditDecisionPayload(recordedAuditLog),
         executionApproved: result.decision === "Allowed",
         nextAction: gatewayNextAction(result.decision),
       };
@@ -567,7 +635,12 @@ export async function createPostgresStore() {
     async confirmCasperDeploy(id, body) {
       const txHash = validateDeployHash(body?.deployHash);
       const [auditRow] = await db.update(auditLogsTable)
-        .set({ txHash })
+        .set({
+          txHash,
+          decisionProofStatus: "recorded",
+          decisionProofError: "",
+          decisionProofUpdatedAt: new Date(),
+        })
         .where(eq(auditLogsTable.id, id))
         .returning();
 
@@ -613,10 +686,28 @@ export async function createPostgresStore() {
     },
 
 
-    async recordAuditLog() {
-      const err = new Error("Automatic local recording is disabled. Prepare the Casper payload, sign the real deploy with Casper client, then confirm the real deploy hash.");
-      err.status = 400;
-      throw err;
+    async recordAuditLog(id) {
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const proof = await recordDecisionProof(normalizeAuditLog(current));
+      const [auditRow] = await db.update(auditLogsTable)
+        .set({
+          ...(proof.txHash ? { txHash: proof.txHash } : {}),
+          decisionProofStatus: proof.decisionProofStatus,
+          decisionProofPayloadHash: proof.decisionProofPayloadHash,
+          decisionProofError: proof.decisionProofError,
+          decisionProofMode: proof.decisionProofMode,
+          decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+        })
+        .where(eq(auditLogsTable.id, id))
+        .returning();
+      const auditLog = normalizeAuditLog(auditRow);
+      return { auditLog, txHash: auditLog.txHash, decisionProofStatus: auditLog.decisionProofStatus };
     },
   };
 }

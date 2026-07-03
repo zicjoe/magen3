@@ -1,6 +1,7 @@
 import { shieldModules } from "../data/seed.mjs";
 import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
+import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 
@@ -331,8 +332,16 @@ export function createMemoryStore() {
         executionSignedBy: body.executionSignedBy || "",
         executionNote: body.executionNote || "",
         executionUpdatedAt: body.executionUpdatedAt || "",
+        decisionProofStatus: body.decisionProofStatus || "queued",
+        decisionProofPayloadHash: body.decisionProofPayloadHash || "",
+        decisionProofError: body.decisionProofError || "",
+        decisionProofMode: body.decisionProofMode || "",
+        decisionProofUpdatedAt: body.decisionProofUpdatedAt || "",
         riskScore: Number(body.riskScore || 50),
       };
+      Object.assign(auditLog, initialDecisionProofState(auditLog));
+      const proof = await recordDecisionProof(auditLog);
+      Object.assign(auditLog, proof);
       auditLogs = [auditLog, ...auditLogs];
       return auditLog;
     },
@@ -377,8 +386,14 @@ export function createMemoryStore() {
         executionSignedBy: "",
         executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
         executionUpdatedAt: "",
+        decisionProofStatus: "queued",
+        decisionProofPayloadHash: "",
+        decisionProofError: "",
+        decisionProofMode: "",
+        decisionProofUpdatedAt: "",
         riskScore: Number(result.riskScore || 50),
       };
+      Object.assign(auditLog, initialDecisionProofState(auditLog));
       const gatewayRequest = {
         ...intent,
         walletAddress,
@@ -392,12 +407,15 @@ export function createMemoryStore() {
       };
       gatewayRequests = [gatewayRequest, ...gatewayRequests];
       auditLogs = [auditLog, ...auditLogs];
+      const proof = await recordDecisionProof(auditLog);
+      auditLogs = auditLogs.map((log) => log.id === auditLog.id ? { ...log, ...proof } : log);
+      const recordedAuditLog = auditLogs.find((log) => log.id === auditLog.id) || auditLog;
       const casperPayload = buildAuditDecisionPayload(auditLog);
       return {
         ok: true,
         gatewayRequest,
         result,
-        auditLog,
+        auditLog: recordedAuditLog,
         casperPayload,
         executionApproved: result.decision === "Allowed",
         nextAction: gatewayNextAction(result.decision),
@@ -416,7 +434,13 @@ export function createMemoryStore() {
 
     async confirmCasperDeploy(id, body) {
       const txHash = validateDeployHash(body?.deployHash);
-      auditLogs = auditLogs.map((log) => log.id === id ? { ...log, txHash } : log);
+      auditLogs = auditLogs.map((log) => log.id === id ? {
+        ...log,
+        txHash,
+        decisionProofStatus: "recorded",
+        decisionProofError: "",
+        decisionProofUpdatedAt: new Date().toISOString(),
+      } : log);
       const auditLog = auditLogs.find((log) => log.id === id);
       if (!auditLog) {
         const err = new Error("Audit log not found");
@@ -450,10 +474,17 @@ export function createMemoryStore() {
       return { auditLog: auditLogs.find((log) => log.id === id), executionTxHash, confirmed: true };
     },
 
-    async recordAuditLog() {
-      const err = new Error("Automatic local recording is disabled. Prepare the Casper payload, sign the real deploy with Casper client, then confirm the real deploy hash.");
-      err.status = 400;
-      throw err;
+    async recordAuditLog(id) {
+      const auditLog = auditLogs.find((log) => log.id === id);
+      if (!auditLog) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const proof = await recordDecisionProof(auditLog);
+      auditLogs = auditLogs.map((log) => log.id === id ? { ...log, ...proof } : log);
+      const updated = auditLogs.find((log) => log.id === id);
+      return { auditLog: updated, txHash: updated.txHash || proof.txHash || "", decisionProofStatus: updated.decisionProofStatus };
     },
   };
 }

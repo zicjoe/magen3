@@ -147,6 +147,11 @@ interface AuditLog {
   executionSignedBy?: string;
   executionNote?: string;
   executionUpdatedAt?: string;
+  decisionProofStatus?: string;
+  decisionProofPayloadHash?: string;
+  decisionProofError?: string;
+  decisionProofMode?: string;
+  decisionProofUpdatedAt?: string;
   riskScore: number;
 }
 
@@ -401,6 +406,14 @@ function casperProofStatus(txHash = "") {
   if (!txHash) return { label: "Pending", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
   if (isRealCasperDeployHash(txHash)) return { label: "Recorded on Casper", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
   return { label: "Unconfirmed", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+}
+
+function decisionProofStatus(log: AuditLog) {
+  if (isRealCasperDeployHash(log.txHash)) return { label: "Recorded on Casper", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (log.decisionProofStatus === "failed") return { label: "Relayer Failed", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
+  if (log.decisionProofStatus === "queued") return { label: "Queued for Relayer", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (log.decisionProofStatus === "not_recordable") return { label: "Not Recordable", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
+  return casperProofStatus(log.txHash);
 }
 
 function executionProofStatus(status = "", txHash = "") {
@@ -2926,7 +2939,7 @@ function AuditLogPage({
 }: {
   auditLogs: AuditLog[];
   policies: Policy[];
-  onRecordAuditLog: (id: string) => Promise<string> | string;
+  onRecordAuditLog: (id: string) => Promise<AuditLog> | AuditLog;
   onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
   onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
@@ -3041,8 +3054,8 @@ function AuditLogPage({
   }, [executionHash, onConfirmExecutionDeploy, selected]);
 
   const recordAuditOnChain = useCallback(async (logId: string) => {
-    const txHash = await onRecordAuditLog(logId);
-    setSelected((prev) => (prev && prev.id === logId ? { ...prev, txHash } : prev));
+    const updated = await onRecordAuditLog(logId);
+    setSelected((prev) => (prev && prev.id === logId ? updated : prev));
   }, [onRecordAuditLog]);
 
   return (
@@ -3175,7 +3188,7 @@ function AuditLogPage({
                         </div>
                       )
                     ) : (
-                      <span className="text-[#94A3B8]/40">Pending decision proof</span>
+                      <span className="text-[#94A3B8]/70">{decisionProofStatus(log).label}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
@@ -3248,7 +3261,7 @@ function AuditLogPage({
                 <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-3">
                   <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Decision Proof Hash</div>
                   <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">
-                    {selected.txHash ? normalizeCasperDeployHash(selected.txHash) : "Pending Casper record"}
+                    {selected.txHash ? normalizeCasperDeployHash(selected.txHash) : selected.decisionProofStatus === "failed" ? "Relayer failed" : "Queued for relayer"}
                   </div>
                   <div className="mt-2 text-xs text-[#94A3B8]">
                     Exists for Allowed, Blocked, and Review Required decisions.
@@ -3307,7 +3320,7 @@ function AuditLogPage({
                   {[
                     ["Intent received", "Complete", "text-[#22C55E]"],
                     ["Magen3 decision", selected.decision, selected.decision === "Blocked" ? "text-[#EF4444]" : selected.decision === "Review Required" ? "text-[#F59E0B]" : "text-[#22C55E]"],
-                    ["Casper decision proof", isRealCasperDeployHash(selected.txHash) ? "Recorded" : "Pending", isRealCasperDeployHash(selected.txHash) ? "text-[#22C55E]" : "text-[#F59E0B]"],
+                    ["Casper decision proof", decisionProofStatus(selected).label, isRealCasperDeployHash(selected.txHash) ? "text-[#22C55E]" : selected.decisionProofStatus === "failed" ? "text-[#EF4444]" : "text-[#F59E0B]"],
                     ["Execution proof", executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "").label, isRealCasperDeployHash(selected.executionTxHash || "") ? "text-[#22C55E]" : "text-[#94A3B8]"],
                   ].map(([label, value, color]) => (
                     <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
@@ -3319,7 +3332,7 @@ function AuditLogPage({
               </div>
 
               {(() => {
-                const proof = casperProofStatus(selected.txHash);
+                const proof = decisionProofStatus(selected);
                 const realDeploy = isRealCasperDeployHash(selected.txHash);
                 const normalizedTxHash = normalizeCasperDeployHash(selected.txHash);
                 return (
@@ -3354,6 +3367,16 @@ function AuditLogPage({
                           {selected.txHash ? normalizedTxHash : "Not confirmed yet"}
                         </div>
                       </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Relayer Status</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.decisionProofStatus || "queued"}</div>
+                      </div>
+                      {selected.decisionProofError && (
+                        <div className="col-span-2 rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/10 p-3">
+                          <span className="text-[#FCA5A5] uppercase tracking-wider">Relayer Note</span>
+                          <div className="text-[#FCA5A5] mt-1">{selected.decisionProofError}</div>
+                        </div>
+                      )}
                       {casperPrepared?.payloadHash && (
                         <div className="col-span-2">
                           <span className="text-[#94A3B8] uppercase tracking-wider">Decision Payload Hash</span>
@@ -3379,7 +3402,7 @@ function AuditLogPage({
                             <ExternalLink size={12} />
                           </a>
                         ) : (
-                          <div className="text-[#94A3B8] mt-1">Available after you confirm a real Casper decision deploy hash.</div>
+                          <div className="text-[#94A3B8] mt-1">Magen3 automatically queues every recordable decision for the relayer. The link appears after Casper returns a real decision deploy hash.</div>
                         )}
                       </div>
                     </div>
@@ -3519,7 +3542,7 @@ function AuditLogPage({
                       Decision Proof Recorder
                     </div>
                     <p className="text-xs text-[#94A3B8] mt-1">
-                      Prepare the record_decision runtime args, sign the Casper decision deploy, then confirm the returned decision proof hash.
+                      Magen3 automatically tries to record every recordable decision. Use this section to inspect the payload, retry the relayer, or manually confirm a deploy hash if needed.
                     </p>
                   </div>
                   {selected.txHash && <StatusBadge status="Active" />}
@@ -3549,7 +3572,7 @@ function AuditLogPage({
                       disabled={casperLoading}
                     >
                       <Database size={14} />
-                      Auto Record Disabled
+                      Retry Decision Proof
                     </Btn>
                   )}
                 </div>
@@ -4099,13 +4122,15 @@ export default function App() {
 
   const onRecordAuditLog = useCallback(async (id: string) => {
     try {
-      await api.recordAuditLog(id);
+      const response = await api.recordAuditLog(id);
+      const updated = response.auditLog as AuditLog;
+      setAuditLogs((prev) => prev.map((log) => log.id === updated.id ? updated : log));
       setApiOnline(true);
-      return "";
+      return updated;
     } catch (error) {
       setApiOnline(false);
       setWalletError(error instanceof Error ? error.message : "Automatic recording is disabled. Use a real Casper deploy hash.");
-      return "";
+      throw error;
     }
   }, []);
 
