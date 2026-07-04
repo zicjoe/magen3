@@ -41,18 +41,40 @@ function normalizeRpcUrl(value = "") {
 
 function extractSignedDeploy(candidate) {
   const signedDeploy = candidate?.signedDeploy ?? candidate;
-  if (!signedDeploy || typeof signedDeploy !== "object") {
+  const deploy = signedDeploy?.deploy ?? signedDeploy;
+  if (!deploy || typeof deploy !== "object") {
     const err = new Error("Signed Casper deploy JSON is required");
     err.status = 400;
     throw err;
   }
 
-  if (signedDeploy.deploy) return signedDeploy.deploy;
-  if (signedDeploy.hash && signedDeploy.header && signedDeploy.payment && signedDeploy.session && signedDeploy.approvals) return signedDeploy;
+  const requiredFields = ["hash", "header", "payment", "session", "approvals"];
+  const missingFields = requiredFields.filter((field) => !deploy[field]);
+  if (missingFields.length > 0) {
+    const err = new Error(`Invalid signed Casper deploy shape. Missing: ${missingFields.join(", ")}.`);
+    err.status = 400;
+    throw err;
+  }
 
-  const err = new Error("Invalid signed Casper deploy shape. Expected deploy JSON returned by Casper Wallet signing.");
-  err.status = 400;
-  throw err;
+  if (!Array.isArray(deploy.approvals) || deploy.approvals.length === 0) {
+    const err = new Error("Signed Casper deploy must include approvals.");
+    err.status = 400;
+    throw err;
+  }
+
+  const invalidApproval = deploy.approvals.find((approval) =>
+    !approval ||
+    typeof approval !== "object" ||
+    !String(approval.signer || "").trim() ||
+    !String(approval.signature || "").trim()
+  );
+  if (invalidApproval) {
+    const err = new Error("Signed Casper deploy approvals must use { signer, signature } entries.");
+    err.status = 400;
+    throw err;
+  }
+
+  return deploy;
 }
 
 function readCasperResultHash(result, deploy) {
@@ -69,30 +91,40 @@ function readCasperResultHash(result, deploy) {
 async function submitSignedDeployToCasper(body) {
   const deploy = extractSignedDeploy(body);
   const rpcUrl = normalizeRpcUrl(process.env.CASPER_RPC_URL);
+  const submittedDeployHadApprovals = Array.isArray(deploy.approvals) && deploy.approvals.length > 0;
   const rpcPayload = {
     jsonrpc: "2.0",
     id: Date.now(),
     method: "account_put_deploy",
-    params: [
-      {
-        name: "deploy",
-        value: deploy,
-      },
-    ],
+    params: [deploy],
   };
 
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(rpcPayload),
-  });
+  let response;
+  try {
+    response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rpcPayload),
+    });
+  } catch (cause) {
+    const err = new Error(`Could not reach Casper RPC: ${cause?.message || "network request failed"}`);
+    err.status = 502;
+    err.casperRpcUrl = rpcUrl;
+    err.submittedDeployHadApprovals = submittedDeployHadApprovals;
+    throw err;
+  }
 
   const result = await response.json().catch(() => ({}));
 
   if (!response.ok || result.error) {
-    const err = new Error(result?.error?.message || `Casper node rejected deploy: HTTP ${response.status}`);
+    const casperError = result?.error || {};
+    const err = new Error(casperError.message || `Casper node rejected deploy: HTTP ${response.status}`);
     err.status = 502;
-    err.details = result.error;
+    err.details = casperError.data ?? casperError;
+    err.casperRpcErrorCode = casperError.code;
+    err.casperRpcErrorData = casperError.data;
+    err.casperRpcUrl = rpcUrl;
+    err.submittedDeployHadApprovals = submittedDeployHadApprovals;
     throw err;
   }
 
@@ -100,6 +132,8 @@ async function submitSignedDeployToCasper(body) {
   if (!deployHash) {
     const err = new Error("Casper node accepted the request but did not return a deploy hash");
     err.status = 502;
+    err.casperRpcUrl = rpcUrl;
+    err.submittedDeployHadApprovals = submittedDeployHadApprovals;
     throw err;
   }
 
@@ -306,6 +340,10 @@ const server = createServer(async (req, res) => {
     return send(res, error.status || 500, {
       error: error.message || "Internal server error",
       details: error.details,
+      casperRpcErrorCode: error.casperRpcErrorCode,
+      casperRpcErrorData: error.casperRpcErrorData,
+      casperRpcUrl: error.casperRpcUrl,
+      submittedDeployHadApprovals: error.submittedDeployHadApprovals,
     });
   }
 });
