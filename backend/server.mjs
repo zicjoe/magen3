@@ -55,6 +55,17 @@ function extractSignedDeploy(candidate) {
   throw err;
 }
 
+function readCasperResultHash(result, deploy) {
+  const rpcResult = result?.result || result;
+  return (
+    rpcResult?.deploy_hash ||
+    rpcResult?.value?.deploy_hash ||
+    rpcResult?.transaction_hash ||
+    rpcResult?.value?.transaction_hash ||
+    deploy.hash
+  );
+}
+
 async function submitSignedDeployToCasper(body) {
   const deploy = extractSignedDeploy(body);
   const rpcUrl = normalizeRpcUrl(process.env.CASPER_RPC_URL);
@@ -62,7 +73,12 @@ async function submitSignedDeployToCasper(body) {
     jsonrpc: "2.0",
     id: Date.now(),
     method: "account_put_deploy",
-    params: { deploy },
+    params: [
+      {
+        name: "deploy",
+        value: deploy,
+      },
+    ],
   };
 
   const response = await fetch(rpcUrl, {
@@ -80,7 +96,7 @@ async function submitSignedDeployToCasper(body) {
     throw err;
   }
 
-  const deployHash = result?.result?.deploy_hash || result?.result?.transaction_hash || deploy.hash;
+  const deployHash = readCasperResultHash(result, deploy);
   if (!deployHash) {
     const err = new Error("Casper node accepted the request but did not return a deploy hash");
     err.status = 502;
