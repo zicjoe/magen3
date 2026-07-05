@@ -213,8 +213,8 @@ CASPER_CALL_PAYMENT_MOTES=5000000000
 ## Railway backend settings
 
 ```text
-Build Command:
-node -e "console.log('Magen3 backend build step skipped')"
+Builder:
+Dockerfile
 
 Start Command:
 pnpm start
@@ -222,6 +222,8 @@ pnpm start
 Health Check Path:
 /api/health
 ```
+
+The Dockerfile installs Rust and `casper-client` so the backend decision-proof relayer can run `casper-client put-deploy` on Railway. If Railway is left on Nixpacks, decision proof recording fails with `spawn casper-client ENOENT`.
 
 ## Agent Gateway API
 
