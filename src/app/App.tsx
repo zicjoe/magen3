@@ -1624,6 +1624,8 @@ function ConnectedAgentsPage({
   const [showRegister, setShowRegister] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Revoked" | "No Policy">("All");
+  const [policyFilter, setPolicyFilter] = useState("All");
+  const [activeTab, setActiveTab] = useState<"overview" | "integration" | "activity" | "security">("overview");
   const [skillTarget, setSkillTarget] = useState<"Claude" | "Codex" | "Custom Agent" | ".env" | "API Snippet">("Claude");
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
@@ -1810,6 +1812,18 @@ ${snippet}
   const agentAuditLogs = selectedAgent
     ? auditLogs.filter((log) => log.agentId === selectedAgent.id).slice(0, 5)
     : [];
+  const scopedAgentIds = new Set(agents.map((agent) => agent.id));
+  const scopedAuditLogs = auditLogs.filter((log) => scopedAgentIds.has(log.agentId));
+  const today = new Date();
+  const requestsToday = scopedAuditLogs.filter((log) => isSameDay(new Date(log.timestamp), today)).length;
+  const agentMetrics = [
+    { label: "Active Agents", value: agents.filter((agent) => agent.status === "Active").length, icon: Bot },
+    { label: "Revoked Agents", value: agents.filter((agent) => agent.status === "Revoked").length, icon: ShieldX },
+    { label: "Requests Today", value: requestsToday, icon: Activity },
+    { label: "Allowed", value: scopedAuditLogs.filter((log) => log.decision === "Allowed").length, icon: CheckCircle },
+    { label: "Review Required", value: scopedAuditLogs.filter((log) => log.decision === "Review Required").length, icon: Clock },
+    { label: "Blocked", value: scopedAuditLogs.filter((log) => log.decision === "Blocked").length, icon: XCircle },
+  ];
   const filteredAgents = agents.filter((agent) => {
     const policy = getActivePolicy(policies, agent.id);
     const query = agentSearch.trim().toLowerCase();
@@ -1821,7 +1835,8 @@ ${snippet}
     const matchesStatus =
       statusFilter === "All" ||
       (statusFilter === "No Policy" ? !policy : agent.status === statusFilter);
-    return matchesSearch && matchesStatus;
+    const matchesPolicy = policyFilter === "All" || policy?.id === policyFilter;
+    return matchesSearch && matchesStatus && matchesPolicy;
   });
 
   return (
@@ -1834,6 +1849,17 @@ ${snippet}
           <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
             Register external agents that are allowed to call Magen3. Agent identity is Agent ID plus API key; the execution wallet is submitted later by the external agent and can be any Casper Wallet.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
+              <ShieldCheck size={13} /> Casper Testnet
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
+              <Server size={13} /> Gateway Online
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
+              <Lock size={13} /> Wallet Scoped
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
@@ -1886,6 +1912,25 @@ ${snippet}
         </div>
       )}
 
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        {agentMetrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <div key={metric.label} className={`${CARD} p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{metric.value}</div>
+                  <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{metric.label}</div>
+                </div>
+                <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-2 text-[#22D3EE]">
+                  <Icon size={17} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="grid xl:grid-cols-[minmax(360px,0.95fr)_1.35fr] gap-6">
         <div className={`${CARD} overflow-hidden`}>
           <div className="border-b border-[#1E293B] p-4 space-y-3">
@@ -1919,6 +1964,23 @@ ${snippet}
                 </button>
               ))}
             </div>
+            <div className="flex items-center gap-2 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2">
+              <Filter size={14} className="text-[#94A3B8]" />
+              <select
+                className="min-w-0 flex-1 bg-transparent text-xs text-[#F8FAFC] outline-none"
+                value={policyFilter}
+                onChange={(e) => setPolicyFilter(e.target.value)}
+              >
+                <option className="bg-[#0B1220]" value="All">All policies</option>
+                {policies
+                  .filter((policy) => policy.status === "Active")
+                  .map((policy) => (
+                    <option className="bg-[#0B1220]" key={policy.id} value={policy.id}>
+                      {policy.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
           </div>
 
           <div className="max-h-[620px] overflow-y-auto p-3 space-y-2">
@@ -1934,7 +1996,10 @@ ${snippet}
               return (
                 <button
                   key={agent.id}
-                  onClick={() => setSelectedAgentId(agent.id)}
+                  onClick={() => {
+                    setSelectedAgentId(agent.id);
+                    setActiveTab("overview");
+                  }}
                   className={`w-full rounded-xl border p-4 text-left transition-all ${
                     active
                       ? "border-[#22D3EE]/40 bg-[#22D3EE]/10"
@@ -1985,6 +2050,12 @@ ${snippet}
                 : skillTarget === "API Snippet"
                 ? `magen3-${selectedAgent.id.toLowerCase()}-gateway.js`
                 : "SKILL.md";
+            const detailTabs = [
+              { id: "overview", label: "Overview", icon: Eye },
+              { id: "integration", label: "Integration", icon: Code2 },
+              { id: "activity", label: "Activity", icon: Activity },
+              { id: "security", label: "Security", icon: Lock },
+            ] as const;
             return (
               <div className="space-y-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1998,122 +2069,222 @@ ${snippet}
                     <div className="mt-2 text-xs text-[#94A3B8]">{selectedAgent.type} · {selectedAgent.permissionLevel}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
-                      <Lock size={14} /> Rotate API Key
-                    </Btn>
-                    <Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
-                      <XCircle size={14} /> Revoke
+                    <Btn variant="secondary" size="sm" onClick={() => copyText("agent id", selectedAgent.id)}>
+                      <Copy size={14} /> {copied === "agent id" ? "Copied" : "Copy Agent ID"}
                     </Btn>
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-3">
-                  {[
-                    ["Agent ID", selectedAgent.id],
-                    ["Gateway URL", gatewayUrl],
-                    ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`],
-                    ["API Key Status", selectedAgent.apiKeyPreview ? `Issued: ${selectedAgent.apiKeyPreview}` : "Rotate key to issue"],
-                    ["Assigned Policy", selectedPolicy?.name || "No active policy"],
-                    ["Last Request", latestLog ? fmtTs(latestLog.timestamp) : "No requests yet"],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
-                        <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
-                      </div>
-                      <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 shadow-[0_0_18px_rgba(34,211,238,0.04)]">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-4">
-                    <div>
-                      <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE] mb-3">
-                        <Code2 size={13} /> Agent Skill Kit
-                      </div>
-                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Export instructions for external AI tools</h3>
-                      <p className="text-xs text-[#94A3B8] mt-1 max-w-2xl">
-                        Give Claude, Codex, YieldBot AI, or a custom agent the exact rules for calling Magen3 before wallet signing. Agent identity is Agent ID plus API key; the execution wallet is supplied by the external agent.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Btn variant="outline" size="sm" onClick={() => copyText("agent skill", skill)}>
-                        <Copy size={14} /> {copied === "agent skill" ? "Copied" : `Copy ${skillTarget}`}
-                      </Btn>
-                      <Btn variant="secondary" size="sm" onClick={() => downloadText(skillFilename, skill)}>
-                        <FileText size={14} /> Download {skillFilename}
-                      </Btn>
-                    </div>
-                  </div>
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {(["Claude", "Codex", "Custom Agent", ".env", "API Snippet"] as const).map((target) => (
+                <div className="flex flex-wrap gap-2 border-b border-[#1E293B] pb-3">
+                  {detailTabs.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
                       <button
-                        key={target}
-                        onClick={() => setSkillTarget(target)}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          skillTarget === target
-                            ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
-                            : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                          activeTab === tab.id
+                            ? "border-[#22D3EE]/40 bg-[#22D3EE]/10 text-[#22D3EE]"
+                            : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8] hover:text-[#F8FAFC]"
                         }`}
                       >
-                        {target}
+                        <Icon size={14} /> {tab.label}
                       </button>
-                    ))}
+                    );
+                  })}
+                </div>
+
+                {activeTab === "overview" && (
+                  <div className="space-y-4">
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {[
+                        ["Agent ID", selectedAgent.id],
+                        ["Agent Type", selectedAgent.type],
+                        ["Wallet Owner", selectedAgent.ownerWalletAddress || walletAddress || "Unknown"],
+                        ["Assigned Policy", selectedPolicy?.name || "No active policy"],
+                        ["Last Request", latestLog ? fmtTs(latestLog.timestamp) : "No requests yet"],
+                        ["Last Decision", latestLog?.decision || "No decision yet"],
+                        ["API Key", selectedAgent.apiKeyPreview ? selectedAgent.apiKeyPreview : "Rotate key to issue"],
+                        ["Created", fmtTs(selectedAgent.createdAt)],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                          <div className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
+                          <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">How this agent is identified</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                        Magen3 identifies this external agent with Agent ID plus API key. The Casper wallet supplied in each gateway request is the execution wallet and does not need to match the owner wallet that registered this agent.
+                      </p>
+                    </div>
                   </div>
-                  <div className="mb-4 grid md:grid-cols-3 gap-3 text-xs">
-                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="text-[#94A3B8] uppercase tracking-wider">Use in</div>
-                      <div className="mt-1 text-[#F8FAFC]">
-                        {skillTarget === "Claude" ? "Claude Project / chat" : skillTarget === "Codex" ? "Codex SKILL.md" : skillTarget === "Custom Agent" ? "System instructions" : skillTarget === ".env" ? "Agent secrets" : "Agent source code"}
+                )}
+
+                {activeTab === "integration" && (
+                  <div className="space-y-4">
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {[
+                        ["Gateway URL", gatewayUrl],
+                        ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`],
+                        ["Agent ID", selectedAgent.id],
+                        ["API Key Status", rawKey ? "Visible once in this session" : selectedAgent.apiKeyPreview ? `Stored as ${selectedAgent.apiKeyPreview}` : "Rotate key to issue"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
+                            <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
+                          </div>
+                          <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 shadow-[0_0_18px_rgba(34,211,238,0.04)]">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-4">
+                        <div>
+                          <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE] mb-3">
+                            <Code2 size={13} /> Agent Skill Kit
+                          </div>
+                          <h3 className="text-sm font-semibold text-[#F8FAFC]">Export instructions for external AI tools</h3>
+                          <p className="text-xs text-[#94A3B8] mt-1 max-w-2xl">
+                            Give Claude, Codex, YieldBot AI, or a custom agent the exact rules for calling Magen3 before wallet signing. Agent identity is Agent ID plus API key; the execution wallet is supplied by the external agent.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Btn variant="outline" size="sm" onClick={() => copyText("agent skill", skill)}>
+                            <Copy size={14} /> {copied === "agent skill" ? "Copied" : `Copy ${skillTarget}`}
+                          </Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => downloadText(skillFilename, skill)}>
+                            <FileText size={14} /> Download {skillFilename}
+                          </Btn>
+                        </div>
+                      </div>
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {(["Claude", "Codex", "Custom Agent", ".env", "API Snippet"] as const).map((target) => (
+                          <button
+                            key={target}
+                            onClick={() => setSkillTarget(target)}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              skillTarget === target
+                                ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
+                                : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
+                            }`}
+                          >
+                            {target}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mb-4 grid md:grid-cols-3 gap-3 text-xs">
+                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                          <div className="text-[#94A3B8] uppercase tracking-wider">Use in</div>
+                          <div className="mt-1 text-[#F8FAFC]">
+                            {skillTarget === "Claude" ? "Claude Project / chat" : skillTarget === "Codex" ? "Codex SKILL.md" : skillTarget === "Custom Agent" ? "System instructions" : skillTarget === ".env" ? "Agent secrets" : "Agent source code"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                          <div className="text-[#94A3B8] uppercase tracking-wider">Policy status</div>
+                          <div className="mt-1 text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</div>
+                        </div>
+                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                          <div className="text-[#94A3B8] uppercase tracking-wider">API key</div>
+                          <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Included once" : "Use preview or rotate key"}</div>
+                        </div>
+                      </div>
+                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{skill}</code></pre>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "activity" && (
+                  <div className="space-y-3">
+                    {agentAuditLogs.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center">
+                        <Activity size={28} className="mx-auto mb-3 text-[#94A3B8]" />
+                        <p className="text-sm text-[#94A3B8]">No gateway activity for this agent yet.</p>
+                      </div>
+                    ) : agentAuditLogs.map((log) => {
+                      const proof = decisionProofStatus(log);
+                      const execution = executionProofStatus(log.executionStatus, log.executionTxHash);
+                      return (
+                        <div key={log.id} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <DecisionBadge decision={log.decision} />
+                                <RiskBadge risk={log.risk} />
+                                <span className="text-xs text-[#94A3B8]">{fmtTs(log.timestamp)}</span>
+                              </div>
+                              <div className="mt-2 text-sm font-semibold text-[#F8FAFC]">
+                                {log.action} · {log.amount} CSPR
+                              </div>
+                              <div className="mt-1 break-all text-xs text-[#94A3B8]">Target: {log.target}</div>
+                              <div className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{log.reason}</div>
+                            </div>
+                            <div className="grid min-w-[220px] gap-2 text-xs">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${proof.className}`}>
+                                Decision: {proof.label}
+                              </span>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${execution.className}`}>
+                                Execution: {execution.label}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {activeTab === "security" && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#F8FAFC]">API credential</h3>
+                          <p className="mt-1 text-xs text-[#94A3B8]">
+                            Raw API keys are shown once after registration or rotation. Magen3 stores and displays only the key preview later.
+                          </p>
+                          <div className="mt-3 font-mono text-xs text-[#F8FAFC]">
+                            {rawKey || selectedAgent.apiKeyPreview || "No active API key preview"}
+                          </div>
+                        </div>
+                        <Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
+                          <Lock size={14} /> Rotate API Key
+                        </Btn>
                       </div>
                     </div>
-                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="text-[#94A3B8] uppercase tracking-wider">Policy status</div>
-                      <div className="mt-1 text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</div>
+
+                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Policy binding</h3>
+                      <p className="mt-1 text-xs text-[#94A3B8]">
+                        Gateway requests use this agent identity to find the assigned active policy. The submitted execution wallet is audited separately.
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <StatusBadge status={selectedPolicy ? "Active" : "No Policy"} />
+                        <span className="text-sm text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</span>
+                      </div>
                     </div>
-                    <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="text-[#94A3B8] uppercase tracking-wider">API key</div>
-                      <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Included once" : "Use preview or rotate key"}</div>
+
+                    <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#F8FAFC]">Revoke agent access</h3>
+                          <p className="mt-1 text-xs text-[#94A3B8]">
+                            Revoked agents can no longer use the gateway with their Agent ID and API key.
+                          </p>
+                        </div>
+                        <Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
+                          <XCircle size={14} /> Revoke Agent
+                        </Btn>
+                      </div>
                     </div>
                   </div>
-                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{skill}</code></pre>
-                </div>
+                )}
               </div>
             );
           })()}
-        </div>
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between mb-4">
-          <h2 className={SECTION_TITLE}>Agent-Specific Audit Activity</h2>
-          <div className="text-xs text-[#94A3B8]">
-            {selectedAgent ? `${selectedAgent.name} · ${selectedAgent.id}` : "Select an agent"}
-          </div>
-        </div>
-        <div className="space-y-2">
-          {agentAuditLogs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-6 text-center text-sm text-[#94A3B8]">
-              No gateway activity for this agent yet.
-            </div>
-          ) : agentAuditLogs.map((log) => (
-            <div
-              key={log.id}
-              className="flex items-center gap-4 p-3 rounded-lg bg-[#0B1220]"
-            >
-              <DecisionBadge decision={log.decision} />
-              <div className="flex-1">
-                <span className="text-sm text-[#F8FAFC]">
-                  {log.agentName} · {log.action} · {log.amount} CSPR
-                </span>
-              </div>
-              <RiskBadge risk={log.risk} />
-              <span className="text-xs text-[#94A3B8]">
-                {fmtTs(log.timestamp)}
-              </span>
-            </div>
-          ))}
         </div>
       </div>
 
