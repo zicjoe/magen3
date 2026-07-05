@@ -52,6 +52,24 @@ function parseDeployHash(output) {
   return normalizeDeployHash(labeled?.[1] || fallback?.[1] || "");
 }
 
+function shortOutput(value, max = 900) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function casperClientErrorMessage(error) {
+  const stderr = shortOutput(error?.stderr);
+  const stdout = shortOutput(error?.stdout);
+  const code = error?.code || error?.signal || "";
+  const parts = ["casper-client put-deploy failed"];
+  if (code) parts.push(`exit=${code}`);
+  if (stderr) parts.push(`stderr=${stderr}`);
+  if (stdout) parts.push(`stdout=${stdout}`);
+  if (!stderr && !stdout && error instanceof Error) parts.push(error.message);
+  return parts.join("; ");
+}
+
 export function isRecordableDecision(auditLog) {
   return auditLog?.shield === "Agent Shield" && RECORDABLE_DECISIONS.has(auditLog?.decision);
 }
@@ -102,13 +120,21 @@ export async function recordDecisionProof(auditLog) {
     };
   }
 
-  const contractHash = MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "";
+  const contractHash = normalizeDeployHash(MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "");
   const secretKey = relayerSecretKeyPath();
   if (!contractHash || !secretKey) {
     return {
       ...base,
       decisionProofStatus: "queued",
-      decisionProofError: "Relayer is not fully configured. Set MAGEN3_CONTRACT_HASH and CASPER_RELAYER_SECRET_KEY_PATH on the backend.",
+      decisionProofError: "Relayer is not fully configured. Set MAGEN3_CONTRACT_HASH and CASPER_RELAYER_SECRET_KEY_PATH or CASPER_RELAYER_SECRET_KEY_B64 on the backend.",
+    };
+  }
+
+  if (!/^[a-f0-9]{64}$/i.test(contractHash)) {
+    return {
+      ...base,
+      decisionProofStatus: "failed",
+      decisionProofError: "MAGEN3_CONTRACT_HASH must be a 64-character Casper contract hash, with or without the hash- prefix.",
     };
   }
 
@@ -154,7 +180,7 @@ export async function recordDecisionProof(auditLog) {
     return {
       ...base,
       decisionProofStatus: "failed",
-      decisionProofError: error instanceof Error ? error.message : "Casper relayer failed to record decision proof.",
+      decisionProofError: casperClientErrorMessage(error),
     };
   }
 }

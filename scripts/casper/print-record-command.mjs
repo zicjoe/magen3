@@ -11,6 +11,10 @@ function getFlag(name) {
   return match ? match.slice(prefix.length) : "";
 }
 
+function normalizeCasperHash(value) {
+  return String(value || "").trim().replace(/^hash-/i, "");
+}
+
 const payloadFile = getFlag("payload") || process.env.AUDIT_PAYLOAD_FILE;
 if (!payloadFile) {
   console.error("Missing payload file.");
@@ -21,7 +25,7 @@ if (!payloadFile) {
 
 const prepared = JSON.parse(readFileSync(payloadFile, "utf8"));
 const runtimeArgs = prepared.runtimeArgs || prepared;
-const contractHash = process.env.MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "hash-PASTE_CONTRACT_HASH";
+const contractHash = normalizeCasperHash(process.env.MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "PASTE_CONTRACT_HASH");
 const nodeAddress = process.env.CASPER_RPC_URL || prepared?.casper?.rpcUrl || "https://node.testnet.casper.network";
 const chainName = process.env.CASPER_CHAIN_NAME || "casper-test";
 const secretKey = process.env.CASPER_SECRET_KEY_PATH || "~/magen3-keys/secret_key.pem";
