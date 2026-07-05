@@ -9,11 +9,9 @@ import {
   Bot,
   Scroll,
   Search,
-  FlaskConical,
   Settings,
   Wallet,
   ChevronDown,
-  Bell,
   X,
   CheckCircle,
   XCircle,
@@ -170,14 +168,6 @@ interface ShieldModule {
   status: ShieldStatus;
   riskCategory: string;
   icon: string;
-}
-
-interface ActionRequest {
-  agentId: string;
-  actionType: ActionType;
-  amount: number;
-  target: string;
-  targetType: TargetType;
 }
 
 interface DecisionResult {
@@ -373,18 +363,6 @@ function executionProofExplanation(log: AuditLog) {
   return "Execution proof is not required for this record.";
 }
 
-function makeId(prefix: string) {
-  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${suffix}`;
-}
-
-function makePseudoHash(prefix: string) {
-  const body = Array.from({ length: 12 }, () =>
-    Math.floor(Math.random() * 16).toString(16)
-  ).join("");
-  return `${prefix}${body}`;
-}
-
 async function writeClipboard(value: string) {
   if (!value) return false;
   try {
@@ -422,29 +400,6 @@ function getActivePolicy(policies: Policy[], agentId: string) {
   return policies.find((p) => p.agentId === agentId && p.status === "Active");
 }
 
-function getDailyUsed(auditLogs: AuditLog[], agentId: string) {
-  const now = new Date();
-  return auditLogs
-    .filter(
-      (log) =>
-        log.agentId === agentId &&
-        log.decision === "Allowed" &&
-        isSameDay(new Date(log.timestamp), now)
-    )
-    .reduce((sum, log) => sum + log.amount, 0);
-}
-
-function targetIsTrusted(request: ActionRequest, policy: Policy) {
-  const normalizedTarget = request.target.trim().toLowerCase();
-  const trustedList = policy.trustedContracts.map((contract) =>
-    contract.trim().toLowerCase()
-  );
-  return (
-    request.targetType === "Trusted Contract" ||
-    Boolean(normalizedTarget && trustedList.includes(normalizedTarget))
-  );
-}
-
 function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): DashboardStats {
   return {
     activeShields: policies.some((p) => p.status === "Active") ? 1 : 0,
@@ -454,138 +409,6 @@ function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): Dashbo
     casperAuditRecords: auditLogs.filter((log) => isRealCasperDeployHash(log.txHash)).length,
   };
 }
-
-function evaluateAction(
-  request: ActionRequest,
-  agents: Agent[],
-  policies: Policy[],
-  auditLogs: AuditLog[]
-): DecisionResult {
-  const agent = agents.find((a) => a.id === request.agentId);
-  const policy = getActivePolicy(policies, request.agentId);
-  const checksPassed: string[] = [];
-  const checksFailed: string[] = [];
-
-  if (!agent) {
-    return {
-      decision: "Blocked",
-      risk: "High",
-      riskScore: 82,
-      policyChecksPassed: [],
-      policyChecksFailed: ["Selected agent is not registered in Magen3"],
-      reason: "Magen3 cannot allow execution from an unknown agent.",
-      recommendedAction: "Register the agent before allowing any Web3 action.",
-    };
-  }
-
-  if (!policy) {
-    return {
-      decision: "Blocked",
-      risk: "High",
-      riskScore: 78,
-      policyChecksPassed: [`Agent ${agent.name} is registered`],
-      policyChecksFailed: ["No active security policy found for this agent"],
-      reason: "This agent has no active policy, so Magen3 blocks execution by default.",
-      recommendedAction: "Create and activate a policy for this agent first.",
-    };
-  }
-
-  const dailyUsed = getDailyUsed(auditLogs, request.agentId);
-  const dailyAfterAction = dailyUsed + request.amount;
-  const isTrusted = targetIsTrusted(request, policy);
-  const isBlockedAction = policy.blockedActions.includes(request.actionType);
-  const strictMode = policy.riskMode === "Conservative";
-  const relaxedMode = policy.riskMode === "Aggressive";
-  let score = 5;
-
-  checksPassed.push(`Active policy found: ${policy.name}`);
-
-  if (isBlockedAction) {
-    checksFailed.push(`Action type is blocked by policy: ${request.actionType}`);
-    score += 35;
-  } else {
-    checksPassed.push(`Action type is not blocked: ${request.actionType}`);
-  }
-
-  if (request.amount > policy.maxTransaction) {
-    checksFailed.push(
-      `Amount exceeds max transaction limit (${request.amount} > ${policy.maxTransaction} CSPR)`
-    );
-    score += 30;
-  } else {
-    checksPassed.push(
-      `Amount within max transaction limit (${request.amount} ≤ ${policy.maxTransaction} CSPR)`
-    );
-  }
-
-  if (dailyAfterAction > policy.dailyLimit) {
-    checksFailed.push(
-      `Daily limit would be exceeded (${dailyAfterAction} > ${policy.dailyLimit} CSPR)`
-    );
-    score += 25;
-  } else {
-    checksPassed.push(
-      `Daily limit remains valid (${dailyAfterAction} ≤ ${policy.dailyLimit} CSPR)`
-    );
-  }
-
-  if (isTrusted) {
-    checksPassed.push("Target is trusted or policy-approved");
-  } else {
-    checksFailed.push("Target is not in the trusted target list");
-    score += strictMode ? 35 : 25;
-  }
-
-  if (request.amount > policy.approvalThreshold) {
-    checksFailed.push(
-      `Amount exceeds approval threshold (${request.amount} > ${policy.approvalThreshold} CSPR)`
-    );
-    score += relaxedMode ? 10 : 18;
-  } else {
-    checksPassed.push(
-      `Amount below approval threshold (${request.amount} ≤ ${policy.approvalThreshold} CSPR)`
-    );
-  }
-
-  const hardBlock =
-    isBlockedAction ||
-    request.amount > policy.maxTransaction ||
-    dailyAfterAction > policy.dailyLimit ||
-    (!isTrusted && (strictMode || request.targetType === "Unknown Contract"));
-  const needsReview =
-    !hardBlock &&
-    (request.amount > policy.approvalThreshold || !isTrusted);
-
-  const decision: Decision = hardBlock
-    ? "Blocked"
-    : needsReview
-    ? "Review Required"
-    : "Allowed";
-  const riskScore = Math.min(99, Math.max(1, score));
-  const risk: Risk =
-    riskScore >= 85 ? "Critical" : riskScore >= 65 ? "High" : riskScore >= 35 ? "Medium" : "Low";
-
-  return {
-    decision,
-    risk,
-    riskScore,
-    policyChecksPassed: checksPassed,
-    policyChecksFailed: checksFailed,
-    reason:
-      decision === "Allowed"
-        ? "This action matches the active policy and can be safely executed."
-        : decision === "Blocked"
-        ? "This action violates one or more hard policy rules and should not execute."
-        : "This action is not fully unsafe, but it needs human approval before execution.",
-    recommendedAction:
-      decision === "Allowed"
-        ? "Proceed with execution and record the decision on Casper."
-        : decision === "Blocked"
-        ? "Do not execute. Update the request or create a stricter review workflow."
-        : "Ask the wallet owner or protocol admin to approve once or reject.",
-  };
-}
-
 
 // ──────────────────────────────────────────────────────────
 // Design tokens / shared classes
@@ -899,7 +722,7 @@ function Sidebar({
       {!collapsed && (
         <div className="px-4 py-4 border-t border-[#1E293B]">
           <div className="text-xs text-[#94A3B8]/60 text-center">
-            Magen3 v0.1 · Casper Testnet
+            Casper Testnet
           </div>
         </div>
       )}
@@ -945,7 +768,7 @@ function TopBar({
         }`}>
           <div className={`w-1.5 h-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#F59E0B]"}`} />
           <span className="text-[11px] font-semibold uppercase tracking-wider">
-            {apiOnline ? "API Online" : "Local Fallback"}
+            {apiOnline ? "Gateway Live" : "Gateway Unavailable"}
           </span>
         </div>
       </div>
@@ -956,14 +779,10 @@ function TopBar({
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-full">
             <ShieldCheck size={13} className="text-[#22C55E]" />
             <span className="text-xs text-[#22C55E] font-semibold">
-              Protected
+              Wallet Connected
             </span>
           </div>
         )}
-        <button className="relative p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors">
-          <Bell size={18} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#22D3EE] rounded-full" />
-        </button>
         {walletError && !walletConnected && (
           <div className="hidden lg:block max-w-[260px] truncate rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-1.5 text-xs text-[#F59E0B]" title={walletError}>
             {walletError}
@@ -1010,13 +829,18 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
           </span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm text-[#94A3B8]">
-          {["How It Works", "Shield Modules", "Decision Proof", "Docs"].map((l) => (
+          {[
+            ["How It Works", "#how-it-works"],
+            ["Shield Modules", "#shield-modules"],
+            ["Decision Proof", "#decision-proof"],
+            ["Docs", "#docs"],
+          ].map(([label, href]) => (
             <a
-              key={l}
-              href="#"
+              key={label}
+              href={href}
               className="hover:text-[#F8FAFC] transition-colors"
             >
-              {l}
+              {label}
             </a>
           ))}
         </div>
@@ -1067,9 +891,12 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
             <Btn variant="primary" size="lg" onClick={onLaunchApp}>
               Launch App <ArrowRight size={18} />
             </Btn>
-            <Btn variant="outline" size="lg">
+            <a
+              href="#decision-proof"
+              className="inline-flex items-center gap-2 rounded-xl border border-[#22D3EE] px-6 py-3 text-base text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/10"
+            >
               View Decision Proof <Eye size={18} />
-            </Btn>
+            </a>
           </div>
 
           {/* Stats */}
@@ -1135,7 +962,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
       </section>
 
       {/* How it works */}
-      <section className="bg-[#0B1220] py-24">
+      <section id="how-it-works" className="bg-[#0B1220] py-24">
         <div className="max-w-6xl mx-auto px-8">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
@@ -1180,8 +1007,46 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
         </div>
       </section>
 
+      <section id="decision-proof" className="max-w-6xl mx-auto px-8 py-24">
+        <div className={`${CARD_GLOW} p-8 md:p-10`}>
+          <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">
+                <Database size={13} />
+                Casper Decision Proof
+              </div>
+              <h2 className="text-3xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+                Every approved or blocked agent action can leave a verifiable record.
+              </h2>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">
+                Magen3 records the policy decision, the agent identity, the execution wallet, and the action details before execution. The Casper deploy hash becomes the proof that the decision happened before the wallet signed.
+              </p>
+            </div>
+            <div className="grid gap-3 text-sm">
+              {[
+                ["Agent intent", "External agent submits the proposed Web3 action."],
+                ["Policy decision", "Magen3 returns Allowed, Blocked, or Review Required."],
+                ["Casper record", "The decision proof is anchored with a real deploy hash."],
+              ].map(([title, desc], index) => (
+                <div key={title} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#22D3EE]/10 text-xs font-bold text-[#22D3EE]">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-[#F8FAFC]">{title}</div>
+                      <div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{desc}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Shield Modules */}
-      <section className="max-w-6xl mx-auto px-8 py-24">
+      <section id="shield-modules" className="max-w-6xl mx-auto px-8 py-24">
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
             Shield Modules
@@ -1242,7 +1107,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
         </div>
       </section>
 
-      <footer className="border-t border-[#1E293B] py-8 text-center text-sm text-[#94A3B8]/60">
+      <footer id="docs" className="border-t border-[#1E293B] py-8 text-center text-sm text-[#94A3B8]/60">
         © 2026 Magen3 · Built on Casper Network
       </footer>
     </div>
@@ -1564,6 +1429,7 @@ function ConnectedAgentsPage({
   onRevokeAgent,
   auditLogs,
   walletAddress,
+  apiOnline,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -1572,6 +1438,7 @@ function ConnectedAgentsPage({
   onRevokeAgent: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   auditLogs: AuditLog[];
   walletAddress: string;
+  apiOnline: boolean;
 }) {
   const [form, setForm] = useState({
     name: "",
@@ -1815,8 +1682,12 @@ ${snippet}
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
               <ShieldCheck size={13} /> Casper Testnet
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
-              <Server size={13} /> Gateway Online
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              apiOnline
+                ? "border-[#22C55E]/20 bg-[#22C55E]/10 text-[#22C55E]"
+                : "border-[#F59E0B]/20 bg-[#F59E0B]/10 text-[#F59E0B]"
+            }`}>
+              <Server size={13} /> {apiOnline ? "Gateway Live" : "Gateway Unavailable"}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
               <Lock size={13} /> Wallet Scoped
@@ -2712,363 +2583,6 @@ function PoliciesPage({
 }
 
 // ──────────────────────────────────────────────────────────
-// Action Review Page
-// ──────────────────────────────────────────────────────────
-
-function ActionReviewPage({
-  agents,
-  policies,
-  auditLogs,
-  onAnalyzeAction,
-  onAddAuditLog,
-  onRecordDecision,
-  walletAddress,
-}: {
-  agents: Agent[];
-  policies: Policy[];
-  auditLogs: AuditLog[];
-  onAnalyzeAction: (request: ActionRequest) => Promise<DecisionResult> | DecisionResult;
-  onAddAuditLog: (log: AuditLog) => Promise<void> | void;
-  onRecordDecision: (log: AuditLog) => Promise<string> | string;
-  walletAddress: string;
-}) {
-  const [form, setForm] = useState<ActionRequest>({
-    agentId: agents[0]?.id || "",
-    actionType: "Stake",
-    amount: 25,
-    target: "",
-    targetType: "Trusted Contract",
-  });
-  const [result, setResult] = useState<DecisionResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [recordedTxHash, setRecordedTxHash] = useState("");
-
-  const analyzeAction = useCallback(async () => {
-    setAnalyzing(true);
-    setResult(null);
-    setRecordedTxHash("");
-    try {
-      const decision = await onAnalyzeAction(form);
-      setResult(decision);
-    } finally {
-      setAnalyzing(false);
-    }
-  }, [form, onAnalyzeAction]);
-
-  const recordDecisionOnChain = useCallback(async () => {
-    if (!result) return;
-    const agent = agents.find((a) => a.id === form.agentId);
-    const policy = getActivePolicy(policies, form.agentId);
-    const log: AuditLog = {
-      id: makeId("AUD"),
-      timestamp: new Date().toISOString(),
-      shield: "Agent Shield",
-      agentId: form.agentId,
-      agentName: agent?.name || form.agentId,
-      action: form.actionType,
-      amount: form.amount,
-      target: form.target || "No target provided",
-      targetType: form.targetType,
-      decision: result.decision,
-      risk: result.risk,
-      reason: result.reason,
-      policyUsed: policy?.name || "No active policy",
-      walletAddress,
-      txHash: "",
-      riskScore: result.riskScore,
-    };
-    const txHash = await onRecordDecision(log);
-    setRecordedTxHash(txHash || "saved");
-  }, [agents, form, onRecordDecision, policies, result, walletAddress]);
-
-  const approveOnce = useCallback(() => {
-    if (!result) return;
-    setResult({
-      ...result,
-      decision: "Allowed",
-      risk: result.risk === "High" || result.risk === "Critical" ? "Medium" : result.risk,
-      riskScore: Math.min(result.riskScore, 45),
-      reason: `${result.reason} User approved this action once for the current session.`,
-      recommendedAction: "Record the one-time approval on Casper before execution.",
-    });
-    setRecordedTxHash("");
-  }, [result]);
-
-  const rejectAction = useCallback(async () => {
-    if (!result) return;
-    const agent = agents.find((a) => a.id === form.agentId);
-    const policy = getActivePolicy(policies, form.agentId);
-    await onAddAuditLog({
-      id: makeId("AUD"),
-      timestamp: new Date().toISOString(),
-      shield: "Agent Shield",
-      agentId: form.agentId,
-      agentName: agent?.name || form.agentId,
-      action: form.actionType,
-      amount: form.amount,
-      target: form.target || "No target provided",
-      targetType: form.targetType,
-      decision: "Blocked",
-      risk: result.risk === "Low" ? "Medium" : result.risk,
-      reason: "The user rejected this action after Magen3 review.",
-      policyUsed: policy?.name || "No active policy",
-      walletAddress,
-      txHash: "",
-      riskScore: Math.max(result.riskScore, 55),
-    });
-    setResult(null);
-    setRecordedTxHash("");
-  }, [agents, form, onAddAuditLog, policies, result, walletAddress]);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-          Action Review
-        </h1>
-        <p className="text-[#94A3B8] text-sm mt-1">
-          Simulate an AI agent requesting a Web3 action and review the Magen3 decision.
-        </p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Request Form */}
-        <div className={`${CARD} p-6`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>Action Request</h2>
-          <div className="space-y-4">
-            <SelectField
-              label="Agent"
-              value={form.agentId}
-              onChange={(v) => setForm((p) => ({ ...p, agentId: v }))}
-              options={agents.map((a) => a.id)}
-            />
-            <SelectField
-              label="Action Type"
-              value={form.actionType}
-              onChange={(v) =>
-                setForm((p) => ({ ...p, actionType: v as ActionType }))
-              }
-              options={[
-                "Stake",
-                "Transfer",
-                "Swap",
-                "Claim Rewards",
-                "Deposit to Vault",
-                "Contract Interaction",
-                "DAO Treasury Payment",
-                "RWA Proof Update",
-                "Oracle Data Update",
-              ]}
-            />
-            <InputField
-              label="Amount (CSPR)"
-              value={String(form.amount)}
-              onChange={(v) =>
-                setForm((p) => ({ ...p, amount: Number(v) || 0 }))
-              }
-              type="number"
-              placeholder="0"
-            />
-            <InputField
-              label="Target Address / Contract"
-              value={form.target}
-              onChange={(v) => setForm((p) => ({ ...p, target: v }))}
-              placeholder="0x..."
-            />
-            <SelectField
-              label="Target Type"
-              value={form.targetType}
-              onChange={(v) =>
-                setForm((p) => ({ ...p, targetType: v as TargetType }))
-              }
-              options={[
-                "Trusted Contract",
-                "Unknown Contract",
-                "Wallet Address",
-                "DAO Treasury",
-                "RWA Registry",
-                "Oracle Feed",
-              ]}
-            />
-            <Btn
-              variant="primary"
-              size="lg"
-              className="w-full justify-center"
-              onClick={analyzeAction}
-              disabled={analyzing}
-            >
-              {analyzing ? (
-                <>
-                  <Activity size={16} className="animate-spin" />
-                  Analyzing...
-                </>
-              ) : (
-                <>
-                  <Zap size={16} />
-                  Analyze Action
-                </>
-              )}
-            </Btn>
-          </div>
-        </div>
-
-        {/* Decision Result */}
-        <div>
-          {!result && !analyzing && (
-            <div className={`${CARD} h-full flex items-center justify-center p-10`}>
-              <div className="text-center">
-                <div className="p-4 bg-[#0B1220] rounded-full w-fit mx-auto mb-4">
-                  <FlaskConical size={28} className="text-[#94A3B8]" />
-                </div>
-                <p className="text-[#94A3B8] text-sm">
-                  Fill in the action request and click Analyze.
-                </p>
-              </div>
-            </div>
-          )}
-          {analyzing && (
-            <div className={`${CARD} h-full flex items-center justify-center p-10`}>
-              <div className="text-center">
-                <div className="p-4 bg-[#22D3EE]/10 rounded-full w-fit mx-auto mb-4 animate-pulse">
-                  <Shield size={28} className="text-[#22D3EE]" />
-                </div>
-                <p className="text-[#94A3B8] text-sm">
-                  Running policy checks...
-                </p>
-              </div>
-            </div>
-          )}
-          {result && !analyzing && (
-            <div
-              className={`${CARD_GLOW} p-6 border-2 ${
-                result.decision === "Allowed"
-                  ? "border-[#22C55E]/30"
-                  : result.decision === "Blocked"
-                  ? "border-[#EF4444]/30"
-                  : "border-[#F59E0B]/30"
-              }`}
-            >
-              <div className="flex items-start justify-between mb-5">
-                <div>
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">
-                    Decision
-                  </div>
-                  <DecisionBadge decision={result.decision} />
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">
-                    Risk Score
-                  </div>
-                  <div
-                    className={`text-3xl font-bold font-['Space_Grotesk'] ${
-                      result.riskScore < 30
-                        ? "text-[#22C55E]"
-                        : result.riskScore < 60
-                        ? "text-[#F59E0B]"
-                        : "text-[#EF4444]"
-                    }`}
-                  >
-                    {result.riskScore}
-                    <span className="text-sm font-normal text-[#94A3B8]">
-                      /100
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {result.policyChecksPassed.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">
-                    Checks Passed
-                  </div>
-                  <ul className="space-y-1.5">
-                    {result.policyChecksPassed.map((c) => (
-                      <li key={c} className="flex items-start gap-2 text-sm">
-                        <CheckCircle
-                          size={14}
-                          className="text-[#22C55E] mt-0.5 flex-shrink-0"
-                        />
-                        <span className="text-[#94A3B8]">{c}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {result.policyChecksFailed.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-2">
-                    Checks Failed
-                  </div>
-                  <ul className="space-y-1.5">
-                    {result.policyChecksFailed.map((c) => (
-                      <li key={c} className="flex items-start gap-2 text-sm">
-                        <XCircle
-                          size={14}
-                          className="text-[#EF4444] mt-0.5 flex-shrink-0"
-                        />
-                        <span className="text-[#94A3B8]">{c}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="bg-[#0B1220] rounded-lg p-4 mb-4">
-                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">
-                  Reason
-                </div>
-                <p className="text-sm text-[#F8FAFC]">{result.reason}</p>
-              </div>
-
-              <div className="bg-[#0B1220] rounded-lg p-4 mb-5">
-                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-1">
-                  Recommended Next Step
-                </div>
-                <p className="text-sm text-[#F8FAFC]">
-                  {result.recommendedAction}
-                </p>
-              </div>
-
-              <div className="flex gap-2 flex-wrap">
-                {recordedTxHash ? (
-                  <div className="flex flex-col gap-1 text-sm text-[#22C55E]">
-                    <span className="flex items-center gap-2"><CheckCircle size={16} /> Saved to Audit Log</span>
-                    <span className="font-mono text-xs text-[#94A3B8]">Open Audit Log to prepare and confirm real Casper proof.</span>
-                  </div>
-                ) : (
-                  <Btn
-                    variant="primary"
-                    size="sm"
-                    onClick={recordDecisionOnChain}
-                  >
-                    <Database size={14} />
-                    Save Audit Log
-                  </Btn>
-                )}
-                {result.decision === "Review Required" && (
-                  <Btn variant="secondary" size="sm" onClick={approveOnce}>
-                    <CheckCircle size={14} />
-                    Approve Once
-                  </Btn>
-                )}
-                {result.decision !== "Allowed" && (
-                  <Btn variant="danger" size="sm" onClick={rejectAction}>
-                    <X size={14} />
-                    Reject
-                  </Btn>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ──────────────────────────────────────────────────────────
 // Audit Log Page
 // ──────────────────────────────────────────────────────────
 
@@ -3783,13 +3297,7 @@ function SettingsPage({
   auditLogs: AuditLog[];
 }) {
   const [devMode, setDevMode] = useState(false);
-  const [riskMode, setRiskMode] = useState("Balanced");
   const [copiedSetting, setCopiedSetting] = useState("");
-  const [notifications, setNotifications] = useState({
-    blocked: true,
-    review: true,
-    allowed: false,
-  });
   const copySetting = useCallback(async (label: string, value: string) => {
     const copiedOk = await writeClipboard(value);
     setCopiedSetting(copiedOk ? label : "copy failed");
@@ -3834,85 +3342,17 @@ function SettingsPage({
         </div>
       </div>
 
-      {/* Risk */}
       <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-1`}>Session Risk Preference</h2>
-        <p className="mb-4 text-xs text-[#94A3B8]">
-          This changes only the local dashboard preference. Policy risk mode is still controlled on each policy.
-        </p>
-        <div className="grid grid-cols-3 gap-3">
-          {["Conservative", "Balanced", "Aggressive"].map((m) => (
-            <button
-              key={m}
-              onClick={() => setRiskMode(m)}
-              className={`p-3 rounded-lg border text-sm font-medium transition-all ${
-                riskMode === m
-                  ? m === "Conservative"
-                    ? "border-[#22C55E] bg-[#22C55E]/10 text-[#22C55E]"
-                    : m === "Balanced"
-                    ? "border-[#F59E0B] bg-[#F59E0B]/10 text-[#F59E0B]"
-                    : "border-[#EF4444] bg-[#EF4444]/10 text-[#EF4444]"
-                  : "border-[#1E293B] text-[#94A3B8] hover:border-[#94A3B8]/30"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Notifications */}
-      <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-4`}>Notification Preferences</h2>
-        <div className="space-y-3">
+        <h2 className={`${SECTION_TITLE} mb-4`}>Workspace Summary</h2>
+        <div className="grid grid-cols-3 gap-3 text-sm">
           {[
-            {
-              key: "blocked",
-              label: "Blocked Actions",
-              desc: "Alert when an action is blocked",
-            },
-            {
-              key: "review",
-              label: "Review Required",
-              desc: "Alert when manual review is needed",
-            },
-            {
-              key: "allowed",
-              label: "Allowed Actions",
-              desc: "Alert when an action is approved",
-            },
-          ].map((n) => (
-            <div
-              key={n.key}
-              className="flex items-center justify-between py-2"
-            >
-              <div>
-                <div className="text-sm font-medium text-[#F8FAFC]">
-                  {n.label}
-                </div>
-                <div className="text-xs text-[#94A3B8]">{n.desc}</div>
-              </div>
-              <button
-                onClick={() =>
-                  setNotifications((p) => ({
-                    ...p,
-                    [n.key]: !p[n.key as keyof typeof p],
-                  }))
-                }
-                className={`relative w-11 h-6 rounded-full transition-colors ${
-                  notifications[n.key as keyof typeof notifications]
-                    ? "bg-[#22D3EE]"
-                    : "bg-[#1E293B]"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                    notifications[n.key as keyof typeof notifications]
-                      ? "translate-x-5"
-                      : ""
-                  }`}
-                />
-              </button>
+            ["Agents", agents.length],
+            ["Active Policies", policies.filter((policy) => policy.status === "Active").length],
+            ["Audit Records", auditLogs.length],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+              <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{value}</div>
+              <div className="mt-1 text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
             </div>
           ))}
         </div>
@@ -4020,6 +3460,22 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    api.health()
+      .then(() => {
+        if (!cancelled) setApiOnline(true);
+      })
+      .catch(() => {
+        if (!cancelled) setApiOnline(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -4209,50 +3665,6 @@ export default function App() {
     }
   }, [walletAddress]);
 
-  const onAnalyzeAction = useCallback(async (request: ActionRequest) => {
-    try {
-      const response = await api.analyzeAction({ ...request, walletAddress } as unknown as Record<string, unknown>);
-      setApiOnline(true);
-      return response.result as DecisionResult;
-    } catch (error) {
-      setApiOnline(false);
-      return {
-        decision: "Blocked",
-        risk: "High",
-        riskScore: 90,
-        policyChecksPassed: [],
-        policyChecksFailed: ["Magen3 backend could not verify this action"],
-        reason: error instanceof Error ? error.message : "Magen3 could not reach the real policy engine.",
-        recommendedAction: "Do not execute until the Magen3 API is online and the connected wallet is verified.",
-      } as DecisionResult;
-    }
-  }, [walletAddress]);
-
-  const onAddAuditLog = useCallback(async (log: AuditLog) => {
-    try {
-      const response = await api.createAuditLog({ ...log, walletAddress } as unknown as Record<string, unknown>);
-      setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
-      setApiOnline(true);
-    } catch (error) {
-      setApiOnline(false);
-      setWalletError(error instanceof Error ? error.message : "Unable to save audit log.");
-    }
-  }, [walletAddress]);
-
-  const onRecordDecision = useCallback(async (log: AuditLog) => {
-    try {
-      const created = await api.createAuditLog({ ...log, walletAddress } as unknown as Record<string, unknown>);
-      const auditLog = created.auditLog as AuditLog;
-      setAuditLogs((prev) => [auditLog, ...prev]);
-      setApiOnline(true);
-      return "";
-    } catch (error) {
-      setApiOnline(false);
-      setWalletError(error instanceof Error ? error.message : "Unable to save decision.");
-      return "";
-    }
-  }, [walletAddress]);
-
   const onPrepareCasperPayload = useCallback(async (id: string) => {
     const response = await api.prepareCasperPayload(id);
     setApiOnline(true);
@@ -4337,6 +3749,7 @@ export default function App() {
         onRevokeAgent={onRevokeAgent}
         auditLogs={auditLogs}
         walletAddress={walletAddress}
+        apiOnline={apiOnline}
       />
     ),
     policies: (
