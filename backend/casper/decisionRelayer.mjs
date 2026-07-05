@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, writeFileSync, chmodSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
@@ -24,21 +25,89 @@ function relayerEnabled() {
   return relayerMode() === "relayer" || process.env.CASPER_AUTO_RECORD_DECISIONS === "true";
 }
 
-function relayerSecretKeyPath() {
-  const configuredPath = process.env.CASPER_RELAYER_SECRET_KEY_PATH || process.env.CASPER_SECRET_KEY_PATH || "";
-  if (configuredPath) return configuredPath;
+function expandPath(value) {
+  const text = String(value || "").trim();
+  return text.startsWith("~/") ? join(homedir(), text.slice(2)) : text;
+}
 
-  const encoded = process.env.CASPER_RELAYER_SECRET_KEY_B64 || "";
-  const pem = process.env.CASPER_RELAYER_SECRET_KEY_PEM || "";
-  if (!encoded && !pem) return "";
+function looksLikePrivateKeyPem(value) {
+  return /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/m.test(String(value || ""));
+}
+
+function normalizePem(value) {
+  return String(value || "").trim().replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+}
+
+function decodeRelayerSecretKeyB64(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { contents: "", error: "" };
+  if (looksLikePrivateKeyPem(raw)) return { contents: normalizePem(raw), error: "" };
+
+  const compact = raw.replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(compact)) {
+    return {
+      contents: "",
+      error: "CASPER_RELAYER_SECRET_KEY_B64 is not valid base64. Generate it with: base64 -w 0 ~/magen3-relayer/secret_key.pem",
+    };
+  }
+
+  const decoded = Buffer.from(compact, "base64").toString("utf8");
+  if (!looksLikePrivateKeyPem(decoded)) {
+    return {
+      contents: "",
+      error: "CASPER_RELAYER_SECRET_KEY_B64 decoded, but it is not a Casper private key PEM. It must be base64 of secret_key.pem, not public_key_hex and not the file path.",
+    };
+  }
+
+  return { contents: normalizePem(decoded), error: "" };
+}
+
+function readRelayerSecretKey() {
+  const configuredPath = String(process.env.CASPER_RELAYER_SECRET_KEY_PATH || process.env.CASPER_SECRET_KEY_PATH || "").trim();
+  const encoded = String(process.env.CASPER_RELAYER_SECRET_KEY_B64 || "").trim();
+  const pem = String(process.env.CASPER_RELAYER_SECRET_KEY_PEM || "").trim();
+  const configuredSources = [
+    configuredPath ? "CASPER_RELAYER_SECRET_KEY_PATH" : "",
+    encoded ? "CASPER_RELAYER_SECRET_KEY_B64" : "",
+    pem ? "CASPER_RELAYER_SECRET_KEY_PEM" : "",
+  ].filter(Boolean);
+
+  if (configuredSources.length === 0) {
+    return { path: "", error: "" };
+  }
+
+  if (configuredSources.length > 1) {
+    return {
+      path: "",
+      error: `Set exactly one relayer secret key source. Found: ${configuredSources.join(", ")}.`,
+    };
+  }
+
+  if (configuredPath) {
+    const keyPath = expandPath(configuredPath);
+    if (!existsSync(keyPath)) {
+      return { path: "", error: `Relayer secret key file does not exist at ${keyPath}. On Railway, use CASPER_RELAYER_SECRET_KEY_B64 instead of a local file path.` };
+    }
+    const contents = readFileSync(keyPath, "utf8");
+    if (!looksLikePrivateKeyPem(contents)) {
+      return { path: "", error: `Relayer secret key file at ${keyPath} is not a valid private key PEM.` };
+    }
+    return { path: keyPath, error: "" };
+  }
+
+  const key = encoded ? decodeRelayerSecretKeyB64(encoded) : { contents: normalizePem(pem), error: "" };
+  if (key.error) return { path: "", error: key.error };
+  if (!looksLikePrivateKeyPem(key.contents)) {
+    return {
+      path: "",
+      error: "CASPER_RELAYER_SECRET_KEY_PEM is not a valid private key PEM. It must include BEGIN PRIVATE KEY and END PRIVATE KEY lines.",
+    };
+  }
 
   const keyPath = join(tmpdir(), "magen3-relayer-secret-key.pem");
-  if (!existsSync(keyPath)) {
-    const contents = encoded ? Buffer.from(encoded, "base64").toString("utf8") : pem.replace(/\\n/g, "\n");
-    writeFileSync(keyPath, contents, { mode: 0o600 });
-    chmodSync(keyPath, 0o600);
-  }
-  return keyPath;
+  writeFileSync(keyPath, `${key.contents}\n`, { mode: 0o600 });
+  chmodSync(keyPath, 0o600);
+  return { path: keyPath, error: "" };
 }
 
 function argValue(name, type, value) {
@@ -121,8 +190,16 @@ export async function recordDecisionProof(auditLog) {
   }
 
   const contractHash = normalizeDeployHash(MAGEN3_CONTRACT_HASH || prepared?.casper?.contractHash || "");
-  const secretKey = relayerSecretKeyPath();
-  if (!contractHash || !secretKey) {
+  const secretKey = readRelayerSecretKey();
+  if (secretKey.error) {
+    return {
+      ...base,
+      decisionProofStatus: "failed",
+      decisionProofError: secretKey.error,
+    };
+  }
+
+  if (!contractHash || !secretKey.path) {
     return {
       ...base,
       decisionProofStatus: "queued",
@@ -143,7 +220,7 @@ export async function recordDecisionProof(auditLog) {
     "put-deploy",
     "--node-address", process.env.CASPER_RPC_URL || CASPER_RPC_URL,
     "--chain-name", process.env.CASPER_CHAIN_NAME || CASPER_CHAIN_NAME,
-    "--secret-key", secretKey,
+    "--secret-key", secretKey.path,
     "--payment-amount", process.env.CASPER_CALL_PAYMENT_MOTES || "5000000000",
     "--session-hash", contractHash,
     "--session-entry-point", "record_decision",

@@ -210,6 +210,16 @@ CASPER_RELAYER_SECRET_KEY_PATH=
 CASPER_CALL_PAYMENT_MOTES=5000000000
 ```
 
+For Railway, prefer `CASPER_RELAYER_SECRET_KEY_B64` and leave `CASPER_RELAYER_SECRET_KEY_PATH` and `CASPER_RELAYER_SECRET_KEY_PEM` unset. Generate it from WSL or Linux with:
+
+```bash
+head -1 ~/magen3-relayer/secret_key.pem
+tail -1 ~/magen3-relayer/secret_key.pem
+base64 -w 0 ~/magen3-relayer/secret_key.pem
+```
+
+The first and last commands should show PEM headers like `BEGIN PRIVATE KEY` and `END PRIVATE KEY`. Paste only the single-line base64 output into Railway. Do not paste `public_key_hex`, the file path, quotes, or a manually copied multiline key into `CASPER_RELAYER_SECRET_KEY_B64`.
+
 ## Railway backend settings
 
 ```text
