@@ -232,7 +232,7 @@ interface AgentGatewayResponse {
 }
 
 // ──────────────────────────────────────────────────────────
-// Static Catalog and Sample Inputs
+// Static Catalog
 // ──────────────────────────────────────────────────────────
 
 const initialAgents: Agent[] = [];
@@ -294,74 +294,6 @@ const shieldModulesCatalog: ShieldModule[] = [
     status: "Preview",
     riskCategory: "Data Feed",
     icon: "globe",
-  },
-];
-
-const sampleActionExamples = [
-  {
-    agentId: "MAG-AGENT-001",
-    actionType: "Stake" as ActionType,
-    amount: 25,
-    target: "0xStakingContract123",
-    targetType: "Trusted Contract" as TargetType,
-    result: {
-      decision: "Allowed" as Decision,
-      risk: "Low" as Risk,
-      riskScore: 8,
-      policyChecksPassed: [
-        "Amount within max transaction limit (25 ≤ 50 CSPR)",
-        "Target contract is trusted",
-        "Action type allowed by policy",
-        "Daily spending limit not exceeded",
-      ],
-      policyChecksFailed: [],
-      reason: "Amount is within policy limit and target contract is trusted.",
-      recommendedAction: "Proceed with staking operation.",
-    } as DecisionResult,
-  },
-  {
-    agentId: "MAG-AGENT-001",
-    actionType: "Transfer" as ActionType,
-    amount: 500,
-    target: "0xUnknownContract999",
-    targetType: "Unknown Contract" as TargetType,
-    result: {
-      decision: "Blocked" as Decision,
-      risk: "High" as Risk,
-      riskScore: 87,
-      policyChecksPassed: [],
-      policyChecksFailed: [
-        "Amount exceeds max transaction limit (500 > 50 CSPR)",
-        "Target contract is not trusted",
-        "Daily limit would be exceeded",
-      ],
-      reason:
-        "Amount exceeds max transaction limit and target is not trusted.",
-      recommendedAction:
-        "Do not execute. Review target contract and reduce amount below policy limit.",
-    } as DecisionResult,
-  },
-  {
-    agentId: "MAG-AGENT-001",
-    actionType: "Deposit to Vault" as ActionType,
-    amount: 120,
-    target: "0xYieldVault456",
-    targetType: "Trusted Contract" as TargetType,
-    result: {
-      decision: "Review Required" as Decision,
-      risk: "Medium" as Risk,
-      riskScore: 52,
-      policyChecksPassed: [
-        "Target contract is trusted",
-        "Daily limit not exceeded",
-      ],
-      policyChecksFailed: [
-        "Amount exceeds approval threshold (120 > 100 CSPR)",
-      ],
-      reason: "Target is trusted, but amount is above approval threshold.",
-      recommendedAction:
-        "Requires manual approval. Review the vault deposit before proceeding.",
-    } as DecisionResult,
   },
 ];
 
@@ -451,6 +383,33 @@ function makePseudoHash(prefix: string) {
     Math.floor(Math.random() * 16).toString(16)
   ).join("");
   return `${prefix}${body}`;
+}
+
+async function writeClipboard(value: string) {
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Some local or embedded browser contexts block navigator.clipboard.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    return document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -740,6 +699,7 @@ function Btn({
   };
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center gap-2 transition-all duration-200 ${variants[variant]} ${sizes[size]} ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
@@ -1050,7 +1010,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
           </span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm text-[#94A3B8]">
-          {["How It Works", "Shield Modules", "Audit Demo", "Docs"].map((l) => (
+          {["How It Works", "Shield Modules", "Decision Proof", "Docs"].map((l) => (
             <a
               key={l}
               href="#"
@@ -1108,7 +1068,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
               Launch App <ArrowRight size={18} />
             </Btn>
             <Btn variant="outline" size="lg">
-              View Audit Demo <Eye size={18} />
+              View Decision Proof <Eye size={18} />
             </Btn>
           </div>
 
@@ -1355,15 +1315,13 @@ function DashboardPage({
     ...item,
     pct: Math.round((item.count / totalRiskRecords) * 100),
   }));
-  const realCasperRecord = auditLogs.some((log) => isRealCasperDeployHash(log.txHash));
-  const demoSteps = [
-    { label: "Real Casper wallet connected", done: walletConnected },
-    { label: "Agent registered", done: agents.length > 0 },
-    { label: "Active policy created", done: Boolean(activePolicy) },
-    { label: "Action reviewed by Magen3", done: auditLogs.length > 0 },
-    { label: "Casper proof confirmed", done: realCasperRecord },
+  const operationalItems = [
+    { label: "Connected wallet", value: "Active", done: walletConnected },
+    { label: "Registered agents", value: String(agents.length), done: agents.length > 0 },
+    { label: "Active policies", value: String(policies.filter((policy) => policy.status === "Active").length), done: Boolean(activePolicy) },
+    { label: "Audit records", value: String(auditLogs.length), done: auditLogs.length > 0 },
+    { label: "Casper proofs", value: String(dashboardStats.casperAuditRecords), done: dashboardStats.casperAuditRecords > 0 },
   ];
-  const completedDemoSteps = demoSteps.filter((step) => step.done).length;
 
   return (
     <div className="space-y-6">
@@ -1380,7 +1338,6 @@ function DashboardPage({
           value={dashboardStats.protectedActions}
           icon={<ShieldCheck size={20} />}
           color="green"
-          trend="+12"
         />
         <StatCard
           label="Blocked Actions"
@@ -1406,14 +1363,14 @@ function DashboardPage({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
-              <CheckCircle size={14} />
-              Demo Readiness
+              <Activity size={14} />
+              Gateway Status
             </div>
             <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-              {completedDemoSteps}/5 core proof steps complete
+              Real wallet-scoped activity
             </h2>
             <p className="text-sm text-[#94A3B8] mt-1 max-w-3xl">
-              The demo should show a real wallet, an Agent Shield policy decision, database-backed audit history, and a Casper Testnet deploy hash as proof.
+              Dashboard numbers come from the connected wallet, registered agents, active policies, saved audit records, and confirmed Casper decision proofs.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1426,15 +1383,15 @@ function DashboardPage({
           </div>
         </div>
         <div className="mt-4 grid md:grid-cols-5 gap-2">
-          {demoSteps.map((step) => (
-            <div key={step.label} className={`rounded-lg border px-3 py-2 text-xs ${
-              step.done
+          {operationalItems.map((item) => (
+            <div key={item.label} className={`rounded-lg border px-3 py-2 text-xs ${
+              item.done
                 ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"
                 : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8]"
             }`}>
-              <div className="flex items-center gap-1.5">
-                {step.done ? <CheckCircle size={13} className="text-[#22C55E]" /> : <Clock size={13} />}
-                <span>{step.label}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span>{item.label}</span>
+                <span className="font-semibold text-[#F8FAFC]">{item.value}</span>
               </div>
             </div>
           ))}
@@ -1446,10 +1403,14 @@ function DashboardPage({
         <div className={`${CARD_GLOW} p-5 lg:col-span-2`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className={SECTION_TITLE}>Recent Activity</h2>
-            <span className="text-xs text-[#94A3B8]">Last 24h</span>
+            <span className="text-xs text-[#94A3B8]">Latest records</span>
           </div>
           <div className="space-y-2">
-            {recentLogs.map((log) => (
+            {recentLogs.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center text-sm text-[#94A3B8]">
+                No audit activity yet. Register an agent, create a policy, then let the external agent call the gateway.
+              </div>
+            ) : recentLogs.map((log) => (
               <div
                 key={log.id}
                 className="flex items-center gap-3 p-3 rounded-lg bg-[#0B1220] hover:bg-[#0D1626] transition-colors"
@@ -1641,12 +1602,13 @@ function ConnectedAgentsPage({
 
   const copyText = useCallback(async (label: string, value: string) => {
     if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
+    const copiedOk = await writeClipboard(value);
+    if (copiedOk) {
       setCopied(label);
       setTimeout(() => setCopied(""), 1400);
-    } catch {
-      setCopied("");
+    } else {
+      setCopied("copy failed");
+      setTimeout(() => setCopied(""), 1800);
     }
   }, []);
 
@@ -1692,7 +1654,7 @@ const response = await fetch("${gatewayUrl}", {
       type: "Stake",
       amount: 15,
       asset: "CSPR",
-      target: "trusted-validator-demo",
+      target: "VALIDATOR_OR_CONTRACT_ADDRESS",
       targetType: "Trusted Contract"
     }
   })
@@ -1752,13 +1714,13 @@ Use this skill when acting as the external agent "${agent.name}".
   "agentId": "${agent.id}",
   "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
   "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "goal": "Stake 15 CSPR to trusted-validator-demo",
+  "goal": "Stake 15 CSPR to a trusted validator",
   "reason": "External agent prepared this action and is requesting approval before execution.",
   "action": {
     "type": "Stake",
     "amount": 15,
     "asset": "CSPR",
-    "target": "trusted-validator-demo",
+    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
     "targetType": "Trusted Contract"
   }
 }
@@ -1879,10 +1841,10 @@ ${snippet}
                 <CheckCircle size={13} /> External Agent Registered
               </div>
               <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-                Copy these details into your external agent
+                New API key generated
               </h2>
               <p className="text-sm text-[#94A3B8] mt-1">
-                This API key is shown once. Store it in the external agent app, then use Rotate API Key if you need a replacement.
+                This is the only time Magen3 can show the full raw key. Copy it into the external agent now; after refresh, only the preview remains.
               </p>
             </div>
             <Btn
@@ -1903,12 +1865,24 @@ ${snippet}
               <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
-                  <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
+                  <button
+                    type="button"
+                    aria-label={`Copy ${label}`}
+                    className="text-[#22D3EE] hover:text-[#F8FAFC]"
+                    onClick={() => copyText(label, value)}
+                  >
+                    <Copy size={13} />
+                  </button>
                 </div>
                 <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
               </div>
             ))}
           </div>
+          {copied === "copy failed" && (
+            <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
+              Copy was blocked by the browser. Select the key text and copy it manually.
+            </div>
+          )}
         </div>
       )}
 
@@ -2041,7 +2015,9 @@ ${snippet}
             />
           ) : (() => {
             const latestLog = auditLogs.find((log) => log.agentId === selectedAgent.id);
-            const rawKey = latestCredentials?.id === selectedAgent.id ? latestCredentials.apiKey : undefined;
+            const rawKey = latestCredentials?.id === selectedAgent.id
+              ? latestCredentials.apiKey
+              : selectedAgent.apiKey;
             const snippet = integrationSnippet(selectedAgent, rawKey);
             const skill = agentSkillKit(selectedAgent, rawKey, skillTarget, snippet);
             const skillFilename =
@@ -2129,14 +2105,26 @@ ${snippet}
                         ["Gateway URL", gatewayUrl],
                         ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`],
                         ["Agent ID", selectedAgent.id],
-                        ["API Key Status", rawKey ? "Visible once in this session" : selectedAgent.apiKeyPreview ? `Stored as ${selectedAgent.apiKeyPreview}` : "Rotate key to issue"],
+                        ["API Key", rawKey || selectedAgent.apiKeyPreview || "Rotate key to issue"],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
-                            <button className="text-[#22D3EE]" onClick={() => copyText(label, value)}><Copy size={13} /></button>
+                            <button
+                              type="button"
+                              aria-label={`Copy ${label}`}
+                              className="text-[#22D3EE] hover:text-[#F8FAFC]"
+                              onClick={() => copyText(label, value)}
+                            >
+                              <Copy size={13} />
+                            </button>
                           </div>
                           <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+                          {label === "API Key" && !rawKey && selectedAgent.apiKeyPreview && (
+                            <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">
+                              This is only the stored preview. Rotate the key to generate a new full key.
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -2189,9 +2177,14 @@ ${snippet}
                         </div>
                         <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
                           <div className="text-[#94A3B8] uppercase tracking-wider">API key</div>
-                          <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Included once" : "Use preview or rotate key"}</div>
+                          <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Full key included" : "Preview only"}</div>
                         </div>
                       </div>
+                      {copied === "copy failed" && (
+                        <div className="mb-4 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
+                          Copy was blocked by the browser. Select the text and copy it manually.
+                        </div>
+                      )}
                       <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{skill}</code></pre>
                     </div>
                   </div>
@@ -2246,9 +2239,23 @@ ${snippet}
                           <p className="mt-1 text-xs text-[#94A3B8]">
                             Raw API keys are shown once after registration or rotation. Magen3 stores and displays only the key preview later.
                           </p>
-                          <div className="mt-3 font-mono text-xs text-[#F8FAFC]">
+                          <div className="mt-3 break-all font-mono text-xs text-[#F8FAFC]">
                             {rawKey || selectedAgent.apiKeyPreview || "No active API key preview"}
                           </div>
+                          {rawKey && (
+                            <button
+                              type="button"
+                              onClick={() => copyText("raw api key", rawKey)}
+                              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-3 py-1.5 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]"
+                            >
+                              <Copy size={13} /> {copied === "raw api key" ? "Copied" : "Copy Full API Key"}
+                            </button>
+                          )}
+                          {copied === "copy failed" && (
+                            <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
+                              Copy was blocked by the browser. Select the key text and copy it manually.
+                            </div>
+                          )}
                         </div>
                         <Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
                           <Lock size={14} /> Rotate API Key
@@ -2824,41 +2831,6 @@ function ActionReviewPage({
         </p>
       </div>
 
-      {/* Quick examples */}
-      <div className="flex gap-3 flex-wrap">
-        <span className="text-xs text-[#94A3B8] py-2">Quick examples:</span>
-        {sampleActionExamples.map((ex, i) => (
-          <button
-            key={i}
-            onClick={() => {
-              setForm({
-                agentId: ex.agentId,
-                actionType: ex.actionType,
-                amount: ex.amount,
-                target: ex.target,
-                targetType: ex.targetType,
-              });
-              setResult(null);
-              setRecordedTxHash("");
-            }}
-            className="text-xs px-3 py-1.5 bg-[#1E293B] hover:bg-[#263548] text-[#94A3B8] hover:text-[#F8FAFC] rounded-lg transition-colors"
-          >
-            Example {i + 1}: {ex.actionType} {ex.amount} CSPR →{" "}
-            <span
-              className={
-                ex.result.decision === "Allowed"
-                  ? "text-[#22C55E]"
-                  : ex.result.decision === "Blocked"
-                  ? "text-[#EF4444]"
-                  : "text-[#F59E0B]"
-              }
-            >
-              {ex.result.decision}
-            </span>
-          </button>
-        ))}
-      </div>
-
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Request Form */}
         <div className={`${CARD} p-6`}>
@@ -3170,11 +3142,11 @@ function AuditLogPage({
   const copyCasperPayload = useCallback(async () => {
     if (!casperPrepared) return;
     const body = JSON.stringify(casperPrepared, null, 2);
-    try {
-      await navigator.clipboard.writeText(body);
+    const copiedOk = await writeClipboard(body);
+    if (copiedOk) {
       setCopiedPayload(true);
       setTimeout(() => setCopiedPayload(false), 1500);
-    } catch {
+    } else {
       setCasperError("Could not copy payload. You can still select and copy it manually.");
     }
   }, [casperPrepared]);
@@ -3812,20 +3784,32 @@ function SettingsPage({
 }) {
   const [devMode, setDevMode] = useState(false);
   const [riskMode, setRiskMode] = useState("Balanced");
+  const [copiedSetting, setCopiedSetting] = useState("");
   const [notifications, setNotifications] = useState({
     blocked: true,
     review: true,
     allowed: false,
   });
+  const copySetting = useCallback(async (label: string, value: string) => {
+    const copiedOk = await writeClipboard(value);
+    setCopiedSetting(copiedOk ? label : "copy failed");
+    setTimeout(() => setCopiedSetting(""), copiedOk ? 1400 : 1800);
+  }, []);
+  const gatewayRows = [
+    ["API Base URL", api.baseUrl],
+    ["Gateway Intent URL", `${api.baseUrl}/api/agent-gateway/intents`],
+    ["Gateway Verify URL", `${api.baseUrl}/api/agent-gateway/me?agentId=YOUR_AGENT_ID`],
+    ["Agent API Keys", "Created and rotated from Connected Agents"],
+  ];
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
           Settings
         </h1>
         <p className="text-[#94A3B8] text-sm mt-1">
-          Configure your Magen3 environment and preferences.
+          View the active Magen3 environment and adjust local dashboard preferences.
         </p>
       </div>
 
@@ -3852,7 +3836,10 @@ function SettingsPage({
 
       {/* Risk */}
       <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-4`}>Default Risk Mode</h2>
+        <h2 className={`${SECTION_TITLE} mb-1`}>Session Risk Preference</h2>
+        <p className="mb-4 text-xs text-[#94A3B8]">
+          This changes only the local dashboard preference. Policy risk mode is still controlled on each policy.
+        </p>
         <div className="grid grid-cols-3 gap-3">
           {["Conservative", "Balanced", "Aggressive"].map((m) => (
             <button
@@ -3931,29 +3918,42 @@ function SettingsPage({
         </div>
       </div>
 
-      {/* API / Integration */}
+      {/* Gateway / Integration */}
       <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-1`}>API / Integration</h2>
+        <h2 className={`${SECTION_TITLE} mb-1`}>Gateway / Integration</h2>
         <p className="text-xs text-[#94A3B8] mb-4">
-          Placeholder for backend API keys and webhook configuration.
+          Use these endpoints with the Agent ID and API key created inside Connected Agents.
         </p>
-        <div className="space-y-3">
-          <InputField
-            label="API Endpoint"
-            value=""
-            onChange={() => {}}
-            placeholder="https://api.magen3.io/v1"
-          />
-          <InputField
-            label="API Key"
-            value=""
-            onChange={() => {}}
-            placeholder="mag3_sk_..."
-            type="password"
-          />
-          <Btn variant="secondary" size="sm">
-            Save Integration
-          </Btn>
+        <div className="space-y-2">
+          {gatewayRows.map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
+                  <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+                </div>
+                {value.startsWith("http") && (
+                  <button
+                    type="button"
+                    aria-label={`Copy ${label}`}
+                    onClick={() => copySetting(label, value)}
+                    className="shrink-0 text-[#22D3EE] hover:text-[#F8FAFC]"
+                  >
+                    <Copy size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {copiedSetting && (
+            <div className={`rounded-lg border px-3 py-2 text-xs ${
+              copiedSetting === "copy failed"
+                ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"
+                : "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"
+            }`}>
+              {copiedSetting === "copy failed" ? "Copy was blocked by the browser." : `${copiedSetting} copied.`}
+            </div>
+          )}
         </div>
       </div>
 

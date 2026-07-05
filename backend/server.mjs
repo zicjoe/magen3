@@ -219,12 +219,12 @@ const server = createServer(async (req, res) => {
         name: "Magen3 Agent Gateway API",
         purpose: "External agents submit structured Web3 action intents to Magen3 before wallet signing or contract execution.",
         authRequired: true,
-        verifyEndpoint: "GET /api/agent-gateway/me?agentId=MAG-AGENT-001",
+        verifyEndpoint: "GET /api/agent-gateway/me?agentId=YOUR_AGENT_ID",
         endpoint: "POST /api/agent-gateway/intents",
         identityModel: "External agents identify with agentId plus x-magen3-agent-key or Authorization Bearer. The request wallet is the execution wallet and does not need to match the Magen3 owner wallet.",
         requestShape: {
           source: "external-agent-name",
-          agentId: "MAG-AGENT-001",
+          agentId: "YOUR_AGENT_ID",
           walletAddress: "execution-wallet-public-key",
           executionWalletAddress: "execution-wallet-public-key",
           goal: "Stake idle funds safely",
@@ -233,7 +233,7 @@ const server = createServer(async (req, res) => {
             type: "Stake",
             amount: 15,
             asset: "CSPR",
-            target: "trusted-validator-demo",
+            target: "VALIDATOR_OR_CONTRACT_ADDRESS",
             targetType: "Trusted Contract"
           }
         },

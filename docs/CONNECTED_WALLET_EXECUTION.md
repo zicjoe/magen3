@@ -50,7 +50,23 @@ Body:
 }
 ```
 
-The backend forwards the signed deploy to the configured Casper RPC using `account_put_deploy` and returns the deploy hash.
+The backend forwards the signed deploy to the configured Casper RPC using `account_put_deploy` with Casper's named JSON-RPC parameter shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "account_put_deploy",
+  "params": [
+    {
+      "name": "deploy",
+      "value": {}
+    }
+  ]
+}
+```
+
+It returns the deploy hash from either `result.deploy_hash` or the Casper 2.0 `result.value.deploy_hash` envelope.
 
 ## Important note
 
