@@ -34,7 +34,6 @@ import {
   Code2,
   ChevronRight,
   Menu,
-  BookOpen,
   Layers,
 } from "lucide-react";
 import { api } from "./lib/api";
@@ -654,6 +653,17 @@ function EmptyState({
   );
 }
 
+function BrandLogo({ className = "h-8 w-8" }: { className?: string }) {
+  return (
+    <img
+      src="/magen3-logo.png"
+      alt="Magen3 logo"
+      className={`object-contain ${className}`}
+      draggable={false}
+    />
+  );
+}
+
 // ──────────────────────────────────────────────────────────
 // Sidebar
 // ──────────────────────────────────────────────────────────
@@ -683,8 +693,8 @@ function Sidebar({
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-[#1E293B]">
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#22D3EE]/15 flex items-center justify-center shadow-[0_0_10px_rgba(34,211,238,0.3)]">
-          <ShieldCheck size={18} className="text-[#22D3EE]" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#050B14] border border-[#1E293B] flex items-center justify-center overflow-hidden">
+          <BrandLogo className="h-7 w-7" />
         </div>
         {!collapsed && (
           <span className="font-bold text-[#F8FAFC] text-lg font-['Space_Grotesk'] tracking-tight">
@@ -825,7 +835,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       <nav className="flex items-center justify-between px-8 py-5 border-b border-[#1E293B] sticky top-0 z-20 bg-[#050B14]">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#0B1220] border border-[#1E293B] flex items-center justify-center">
-            <ShieldCheck size={18} className="text-[#22D3EE]" />
+            <BrandLogo className="h-7 w-7" />
           </div>
           <span className="font-bold text-xl font-['Space_Grotesk']">
             Magen<span className="text-[#22D3EE]">3</span>
@@ -1082,7 +1092,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       <section className="bg-[#050B14] py-24">
         <div className="max-w-3xl mx-auto px-8 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#0B1220] border border-[#1E293B] flex items-center justify-center mx-auto mb-6">
-            <ShieldCheck size={32} className="text-[#22D3EE]" />
+            <BrandLogo className="h-12 w-12" />
           </div>
           <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
             Ready to protect your agents?
@@ -3534,7 +3544,7 @@ Content-Type: application/json
         <header className="border-b border-[#1E293B] bg-[#050B14] px-6 py-6 lg:px-8">
           <div className="max-w-5xl">
             <div className="mb-3 flex items-center gap-2">
-              <BookOpen size={18} className="text-[#22D3EE]" />
+              <BrandLogo className="h-5 w-5" />
               <span className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">
                 Documentation
               </span>
