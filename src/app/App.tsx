@@ -34,6 +34,8 @@ import {
   Code2,
   ChevronRight,
   Menu,
+  BookOpen,
+  Layers,
 } from "lucide-react";
 import { api } from "./lib/api";
 import {
@@ -53,7 +55,8 @@ type Page =
   | "connected-agents"
   | "policies"
   | "audit-log"
-  | "settings";
+  | "settings"
+  | "docs";
 
 type Decision = "Allowed" | "Blocked" | "Review Required";
 type Risk = "Low" | "Medium" | "High" | "Critical";
@@ -815,7 +818,7 @@ function TopBar({
 // Landing Page
 // ──────────────────────────────────────────────────────────
 
-function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
+function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onOpenDocs: () => void }) {
   return (
     <div className="min-h-screen bg-[#050B14] text-[#F8FAFC] font-['Inter']">
       {/* Navbar */}
@@ -829,20 +832,18 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
           </span>
         </div>
         <div className="hidden md:flex items-center gap-8 text-sm text-[#94A3B8]">
-          {[
-            ["How It Works", "#how-it-works"],
-            ["Shield Modules", "#shield-modules"],
-            ["Decision Proof", "#decision-proof"],
-            ["Docs", "#docs"],
-          ].map(([label, href]) => (
-            <a
-              key={label}
-              href={href}
-              className="hover:text-[#F8FAFC] transition-colors"
-            >
-              {label}
-            </a>
-          ))}
+          <a href="#how-it-works" className="hover:text-[#F8FAFC] transition-colors">
+            How It Works
+          </a>
+          <a href="#shield-modules" className="hover:text-[#F8FAFC] transition-colors">
+            Shield Modules
+          </a>
+          <a href="#decision-proof" className="hover:text-[#F8FAFC] transition-colors">
+            Decision Proof
+          </a>
+          <button type="button" onClick={onOpenDocs} className="hover:text-[#F8FAFC] transition-colors">
+            Docs
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#FF3B3B]/10 border border-[#FF3B3B]/20 rounded-full">
@@ -1090,7 +1091,7 @@ function LandingPage({ onLaunchApp }: { onLaunchApp: () => void }) {
       </section>
 
       {/* CTA */}
-      <section className="bg-gradient-to-b from-[#0B1220] to-[#050B14] py-24">
+      <section className="bg-[#050B14] py-24">
         <div className="max-w-3xl mx-auto px-8 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#22D3EE]/15 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
             <ShieldCheck size={32} className="text-[#22D3EE]" />
@@ -3284,6 +3285,695 @@ function AuditLogPage({
 }
 
 // ──────────────────────────────────────────────────────────
+// Docs Page
+// ──────────────────────────────────────────────────────────
+
+const docsSidebar = [
+  {
+    group: "Getting Started",
+    items: [
+      { id: "intro", label: "What is Magen3?" },
+      { id: "architecture", label: "How Magen3 Works" },
+      { id: "quick-start", label: "Quick Start" },
+      { id: "core-concepts", label: "Core Concepts" },
+    ],
+  },
+  {
+    group: "Shield Modules",
+    items: [
+      { id: "shield-modules-doc", label: "Shield Overview" },
+      { id: "agent-shield-doc", label: "Agent Shield" },
+      { id: "shield-modules-doc", label: "Contract Shield" },
+      { id: "shield-modules-doc", label: "DAO Shield" },
+      { id: "shield-modules-doc", label: "RWA Shield" },
+      { id: "shield-modules-doc", label: "Oracle Shield" },
+    ],
+  },
+  {
+    group: "Agent Shield",
+    items: [
+      { id: "connected-agents-doc", label: "Connected Agents" },
+      { id: "api-keys-doc", label: "Agent API Keys" },
+      { id: "agent-flow-doc", label: "Agent Gateway Flow" },
+      { id: "api-request-doc", label: "Integration Examples" },
+      { id: "case-study-doc", label: "Case Study: Lobstar Wilde" },
+    ],
+  },
+  {
+    group: "Audit & Proofs",
+    items: [
+      { id: "proofs-doc", label: "Casper Decision Proof" },
+      { id: "proofs-doc", label: "Execution Proof" },
+      { id: "proofs-doc", label: "Decision vs Execution Hash" },
+    ],
+  },
+  {
+    group: "Reference",
+    items: [
+      { id: "security-doc", label: "Security Model" },
+      { id: "troubleshooting-doc", label: "Troubleshooting" },
+      { id: "faq-doc", label: "FAQ" },
+    ],
+  },
+];
+
+const docsOnThisPage = [
+  { id: "intro", label: "What is Magen3?" },
+  { id: "architecture", label: "Platform Architecture" },
+  { id: "shield-modules-doc", label: "Shield Modules" },
+  { id: "agent-flow-doc", label: "Agent Shield Flow" },
+  { id: "connected-agents-doc", label: "Connected Agents" },
+  { id: "api-request-doc", label: "Gateway API" },
+  { id: "security-doc", label: "Security Model" },
+  { id: "case-study-doc", label: "Case Study" },
+  { id: "proofs-doc", label: "Casper Proofs" },
+  { id: "troubleshooting-doc", label: "Troubleshooting" },
+  { id: "faq-doc", label: "FAQ" },
+];
+
+function scrollToDocSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function DocsBadge({ label, variant }: { label: string; variant: "live" | "preview" | "info" | "warning" }) {
+  const styles = {
+    live: "border-[#22C55E]/30 bg-[#22C55E]/15 text-[#22C55E]",
+    preview: "border-[#22D3EE]/30 bg-[#22D3EE]/10 text-[#22D3EE]",
+    info: "border-[#22D3EE]/20 bg-[#22D3EE]/10 text-[#22D3EE]",
+    warning: "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]",
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[variant]}`}>
+      {label}
+    </span>
+  );
+}
+
+function DocsCallout({
+  type = "info",
+  children,
+}: {
+  type?: "info" | "warning" | "danger" | "success";
+  children: React.ReactNode;
+}) {
+  const styles = {
+    info: "border-[#22D3EE]/25 bg-[#22D3EE]/5",
+    warning: "border-[#F59E0B]/30 bg-[#F59E0B]/5",
+    danger: "border-[#EF4444]/30 bg-[#EF4444]/5",
+    success: "border-[#22C55E]/30 bg-[#22C55E]/5",
+  };
+  const iconStyles = {
+    info: "text-[#22D3EE]",
+    warning: "text-[#F59E0B]",
+    danger: "text-[#EF4444]",
+    success: "text-[#22C55E]",
+  };
+  const Icon = type === "danger" ? ShieldX : type === "success" ? CheckCircle : type === "warning" ? AlertTriangle : Shield;
+
+  return (
+    <div className={`flex gap-3 rounded-xl border p-4 ${styles[type]}`}>
+      <Icon size={16} className={`mt-0.5 shrink-0 ${iconStyles[type]}`} />
+      <div className="text-sm leading-relaxed text-[#94A3B8]">{children}</div>
+    </div>
+  );
+}
+
+function DocsCodeBlock({ code, lang = "json" }: { code: string; lang?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(async () => {
+    const copiedOk = await writeClipboard(code);
+    setCopied(copiedOk);
+    setTimeout(() => setCopied(false), 1400);
+  }, [code]);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#1E293B] bg-[#050B14]">
+      <div className="flex items-center justify-between border-b border-[#1E293B] px-4 py-2">
+        <span className="font-mono text-xs uppercase tracking-wider text-[#94A3B8]">{lang}</span>
+        <button
+          type="button"
+          onClick={copyCode}
+          className="inline-flex items-center gap-1.5 text-xs text-[#94A3B8] transition-colors hover:text-[#22D3EE]"
+        >
+          {copied ? <CheckCircle size={12} className="text-[#22C55E]" /> : <Copy size={12} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="overflow-x-auto whitespace-pre p-5 font-mono text-xs leading-relaxed text-[#94A3B8]">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function DocsFlowStep({ label, sub }: { label: string; sub?: string }) {
+  return (
+    <div className="min-w-[128px] rounded-xl border border-[#1E293B] bg-[#111827] px-3 py-3 text-center">
+      <div className="font-['Space_Grotesk'] text-xs font-semibold text-[#F8FAFC]">{label}</div>
+      {sub && <div className="mt-1 text-[11px] text-[#94A3B8]">{sub}</div>}
+    </div>
+  );
+}
+
+function DocsFlowArrow() {
+  return <ChevronRight size={16} className="shrink-0 text-[#22D3EE]" />;
+}
+
+function DocsPage() {
+  const [search, setSearch] = useState("");
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    new Set(["Getting Started", "Shield Modules", "Agent Shield"])
+  );
+
+  const filteredSidebar = docsSidebar
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        !search.trim() || item.label.toLowerCase().includes(search.trim().toLowerCase())
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const toggleGroup = useCallback((group: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }, []);
+
+  const apiRequest = `POST /api/agent-gateway/intents
+
+x-magen3-agent-key: YOUR_AGENT_API_KEY
+Content-Type: application/json
+
+{
+  "source": "YieldBot AI",
+  "agentId": "MAG-AGENT-...",
+  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "goal": "Stake 15 CSPR to a trusted validator",
+  "reason": "The agent prepared this action and needs Magen3 approval.",
+  "action": {
+    "type": "Stake",
+    "amount": 15,
+    "asset": "CSPR",
+    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
+    "targetType": "Trusted Contract"
+  }
+}`;
+
+  const apiResponse = `{
+  "executionApproved": true,
+  "result": {
+    "decision": "Allowed",
+    "risk": "Low",
+    "reason": "The action matches the active policy."
+  },
+  "nextAction": "Request wallet signature before execution"
+}`;
+
+  return (
+    <div className="flex min-h-[calc(100vh-57px)] bg-[#050B14]">
+      <aside className="hidden w-64 shrink-0 border-r border-[#1E293B] bg-[#0B1220] lg:flex lg:flex-col">
+        <div className="border-b border-[#1E293B] p-4">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+            <input
+              className={`${INPUT_CLS} pl-9 text-xs`}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search docs..."
+            />
+          </div>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-3">
+          {filteredSidebar.map((group) => (
+            <div key={group.group} className="mb-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.group)}
+                className="flex w-full items-center justify-between px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8] transition-colors hover:text-[#F8FAFC]"
+              >
+                {group.group}
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform ${openGroups.has(group.group) ? "" : "-rotate-90"}`}
+                />
+              </button>
+              {openGroups.has(group.group) && (
+                <div className="mb-2 ml-2">
+                  {group.items.map((item) => (
+                    <button
+                      type="button"
+                      key={`${group.group}-${item.label}`}
+                      onClick={() => scrollToDocSection(item.id)}
+                      className="block w-full rounded-lg px-4 py-1.5 text-left text-sm text-[#94A3B8] transition-colors hover:bg-[#1E293B]/70 hover:text-[#F8FAFC]"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <main className="min-w-0 flex-1 overflow-y-auto">
+        <header className="border-b border-[#1E293B] bg-[#050B14] px-6 py-6 lg:px-8">
+          <div className="max-w-5xl">
+            <div className="mb-3 flex items-center gap-2">
+              <BookOpen size={18} className="text-[#22D3EE]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">
+                Documentation
+              </span>
+            </div>
+            <h1 className="font-['Space_Grotesk'] text-3xl font-bold text-[#F8FAFC]">
+              Magen3 Docs
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">
+              Developer and security documentation for Magen3 Shield modules, policy enforcement,
+              agent gateway integrations, and Casper decision proofs.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <DocsBadge label="Casper Testnet" variant="warning" />
+              <DocsBadge label="Modular Shields" variant="info" />
+              <DocsBadge label="Policy Gateway" variant="info" />
+              <DocsBadge label="Decision Proofs" variant="live" />
+            </div>
+          </div>
+        </header>
+
+        <div className="flex">
+          <article className="min-w-0 flex-1 px-6 py-8 lg:px-8">
+            <div className="max-w-4xl space-y-12">
+              <section id="intro" className="scroll-mt-8">
+                <DocsBadge label="Getting Started" variant="live" />
+                <h2 className="mt-4 font-['Space_Grotesk'] text-3xl font-bold text-[#F8FAFC]">
+                  What is Magen3?
+                </h2>
+                <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
+                  Magen3 is a modular Web3 security gateway for execution protection. It checks risky
+                  actions from AI agents, smart contracts, DAOs, RWA workflows, and oracle-driven systems
+                  before those actions reach the blockchain.
+                </p>
+                <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
+                  Magen3 sits between <span className="font-semibold text-[#F8FAFC]">intent</span> and{" "}
+                  <span className="font-semibold text-[#F8FAFC]">execution</span>. It gives Web3 teams a
+                  policy layer, gateway layer, and audit layer for controlling high-risk actions before
+                  wallet signing or protocol execution.
+                </p>
+              </section>
+
+              <section id="architecture" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Platform Architecture</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Magen3 is built around four layers that work together to protect high-risk Web3 actions.
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {[
+                    {
+                      icon: Layers,
+                      title: "Shield Modules",
+                      desc: "Protection modules for different Web3 execution surfaces.",
+                    },
+                    {
+                      icon: FileText,
+                      title: "Policy Engine",
+                      desc: "Rules that decide whether an action is Allowed, Blocked, or requires Review.",
+                    },
+                    {
+                      icon: Server,
+                      title: "Gateway API",
+                      desc: "External agents and apps submit action intents before execution.",
+                    },
+                    {
+                      icon: Database,
+                      title: "Casper Decision Proofs",
+                      desc: "Policy decisions can be recorded on Casper for verifiable audit trails.",
+                    },
+                  ].map((card) => {
+                    const Icon = card.icon;
+                    return (
+                      <div key={card.title} className={`${CARD} p-5 transition-colors hover:border-[#22D3EE]/25`}>
+                        <div className="mb-3 flex items-center gap-2.5">
+                          <div className="rounded-lg bg-[#22D3EE]/10 p-2 text-[#22D3EE]">
+                            <Icon size={18} />
+                          </div>
+                          <h3 className="font-['Space_Grotesk'] font-semibold text-[#F8FAFC]">
+                            {card.title}
+                          </h3>
+                        </div>
+                        <p className="text-sm leading-relaxed text-[#94A3B8]">{card.desc}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section id="quick-start" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Quick Start</h2>
+                <div className="mt-5 grid gap-3">
+                  {[
+                    "Connect Casper Wallet as the owner wallet.",
+                    "Register a Connected Agent and copy the one-time API key.",
+                    "Create an active policy for that agent.",
+                    "Send agent intents to the Magen3 Gateway before wallet signing.",
+                    "Review audit logs and attach Casper decision proofs.",
+                  ].map((step, index) => (
+                    <div key={step} className="flex gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#22D3EE]/10 text-xs font-bold text-[#22D3EE]">
+                        {index + 1}
+                      </div>
+                      <p className="text-sm leading-relaxed text-[#94A3B8]">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section id="core-concepts" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Core Concepts</h2>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ["Connected Agent", "The external AI app, bot, or autonomous system calling Magen3."],
+                    ["Agent ID", "The public identifier for the connected agent."],
+                    ["Agent API Key", "The secret credential used by that agent to call the gateway."],
+                    ["Execution Wallet", "The wallet that signs the real transaction after approval."],
+                    ["Decision", "Allowed, Blocked, or Review Required."],
+                    ["Decision Proof", "The Casper record proving Magen3 reviewed the action."],
+                  ].map(([title, desc]) => (
+                    <div key={title} className={`${CARD} p-4`}>
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section id="shield-modules-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Shield Modules</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Magen3 is not only Agent Shield. Agent Shield is the first live module; the broader
+                  platform is designed around multiple Shields for different execution surfaces.
+                </p>
+                <div className="mt-5 overflow-hidden rounded-xl border border-[#1E293B]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#0B1220]">
+                      <tr className="border-b border-[#1E293B]">
+                        {["Shield", "Status", "Purpose"].map((heading) => (
+                          <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1E293B]">
+                      {[
+                        ["Agent Shield", "Live", "Protects AI agents before wallet or protocol execution"],
+                        ["Contract Shield", "Preview", "Reviews smart contract interactions, upgrades, and risky calls"],
+                        ["DAO Shield", "Preview", "Checks treasury actions and governance execution"],
+                        ["RWA Shield", "Preview", "Validates real-world asset proof updates and expiry checks"],
+                        ["Oracle Shield", "Preview", "Reviews oracle and data-feed updates before they trigger actions"],
+                      ].map(([shield, status, purpose]) => (
+                        <tr key={shield} className="bg-[#111827]">
+                          <td className="px-4 py-3 font-semibold text-[#F8FAFC]">{shield}</td>
+                          <td className="px-4 py-3">
+                            <DocsBadge label={status} variant={status === "Live" ? "live" : "preview"} />
+                          </td>
+                          <td className="px-4 py-3 text-[#94A3B8]">{purpose}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-5">
+                  <DocsCallout type="info">
+                    <span className="font-semibold text-[#F8FAFC]">Agent Shield is live first.</span> Other
+                    Shields show the broader architecture and future protection surfaces.
+                  </DocsCallout>
+                </div>
+              </section>
+
+              <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Agent Shield</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Agent Shield protects autonomous agents before they execute wallet or protocol actions.
+                  External agents submit intent, Magen3 checks the active policy, and only approved actions
+                  should continue to wallet signing.
+                </p>
+              </section>
+
+              <section id="agent-flow-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Agent Shield Flow</h2>
+                <div className="mt-5 overflow-x-auto rounded-xl border border-[#1E293B] bg-[#0B1220] p-5">
+                  <div className="flex min-w-max items-center gap-2">
+                    <DocsFlowStep label="External Agent" sub="Submits intent" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Magen3 Gateway" sub="Receives request" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Policy Check" sub="Evaluates rules" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Decision" sub="Allowed / Blocked / Review" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Wallet Signature" sub="Only if Allowed" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Casper Proof" sub="Audit record" />
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <DocsCallout type="warning">
+                    External agents should never request wallet signing before Magen3 returns an{" "}
+                    <span className="font-semibold text-[#22C55E]">Allowed</span> decision.
+                  </DocsCallout>
+                </div>
+              </section>
+
+              <section id="connected-agents-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Connected Agents</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Connected Agents are external AI apps, bots, or autonomous systems allowed to call Magen3.
+                  The owner wallet registers the agent, while the execution wallet signs the real transaction
+                  in the external app.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ["Agent ID", "Identifies the external agent."],
+                    ["API Key", "Authenticates each gateway request."],
+                    ["Policy", "Controls what the agent can do."],
+                    ["Audit Logs", "Track every decision and proof state."],
+                  ].map(([title, desc]) => (
+                    <div key={title} className={`${CARD} p-4`}>
+                      <h3 className="text-sm font-semibold text-[#22D3EE]">{title}</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section id="api-keys-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Agent API Keys</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  One API key is created per connected agent. Policies attach to agents, not global app keys.
+                  Raw API keys are shown once after registration or rotation.
+                </p>
+                <div className="mt-5">
+                  <DocsCallout type="danger">
+                    If a key is lost, rotate it. If an agent is compromised, revoke it. Magen3 stores only
+                    the secure key hash and preview after the one-time display.
+                  </DocsCallout>
+                </div>
+              </section>
+
+              <section id="api-request-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Gateway API Example</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  External agents submit action intents to the gateway before requesting wallet signatures.
+                </p>
+                <div className="mt-5">
+                  <DocsCodeBlock lang="http" code={apiRequest} />
+                </div>
+                <h3 className="mt-6 text-sm font-semibold text-[#F8FAFC]">Example response</h3>
+                <div className="mt-3">
+                  <DocsCodeBlock lang="json" code={apiResponse} />
+                </div>
+              </section>
+
+              <section id="security-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Security Model</h2>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    "One API key per agent",
+                    "Policy belongs to the agent",
+                    "Owner wallet manages the agent",
+                    "Execution wallet signs the actual transaction",
+                    "Raw keys are shown once",
+                    "Revoked agents cannot call the gateway",
+                    "Unsafe actions fail closed",
+                    "Decision records are auditable",
+                  ].map((item) => (
+                    <div key={item} className="flex gap-2.5 rounded-lg border border-[#1E293B] bg-[#111827] px-4 py-3">
+                      <CheckCircle size={14} className="mt-0.5 shrink-0 text-[#22C55E]" />
+                      <span className="text-sm text-[#94A3B8]">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section id="case-study-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Case Study: Wallet-Connected Agents Need Guardrails</h2>
+                <div className="mt-5 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-[#F59E0B]" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#F59E0B]">
+                      Public AI-Agent Incident · 2026
+                    </span>
+                  </div>
+                  <p className="text-sm leading-relaxed text-[#94A3B8]">
+                    In a widely reported 2026 incident, a wallet-connected AI crypto agent called{" "}
+                    <span className="font-semibold text-[#F8FAFC]">Lobstar Wilde</span> sent a large token
+                    allocation to an X user after processing a public request. The exact financial impact
+                    varied by valuation and liquidity, but the lesson was clear: autonomous agents with wallet
+                    access need hard execution policies before they can move assets.
+                  </p>
+                  <p className="mt-3 text-sm leading-relaxed text-[#94A3B8]">
+                    Agent Shield is designed to prevent this class of failure by requiring every external
+                    agent action to pass through policy checks before wallet signing.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-3 text-xs">
+                    <a
+                      href="https://www.ccn.com/education/crypto/ai-agent-sends-5-percent-memecoin-supply-250k-lobstar-wilde-incident/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                    >
+                      CCN report <ExternalLink size={11} />
+                    </a>
+                    <a
+                      href="https://crypto.news/ai-trading-bot-lobstar-wilde-transfer-memecoin-2026/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                    >
+                      Crypto.news report <ExternalLink size={11} />
+                    </a>
+                  </div>
+                </div>
+                <div className="mt-5 overflow-x-auto rounded-xl border border-[#1E293B] bg-[#0B1220] p-5">
+                  <div className="flex min-w-max items-center gap-2">
+                    <DocsFlowStep label="Public prompt" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Agent prepares action" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Magen3 checks policy" />
+                    <DocsFlowArrow />
+                    <div className="rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-3 text-center">
+                      <div className="text-xs font-semibold text-[#EF4444]">Unsafe transfer blocked</div>
+                    </div>
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Approved action" sub="Wallet signing" />
+                  </div>
+                </div>
+              </section>
+
+              <section id="proofs-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Casper Decision Proofs</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Decision Proof records that Magen3 reviewed an action before execution. This is different
+                  from the execution transaction itself.
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div className={`${CARD} p-5`}>
+                    <div className="mb-3 flex items-center gap-2 text-[#22D3EE]">
+                      <Database size={16} />
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Decision Proof</h3>
+                    </div>
+                    <ul className="space-y-2 text-sm text-[#94A3B8]">
+                      <li>Records Magen3's policy decision</li>
+                      <li>Shows what was allowed, blocked, or reviewed</li>
+                      <li>Can be anchored on Casper</li>
+                    </ul>
+                  </div>
+                  <div className={`${CARD} p-5`}>
+                    <div className="mb-3 flex items-center gap-2 text-[#22C55E]">
+                      <Send size={16} />
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Execution Proof</h3>
+                    </div>
+                    <ul className="space-y-2 text-sm text-[#94A3B8]">
+                      <li>Shows the real wallet transaction</li>
+                      <li>Comes after wallet signing</li>
+                      <li>Only exists if execution happens</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section id="troubleshooting-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Troubleshooting</h2>
+                <div className="mt-5 grid gap-3">
+                  {[
+                    ["Gateway Unavailable", "Check that the backend service is running and VITE_API_URL points to the correct deployment."],
+                    ["Invalid API Key", "The key may have been rotated or the agent revoked. Rotate or re-register from Connected Agents."],
+                    ["No Active Policy", "Create and activate a policy for the connected agent before gateway execution."],
+                    ["Casper Wallet Not Detected", "Install and unlock Casper Wallet in the browser before connecting."],
+                    ["Decision Proof Pending", "Check the audit log and retry decision proof recording if the relayer has not confirmed a hash."],
+                  ].map(([title, desc]) => (
+                    <div key={title} className={`${CARD} p-4`}>
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-[#94A3B8]">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section id="faq-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>FAQ</h2>
+                <div className="mt-5 space-y-3">
+                  {[
+                    ["Is Magen3 only Agent Shield?", "No. Agent Shield is the first live Shield. Magen3 is built as a modular Shield platform."],
+                    ["Is it one API key for the whole app?", "No. Use one API key per connected agent."],
+                    ["Is it one API key per policy?", "No. Policies attach to agents. API keys authenticate agents."],
+                    ["Can the execution wallet differ from the owner wallet?", "Yes. The owner wallet manages the agent in Magen3; the execution wallet signs in the external app."],
+                    ["Does Magen3 sign transactions?", "No. Magen3 checks and records decisions. Wallet signing still happens through the execution wallet."],
+                  ].map(([question, answer]) => (
+                    <div key={question} className={`${CARD} p-4`}>
+                      <h3 className="text-sm font-semibold text-[#F8FAFC]">{question}</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{answer}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </article>
+
+          <aside className="hidden w-56 shrink-0 px-5 py-8 xl:block">
+            <div className="sticky top-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+                On this page
+              </p>
+              <nav className="space-y-1">
+                {docsOnThisPage.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => scrollToDocSection(item.id)}
+                    className="block w-full py-1 text-left text-xs leading-snug text-[#94A3B8] transition-colors hover:text-[#22D3EE]"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
 // Settings Page
 // ──────────────────────────────────────────────────────────
 
@@ -3723,11 +4413,11 @@ export default function App() {
 
   if (page === "landing") {
     return (
-      <LandingPage onLaunchApp={() => setPage("dashboard")} />
+      <LandingPage onLaunchApp={() => setPage("dashboard")} onOpenDocs={() => setPage("docs")} />
     );
   }
 
-  const pageComponents: Record<Exclude<Page, "landing">, ReactElement> = {
+  const pageComponents: Record<Exclude<Page, "landing" | "docs">, ReactElement> = {
     dashboard: (
       <DashboardPage
         walletConnected={walletConnected}
@@ -3797,8 +4487,12 @@ export default function App() {
           walletConnecting={walletConnecting}
           walletError={walletError}
         />
-        <main className="flex-1 p-6 overflow-auto">
-          {pageComponents[page as Exclude<Page, "landing">]}
+        <main className={`flex-1 overflow-auto ${page === "docs" ? "p-0" : "p-6"}`}>
+          {page === "docs" ? (
+            <DocsPage />
+          ) : (
+            pageComponents[page as Exclude<Page, "landing" | "docs">]
+          )}
         </main>
       </div>
     </div>
