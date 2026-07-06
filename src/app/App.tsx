@@ -822,9 +822,9 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
   return (
     <div className="min-h-screen bg-[#050B14] text-[#F8FAFC] font-['Inter']">
       {/* Navbar */}
-      <nav className="flex items-center justify-between px-8 py-5 border-b border-[#1E293B]/60 backdrop-blur-sm sticky top-0 z-20 bg-[#050B14]/90">
+      <nav className="flex items-center justify-between px-8 py-5 border-b border-[#1E293B] sticky top-0 z-20 bg-[#050B14]">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#22D3EE]/15 flex items-center justify-center shadow-[0_0_10px_rgba(34,211,238,0.3)]">
+          <div className="w-8 h-8 rounded-lg bg-[#0B1220] border border-[#1E293B] flex items-center justify-center">
             <ShieldCheck size={18} className="text-[#22D3EE]" />
           </div>
           <span className="font-bold text-xl font-['Space_Grotesk']">
@@ -846,8 +846,8 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#FF3B3B]/10 border border-[#FF3B3B]/20 rounded-full">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B3B] animate-pulse" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0B1220] border border-[#1E293B] rounded-full">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B3B]" />
             <span className="text-xs text-[#FF3B3B] font-semibold uppercase tracking-wide">
               Casper Testnet
             </span>
@@ -859,27 +859,15 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       </nav>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        {/* Background grid */}
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(34,211,238,1) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,1) 1px, transparent 1px)",
-            backgroundSize: "60px 60px",
-          }}
-        />
-        {/* Glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-[#22D3EE]/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative max-w-6xl mx-auto px-8 py-32 text-center">
+      <section className="bg-[#050B14]">
+        <div className="max-w-6xl mx-auto px-8 py-32 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#22D3EE]/10 border border-[#22D3EE]/20 rounded-full text-xs text-[#22D3EE] font-semibold uppercase tracking-wider mb-8">
             <Zap size={12} />
             Web3 Execution Firewall · Now on Casper Testnet
           </div>
           <h1 className="text-5xl md:text-7xl font-bold font-['Space_Grotesk'] leading-tight mb-6">
             Magen3 is a{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#22D3EE] to-[#06B6D4]">
+            <span className="text-[#22D3EE]">
               Web3 execution
             </span>{" "}
             firewall for autonomous agents.
@@ -894,7 +882,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
             </Btn>
             <a
               href="#decision-proof"
-              className="inline-flex items-center gap-2 rounded-xl border border-[#22D3EE] px-6 py-3 text-base text-[#22D3EE] transition-colors hover:bg-[#22D3EE]/10"
+              className="inline-flex items-center gap-2 rounded-xl border border-[#22D3EE] px-6 py-3 text-base text-[#22D3EE] hover:bg-[#22D3EE]/10"
             >
               View Decision Proof <Eye size={18} />
             </a>
@@ -1009,7 +997,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       </section>
 
       <section id="decision-proof" className="max-w-6xl mx-auto px-8 py-24">
-        <div className={`${CARD_GLOW} p-8 md:p-10`}>
+        <div className={`${CARD} p-8 md:p-10`}>
           <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">
@@ -1060,7 +1048,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
           {shieldModulesCatalog.map((m) => (
             <div
               key={m.id}
-              className={`${CARD} p-6 hover:border-[#22D3EE]/30 transition-colors`}
+              className={`${CARD} p-6 hover:border-[#22D3EE]/30`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="p-2.5 bg-[#22D3EE]/10 rounded-lg">
@@ -1093,7 +1081,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       {/* CTA */}
       <section className="bg-[#050B14] py-24">
         <div className="max-w-3xl mx-auto px-8 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-[#22D3EE]/15 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+          <div className="w-16 h-16 rounded-2xl bg-[#0B1220] border border-[#1E293B] flex items-center justify-center mx-auto mb-6">
             <ShieldCheck size={32} className="text-[#22D3EE]" />
           </div>
           <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
