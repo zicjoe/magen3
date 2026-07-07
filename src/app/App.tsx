@@ -61,6 +61,7 @@ type Page =
 type Decision = "Allowed" | "Blocked" | "Review Required";
 type Risk = "Low" | "Medium" | "High" | "Critical";
 type ShieldStatus = "Available" | "Preview" | "Coming Soon";
+type ShieldGroup = "Execution Shields" | "Infrastructure Shields" | "Intelligence Shields";
 type AgentType =
   | "DeFi Agent"
   | "Trading Agent"
@@ -169,6 +170,7 @@ interface ShieldModule {
   name: string;
   description: string;
   status: ShieldStatus;
+  group: ShieldGroup;
   riskCategory: string;
   icon: string;
 }
@@ -249,8 +251,19 @@ const shieldModulesCatalog: ShieldModule[] = [
     description:
       "Protect wallets and protocols from unsafe AI-agent actions before they reach the chain.",
     status: "Available",
+    group: "Execution Shields",
     riskCategory: "Agent Execution",
     icon: "bot",
+  },
+  {
+    id: "shield-wallet",
+    name: "Wallet Shield",
+    description:
+      "Review transaction requests, spending limits, and wallet-connected execution before signing.",
+    status: "Preview",
+    group: "Execution Shields",
+    riskCategory: "Wallet Execution",
+    icon: "wallet",
   },
   {
     id: "shield-contract",
@@ -258,6 +271,7 @@ const shieldModulesCatalog: ShieldModule[] = [
     description:
       "Analyze risky smart-contract interactions, upgrades, and admin permission changes.",
     status: "Preview",
+    group: "Execution Shields",
     riskCategory: "Smart Contract",
     icon: "code",
   },
@@ -267,17 +281,19 @@ const shieldModulesCatalog: ShieldModule[] = [
     description:
       "Verify that treasury execution matches approved governance decisions.",
     status: "Preview",
+    group: "Execution Shields",
     riskCategory: "Governance",
     icon: "building",
   },
   {
-    id: "shield-rwa",
-    name: "RWA Shield",
+    id: "shield-bridge",
+    name: "Bridge Shield",
     description:
-      "Check asset verification, proof expiry, and risk status before protocol action.",
+      "Check bridge routes, destination addresses, and transfer constraints before cross-chain movement.",
     status: "Preview",
-    riskCategory: "Real World Assets",
-    icon: "database",
+    group: "Infrastructure Shields",
+    riskCategory: "Cross-chain Bridge",
+    icon: "globe",
   },
   {
     id: "shield-oracle",
@@ -285,8 +301,67 @@ const shieldModulesCatalog: ShieldModule[] = [
     description:
       "Detect suspicious data updates before they trigger on-chain decisions.",
     status: "Preview",
+    group: "Infrastructure Shields",
     riskCategory: "Data Feed",
     icon: "globe",
+  },
+  {
+    id: "shield-access",
+    name: "Access Shield",
+    description:
+      "Review privileged access, signer roles, admin changes, and sensitive permissions.",
+    status: "Preview",
+    group: "Infrastructure Shields",
+    riskCategory: "Access Control",
+    icon: "lock",
+  },
+  {
+    id: "shield-rwa",
+    name: "RWA Shield",
+    description:
+      "Check asset verification, proof expiry, and risk status before protocol action.",
+    status: "Preview",
+    group: "Intelligence Shields",
+    riskCategory: "Real World Assets",
+    icon: "database",
+  },
+  {
+    id: "shield-simulation",
+    name: "Simulation Shield",
+    description:
+      "Simulate high-risk execution paths and highlight policy conflicts before approval.",
+    status: "Preview",
+    group: "Intelligence Shields",
+    riskCategory: "Execution Simulation",
+    icon: "activity",
+  },
+  {
+    id: "shield-threat-intel",
+    name: "Threat Intel Shield",
+    description:
+      "Use risk signals and known threat patterns to flag unsafe targets or behavior.",
+    status: "Preview",
+    group: "Intelligence Shields",
+    riskCategory: "Threat Intelligence",
+    icon: "shield",
+  },
+];
+
+const shieldModuleGroups: { group: ShieldGroup; description: string; modules: ShieldModule[] }[] = [
+  {
+    group: "Execution Shields",
+    description: "Policy checks for actions that directly reach wallets, contracts, agents, or DAOs.",
+    modules: shieldModulesCatalog.filter((module) => module.group === "Execution Shields"),
+  },
+  {
+    group: "Infrastructure Shields",
+    description: "Controls for bridge, oracle, and access-control surfaces that can amplify execution risk.",
+    modules: shieldModulesCatalog.filter((module) => module.group === "Infrastructure Shields"),
+  },
+  {
+    group: "Intelligence Shields",
+    description: "Risk intelligence and simulation layers for context-aware execution decisions.",
+    modules: shieldModulesCatalog.filter((module) => module.group === "Intelligence Shields"),
   },
 ];
 
@@ -694,17 +769,28 @@ function Sidebar({
       className={`flex flex-col bg-[#0B1220] border-r border-[#1E293B] transition-all duration-300 ${collapsed ? "w-16" : "w-60"} min-h-screen`}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-[#1E293B]">
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#050B14] border border-[#1E293B] flex items-center justify-center overflow-hidden">
-          <BrandLogo className="h-7 w-7" />
-        </div>
-        {!collapsed && (
-          <span className="font-bold text-[#F8FAFC] text-lg font-['Space_Grotesk'] tracking-tight">
-            Magen<span className="text-[#22D3EE]">3</span>
-          </span>
-        )}
+      <div className={`flex items-center border-b border-[#1E293B] py-5 ${collapsed ? "gap-1 px-1" : "gap-3 px-4"}`}>
         <button
+          type="button"
+          onClick={() => onNavigate("dashboard")}
+          aria-label="Go to Magen3 dashboard"
+          title="Go to Magen3 dashboard"
+          className="flex min-w-0 items-center gap-3 rounded-lg text-left transition-colors hover:text-[#22D3EE] focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
+        >
+          <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#050B14] border border-[#1E293B] flex items-center justify-center overflow-hidden">
+            <BrandLogo className="h-7 w-7" />
+          </span>
+          {!collapsed && (
+            <span className="font-bold text-[#F8FAFC] text-lg font-['Space_Grotesk'] tracking-tight">
+              Magen<span className="text-[#22D3EE]">3</span>
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="ml-auto text-[#94A3B8] hover:text-[#F8FAFC] transition-colors"
         >
           <Menu size={16} />
@@ -904,7 +990,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
           <div className="mt-20 grid grid-cols-3 gap-8 max-w-2xl mx-auto">
             {[
               { v: "Live", l: "Casper Wallet" },
-              { v: "5", l: "Shield Modules" },
+              { v: "10", l: "Shield Modules" },
               { v: "On-chain", l: "Decision Proof" },
             ].map((s) => (
               <div key={s.l} className="text-center">
@@ -1056,35 +1142,49 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
             Specialized protection layers for every Web3 threat surface.
           </p>
         </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {shieldModulesCatalog.map((m) => (
-            <div
-              key={m.id}
-              className={`${CARD} p-6 hover:border-[#22D3EE]/30`}
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="p-2.5 bg-[#22D3EE]/10 rounded-lg">
-                  <Shield size={20} className="text-[#22D3EE]" />
-                </div>
-                <StatusBadge
-                  status={
-                    m.status === "Available"
-                      ? "Available"
-                      : m.status === "Preview"
-                      ? "Preview"
-                      : "Coming Soon"
-                  }
-                />
+        <div className="space-y-10">
+          {shieldModuleGroups.map((group) => (
+            <div key={group.group}>
+              <div className="mb-4">
+                <h3 className="font-['Space_Grotesk'] text-xl font-semibold text-[#F8FAFC]">
+                  {group.group}
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-[#94A3B8]">
+                  {group.description}
+                </p>
               </div>
-              <h3 className="font-semibold text-[#F8FAFC] mb-2 font-['Space_Grotesk']">
-                {m.name}
-              </h3>
-              <p className="text-sm text-[#94A3B8] leading-relaxed mb-4">
-                {m.description}
-              </p>
-              <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2 py-1 rounded">
-                {m.riskCategory}
-              </span>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {group.modules.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`${CARD} p-6 hover:border-[#22D3EE]/30`}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="p-2.5 bg-[#22D3EE]/10 rounded-lg">
+                        <Shield size={20} className="text-[#22D3EE]" />
+                      </div>
+                      <StatusBadge
+                        status={
+                          m.status === "Available"
+                            ? "Available"
+                            : m.status === "Preview"
+                            ? "Preview"
+                            : "Coming Soon"
+                        }
+                      />
+                    </div>
+                    <h4 className="font-semibold text-[#F8FAFC] mb-2 font-['Space_Grotesk']">
+                      {m.name}
+                    </h4>
+                    <p className="text-sm text-[#94A3B8] leading-relaxed mb-4">
+                      {m.description}
+                    </p>
+                    <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2 py-1 rounded">
+                      {m.riskCategory}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -1378,40 +1478,54 @@ function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           Available and upcoming protection modules for your Web3 stack.
         </p>
       </div>
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {shieldModulesCatalog.map((m) => (
-          <div key={m.id} className={`${CARD_GLOW} p-6 flex flex-col`}>
-            <div className="flex items-start justify-between mb-4">
-              <div className="p-3 bg-[#22D3EE]/10 rounded-xl">
-                <Shield size={22} className="text-[#22D3EE]" />
-              </div>
-              <StatusBadge status={m.status as any} />
+      <div className="space-y-8">
+        {shieldModuleGroups.map((group) => (
+          <section key={group.group} className="space-y-4">
+            <div>
+              <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F8FAFC]">
+                {group.group}
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-[#94A3B8]">
+                {group.description}
+              </p>
             </div>
-            <h3 className="font-bold text-[#F8FAFC] text-lg mb-2 font-['Space_Grotesk']">
-              {m.name}
-            </h3>
-            <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 flex-1">
-              {m.description}
-            </p>
-            <div className="flex items-center justify-between pt-4 border-t border-[#1E293B]">
-              <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2.5 py-1 rounded-full">
-                {m.riskCategory}
-              </span>
-              {m.status === "Available" ? (
-                <Btn
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onNavigate("connected-agents")}
-                >
-                  Open Shield
-                </Btn>
-              ) : (
-                <Btn variant="secondary" size="sm" disabled>
-                  Coming Soon
-                </Btn>
-              )}
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {group.modules.map((m) => (
+                <div key={m.id} className={`${CARD_GLOW} p-6 flex flex-col`}>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="p-3 bg-[#22D3EE]/10 rounded-xl">
+                      <Shield size={22} className="text-[#22D3EE]" />
+                    </div>
+                    <StatusBadge status={m.status} />
+                  </div>
+                  <h3 className="font-bold text-[#F8FAFC] text-lg mb-2 font-['Space_Grotesk']">
+                    {m.name}
+                  </h3>
+                  <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 flex-1">
+                    {m.description}
+                  </p>
+                  <div className="flex items-center justify-between pt-4 border-t border-[#1E293B]">
+                    <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2.5 py-1 rounded-full">
+                      {m.riskCategory}
+                    </span>
+                    {m.status === "Available" ? (
+                      <Btn
+                        variant="primary"
+                        size="sm"
+                        onClick={() => onNavigate("connected-agents")}
+                      >
+                        Open Shield
+                      </Btn>
+                    ) : (
+                      <Btn variant="secondary" size="sm" disabled>
+                        Preview
+                      </Btn>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         ))}
       </div>
     </div>
@@ -2269,6 +2383,12 @@ function PoliciesPage({
     riskMode: "Balanced" as RiskMode,
   });
   const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
+  const [copiedPolicyHash, setCopiedPolicyHash] = useState("");
+  const copyPolicyHash = useCallback(async (policyHash: string) => {
+    const copiedOk = await writeClipboard(policyHash);
+    setCopiedPolicyHash(copiedOk ? policyHash : "copy failed");
+    setTimeout(() => setCopiedPolicyHash(""), copiedOk ? 1400 : 1800);
+  }, []);
   const [editForm, setEditForm] = useState({
     name: "",
     maxTransaction: "",
@@ -2488,11 +2608,27 @@ function PoliciesPage({
                   <span>Created {fmtTs(pol.createdAt)}</span>
                   <div className="flex items-center gap-1.5 font-mono">
                     <span>{pol.policyHash}</span>
-                    <button className="hover:text-[#F8FAFC] transition-colors">
+                    <button
+                      type="button"
+                      aria-label="Copy policy hash"
+                      title="Copy policy hash"
+                      onClick={() => copyPolicyHash(pol.policyHash)}
+                      className="hover:text-[#F8FAFC] transition-colors"
+                    >
                       <Copy size={11} />
                     </button>
                   </div>
                 </div>
+                {copiedPolicyHash === pol.policyHash && (
+                  <div className="mt-2 rounded-lg border border-[#22C55E]/30 bg-[#22C55E]/10 px-3 py-2 text-xs text-[#BBF7D0]">
+                    Policy hash copied.
+                  </div>
+                )}
+                {copiedPolicyHash === "copy failed" && (
+                  <div className="mt-2 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
+                    Copy was blocked by the browser. Select the policy hash and copy it manually.
+                  </div>
+                )}
               </div>
             );
           })}
@@ -3303,11 +3439,10 @@ const docsSidebar = [
     group: "Shield Modules",
     items: [
       { id: "shield-modules-doc", label: "Shield Overview" },
+      { id: "shield-modules-doc", label: "Execution Shields" },
+      { id: "shield-modules-doc", label: "Infrastructure Shields" },
+      { id: "shield-modules-doc", label: "Intelligence Shields" },
       { id: "agent-shield-doc", label: "Agent Shield" },
-      { id: "shield-modules-doc", label: "Contract Shield" },
-      { id: "shield-modules-doc", label: "DAO Shield" },
-      { id: "shield-modules-doc", label: "RWA Shield" },
-      { id: "shield-modules-doc", label: "Oracle Shield" },
     ],
   },
   {
@@ -3345,6 +3480,7 @@ const docsOnThisPage = [
   { id: "shield-modules-doc", label: "Shield Modules" },
   { id: "agent-flow-doc", label: "Agent Shield Flow" },
   { id: "connected-agents-doc", label: "Connected Agents" },
+  { id: "api-keys-doc", label: "Agent API Keys" },
   { id: "api-request-doc", label: "Gateway API" },
   { id: "security-doc", label: "Security Model" },
   { id: "case-study-doc", label: "Case Study" },
@@ -3641,7 +3777,7 @@ Content-Type: application/json
               <section id="cross-chain-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Cross-chain Model</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Magen3 is chain-agnostic at the policy and gateway layer. The current MVP uses Casper
+                  Magen3 is chain-agnostic at the policy and gateway layer. The current implementation uses Casper
                   Testnet for decision proofs, while the action being reviewed can describe an intended
                   execution on Casper, an EVM chain, Solana, or another target environment.
                 </p>
@@ -3650,7 +3786,7 @@ Content-Type: application/json
                     ["Policy layer", "Magen3 evaluates the agent, action type, target, amount, and risk before execution."],
                     ["Target chain", "The external agent can include the intended execution chain in the intent payload."],
                     ["Execution layer", "Wallet signing and transaction submission still happen outside Magen3."],
-                    ["Proof layer", "The MVP records Magen3's decision proof on Casper Testnet."],
+                    ["Proof layer", "The current implementation records Magen3's decision proof on Casper Testnet."],
                   ].map(([title, desc]) => (
                     <div key={title} className={`${CARD} p-4`}>
                       <div className="mb-2 flex items-center gap-2 text-[#22D3EE]">
@@ -3676,7 +3812,7 @@ Content-Type: application/json
                 </div>
                 <div className="mt-5">
                   <DocsCallout type="info">
-                    Cross-chain support should be presented as an architecture. The live MVP records
+                    Cross-chain support should be presented as an architecture. The live implementation records
                     decision proofs on Casper Testnet; full target-chain adapters can be added as the
                     gateway expands.
                   </DocsCallout>
@@ -3727,37 +3863,46 @@ Content-Type: application/json
                 <h2 className={SECTION_TITLE}>Shield Modules</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
                   Magen3 is not only Agent Shield. Agent Shield is the first live module; the broader
-                  platform is designed around multiple Shields for different execution surfaces.
+                  platform is designed around grouped Shields for different execution surfaces.
                 </p>
-                <div className="mt-5 overflow-hidden rounded-xl border border-[#1E293B]">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#0B1220]">
-                      <tr className="border-b border-[#1E293B]">
-                        {["Shield", "Status", "Purpose"].map((heading) => (
-                          <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
-                            {heading}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1E293B]">
-                      {[
-                        ["Agent Shield", "Live", "Protects AI agents before wallet or protocol execution"],
-                        ["Contract Shield", "Preview", "Reviews smart contract interactions, upgrades, and risky calls"],
-                        ["DAO Shield", "Preview", "Checks treasury actions and governance execution"],
-                        ["RWA Shield", "Preview", "Validates real-world asset proof updates and expiry checks"],
-                        ["Oracle Shield", "Preview", "Reviews oracle and data-feed updates before they trigger actions"],
-                      ].map(([shield, status, purpose]) => (
-                        <tr key={shield} className="bg-[#111827]">
-                          <td className="px-4 py-3 font-semibold text-[#F8FAFC]">{shield}</td>
-                          <td className="px-4 py-3">
-                            <DocsBadge label={status} variant={status === "Live" ? "live" : "preview"} />
-                          </td>
-                          <td className="px-4 py-3 text-[#94A3B8]">{purpose}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="mt-5 space-y-5">
+                  {shieldModuleGroups.map((group) => (
+                    <div key={group.group} className="overflow-hidden rounded-xl border border-[#1E293B]">
+                      <div className="border-b border-[#1E293B] bg-[#0B1220] px-4 py-3">
+                        <h3 className="font-['Space_Grotesk'] text-sm font-semibold text-[#F8FAFC]">
+                          {group.group}
+                        </h3>
+                        <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">
+                          {group.description}
+                        </p>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead className="bg-[#050B14]">
+                          <tr className="border-b border-[#1E293B]">
+                            {["Shield", "Status", "Purpose"].map((heading) => (
+                              <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+                                {heading}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#1E293B]">
+                          {group.modules.map((module) => (
+                            <tr key={module.id} className="bg-[#111827]">
+                              <td className="px-4 py-3 font-semibold text-[#F8FAFC]">{module.name}</td>
+                              <td className="px-4 py-3">
+                                <DocsBadge
+                                  label={module.status === "Available" ? "Live" : module.status}
+                                  variant={module.status === "Available" ? "live" : "preview"}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-[#94A3B8]">{module.description}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
                 </div>
                 <div className="mt-5">
                   <DocsCallout type="info">
@@ -3882,15 +4027,17 @@ Content-Type: application/json
                     </span>
                   </div>
                   <p className="text-sm leading-relaxed text-[#94A3B8]">
-                    In a widely reported 2026 incident, a wallet-connected AI crypto agent called{" "}
-                    <span className="font-semibold text-[#F8FAFC]">Lobstar Wilde</span> sent a large token
-                    allocation to an X user after processing a public request. The exact financial impact
-                    varied by valuation and liquidity, but the lesson was clear: autonomous agents with wallet
-                    access need hard execution policies before they can move assets.
+                    Public reporting about a wallet-connected AI crypto agent called{" "}
+                    <span className="font-semibold text-[#F8FAFC]">Lobstar Wilde</span> described an
+                    unexpected token transfer after the agent processed an external request. The exact
+                    financial impact depends on valuation and liquidity assumptions, but the security lesson
+                    is clear: autonomous agents with wallet access need hard execution policies before they
+                    can move assets.
                   </p>
                   <p className="mt-3 text-sm leading-relaxed text-[#94A3B8]">
-                    Agent Shield is designed to prevent this class of failure by requiring every external
-                    agent action to pass through policy checks before wallet signing.
+                    Agent Shield is designed to reduce this class of preventable execution failure by requiring
+                    external agent actions to pass through policy checks before wallet signing. It is a guardrail,
+                    not a claim that every possible exploit is automatically prevented.
                   </p>
                   <div className="mt-4 flex flex-wrap gap-3 text-xs">
                     <a
@@ -3983,11 +4130,12 @@ Content-Type: application/json
                 <div className="mt-5 space-y-3">
                   {[
                     ["Is Magen3 only Agent Shield?", "No. Agent Shield is the first live Shield. Magen3 is built as a modular Shield platform."],
-                    ["Can Magen3 be cross-chain?", "Yes at the gateway and policy layer. The current MVP records decision proofs on Casper Testnet while future adapters can support more target chains."],
+                    ["Can Magen3 be cross-chain?", "Yes at the gateway and policy layer. The current implementation records decision proofs on Casper Testnet while future adapters can support more target chains."],
                     ["Is it one API key for the whole app?", "No. Use one API key per connected agent."],
                     ["Is it one API key per policy?", "No. Policies attach to agents. API keys authenticate agents."],
                     ["Can the execution wallet differ from the owner wallet?", "Yes. The owner wallet manages the agent in Magen3; the execution wallet signs in the external app."],
                     ["Does Magen3 sign transactions?", "No. Magen3 checks and records decisions. Wallet signing still happens through the execution wallet."],
+                    ["What does Casper Testnet do?", "Casper Testnet is the current proof and audit layer for Magen3 decisions. It records the gateway decision, not the target-chain transaction itself."],
                   ].map(([question, answer]) => (
                     <div key={question} className={`${CARD} p-4`}>
                       <h3 className="text-sm font-semibold text-[#F8FAFC]">{question}</h3>

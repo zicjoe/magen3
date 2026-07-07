@@ -1,124 +1,153 @@
 # Magen3
 
-**Magen3 is a Web3 execution firewall and safety gateway for autonomous agents.**
+**Magen3 is a Web3 execution firewall and security gateway for autonomous agents.**
 
-Magen3 is **not** the agent. It is the external policy, approval, and audit layer that independent AI agents connect to before taking Web3 actions.
+Magen3 sits between agent intent and blockchain execution. External agents send proposed actions to the Magen3 Gateway before wallet signing. Magen3 checks the action against the active policy, returns `Allowed`, `Blocked`, or `Review Required`, and records the decision for auditability with Casper Testnet proofs.
 
-## Cross-chain positioning
+Magen3 is not the agent. It is the policy, approval, and audit layer that independent AI agents connect to before they take Web3 actions.
 
-Magen3 is designed to be chain-agnostic at the policy and gateway layer.
+## Problem Statement
 
-The current MVP uses Casper Testnet as the decision-proof and audit layer. External agents can still describe actions intended for other execution environments in the gateway intent payload. Magen3 reviews the intent before execution, returns `Allowed`, `Blocked`, or `Review Required`, and records the decision proof on Casper.
+Web3 systems fail when unsafe execution reaches wallets, contracts, bridges, DAOs, or oracle-driven workflows before a policy check happens. Wallet drainers, compromised contracts, risky bridge routes, oracle manipulation, DAO treasury mistakes, and AI-agent execution errors all share the same core issue: the transaction is often evaluated too late.
+
+Magen3 is designed to reduce preventable execution failures by enforcing policy before execution. It does not claim to prevent every exploit. Its role is to add a programmable security gateway between intent and signing.
+
+## Product Model
 
 ```text
 External agent intent
-→ Magen3 Gateway API
-→ policy decision
-→ target-chain wallet/protocol execution only if allowed
-→ Casper decision proof for auditability
+-> Magen3 Gateway API
+-> policy decision
+-> target-chain wallet/protocol execution only if allowed
+-> Casper decision proof for auditability
 ```
 
-In production, this model can support adapters for EVM chains, Solana, Casper, and other ecosystems while keeping Casper as the verifiable audit/proof layer.
+Magen3 is chain-agnostic at the gateway and policy layer. Casper Testnet is the current proof and audit layer. External agents can still describe actions intended for Casper, EVM chains, Solana, or other execution environments in the gateway intent payload.
 
-## Current product split
+## Current Product Split
 
 ```text
 Magen3
-→ security gateway / admin dashboard / policies / audit / Casper decision proof
+-> security gateway, admin dashboard, policies, audit logs, Casper decision proofs
 
-YieldBot AI or any external agent
-→ independent agent app that calls Magen3 before execution
+External agents
+-> independent apps that call Magen3 before requesting wallet signing
 ```
 
-## Real-world flow
+## Shield Modules
+
+Agent Shield is live. The other Shield modules are preview modules that show the broader security platform direction.
+
+| Group | Modules | Status |
+| --- | --- | --- |
+| Execution Shields | Agent Shield, Wallet Shield, Contract Shield, DAO Shield | Agent Shield live; others preview |
+| Infrastructure Shields | Bridge Shield, Oracle Shield, Access Shield | Preview |
+| Intelligence Shields | RWA Shield, Simulation Shield, Threat Intel Shield | Preview |
+
+## Connected Agents
+
+Connected Agents are external AI apps, bots, or autonomous systems allowed to call Magen3.
+
+The flow is:
 
 ```text
-User connects Casper Wallet to Magen3
-→ registers an external agent
-→ creates a policy for that agent
-→ copies Gateway URL / Agent ID / API key into the external agent
-→ external agent receives a user task
-→ external agent identifies with Agent ID + API key
-→ external agent sends the intended action, target chain, and connected execution wallet to Magen3 Gateway API
-→ Magen3 returns Allowed / Blocked / Review Required
-→ blocked/review actions stop
-→ allowed actions may request wallet signing in the external agent
-→ audit and Casper proof are visible in Magen3
+Connect owner wallet
+-> register external agent
+-> copy Agent ID, Gateway URL, Verify URL, and one-time API key
+-> create or attach a policy to that agent
+-> external agent calls Magen3 before wallet signing
 ```
 
-## What is implemented
+## API Key Model
 
-- Real Casper Wallet browser-extension connection
-- Wallet-scoped agents, policies, and audit logs
-- Connected Agents for registered external autonomous agents
-- Policy Management for Agent Shield rules
-- Agent Gateway API for external agents
-- Cross-chain intent convention for target-chain action review
-- Gateway sync endpoint for external agents: `GET /api/agent-gateway/me?agentId=...`
-- Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
-- Agent Skill Kit exports for Claude, Codex `SKILL.md`, custom agents, `.env`, and API snippets
-- Audit Log with Decision Proof and Execution Proof sections
-- Manual proof fallback hidden under Advanced sections
-- Backend API using Node's built-in HTTP server
-- Railway PostgreSQL support through Drizzle ORM
-- Casper Testnet audit registry contract
-- Casper deploy helper scripts
-- Public config endpoint for gateway/contract metadata
+- API keys are one key per Connected Agent.
+- API keys are not global for the whole app.
+- API keys are not one key per policy.
+- Policies attach to agents.
+- Raw API keys are shown once after registration or rotation.
+- If the raw key is lost, rotate the key from Connected Agents.
 
-## Removed from the main Magen3 app
+Agent identity comes from `agentId` plus `x-magen3-agent-key` or `Authorization: Bearer <api-key>`.
 
-The in-app Agent Runner, External Agent demo, and standalone Gateway Integration pages were removed from the main product flow. Those flows now belong in a separate standalone agent app such as YieldBot AI, while gateway setup lives inside each Connected Agents record. Magen3 now stays focused on being the security gateway.
+## Policy Model
 
-## Live Casper proof
+Policies define what an agent is allowed to do. A policy can define transaction limits, daily limits, trusted targets, blocked action types, approval thresholds, and risk mode.
 
-## Decision proof vs execution proof
+If an agent has no active policy, Magen3 fails closed and does not approve execution.
 
-Magen3 tracks two different Casper footprints:
+## Decision Proof vs Execution Proof
 
-| Proof | Meaning | Blocked action | Allowed action |
+Magen3 tracks two different proof concepts:
+
+| Proof | Meaning | Can exist for blocked actions? | Created by |
 | --- | --- | --- | --- |
-| Decision Proof Hash | Casper deploy hash proving Magen3 reviewed the intent and recorded Allowed / Blocked / Review Required | Yes | Yes |
-| Execution Deploy Hash | Casper deploy hash proving the execution wallet actually signed/submitted the approved action | No | Only after signing |
+| Casper Decision Proof | Proves Magen3 reviewed the intent and recorded `Allowed`, `Blocked`, or `Review Required` | Yes | Magen3 relayer or manual proof flow |
+| Execution Proof | Proves the execution wallet signed/submitted the real transaction | No | External wallet or execution layer |
 
-Blocked and review-required actions should not have execution hashes. They can still have decision proof hashes because Magen3 can prove what it stopped.
+Blocked and review-required actions should not have execution hashes. They can still have decision proofs because Magen3 can prove what it stopped or escalated.
 
-## Automatic decision proof recording
+## Agent Gateway API
 
-Every Agent Gateway decision is recordable. Magen3 does not use a "recommended events only" rule.
+Verify a connected agent:
 
-When an external agent submits an intent, Magen3:
-
-```text
-validates Agent ID + API key
-checks the assigned policy
-creates the database audit record
-queues/attempts the Casper record_decision proof
-stores the returned Decision Proof Hash when the relayer succeeds
+```http
+GET /api/agent-gateway/me?agentId=MAG-AGENT-...
+x-magen3-agent-key: YOUR_AGENT_API_KEY
 ```
 
-If the backend relayer is not configured, the audit record stays queued with a decision payload hash and relayer note. Magen3 does not create fake deploy hashes.
+Submit an intent:
 
-Magen3 audit registry contract on Casper Testnet:
-
-```text
-hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
+```http
+POST /api/agent-gateway/intents
+x-magen3-agent-key: YOUR_AGENT_API_KEY
+Content-Type: application/json
 ```
 
-First real `record_decision` deploy hash:
-
-```text
-c95359f46a5709cc10d4e014dadc29b6b9734629b475b5d58f8ba2fa0394f668
+```json
+{
+  "source": "yieldbot-ai",
+  "agentId": "MAG-AGENT-...",
+  "targetChain": "casper-testnet",
+  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "goal": "Stake 15 CSPR to a trusted validator",
+  "reason": "The agent prepared this action and needs Magen3 approval before execution.",
+  "action": {
+    "type": "Stake",
+    "amount": 15,
+    "asset": "CSPR",
+    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
+    "targetType": "Trusted Contract"
+  }
+}
 ```
 
-These are public Testnet values. Never commit or share `secret_key.pem`.
+The execution wallet in the request can differ from the Magen3 owner wallet. The owner wallet manages the connected agent and policy in Magen3; the execution wallet signs in the external agent after approval.
 
-## Requirements
+## Implemented Surface
+
+- Landing page with Docs access from landing navigation.
+- Dashboard with gateway/proof status.
+- Grouped Shield Modules.
+- Connected Agents registration, per-agent API keys, rotation, revoke flow, and copyable integration details.
+- Policies attached to agents.
+- Audit Logs with Casper Decision Proof and Execution Proof fields.
+- Settings with workspace and environment information.
+- In-app Docs with architecture, quick start, shield modules, API keys, gateway examples, security model, case study, proofs, troubleshooting, and FAQ.
+- Backend Agent Gateway API with Node HTTP server.
+- PostgreSQL storage through Drizzle ORM.
+- Casper Testnet audit registry support and relayer configuration.
+- Vercel-ready Vite SPA routing.
+- Railway-ready backend deployment.
+
+## Local Setup
+
+Requirements:
 
 - Node.js 20+
 - pnpm 10+
 - Casper Wallet browser extension
-- PostgreSQL for real persistent storage
-- Ubuntu / WSL for Casper CLI deployment commands
+- PostgreSQL for persistent storage
 - Rust only if rebuilding the Casper contract
 
 Enable pnpm if needed:
@@ -128,21 +157,19 @@ corepack enable
 corepack prepare pnpm@10.14.0 --activate
 ```
 
-## Local setup
-
 Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-Start backend API:
+Start the backend:
 
 ```bash
 pnpm dev:backend
 ```
 
-Start frontend:
+Start the frontend:
 
 ```bash
 pnpm dev
@@ -166,7 +193,7 @@ Public gateway config:
 http://localhost:8787/api/public-config
 ```
 
-## Environment variables
+## Environment Variables
 
 Copy `.env.example` to `.env`:
 
@@ -174,7 +201,7 @@ Copy `.env.example` to `.env`:
 Copy-Item .env.example .env
 ```
 
-Important local values:
+Key values:
 
 ```env
 VITE_API_URL=http://localhost:8787
@@ -192,7 +219,9 @@ CASPER_RECORDING_MODE=relayer
 MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
 ```
 
-For real Railway demo, use PostgreSQL and disable memory fallback:
+## Railway Backend Notes
+
+Use PostgreSQL and keep memory fallback disabled:
 
 ```env
 DATABASE_URL=${{Postgres.DATABASE_URL}}
@@ -214,30 +243,9 @@ NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 PNPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 ```
 
-Use exactly one relayer key source. Keep it backend-only and fund the relayer account with Casper Testnet CSPR.
+Use exactly one relayer key source. Keep the relayer key backend-only and fund the relayer account with Casper Testnet CSPR.
 
-Relayer options:
-
-```env
-CASPER_RECORDING_MODE=relayer
-CASPER_CLIENT_BIN=casper-client
-CASPER_RELAYER_SECRET_KEY_B64=
-CASPER_RELAYER_SECRET_KEY_PEM=
-CASPER_RELAYER_SECRET_KEY_PATH=
-CASPER_CALL_PAYMENT_MOTES=5000000000
-```
-
-For Railway, prefer `CASPER_RELAYER_SECRET_KEY_B64` and leave `CASPER_RELAYER_SECRET_KEY_PATH` and `CASPER_RELAYER_SECRET_KEY_PEM` unset. Generate it from WSL or Linux with:
-
-```bash
-head -1 ~/magen3-relayer/secret_key.pem
-tail -1 ~/magen3-relayer/secret_key.pem
-base64 -w 0 ~/magen3-relayer/secret_key.pem
-```
-
-The first and last commands should show PEM headers like `BEGIN PRIVATE KEY` and `END PRIVATE KEY`. Paste only the single-line base64 output into Railway. Do not paste `public_key_hex`, the file path, quotes, or a manually copied multiline key into `CASPER_RELAYER_SECRET_KEY_B64`.
-
-## Railway backend settings
+Railway settings:
 
 ```text
 Builder:
@@ -250,55 +258,21 @@ Health Check Path:
 /api/health
 ```
 
-The Dockerfile installs Rust and `casper-client` so the backend decision-proof relayer can run `casper-client put-deploy` on Railway. If Railway is left on Nixpacks, decision proof recording fails with `spawn casper-client ENOENT`.
+The Dockerfile installs Rust and `casper-client` so the backend decision-proof relayer can run `casper-client put-deploy` on Railway. If Railway is left on Nixpacks, decision proof recording can fail with `spawn casper-client ENOENT`.
 
-## Agent Gateway API
+## Vercel Frontend Notes
 
-External agents call:
+The frontend is a Vite SPA. `vercel.json` keeps all routes pointed to `index.html` so direct navigation and refresh work.
 
-```http
-GET /api/agent-gateway/me?agentId=MAG-AGENT-...
+Set:
+
+```env
+VITE_API_URL=https://YOUR_RAILWAY_BACKEND_URL
 ```
 
-to verify Agent ID + API key and confirm that an active policy exists.
+## Casper Contract Commands
 
-Then they submit action intents to:
-
-```http
-POST /api/agent-gateway/intents
-```
-
-Agent identity comes from `agentId` plus `x-magen3-agent-key` or `Authorization: Bearer <api-key>`.
-
-The `walletAddress` / `executionWalletAddress` in the request is the execution wallet connected inside the external agent. It does not need to match the Magen3 owner wallet that registered the agent.
-
-For transfer intents, `targetType: "Wallet Address"` is supported. Add trusted recipient wallet addresses to the policy's trusted targets list when those transfers should be allowed automatically within the policy limits. Unknown or untrusted wallet recipients still require review or are blocked depending on risk mode.
-
-Example payload:
-
-```json
-{
-  "source": "yieldbot-ai",
-  "agentId": "MAG-AGENT-...",
-  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "goal": "Stake 15 CSPR to trusted-validator-demo",
-  "reason": "YieldBot prepared this action and is requesting approval before execution.",
-  "action": {
-    "type": "Stake",
-    "amount": 15,
-    "asset": "CSPR",
-    "target": "trusted-validator-demo",
-    "targetType": "Trusted Contract"
-  }
-}
-```
-
-Magen3 returns a decision, risk level, audit ID, Casper payload, and whether execution is approved. See `docs/AGENT_GATEWAY_API.md` and `docs/GATEWAY_INTEGRATION.md`.
-
-## Casper contract commands
-
-Prepare Rust toolchain:
+Prepare Rust:
 
 ```bash
 pnpm rust:prepare
@@ -317,26 +291,19 @@ Generate install command:
 pnpm casper:install:cmd
 ```
 
-Generate `record_decision` command from a copied payload:
+Generate a `record_decision` command from a copied payload:
 
 ```bash
 pnpm casper:record:cmd -- --payload=./payload.json
 ```
 
-## Demo script
+## Documentation
 
-```text
-1. Open Magen3
-2. Connect real Casper Wallet
-3. Register external agent
-4. Create policy for that agent
-5. Open Connected Agents and copy Agent ID / Gateway URL / API key
-6. Open YieldBot AI on its own domain
-7. Connect YieldBot to Magen3
-8. Ask YieldBot to perform a safe action
-9. YieldBot calls Magen3 and receives Allowed
-10. Ask YieldBot to perform a risky action
-11. YieldBot calls Magen3 and receives Blocked
-12. Return to Magen3 Audit Log
-13. Show wallet-scoped audit history, Casper proof, and execution proof
-```
+Current product documentation lives in:
+
+- `docs/README.md`
+- `docs/MAGEN3_PLATFORM.md`
+- `docs/AGENT_GATEWAY_API.md`
+- `docs/GATEWAY_INTEGRATION.md`
+
+Older implementation notes are kept under `docs/archive/` when they are useful for project history but should not be treated as current public product documentation.

@@ -1,59 +1,69 @@
 # Magen3 Gateway Integration
 
-Magen3 is now focused as a security gateway for external AI agents.
+Magen3 is the security gateway. External agents remain independent apps and call Magen3 before requesting wallet signatures.
 
-## Product model
-
-External agents should not be built inside Magen3. They should connect to Magen3 as an external policy and approval layer.
+## Integration Flow
 
 ```text
-External Agent → Magen3 Gateway API → Allowed / Blocked / Review Required
+Register Connected Agent in Magen3
+-> copy Agent ID and one-time API key
+-> attach an active policy
+-> external agent verifies its gateway access
+-> external agent submits action intent
+-> Magen3 returns Allowed / Blocked / Review Required
+-> external agent requests wallet signing only if Allowed
 ```
 
-Magen3 is chain-agnostic at this gateway layer. The current MVP records decision proofs on Casper Testnet, while the external agent can describe the target execution chain in the request.
+## Required Values
 
-## Integration steps
+| Value | Where it comes from |
+| --- | --- |
+| Agent ID | Connected Agents page |
+| Agent API Key | Shown once after registration or rotation |
+| Gateway URL | Connected Agents page or Settings |
+| Verify URL | Connected Agents page or Settings |
+| Policy | Policies page |
 
-1. Connect Casper Wallet in Magen3.
-2. Register the external agent in Agent Registry.
-3. Create and activate a policy for that agent.
-4. Open Gateway Integration.
-5. Copy the Gateway URL and Agent ID into the external agent.
-6. The external agent calls `POST /api/agent-gateway/intents` before execution, including the intended `targetChain` when relevant.
-7. The external agent only asks for wallet signing if Magen3 returns `Allowed`.
+Copy buttons in Magen3 are wired through the shared clipboard helper for Agent ID, Gateway URL, Verify URL, API keys, code snippets, settings endpoints, policy hash, and docs code blocks.
 
-## Request shape
+## Cross-chain Intent Payload
+
+Magen3 is chain-agnostic at the gateway and policy layer. Include `targetChain` so Magen3 can review the intended environment even when the current proof layer is Casper Testnet.
 
 ```json
 {
-  "source": "yieldbot-ai",
+  "source": "YieldBot AI",
   "agentId": "MAG-AGENT-...",
   "targetChain": "casper-testnet",
-  "walletAddress": "CASPER_PUBLIC_KEY",
-  "goal": "Stake 15 CSPR to trusted-validator-demo",
+  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "goal": "Stake 15 CSPR to a trusted validator",
+  "reason": "The agent prepared this action and needs Magen3 approval.",
   "action": {
     "type": "Stake",
     "amount": 15,
     "asset": "CSPR",
-    "target": "trusted-validator-demo",
+    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
     "targetType": "Trusted Contract"
   }
 }
 ```
 
-## Response behavior
+## API Key Rotation
 
-- `Allowed`: external agent may ask the connected wallet to sign.
-- `Blocked`: external agent must stop.
-- `Review Required`: external agent must pause until human approval.
+Raw API keys are shown once. If the external agent loses the key, rotate it in Connected Agents and update the external app.
 
-For cross-chain use, `targetChain` should describe where execution is intended to happen. Casper can still be used as the neutral decision-proof layer even when the final execution target is another chain.
+Rotation affects that connected agent only. It does not rotate keys for every app and it does not create a policy-specific key.
 
-## Audit model
+## Recommended External Agent Behavior
 
-Magen3 tracks two proofs:
+- Verify the connected agent before execution.
+- Submit every high-risk Web3 intent to Magen3 before wallet signing.
+- Stop immediately when Magen3 returns `Blocked`.
+- Pause for human review when Magen3 returns `Review Required`.
+- Request wallet signing only when Magen3 returns `Allowed`.
+- Attach the real execution hash back to Magen3 after execution when available.
 
-- Decision Proof: Magen3 policy decision recorded on Casper.
-- Execution Proof: real deploy/transaction hash after approved wallet signing.
+## Proof Model
 
-Manual hash inputs are hidden as advanced fallback only. Normal flow should capture hashes automatically from the external agent/wallet flow.
+Magen3 records Decision Proofs on Casper Testnet. Execution Proofs come from the external wallet or target execution layer after an allowed action is signed and submitted.

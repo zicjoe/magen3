@@ -7,7 +7,7 @@ export async function createStore() {
       return createMemoryStore();
     }
 
-    throw new Error("DATABASE_URL is required. Magen3 no longer falls back to temporary or mock storage by default.");
+    throw new Error("DATABASE_URL is required. Magen3 does not fall back to temporary storage by default.");
   }
 
   try {

@@ -1,6 +1,5 @@
 node_modules
 dist
-.git
 *.zip
 .cache
 tmp
@@ -11,5 +10,4 @@ generated
 .env.*
 !.env.example
 coverage
-.DS_Store
-*.log
+docs/archive

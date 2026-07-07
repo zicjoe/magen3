@@ -1,73 +1,31 @@
-# Connected Wallet Execution Flow
+# Connected Wallet Execution
 
-Magen3 v23 adds the next production-shaped execution step: after an external agent receives an **Allowed** decision from Magen3, the same connected Casper Wallet can sign an on-chain execution proof.
+Magen3 separates three identities:
 
-## What this proves
+| Identity | Role |
+| --- | --- |
+| Owner wallet | Registers and manages the Connected Agent in Magen3. |
+| Connected Agent | External app or autonomous system that calls the gateway. |
+| Execution wallet | Wallet that signs the real transaction after Magen3 returns `Allowed`. |
 
-The demo now shows the full gate:
+The owner wallet and execution wallet can be different. This is important because Magen3 is the security gateway, not the external agent and not the signing wallet.
+
+## Flow
 
 ```text
-External agent receives a task
-→ Agent asks Magen3 Gateway for permission
-→ Magen3 checks the active wallet-scoped policy
-→ Blocked / Review Required actions stop before signing
-→ Allowed actions can request Casper Wallet signature
-→ Signed deploy is submitted to Casper Testnet
-→ Returned deploy hash is attached to the audit log
+External agent prepares action
+-> external agent calls Magen3 Gateway
+-> Magen3 checks active policy
+-> Magen3 returns Allowed / Blocked / Review Required
+-> execution wallet signs only if Allowed
+-> execution hash is attached to the Magen3 audit record when available
 ```
 
-## What is signed
+## Proofs
 
-For the safe buildathon demo, the connected wallet signs an on-chain **execution proof** against the deployed Magen3 audit registry contract.
+Magen3 uses two proof concepts:
 
-This is intentionally safer than moving funds during the demo. It proves the user wallet approved the Magen3-allowed action and produces a real Casper deploy hash without needing to perform a real staking or transfer operation.
+- **Decision Proof:** Casper Testnet proof that Magen3 reviewed the action and recorded the decision.
+- **Execution Proof:** real transaction/deploy hash created after the execution wallet signs and submits the approved action.
 
-## UI flow
-
-1. Connect Casper Wallet.
-2. Register an agent.
-3. Create and activate a policy.
-4. Open **External Agent**.
-5. Ask for a safe action, for example `Stake 15 CSPR to trusted-validator-demo`.
-6. Magen3 should return `Allowed`.
-7. Click **Sign with Connected Casper Wallet**.
-8. Approve the Casper Wallet prompt.
-9. Magen3 submits the signed deploy through `/api/casper/send-deploy`.
-10. The returned deploy hash is saved through `/api/audit-logs/:id/execution-confirm`.
-11. Open Audit Log and verify **Execution Proof**.
-
-## Backend endpoint
-
-```http
-POST /api/casper/send-deploy
-```
-
-Body:
-
-```json
-{
-  "signedDeploy": { "deploy": {} }
-}
-```
-
-The backend forwards the signed deploy to the configured Casper RPC using `account_put_deploy` with Casper's named JSON-RPC parameter shape:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "account_put_deploy",
-  "params": [
-    {
-      "name": "deploy",
-      "value": {}
-    }
-  ]
-}
-```
-
-It returns the deploy hash from either `result.deploy_hash` or the Casper 2.0 `result.value.deploy_hash` envelope.
-
-## Important note
-
-This is not an invisible agent key. The agent does not hold the user's private key. The wallet owner still approves the signature from Casper Wallet.
+Blocked and review-required actions should not have execution hashes because they should not proceed to wallet signing.

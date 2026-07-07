@@ -1,148 +1,69 @@
-# Magen3 Casper Deployment Playbook
+# Casper Deployment Playbook
 
-This guide turns the current Magen3 mock recorder into a real Casper Testnet audit flow.
+Magen3 currently uses Casper Testnet as the decision-proof and audit layer. The gateway and policy layer are chain-agnostic, but the decision proof records are anchored through the deployed Magen3 audit registry contract on Casper Testnet.
 
-The goal is:
+## Contract
+
+Current contract hash:
 
 ```text
-Magen3 decision → Casper runtime args → signed Casper deploy → deploy hash saved in PostgreSQL
+hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
 ```
 
-## What this version gives you
+Never commit or share relayer private keys.
 
-- A complete Rust contract package scaffold for the Magen3 audit registry
-- A build command for the contract Wasm
-- A command generator for installing the contract on Casper Testnet
-- A command generator for calling `record_decision` with a prepared Magen3 payload
-- Backend support for confirming and saving the real deploy hash
+## Environment
 
-## 1. Install local tools
-
-You need Rust and `casper-client` on the machine where you will build/deploy the contract.
-
-Check Rust:
-
-```powershell
-rustc --version
-cargo --version
+```env
+CASPER_NETWORK=casper-testnet
+CASPER_CHAIN_NAME=casper-test
+CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+CASPER_RECORDING_MODE=relayer
+MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7176cd4abcf
+CASPER_CLIENT_BIN=casper-client
+CASPER_RELAYER_SECRET_KEY_B64=
+CASPER_RELAYER_SECRET_KEY_PEM=
+CASPER_RELAYER_SECRET_KEY_PATH=
+CASPER_CALL_PAYMENT_MOTES=5000000000
 ```
 
-Add the Wasm target:
+Use exactly one relayer key source. For Railway, prefer `CASPER_RELAYER_SECRET_KEY_B64`.
 
-```powershell
-rustup target add wasm32-unknown-unknown
-```
+## Build Contract
 
-Check Casper client:
-
-```powershell
-casper-client --version
-```
-
-## 2. Build the Magen3 audit registry contract
-
-From the project root:
-
-```powershell
+```bash
+pnpm rust:prepare
 pnpm contract:build
 pnpm contract:check
 ```
 
-Expected Wasm path:
+## Generate Commands
 
-```text
-contracts/magen3-audit-registry/target/wasm32-unknown-unknown/release/magen3_audit_registry.wasm
-```
+Install command:
 
-## 3. Prepare your deploy environment
-
-Create `.env` from `.env.example`, then set these values locally:
-
-```env
-CASPER_RPC_URL=https://node.testnet.casper.network/rpc
-CASPER_CHAIN_NAME=casper-test
-CASPER_SECRET_KEY_PATH=./keys/secret_key.pem
-CASPER_INSTALL_PAYMENT_MOTES=150000000000
-CASPER_CALL_PAYMENT_MOTES=5000000000
-```
-
-Do not commit private keys or `.env`.
-
-## 4. Print the contract install command
-
-```powershell
+```bash
 pnpm casper:install:cmd
 ```
 
-Copy the printed command into your terminal and run it.
+Record decision command from a copied payload:
 
-After the deploy finalizes, query your account named keys and find:
-
-```text
-magen3_audit_registry_contract
-```
-
-That is the contract hash for Magen3.
-
-## 5. Add the contract hash to Railway
-
-In Railway → `magen3` service → Variables, set:
-
-```env
-CASPER_RECORDING_MODE=manual
-MAGEN3_CONTRACT_HASH=hash-your-real-contract-hash
-CASPER_RPC_URL=https://node.testnet.casper.network/rpc
-CASPER_CHAIN_NAME=casper-test
-```
-
-Redeploy the backend.
-
-Check:
-
-```text
-https://your-railway-backend-url.up.railway.app/api/casper/status
-```
-
-You want `contractConfigured` to be `true`.
-
-## 6. Prepare a real decision payload
-
-In the app:
-
-```text
-Audit Log → open record → Prepare Payload → Copy JSON
-```
-
-Save it locally as:
-
-```text
-payload.json
-```
-
-## 7. Print the record_decision command
-
-```powershell
+```bash
 pnpm casper:record:cmd -- --payload=./payload.json
 ```
 
-Run the printed `casper-client put-deploy` command.
+## Railway Notes
 
-## 8. Confirm the deploy hash in Magen3
-
-After Casper returns a deploy hash:
+Use the Dockerfile builder so `casper-client` is available to the backend relayer.
 
 ```text
-Audit Log → open same record → Real Casper Deploy Hash → Confirm Real Deploy Hash
+Builder:
+Dockerfile
+
+Start Command:
+pnpm start
+
+Health Check Path:
+/api/health
 ```
 
-Magen3 saves that deploy hash in PostgreSQL.
-
-## 9. Demo line
-
-For the buildathon video, say:
-
-> Magen3 prepares a deterministic audit payload for every firewall decision. The decision is recorded through a Casper Testnet deploy, and the resulting deploy hash is saved back into the Magen3 audit log for transparent proof of execution.
-
-## Current limitation
-
-This version uses a manual Casper deploy flow. That is acceptable for getting the first real Testnet proof working. The next version can replace the manual step with wallet-signed deploys from the frontend.
+If Railway uses Nixpacks instead of the Dockerfile, decision proof recording can fail with `spawn casper-client ENOENT`.

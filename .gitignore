@@ -2,7 +2,17 @@ node_modules
 dist
 .env
 .env.local
+.env.*
+!.env.example
 .DS_Store
 *.log
 package-lock.json
 yarn.lock
+*.zip
+.cache
+tmp
+tmp-*
+temp
+generated
+coverage
+.vercel
