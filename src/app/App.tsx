@@ -51,6 +51,7 @@ import {
 type Page =
   | "landing"
   | "dashboard"
+  | "shields"
   | "connected-agents"
   | "policies"
   | "audit-log"
@@ -670,6 +671,7 @@ function BrandLogo({ className = "h-8 w-8" }: { className?: string }) {
 
 const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
+  { id: "shields", label: "Shield Modules", icon: <Shield size={18} /> },
   { id: "connected-agents", label: "Connected Agents", icon: <Bot size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "audit-log", label: "Audit Logs", icon: <Scroll size={18} /> },
@@ -3292,6 +3294,7 @@ const docsSidebar = [
     items: [
       { id: "intro", label: "What is Magen3?" },
       { id: "architecture", label: "How Magen3 Works" },
+      { id: "cross-chain-doc", label: "Cross-chain Model" },
       { id: "quick-start", label: "Quick Start" },
       { id: "core-concepts", label: "Core Concepts" },
     ],
@@ -3338,6 +3341,7 @@ const docsSidebar = [
 const docsOnThisPage = [
   { id: "intro", label: "What is Magen3?" },
   { id: "architecture", label: "Platform Architecture" },
+  { id: "cross-chain-doc", label: "Cross-chain Model" },
   { id: "shield-modules-doc", label: "Shield Modules" },
   { id: "agent-flow-doc", label: "Agent Shield Flow" },
   { id: "connected-agents-doc", label: "Connected Agents" },
@@ -3470,6 +3474,7 @@ Content-Type: application/json
 {
   "source": "YieldBot AI",
   "agentId": "MAG-AGENT-...",
+  "targetChain": "casper-testnet",
   "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
   "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
   "goal": "Stake 15 CSPR to a trusted validator",
@@ -3558,6 +3563,7 @@ Content-Type: application/json
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <DocsBadge label="Casper Testnet" variant="warning" />
+              <DocsBadge label="Cross-chain Gateway" variant="info" />
               <DocsBadge label="Modular Shields" variant="info" />
               <DocsBadge label="Policy Gateway" variant="info" />
               <DocsBadge label="Decision Proofs" variant="live" />
@@ -3576,7 +3582,7 @@ Content-Type: application/json
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
                   Magen3 is a modular Web3 security gateway for execution protection. It checks risky
                   actions from AI agents, smart contracts, DAOs, RWA workflows, and oracle-driven systems
-                  before those actions reach the blockchain.
+                  before those actions reach the blockchain or target execution environment.
                 </p>
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
                   Magen3 sits between <span className="font-semibold text-[#F8FAFC]">intent</span> and{" "}
@@ -3606,7 +3612,7 @@ Content-Type: application/json
                     {
                       icon: Server,
                       title: "Gateway API",
-                      desc: "External agents and apps submit action intents before execution.",
+                      desc: "External agents and apps submit chain-aware action intents before execution.",
                     },
                     {
                       icon: Database,
@@ -3629,6 +3635,51 @@ Content-Type: application/json
                       </div>
                     );
                   })}
+                </div>
+              </section>
+
+              <section id="cross-chain-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Cross-chain Model</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Magen3 is chain-agnostic at the policy and gateway layer. The current MVP uses Casper
+                  Testnet for decision proofs, while the action being reviewed can describe an intended
+                  execution on Casper, an EVM chain, Solana, or another target environment.
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {[
+                    ["Policy layer", "Magen3 evaluates the agent, action type, target, amount, and risk before execution."],
+                    ["Target chain", "The external agent can include the intended execution chain in the intent payload."],
+                    ["Execution layer", "Wallet signing and transaction submission still happen outside Magen3."],
+                    ["Proof layer", "The MVP records Magen3's decision proof on Casper Testnet."],
+                  ].map(([title, desc]) => (
+                    <div key={title} className={`${CARD} p-4`}>
+                      <div className="mb-2 flex items-center gap-2 text-[#22D3EE]">
+                        <Globe size={15} />
+                        <h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3>
+                      </div>
+                      <p className="text-xs leading-relaxed text-[#94A3B8]">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 overflow-x-auto rounded-xl border border-[#1E293B] bg-[#0B1220] p-5">
+                  <div className="flex min-w-max items-center gap-2">
+                    <DocsFlowStep label="Agent intent" sub="Any supported chain" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Magen3 policy" sub="Chain-agnostic check" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Decision" sub="Allow / Block / Review" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Target-chain execution" sub="Only if allowed" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Casper proof" sub="Audit record" />
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <DocsCallout type="info">
+                    Cross-chain support should be presented as an architecture. The live MVP records
+                    decision proofs on Casper Testnet; full target-chain adapters can be added as the
+                    gateway expands.
+                  </DocsCallout>
                 </div>
               </section>
 
@@ -3659,6 +3710,7 @@ Content-Type: application/json
                     ["Connected Agent", "The external AI app, bot, or autonomous system calling Magen3."],
                     ["Agent ID", "The public identifier for the connected agent."],
                     ["Agent API Key", "The secret credential used by that agent to call the gateway."],
+                    ["Target Chain", "The chain or execution environment the external agent intends to use."],
                     ["Execution Wallet", "The wallet that signs the real transaction after approval."],
                     ["Decision", "Allowed, Blocked, or Review Required."],
                     ["Decision Proof", "The Casper record proving Magen3 reviewed the action."],
@@ -3931,6 +3983,7 @@ Content-Type: application/json
                 <div className="mt-5 space-y-3">
                   {[
                     ["Is Magen3 only Agent Shield?", "No. Agent Shield is the first live Shield. Magen3 is built as a modular Shield platform."],
+                    ["Can Magen3 be cross-chain?", "Yes at the gateway and policy layer. The current MVP records decision proofs on Casper Testnet while future adapters can support more target chains."],
                     ["Is it one API key for the whole app?", "No. Use one API key per connected agent."],
                     ["Is it one API key per policy?", "No. Policies attach to agents. API keys authenticate agents."],
                     ["Can the execution wallet differ from the owner wallet?", "Yes. The owner wallet manages the agent in Magen3; the execution wallet signs in the external app."],
@@ -4440,6 +4493,7 @@ export default function App() {
         apiOnline={apiOnline}
       />
     ),
+    shields: <ShieldsPage onNavigate={navigate} />,
     policies: (
       <PoliciesPage
         agents={agents}

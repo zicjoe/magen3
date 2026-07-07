@@ -2,13 +2,29 @@
 
 **Magen3 is a Web3 execution firewall and safety gateway for autonomous agents.**
 
-Magen3 is **not** the agent. It is the external policy, approval, and audit layer that independent AI agents connect to before taking Casper/Web3 actions.
+Magen3 is **not** the agent. It is the external policy, approval, and audit layer that independent AI agents connect to before taking Web3 actions.
+
+## Cross-chain positioning
+
+Magen3 is designed to be chain-agnostic at the policy and gateway layer.
+
+The current MVP uses Casper Testnet as the decision-proof and audit layer. External agents can still describe actions intended for other execution environments in the gateway intent payload. Magen3 reviews the intent before execution, returns `Allowed`, `Blocked`, or `Review Required`, and records the decision proof on Casper.
+
+```text
+External agent intent
+→ Magen3 Gateway API
+→ policy decision
+→ target-chain wallet/protocol execution only if allowed
+→ Casper decision proof for auditability
+```
+
+In production, this model can support adapters for EVM chains, Solana, Casper, and other ecosystems while keeping Casper as the verifiable audit/proof layer.
 
 ## Current product split
 
 ```text
 Magen3
-→ security gateway / admin dashboard / policies / audit / Casper proof
+→ security gateway / admin dashboard / policies / audit / Casper decision proof
 
 YieldBot AI or any external agent
 → independent agent app that calls Magen3 before execution
@@ -23,7 +39,7 @@ User connects Casper Wallet to Magen3
 → copies Gateway URL / Agent ID / API key into the external agent
 → external agent receives a user task
 → external agent identifies with Agent ID + API key
-→ external agent sends the intended action plus its connected execution wallet to Magen3 Gateway API
+→ external agent sends the intended action, target chain, and connected execution wallet to Magen3 Gateway API
 → Magen3 returns Allowed / Blocked / Review Required
 → blocked/review actions stop
 → allowed actions may request wallet signing in the external agent
@@ -37,6 +53,7 @@ User connects Casper Wallet to Magen3
 - Connected Agents for registered external autonomous agents
 - Policy Management for Agent Shield rules
 - Agent Gateway API for external agents
+- Cross-chain intent convention for target-chain action review
 - Gateway sync endpoint for external agents: `GET /api/agent-gateway/me?agentId=...`
 - Per-agent integration details, API key status, and copyable code snippet inside Connected Agents
 - Agent Skill Kit exports for Claude, Codex `SKILL.md`, custom agents, `.env`, and API snippets

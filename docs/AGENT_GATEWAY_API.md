@@ -2,6 +2,20 @@
 
 Magen3 is not the agent. Magen3 is the security gateway that an external agent calls before asking an execution wallet to sign a Web3 action.
 
+## Cross-chain Model
+
+Magen3 is chain-agnostic at the gateway and policy layer. The current MVP records decision proofs on Casper Testnet, but external agents can include the intended execution chain in the intent they submit.
+
+```text
+External agent intent
+→ Magen3 policy check
+→ Allowed / Blocked / Review Required
+→ target-chain execution only if allowed
+→ Casper decision proof
+```
+
+Use `targetChain` as a request convention for the intended execution environment, for example `casper-testnet`, `base`, `ethereum`, `arbitrum`, `bnb-chain`, or `solana`. Full target-chain adapters can be added without changing the core gateway model.
+
 ## Identity Model
 
 External agents identify themselves with:
@@ -76,6 +90,7 @@ curl -X POST "https://your-magen3-api.up.railway.app/api/agent-gateway/intents" 
   -d '{
     "source": "YieldBot-AI",
     "agentId": "MAG-AGENT-...",
+    "targetChain": "casper-testnet",
     "walletAddress": "execution-wallet-public-key",
     "executionWalletAddress": "execution-wallet-public-key",
     "goal": "Stake 15 CSPR to trusted-validator-demo",
@@ -93,6 +108,7 @@ curl -X POST "https://your-magen3-api.up.railway.app/api/agent-gateway/intents" 
 ## Response Meaning
 
 - `result.decision`: `Allowed`, `Blocked`, or `Review Required`
+- `targetChain`: optional request field describing the intended execution chain or environment
 - `executionApproved`: true only when Magen3 says the action is allowed
 - `auditLog.agentOwnerWalletAddress`: wallet that registered and controls the connected agent in Magen3
 - `auditLog.executionWalletAddress`: wallet that the external agent will ask to sign execution
