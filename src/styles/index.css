@@ -1,3 +1,47 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* Recording-safe mode:
+   Keep Magen3's dark professional look, but remove GPU-heavy effects that can
+   cause short screen recordings to stop on lower-memory devices. */
+*, *::before, *::after {
+  animation: none !important;
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+html, body, #root {
+  background: #050B14 !important;
+}
+
+[class*="shadow"],
+[class*="drop-shadow"] {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+[class*="backdrop-blur"],
+[class*="blur-"],
+[class*="filter"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+
+.animate-pulse,
+.animate-spin,
+.animate-bounce,
+.animate-ping,
+[class*="animate-"] {
+  animation: none !important;
+}
+
+.bg-gradient-to-br,
+.bg-gradient-to-r,
+.bg-gradient-to-l,
+.bg-gradient-to-t,
+.bg-gradient-to-b {
+  background-image: none !important;
+}

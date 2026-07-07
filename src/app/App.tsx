@@ -494,9 +494,9 @@ function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): Dashbo
 
 const CARD = "bg-[#111827] border border-[#1E293B] rounded-xl";
 const CARD_GLOW =
-  "bg-[#111827] border border-[#1E293B] rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.04)]";
+  "bg-[#111827] border border-[#1E293B] rounded-xl";
 const INPUT_CLS =
-  "w-full bg-[#0B1220] border border-[#1E293B] rounded-lg px-3 py-2 text-[#F8FAFC] text-sm placeholder-[#94A3B8] focus:outline-none focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/30 transition-colors";
+  "w-full bg-[#0B1220] border border-[#1E293B] rounded-lg px-3 py-2 text-[#F8FAFC] text-sm placeholder-[#94A3B8] focus:outline-none focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/30";
 const LABEL_CLS = "block text-xs font-medium text-[#94A3B8] mb-1.5 uppercase tracking-wider";
 const SECTION_TITLE = "text-lg font-semibold text-[#F8FAFC] font-['Space_Grotesk']";
 
@@ -584,7 +584,7 @@ function Btn({
 }) {
   const variants: Record<string, string> = {
     primary:
-      "bg-[#22D3EE] hover:bg-[#06B6D4] text-[#050B14] font-semibold shadow-[0_0_12px_rgba(34,211,238,0.25)] hover:shadow-[0_0_20px_rgba(34,211,238,0.35)]",
+      "bg-[#22D3EE] hover:bg-[#06B6D4] text-[#050B14] font-semibold",
     secondary:
       "bg-[#1E293B] hover:bg-[#263548] text-[#F8FAFC] border border-[#1E293B]",
     danger:
@@ -603,7 +603,7 @@ function Btn({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-2 transition-all duration-200 ${variants[variant]} ${sizes[size]} ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
+      className={`inline-flex items-center gap-2 ${variants[variant]} ${sizes[size]} ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${className}`}
     >
       {children}
     </button>
@@ -766,7 +766,7 @@ function Sidebar({
 }) {
   return (
     <aside
-      className={`flex flex-col bg-[#0B1220] border-r border-[#1E293B] transition-all duration-300 ${collapsed ? "w-16" : "w-60"} min-h-screen`}
+      className={`flex flex-col bg-[#0B1220] border-r border-[#1E293B] ${collapsed ? "w-16" : "w-60"} min-h-screen`}
     >
       {/* Logo */}
       <div className={`flex items-center border-b border-[#1E293B] py-5 ${collapsed ? "gap-1 px-1" : "gap-3 px-4"}`}>
@@ -775,7 +775,7 @@ function Sidebar({
           onClick={() => onNavigate("dashboard")}
           aria-label="Go to Magen3 dashboard"
           title="Go to Magen3 dashboard"
-          className="flex min-w-0 items-center gap-3 rounded-lg text-left transition-colors hover:text-[#22D3EE] focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
+          className="flex min-w-0 items-center gap-3 rounded-lg text-left hover:text-[#22D3EE] focus:outline-none focus:ring-2 focus:ring-[#22D3EE]/40"
         >
           <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#050B14] border border-[#1E293B] flex items-center justify-center overflow-hidden">
             <BrandLogo className="h-7 w-7" />
@@ -791,7 +791,7 @@ function Sidebar({
           onClick={onToggle}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="ml-auto text-[#94A3B8] hover:text-[#F8FAFC] transition-colors"
+          className="ml-auto text-[#94A3B8] hover:text-[#F8FAFC]"
         >
           <Menu size={16} />
         </button>
@@ -805,9 +805,9 @@ function Sidebar({
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${
                 active
-                  ? "bg-[#22D3EE]/10 text-[#22D3EE] shadow-[inset_0_0_0_1px_rgba(34,211,238,0.2)]"
+                  ? "bg-[#22D3EE]/10 text-[#22D3EE] ring-1 ring-[#22D3EE]/20"
                   : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"
               }`}
               title={collapsed ? item.label : undefined}
@@ -853,11 +853,11 @@ function TopBar({
   walletError: string;
 }) {
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-[#1E293B] bg-[#050B14]/80 backdrop-blur-sm sticky top-0 z-10">
+    <header className="flex items-center justify-between px-6 py-3 border-b border-[#1E293B] bg-[#050B14] sticky top-0 z-10">
       {/* Network badge */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#FF3B3B] animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-[#FF3B3B]" />
           <span className="text-xs font-semibold text-[#FF3B3B] uppercase tracking-wider">
             Casper Testnet
           </span>
@@ -892,7 +892,7 @@ function TopBar({
         {walletConnected ? (
           <button
             onClick={onDisconnectWallet}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[#111827] border border-[#1E293B] rounded-lg hover:border-[#22D3EE]/40 transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 bg-[#111827] border border-[#1E293B] rounded-lg hover:border-[#22D3EE]/40"
             title="Disconnect Casper Wallet"
           >
             <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#22D3EE] to-[#0EA5E9]" />
@@ -2115,7 +2115,7 @@ ${snippet}
                       ))}
                     </div>
 
-                    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 shadow-[0_0_18px_rgba(34,211,238,0.04)]">
+                    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-4">
                         <div>
                           <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE] mb-3">
@@ -2140,7 +2140,7 @@ ${snippet}
                           <button
                             key={target}
                             onClick={() => setSkillTarget(target)}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                               skillTarget === target
                                 ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
                                 : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
@@ -2283,7 +2283,7 @@ ${snippet}
 
       {showRegister && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRegister(false)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowRegister(false)} />
           <div className={`${CARD_GLOW} relative w-full max-w-xl p-6`}>
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
@@ -2294,7 +2294,7 @@ ${snippet}
               </div>
               <button
                 onClick={() => setShowRegister(false)}
-                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors"
+                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg"
               >
                 <X size={18} />
               </button>
@@ -2637,7 +2637,7 @@ function PoliciesPage({
 
       {editingPolicy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingPolicy(null)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditingPolicy(null)} />
           <div className={`${CARD_GLOW} relative w-full max-w-2xl p-6`}>
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
@@ -2648,7 +2648,7 @@ function PoliciesPage({
               </div>
               <button
                 onClick={() => setEditingPolicy(null)}
-                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors"
+                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg"
               >
                 <X size={18} />
               </button>
@@ -3026,10 +3026,10 @@ function AuditLogPage({
       {selected && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/60"
             onClick={() => setSelected(null)}
           />
-          <div className="relative bg-[#0B1220] border-l border-[#1E293B] w-full max-w-lg overflow-y-auto shadow-2xl">
+          <div className="relative bg-[#0B1220] border-l border-[#1E293B] w-full max-w-lg overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-[#1E293B] sticky top-0 bg-[#0B1220]">
               <div>
                 <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
@@ -3130,7 +3130,7 @@ function AuditLogPage({
                 const realDeploy = isRealCasperDeployHash(selected.txHash);
                 const normalizedTxHash = normalizeCasperDeployHash(selected.txHash);
                 return (
-                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 space-y-3 shadow-[0_0_20px_rgba(34,211,238,0.04)]">
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
@@ -3233,7 +3233,7 @@ function AuditLogPage({
                 const realExecution = isRealCasperDeployHash(selected.executionTxHash || "");
                 const canAttachExecution = selected.decision === "Allowed";
                 return (
-                  <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3 shadow-[0_0_20px_rgba(34,197,94,0.04)]">
+                  <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
@@ -4223,7 +4223,7 @@ function SettingsPage({
             </div>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FF3B3B]/10 border border-[#FF3B3B]/20 rounded-full">
-            <div className="w-2 h-2 rounded-full bg-[#FF3B3B] animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-[#FF3B3B]" />
             <span className="text-sm text-[#FF3B3B] font-semibold">
               Casper Testnet
             </span>
@@ -4297,12 +4297,12 @@ function SettingsPage({
           </div>
           <button
             onClick={() => setDevMode((p) => !p)}
-            className={`relative w-11 h-6 rounded-full transition-colors ${
+            className={`relative w-11 h-6 rounded-full ${
               devMode ? "bg-[#22D3EE]" : "bg-[#1E293B]"
             }`}
           >
             <span
-              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full ${
                 devMode ? "translate-x-5" : ""
               }`}
             />
