@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a focused improvement to Magen3
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What execution-security or developer problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and compatibility impact
+      description: Explain effects on policies, API keys, wallet flow, proofs, database, or deployments.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Product area
+      options:
+        - Agent Shield
+        - Connected Agents
+        - Policies
+        - Audit Logs
+        - Gateway API
+        - Casper Decision Proofs
+        - Developer experience
+        - Documentation
+        - Roadmap Shield module
+    validations:
+      required: true

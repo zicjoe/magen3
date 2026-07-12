@@ -1,6 +1,6 @@
 # Magen3
 
-**Magen3 is a Web3 execution firewall and security gateway for autonomous agents.**
+**Magen3 is a modular Web3 execution firewall.**
 
 Magen3 sits between agent intent and blockchain execution. External agents send proposed actions to the Magen3 Gateway before wallet signing. Magen3 checks the action against the active policy, returns `Allowed`, `Blocked`, or `Review Required`, and records the decision for auditability with Casper Testnet proofs.
 
@@ -187,6 +187,14 @@ Backend health:
 http://localhost:8787/api/health
 ```
 
+Run the same checks used by GitHub Actions:
+
+```bash
+pnpm verify
+```
+
+This runs TypeScript validation, backend policy-engine tests, and the production frontend build.
+
 Public gateway config:
 
 ```text
@@ -307,3 +315,16 @@ Current product documentation lives in:
 - `docs/GATEWAY_INTEGRATION.md`
 
 Older implementation notes are kept under `docs/archive/` when they are useful for project history but should not be treated as current public product documentation.
+## Repository Standards and Security
+
+The repository includes:
+
+- MIT license;
+- contribution, support, security, and code-of-conduct policies;
+- structured issue and pull-request templates;
+- GitHub Actions CI for TypeScript, tests, and production builds;
+- CodeQL scanning for JavaScript and TypeScript;
+- Dependabot updates for pnpm, Cargo, and GitHub Actions.
+
+Do not commit `.env` files, API keys, wallet secret keys, database credentials, or Casper relayer keys. Security vulnerabilities should be reported privately according to [SECURITY.md](SECURITY.md).
+

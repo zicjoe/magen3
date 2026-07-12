@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    labels:
+      - dependencies
+      - security
+
+  - package-ecosystem: cargo
+    directory: /contracts/magen3-audit-registry
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:15"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+      - security
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:30"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions

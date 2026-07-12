@@ -21,7 +21,11 @@
     "casper:record:cmd": "node scripts/casper/print-record-command.mjs",
     "contract:clean": "cargo clean --manifest-path contracts/magen3-audit-registry/Cargo.toml",
     "contract:doctor": "node scripts/casper/contract-doctor.mjs",
-    "rust:prepare": "rustup toolchain install nightly-2024-08-01 && rustup target add wasm32-unknown-unknown --toolchain nightly-2024-08-01"
+    "rust:prepare": "rustup toolchain install nightly-2024-08-01 && rustup target add wasm32-unknown-unknown --toolchain nightly-2024-08-01",
+    "typecheck": "tsc -b",
+    "test:backend": "node --test backend/**/*.test.mjs",
+    "test": "pnpm test:backend",
+    "verify": "pnpm typecheck && pnpm test && vite build"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",
