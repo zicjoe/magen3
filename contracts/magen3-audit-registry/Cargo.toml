@@ -15,7 +15,7 @@ casper-types = "6.1.0"
 # RustCrypto releases can require Rust 2024/Cargo 1.85+. Pin base64ct to
 # the pre-Rust-2024 line so the contract builds consistently with the
 # Casper-compatible nightly toolchain.
-base64ct = "=1.6.0"
+base64ct = "=1.8.3"
 # zeroize 1.9.0 moved to Rust 2024 / rust-version 1.85, which breaks
 # the pinned Casper-compatible nightly-2024-08-01 toolchain. Keep this
 # on the pre-Rust-2024 line for deterministic contract builds.
