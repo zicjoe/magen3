@@ -10,7 +10,7 @@ path = "contract/src/lib.rs"
 
 [dependencies]
 casper-contract = "5.1.1"
-casper-types = "6.1.0"
+casper-types = "7.0.0"
 # Casper contract builds require an older pinned nightly, but newer transitive
 # RustCrypto releases can require Rust 2024/Cargo 1.85+. Pin base64ct to
 # the pre-Rust-2024 line so the contract builds consistently with the
