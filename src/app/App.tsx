@@ -3456,6 +3456,17 @@ const docsSidebar = [
     ],
   },
   {
+    group: "Developer Platform",
+    items: [
+      { id: "developer-portal-doc", label: "Developer Portal" },
+      { id: "sdk-typescript-doc", label: "TypeScript SDK" },
+      { id: "sdk-python-doc", label: "Python SDK" },
+      { id: "mcp-server-doc", label: "MCP Server" },
+      { id: "agent-skills-doc", label: "Agent Skills Kit" },
+      { id: "integration-test-doc", label: "Real Agent Test" },
+    ],
+  },
+  {
     group: "Audit & Proofs",
     items: [
       { id: "proofs-doc", label: "Casper Decision Proof" },
@@ -3482,6 +3493,12 @@ const docsOnThisPage = [
   { id: "connected-agents-doc", label: "Connected Agents" },
   { id: "api-keys-doc", label: "Agent API Keys" },
   { id: "api-request-doc", label: "Gateway API" },
+  { id: "developer-portal-doc", label: "Developer Portal" },
+  { id: "sdk-typescript-doc", label: "TypeScript SDK" },
+  { id: "sdk-python-doc", label: "Python SDK" },
+  { id: "mcp-server-doc", label: "MCP Server" },
+  { id: "agent-skills-doc", label: "Agent Skills Kit" },
+  { id: "integration-test-doc", label: "Real Agent Test" },
   { id: "security-doc", label: "Security Model" },
   { id: "case-study-doc", label: "Case Study" },
   { id: "proofs-doc", label: "Casper Proofs" },
@@ -3581,7 +3598,7 @@ function DocsFlowArrow() {
 function DocsPage() {
   const [search, setSearch] = useState("");
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    new Set(["Getting Started", "Shield Modules", "Agent Shield"])
+    new Set(["Getting Started", "Shield Modules", "Agent Shield", "Developer Platform"])
   );
 
   const filteredSidebar = docsSidebar
@@ -3716,9 +3733,9 @@ Content-Type: application/json
                   What is Magen3?
                 </h2>
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
-                  Magen3 is a modular Web3 security gateway for execution protection. It checks risky
-                  actions from AI agents, smart contracts, DAOs, RWA workflows, and oracle-driven systems
-                  before those actions reach the blockchain or target execution environment.
+                  Magen3 is a modular Web3 execution firewall. It checks risky actions from AI agents,
+                  smart contracts, DAOs, RWA workflows, and oracle-driven systems before those actions
+                  reach the blockchain or target execution environment.
                 </p>
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
                   Magen3 sits between <span className="font-semibold text-[#F8FAFC]">intent</span> and{" "}
@@ -3994,6 +4011,139 @@ Content-Type: application/json
                 <div className="mt-3">
                   <DocsCodeBlock lang="json" code={apiResponse} />
                 </div>
+              </section>
+
+              <section id="developer-portal-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <div className="flex flex-wrap items-center gap-2">
+                  <DocsBadge label="Developer Platform" variant="live" />
+                  <DocsBadge label="Official SDKs" variant="info" />
+                  <DocsBadge label="MCP" variant="info" />
+                </div>
+                <h2 className={`${SECTION_TITLE} mt-4`}>Developer Portal</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">
+                  Integrate an external DeFi agent, treasury bot, trading agent, or MCP-compatible assistant
+                  with the same Magen3 Gateway used by Agent Shield. Register the agent first, assign an active
+                  policy, then choose the integration path that matches the agent runtime.
+                </p>
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  {[
+                    { icon: <Code2 size={18} />, title: "TypeScript SDK", text: "For Node.js, TypeScript, LangGraph, trading bots, and custom Web3 agents.", target: "sdk-typescript-doc" },
+                    { icon: <FileText size={18} />, title: "Python SDK", text: "For Python agents, CrewAI, AutoGen, research agents, and automation services.", target: "sdk-python-doc" },
+                    { icon: <Server size={18} />, title: "MCP Server", text: "For Codex and other MCP-compatible agents that discover Magen3 as a tool.", target: "mcp-server-doc" },
+                    { icon: <Bot size={18} />, title: "Agent Skills Kit", text: "Behavioral instructions that tell an agent when to check intent and how to obey decisions.", target: "agent-skills-doc" },
+                  ].map((item) => (
+                    <button
+                      type="button"
+                      key={item.title}
+                      onClick={() => scrollToDocSection(item.target)}
+                      className="rounded-xl border border-[#1E293B] bg-[#111827] p-5 text-left transition-colors hover:border-[#22D3EE]/40 hover:bg-[#111827]/80"
+                    >
+                      <span className="mb-3 inline-flex rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2 text-[#22D3EE]">{item.icon}</span>
+                      <span className="block text-sm font-semibold text-[#F8FAFC]">{item.title}</span>
+                      <span className="mt-1 block text-sm leading-relaxed text-[#94A3B8]">{item.text}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-5">
+                  <DocsCallout type="warning">
+                    SDKs and MCP evaluate intent; they do not read browser-wallet storage, expose private keys,
+                    approve wallet popups, or sign transactions. Wallet approval remains human-controlled.
+                  </DocsCallout>
+                </div>
+              </section>
+
+              <section id="sdk-typescript-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Official TypeScript SDK</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  The repository package is located at <code className="text-[#22D3EE]">packages/sdk-js</code> and is named <code className="text-[#22D3EE]">@magen3/sdk</code>.
+                </p>
+                <div className="mt-5"><DocsCodeBlock lang="bash" code={`pnpm --filter @magen3/sdk build`} /></div>
+                <div className="mt-4"><DocsCodeBlock lang="typescript" code={`import { Magen3Client } from "@magen3/sdk";
+
+const magen3 = new Magen3Client({
+  gatewayUrl: process.env.MAGEN3_GATEWAY_URL!,
+  agentId: process.env.MAGEN3_AGENT_ID!,
+  apiKey: process.env.MAGEN3_AGENT_KEY!,
+});
+
+const result = await magen3.requireAllowed(intent);`} /></div>
+                <p className="mt-3 text-xs leading-relaxed text-[#94A3B8]">
+                  Use <code className="text-[#F8FAFC]">requireAllowed</code> for fail-closed execution. It stops on Blocked, Review Required, malformed responses, authentication failures, and gateway errors.
+                </p>
+              </section>
+
+              <section id="sdk-python-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Official Python SDK</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  The repository package is located at <code className="text-[#22D3EE]">packages/sdk-python</code> and is named <code className="text-[#22D3EE]">magen3-sdk</code>.
+                </p>
+                <div className="mt-5"><DocsCodeBlock lang="bash" code={`python -m pip install -e packages/sdk-python`} /></div>
+                <div className="mt-4"><DocsCodeBlock lang="python" code={`from magen3 import Magen3Client
+
+client = Magen3Client(
+    gateway_url=os.environ["MAGEN3_GATEWAY_URL"],
+    agent_id=os.environ["MAGEN3_AGENT_ID"],
+    api_key=os.environ["MAGEN3_AGENT_KEY"],
+)
+
+result = client.require_allowed(intent)`} /></div>
+              </section>
+
+              <section id="mcp-server-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Official MCP Server</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  The local stdio server lives at <code className="text-[#22D3EE]">packages/mcp-server</code>. It exposes four tools to MCP-compatible agents.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {["magen3_verify_agent", "magen3_get_intent_schema", "magen3_check_intent", "magen3_require_allowed"].map((tool) => (
+                    <div key={tool} className="rounded-lg border border-[#1E293B] bg-[#111827] px-4 py-3 font-mono text-xs text-[#22D3EE]">{tool}</div>
+                  ))}
+                </div>
+                <div className="mt-5"><DocsCodeBlock lang="powershell" code={`pnpm mcp:build
+
+codex mcp add magen3 \
+  --env MAGEN3_GATEWAY_URL="YOUR_GATEWAY_URL" \
+  --env MAGEN3_AGENT_ID="MAG-AGENT-..." \
+  --env MAGEN3_AGENT_KEY="YOUR_PRIVATE_KEY" \
+  -- node "C:\\dev\\magen3\\packages\\mcp-server\\dist\\server.js"`} /></div>
+                <DocsCallout type="info">
+                  Keep the API key in local environment configuration. Do not commit it, place it in an Agent Skills file, or include it in screenshots.
+                </DocsCallout>
+              </section>
+
+              <section id="agent-skills-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Agent Skills Kit</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Connected Agents generates an Agent Skills Kit for the selected integration target. The skill tells the agent to submit every blockchain intent before execution and strictly obey Allowed, Blocked, and Review Required.
+                </p>
+                <div className="mt-5"><DocsCodeBlock lang="text" code={`Before any Web3 execution:
+1. Call Magen3 with the exact intended action.
+2. Allowed: continue only toward human-controlled signing.
+3. Blocked: stop immediately.
+4. Review Required: pause and request human review.
+5. Gateway or authentication error: fail closed; never bypass Magen3.`} /></div>
+              </section>
+
+              <section id="integration-test-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Test With a Real Agent</h2>
+                <ol className="mt-5 space-y-3">
+                  {[
+                    "Register the external agent in Connected Agents and save its one-time API key securely.",
+                    "Assign an active policy with predictable Allowed, Review Required, and Blocked limits.",
+                    "Configure the TypeScript SDK, Python SDK, or MCP server with the Gateway URL, Agent ID, and API key.",
+                    "Submit a harmless Casper Testnet intent below the policy limit without signing or broadcasting it.",
+                    "Submit intents that trigger Review Required and Blocked, and verify the agent stops correctly.",
+                    "Open Audit Logs and confirm the agent identity, decision, reason, risk, and Casper proof status.",
+                  ].map((step, index) => (
+                    <li key={step} className="flex gap-3 rounded-lg border border-[#1E293B] bg-[#111827] px-4 py-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#22D3EE]/10 text-xs font-semibold text-[#22D3EE]">{index + 1}</span>
+                      <span className="text-sm leading-relaxed text-[#94A3B8]">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+                <div className="mt-5"><DocsCallout type="success">
+                  A successful integration proves the independent agent authenticates through its own Connected Agent, receives Magen3 decisions, obeys those decisions, and creates audit records before wallet signing.
+                </DocsCallout></div>
               </section>
 
               <section id="security-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
