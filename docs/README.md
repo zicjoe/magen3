@@ -13,3 +13,7 @@ This folder contains current product and integration documentation for Magen3.
 ## Archived Notes
 
 Older build notes, recording scripts, and historic walkthroughs live in `archive/`. They are kept for project history and should not be treated as current public product documentation.
+
+## SDK integration
+
+- [Official TypeScript and Python SDKs](./OFFICIAL_SDKS.md)

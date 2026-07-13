@@ -328,3 +328,13 @@ The repository includes:
 
 Do not commit `.env` files, API keys, wallet secret keys, database credentials, or Casper relayer keys. Security vulnerabilities should be reported privately according to [SECURITY.md](SECURITY.md).
 
+
+## Official SDKs
+
+Magen3 ships with official SDKs for integrating independent external agents without giving them wallet custody:
+
+- TypeScript: [`packages/sdk-js`](packages/sdk-js)
+- Python: [`packages/sdk-python`](packages/sdk-python)
+- Integration guide: [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
+
+Both SDKs support agent verification, intent submission, fail-closed decision handling, timeouts, structured errors, API-key authentication, and the exact existing Agent Gateway schema. They never read wallet secrets or sign blockchain transactions.

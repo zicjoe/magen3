@@ -1,0 +1,153 @@
+export type Magen3Decision = "Allowed" | "Blocked" | "Review Required";
+export type Magen3Risk = "Low" | "Medium" | "High" | "Critical";
+
+export interface Magen3Action {
+  type: string;
+  amount?: number;
+  asset?: string;
+  target: string;
+  targetType?: string;
+}
+
+export interface Magen3Intent {
+  source?: string;
+  targetChain?: string;
+  walletAddress?: string;
+  executionWalletAddress: string;
+  goal?: string;
+  reason?: string;
+  action: Magen3Action;
+}
+
+export interface Magen3Identity {
+  ok?: boolean;
+  agent?: Record<string, unknown>;
+  policy?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface Magen3DecisionResult {
+  decision: Magen3Decision;
+  risk: Magen3Risk;
+  riskScore: number;
+  reason: string;
+  recommendedAction: string;
+  policyChecksPassed?: string[];
+  policyChecksFailed?: string[];
+}
+
+export interface Magen3IntentResponse {
+  ok: boolean;
+  executionApproved: boolean;
+  result: Magen3DecisionResult;
+  gatewayRequest: Record<string, unknown>;
+  auditLog: Record<string, unknown>;
+  casperPayload?: Record<string, unknown>;
+  nextAction: string;
+}
+
+export interface Magen3ClientOptions {
+  gatewayUrl: string;
+  agentId: string;
+  apiKey: string;
+  timeoutMs?: number;
+  fetch?: typeof globalThis.fetch;
+  authMode?: "header" | "bearer";
+}
+
+export class Magen3Error extends Error {
+  readonly status: number;
+  readonly body: unknown;
+  constructor(message: string, status = 0, body?: unknown) {
+    super(message);
+    this.name = "Magen3Error";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export class Magen3Client {
+  private readonly baseUrl: string;
+  private readonly agentId: string;
+  private readonly apiKey: string;
+  private readonly timeoutMs: number;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly authMode: "header" | "bearer";
+
+  constructor(options: Magen3ClientOptions) {
+    if (!options.gatewayUrl?.trim()) throw new TypeError("gatewayUrl is required");
+    if (!options.agentId?.trim()) throw new TypeError("agentId is required");
+    if (!options.apiKey?.trim()) throw new TypeError("apiKey is required");
+    const fetchImpl = options.fetch ?? globalThis.fetch;
+    if (!fetchImpl) throw new TypeError("A Fetch API implementation is required");
+    this.baseUrl = options.gatewayUrl.replace(/\/+$/, "");
+    this.agentId = options.agentId.trim();
+    this.apiKey = options.apiKey.trim();
+    this.timeoutMs = options.timeoutMs ?? 15_000;
+    this.fetchImpl = fetchImpl;
+    this.authMode = options.authMode ?? "header";
+  }
+
+  async verifyAgent(): Promise<Magen3Identity> {
+    return this.request<Magen3Identity>(`/api/agent-gateway/me?agentId=${encodeURIComponent(this.agentId)}`, { method: "GET" });
+  }
+
+  async checkIntent(intent: Magen3Intent): Promise<Magen3IntentResponse> {
+    if (!intent?.executionWalletAddress?.trim()) throw new TypeError("executionWalletAddress is required");
+    if (!intent?.action?.type?.trim()) throw new TypeError("action.type is required");
+    if (!intent?.action?.target?.trim()) throw new TypeError("action.target is required");
+    return this.request<Magen3IntentResponse>("/api/agent-gateway/intents", {
+      method: "POST",
+      body: JSON.stringify({
+        ...intent,
+        agentId: this.agentId,
+        walletAddress: intent.walletAddress ?? intent.executionWalletAddress,
+      }),
+    });
+  }
+
+  async requireAllowed(intent: Magen3Intent): Promise<Magen3IntentResponse> {
+    const response = await this.checkIntent(intent);
+    if (response.result.decision !== "Allowed") {
+      throw new Magen3Error(`Magen3 returned ${response.result.decision}: ${response.result.reason}`, 403, response);
+    }
+    return response;
+  }
+
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const authHeaders = this.authMode === "bearer"
+      ? { Authorization: `Bearer ${this.apiKey}` }
+      : { "x-magen3-agent-key": this.apiKey };
+    try {
+      const headers = new Headers(init.headers);
+      headers.set("Accept", "application/json");
+      headers.set("Content-Type", "application/json");
+      for (const [name, value] of Object.entries(authHeaders)) {
+        if (value) headers.set(name, value);
+      }
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers,
+      });
+      const text = await response.text();
+      let body: unknown = undefined;
+      if (text) {
+        try { body = JSON.parse(text); } catch { body = text; }
+      }
+      if (!response.ok) {
+        const message = typeof body === "object" && body && "error" in body ? String((body as { error: unknown }).error) : `Magen3 request failed with HTTP ${response.status}`;
+        throw new Magen3Error(message, response.status, body);
+      }
+      return body as T;
+    } catch (error) {
+      if (error instanceof Magen3Error) throw error;
+      if (error instanceof Error && error.name === "AbortError") throw new Magen3Error(`Magen3 request timed out after ${this.timeoutMs}ms`);
+      throw new Magen3Error(error instanceof Error ? error.message : "Magen3 request failed", 0, error);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
