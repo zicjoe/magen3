@@ -25,9 +25,12 @@
     "typecheck": "tsc -b",
     "test:backend": "node --test backend/**/*.test.mjs",
     "test": "pnpm test:backend",
-    "verify": "pnpm typecheck && pnpm test && pnpm sdk:test && vite build",
+    "verify": "pnpm typecheck && pnpm test && pnpm sdk:test && pnpm mcp:test && vite build",
     "sdk:build": "pnpm --filter @magen3/sdk build",
-    "sdk:test": "pnpm sdk:build && pnpm --filter @magen3/sdk test && PYTHONPATH=packages/sdk-python/src python3 -m unittest discover -s packages/sdk-python/tests -v"
+    "sdk:test": "pnpm sdk:build && pnpm --filter @magen3/sdk test && PYTHONPATH=packages/sdk-python/src python3 -m unittest discover -s packages/sdk-python/tests -v",
+    "mcp:build": "pnpm sdk:build && pnpm --filter @magen3/mcp-server build",
+    "mcp:test": "pnpm mcp:build && pnpm --filter @magen3/mcp-server test",
+    "mcp:start": "node packages/mcp-server/dist/server.js"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",

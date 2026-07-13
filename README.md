@@ -338,3 +338,13 @@ Magen3 ships with official SDKs for integrating independent external agents with
 - Integration guide: [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
 
 Both SDKs support agent verification, intent submission, fail-closed decision handling, timeouts, structured errors, API-key authentication, and the exact existing Agent Gateway schema. They never read wallet secrets or sign blockchain transactions.
+
+## Official MCP server
+
+Magen3 includes a local `stdio` MCP server for Codex and other MCP-compatible agents. It exposes agent verification, intent-schema discovery, policy evaluation, and a fail-closed approval gate on top of the existing Gateway API.
+
+```bash
+pnpm mcp:build
+```
+
+See [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) for configuration and a real-agent test. The MCP server evaluates intent only; wallet signing remains under explicit human control.

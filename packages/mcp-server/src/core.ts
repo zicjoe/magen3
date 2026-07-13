@@ -1,0 +1,86 @@
+import { Magen3Client, Magen3Error, type Magen3Intent } from "@magen3/sdk";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
+export interface Magen3McpConfig {
+  gatewayUrl: string;
+  agentId: string;
+  apiKey: string;
+  timeoutMs?: number;
+  authMode?: "header" | "bearer";
+}
+
+export type ToolTextResult = CallToolResult;
+
+export const INTENT_SCHEMA_DESCRIPTION = {
+  source: "Optional external agent name",
+  targetChain: "Target chain, for example casper-testnet",
+  executionWalletAddress: "Public execution-wallet address; never a private key",
+  walletAddress: "Optional owner wallet address; defaults to executionWalletAddress",
+  goal: "Human-readable execution goal",
+  reason: "Why the agent wants to perform the action",
+  action: {
+    type: "Action type, for example Transfer, Swap, Stake, or Contract Call",
+    amount: "Optional numeric amount",
+    asset: "Optional asset symbol, for example CSPR",
+    target: "Destination wallet, contract, validator, or protocol identifier",
+    targetType: "Optional target classification",
+  },
+} as const;
+
+export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Magen3McpConfig {
+  const gatewayUrl = env.MAGEN3_GATEWAY_URL?.trim();
+  const agentId = env.MAGEN3_AGENT_ID?.trim();
+  const apiKey = env.MAGEN3_AGENT_KEY?.trim();
+  const missing = [
+    !gatewayUrl && "MAGEN3_GATEWAY_URL",
+    !agentId && "MAGEN3_AGENT_ID",
+    !apiKey && "MAGEN3_AGENT_KEY",
+  ].filter(Boolean);
+  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  const timeout = Number(env.MAGEN3_TIMEOUT_MS ?? "15000");
+  return {
+    gatewayUrl: gatewayUrl!,
+    agentId: agentId!,
+    apiKey: apiKey!,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 15_000,
+    authMode: env.MAGEN3_AUTH_MODE === "bearer" ? "bearer" : "header",
+  };
+}
+
+export function createClient(config: Magen3McpConfig): Magen3Client {
+  return new Magen3Client(config);
+}
+
+function text(value: unknown, isError = false): ToolTextResult {
+  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], ...(isError ? { isError: true } : {}) };
+}
+
+function errorPayload(error: unknown) {
+  if (error instanceof Magen3Error) {
+    return { ok: false, error: error.message, status: error.status, details: error.body };
+  }
+  return { ok: false, error: error instanceof Error ? error.message : "Unknown Magen3 MCP error" };
+}
+
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed">) {
+  return {
+    async verifyAgent(): Promise<ToolTextResult> {
+      try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getIntentSchema(): Promise<ToolTextResult> {
+      return text({ ok: true, schema: INTENT_SCHEMA_DESCRIPTION, decisions: ["Allowed", "Blocked", "Review Required"], signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions." });
+    },
+    async checkIntent(intent: Magen3Intent): Promise<ToolTextResult> {
+      try {
+        const response = await client.checkIntent(intent);
+        return text({ ...response, mcpGuidance: response.result.decision === "Allowed" ? "Policy allows continuation, but a human-controlled wallet must still approve signing." : response.result.decision === "Review Required" ? "Stop and request human review." : "Stop. Do not execute or bypass Magen3." });
+      } catch (error) { return text(errorPayload(error), true); }
+    },
+    async requireAllowed(intent: Magen3Intent): Promise<ToolTextResult> {
+      try {
+        const response = await client.requireAllowed(intent);
+        return text({ ...response, mcpGuidance: "Allowed by Magen3. Do not sign or broadcast without explicit human approval." });
+      } catch (error) { return text(errorPayload(error), true); }
+    },
+  };
+}

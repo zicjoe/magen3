@@ -17,3 +17,4 @@ Older build notes, recording scripts, and historic walkthroughs live in `archive
 ## SDK integration
 
 - [Official TypeScript and Python SDKs](./OFFICIAL_SDKS.md)
+- [Official MCP Server for Codex and external agents](./MCP_SERVER.md)
