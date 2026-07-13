@@ -1,8 +1,19 @@
 import { readFileSync } from "node:fs";
 
+function escapeCasperString(value) {
+  const text = String(value ?? "");
+  if (/[\u0000\r\n]/.test(text)) {
+    throw new Error("Casper runtime string arguments cannot contain NUL or newline characters.");
+  }
+  return text.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
 function argFlag(name, type, value) {
-  const escaped = String(value ?? "").replace(/'/g, "\\'");
-  return `--session-arg "${name}:${type}='${escaped}'"`;
+  return ["--session-arg", shellQuote(`${name}:${type}='${escapeCasperString(value)}'`)].join(" ");
 }
 
 function getFlag(name) {
@@ -49,6 +60,6 @@ const flags = [
 
 console.log("Magen3 Casper record_decision command");
 console.log("======================================");
-console.log(`casper-client put-deploy \\\n  --node-address ${nodeAddress} \\\n  --chain-name ${chainName} \\\n  --secret-key ${secretKey} \\\n  --payment-amount ${paymentAmount} \\\n  --session-hash ${contractHash} \\\n  --session-entry-point record_decision \\\n  ${flags.join(" \\\n  ")}`);
+console.log(`casper-client put-deploy \\\n  --node-address ${shellQuote(nodeAddress)} \\\n  --chain-name ${shellQuote(chainName)} \\\n  --secret-key ${shellQuote(secretKey)} \\\n  --payment-amount ${shellQuote(paymentAmount)} \\\n  --session-hash ${shellQuote(contractHash)} \\\n  --session-entry-point record_decision \\\n  ${flags.join(" \\\n  ")}`);
 
 console.log("\nAfter the deploy succeeds, copy the deploy hash into the Magen3 Audit Log drawer and click Confirm Real Deploy Hash.");

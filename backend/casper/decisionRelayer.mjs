@@ -110,8 +110,16 @@ function readRelayerSecretKey() {
   return { path: keyPath, error: "" };
 }
 
+function escapeCasperString(value) {
+  const text = String(value ?? "");
+  if (/[\u0000\r\n]/.test(text)) {
+    throw new Error("Casper runtime string arguments cannot contain NUL or newline characters.");
+  }
+  return text.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 function argValue(name, type, value) {
-  return `${name}:${type}='${String(value ?? "").replace(/'/g, "\\'")}'`;
+  return `${name}:${type}='${escapeCasperString(value)}'`;
 }
 
 function parseDeployHash(output) {

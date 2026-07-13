@@ -45,3 +45,25 @@ Relevant areas include:
 - Restrict production CORS to trusted origins.
 - Keep CodeQL, Dependabot, and CI checks enabled.
 - Resolve all High or Critical alerts before release.
+
+## Dependency Risk Register
+
+### `wee_alloc` through `casper-contract`
+
+- **Status:** Accepted upstream risk
+- **Severity reported by Dependabot:** Critical
+- **Origin:** The official Casper `casper-contract` SDK dependency graph, not Magen3 application code
+- **Current remediation availability:** No patched `wee_alloc` release is available
+- **Decision:** Retain the official SDK configuration used by the deployed Casper Testnet contract. Replacing the allocator would produce a different WASM artifact and would no longer reproduce the currently deployed contract build.
+- **Operational boundary:** This acceptance does not modify, redeploy, or replace the existing contract package, contract hash, or on-chain decision-proof history.
+- **Review trigger:** Re-evaluate when the Casper SDK adopts a maintained allocator or publishes an officially supported migration path.
+
+The corresponding Dependabot alert is dismissed as **risk tolerable to this project** with this rationale recorded in the repository.
+
+## Static Analysis Decisions
+
+### Agent API-key hash classification
+
+Magen3 API keys are generated server-side from 24 random bytes and are not user-selected passwords. Their stored SHA-256 digest is used only for exact API-key lookup and constant-time verification; raw keys are not stored. A password-hashing CodeQL finding against this flow is therefore classified as an inaccurate password-credential model, not as evidence of a low-entropy password store.
+
+This classification applies only to generated Connected Agent API keys. User passwords must never be introduced into this hashing flow.
