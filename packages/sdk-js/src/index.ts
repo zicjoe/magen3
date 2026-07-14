@@ -80,7 +80,12 @@ export class Magen3Client {
     if (!options.apiKey?.trim()) throw new TypeError("apiKey is required");
     const fetchImpl = options.fetch ?? globalThis.fetch;
     if (!fetchImpl) throw new TypeError("A Fetch API implementation is required");
-    this.baseUrl = options.gatewayUrl.replace(/\/+$/, "");
+    const gatewayUrl = options.gatewayUrl.trim();
+    let baseUrlEnd = gatewayUrl.length;
+    while (baseUrlEnd > 0 && gatewayUrl.charCodeAt(baseUrlEnd - 1) === 47) {
+      baseUrlEnd -= 1;
+    }
+    this.baseUrl = gatewayUrl.slice(0, baseUrlEnd);
     this.agentId = options.agentId.trim();
     this.apiKey = options.apiKey.trim();
     this.timeoutMs = options.timeoutMs ?? 15_000;

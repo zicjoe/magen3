@@ -21,3 +21,20 @@ test("requireAllowed stops blocked execution", async () => {
   const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret", fetch: async () => new Response(JSON.stringify({ ok: true, executionApproved: false, result: { decision: "Blocked", risk: "High", riskScore: 80, reason: "limit exceeded", recommendedAction: "stop" }, gatewayRequest: {}, auditLog: {}, nextAction: "stop" }), { status: 201 }) });
   await assert.rejects(() => client.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", amount: 100, target: "01def" } }), Magen3Error);
 });
+
+test("normalizes trailing gateway URL slashes without a regular expression", async () => {
+  let capturedUrl;
+  const client = new Magen3Client({
+    gatewayUrl: `  https://api.example${"/".repeat(10_000)}  `,
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  });
+
+  await client.verifyAgent();
+  assert.equal(capturedUrl, "https://api.example/api/agent-gateway/me?agentId=MAG-1");
+});
+
