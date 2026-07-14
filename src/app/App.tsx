@@ -729,6 +729,39 @@ function EmptyState({
   );
 }
 
+function WalletConnectionRequired({
+  onConnectWallet,
+  walletConnecting,
+  walletError,
+}: {
+  onConnectWallet: () => void;
+  walletConnecting: boolean;
+  walletError: string;
+}) {
+  return (
+    <EmptyState
+      title="Connect Your Wallet"
+      description="Connect your Casper wallet to access this Magen3 panel and manage wallet-scoped agents, policies, audit records, and security settings."
+      action={
+        <div className="flex flex-col items-center gap-3">
+          <Btn variant="primary" size="lg" onClick={onConnectWallet} disabled={walletConnecting}>
+            <Wallet size={18} />
+            {walletConnecting ? "Connecting..." : "Connect Wallet"}
+          </Btn>
+          {walletError && (
+            <div className="max-w-xl rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-4 py-3 text-sm text-[#F59E0B]">
+              {walletError}
+            </div>
+          )}
+          <p className="max-w-xl text-center text-xs text-[#94A3B8]">
+            Magen3 uses the active Casper Wallet public key to scope connected agents, policies, audit records, and decision proofs.
+          </p>
+        </div>
+      }
+    />
+  );
+}
+
 function BrandLogo({ className = "h-8 w-8" }: { className?: string }) {
   return (
     <img
@@ -1240,25 +1273,10 @@ function DashboardPage({
 }) {
   if (!walletConnected) {
     return (
-      <EmptyState
-        title="Connect Your Wallet"
-        description="Connect your Casper wallet to access the security dashboard and start protecting your agents."
-        action={
-          <div className="flex flex-col items-center gap-3">
-            <Btn variant="primary" size="lg" onClick={onConnectWallet} disabled={walletConnecting}>
-              <Wallet size={18} />
-              {walletConnecting ? "Connecting..." : "Connect Wallet"}
-            </Btn>
-            {walletError && (
-              <div className="max-w-xl rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-4 py-3 text-sm text-[#F59E0B]">
-                {walletError}
-              </div>
-            )}
-            <p className="max-w-xl text-center text-xs text-[#94A3B8]">
-              Magen3 now connects to the real Casper Wallet browser extension and uses the active public key for Agent Shield audits.
-            </p>
-          </div>
-        }
+      <WalletConnectionRequired
+        onConnectWallet={onConnectWallet}
+        walletConnecting={walletConnecting}
+        walletError={walletError}
       />
     );
   }
@@ -4840,6 +4858,12 @@ export default function App() {
         <main className={`flex-1 overflow-auto ${page === "docs" ? "p-0" : "p-6"}`}>
           {page === "docs" ? (
             <DocsPage />
+          ) : !walletConnected ? (
+            <WalletConnectionRequired
+              onConnectWallet={connectWallet}
+              walletConnecting={walletConnecting}
+              walletError={walletError}
+            />
           ) : (
             pageComponents[page as Exclude<Page, "landing" | "docs">]
           )}
