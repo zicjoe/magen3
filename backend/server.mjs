@@ -221,7 +221,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation"],
+          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -261,11 +261,11 @@ const server = createServer(async (req, res) => {
           goal: "Transfer funds to an approved wallet safely",
           reason: "User strategy asks for a policy-checked transfer",
           action: {
-            type: "Transfer | Swap | Deposit to Vault | Contract Interaction",
+            type: "Transfer | Swap | Deposit to Vault | Contract Interaction | Bridge",
             amount: 5,
             asset: "CSPR",
             target: "Casper wallet identifier, Contract Hash, or Package Hash",
-            targetType: "Wallet Address | Trusted Contract | Unknown Contract",
+            targetType: "Wallet Address | Trusted Contract | Unknown Contract | Bridge Contract",
             contractIdentifierType: "Contract Hash | Package Hash (required for ambiguous hash- identifiers)",
             entryPoint: "Required for contract-call actions",
             contractVersion: "Optional positive integer for Package Hash calls",
@@ -287,6 +287,22 @@ const server = createServer(async (req, res) => {
               quoteAsset: "Required quote asset, for example USD or USDC",
               executionPrice: "Proposed execution price in quote units per base unit; can be derived from expectedOutput / amount",
               quoteTimestamp: "ISO-8601 time when the execution quote was produced"
+            },
+            bridge: {
+              sourceChain: "Source chain identifier, normally casper-test for the current Magen3 deployment",
+              destinationChain: "Destination chain identifier, for example ethereum-sepolia",
+              provider: "Canonical bridge provider or adapter name",
+              routeId: "Provider-issued route or quote identifier",
+              destinationAddress: "Recipient address on the destination chain",
+              asset: "Asset being bridged",
+              feeAmount: "Optional bridge fee in asset units",
+              feeBps: "Optional bridge fee in basis points",
+              expectedOutput: "Quoted destination output",
+              minimumReceived: "Minimum acceptable destination output",
+              quoteTimestamp: "ISO-8601 quote creation time",
+              quoteExpiresAt: "ISO-8601 route expiry time",
+              sourceConfirmations: "Source-chain confirmation requirement declared by the route",
+              destinationConfirmations: "Destination-chain confirmation requirement declared by the route"
             }
           }
         },
@@ -377,6 +393,39 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "A configured feed can produce deterministic pass, review, or block findings. No oracle provider is bundled, and an unavailable feed never counts as a pass."
         },
+        bridgeControls: {
+          status: "Foundation Available",
+          purpose: "Evaluate bridge-route metadata, approved providers, source and destination chains, assets, route freshness, fees, destination-address structure, and finality requirements before wallet signing.",
+          supportedDestinationFormats: ["Casper signing public key", "Casper account-hash", "EVM 20-byte address"],
+          deterministicChecks: [
+            "Required bridge route metadata",
+            "Route identifier and provider structure",
+            "Approved provider and source/destination chain lists",
+            "Explicitly blocked destination chains",
+            "Approved bridge assets and maximum amount",
+            "Maximum bridge fee",
+            "Expected-output and minimum-received consistency",
+            "Quote freshness and expiry",
+            "Destination-chain address format for Casper and EVM chains",
+            "Source and destination confirmation requirements"
+          ],
+          policyFields: {
+            mode: "structuredRules.bridgeControlMode: Observe | Review | Enforce",
+            unavailableAction: "structuredRules.bridgeControlUnavailableAction: Warn | Review | Block",
+            allowedProviders: "structuredRules.bridgeAllowedProviders",
+            allowedSourceChains: "structuredRules.bridgeAllowedSourceChains",
+            allowedDestinationChains: "structuredRules.bridgeAllowedDestinationChains",
+            blockedDestinationChains: "structuredRules.bridgeBlockedDestinationChains",
+            allowedAssets: "structuredRules.bridgeAllowedAssets",
+            maximumAmount: "structuredRules.bridgeMaxAmount",
+            maximumFee: "structuredRules.bridgeMaxFeeBps",
+            maximumQuoteAge: "structuredRules.bridgeMaxQuoteAgeSeconds",
+            requireExpiry: "structuredRules.bridgeRequireQuoteExpiry",
+            sourceConfirmations: "structuredRules.bridgeMinSourceConfirmations",
+            destinationConfirmations: "structuredRules.bridgeMinDestinationConfirmations"
+          },
+          decisionRule: "Bridge Controls can deterministically pass, require review, or block when a bridge adapter supplies complete route metadata. It does not certify provider solvency, destination-chain liveness, or cross-chain message delivery."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -387,6 +436,7 @@ const server = createServer(async (req, res) => {
           pipelineStages: "Actual security-pipeline state",
           threatIntelligenceContext: "Sanitized feed status, policy behavior, checked identities, and exact-match indicator summaries",
           oracleValidationContext: "Sanitized oracle-feed state, policy limits, pair, reference price, deviation, source quorum, and confidence",
+          bridgeControlsContext: "Sanitized route, provider, chain, asset, fee, quote-expiry, destination-format, and finality evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",

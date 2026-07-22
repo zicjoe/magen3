@@ -14,6 +14,7 @@ export type ToolTextResult = CallToolResult;
 export const INTENT_SCHEMA_DESCRIPTION = {
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
   oracleValidation: "For priced swaps and DeFi intents, include action.outputAsset plus action.oracle. Magen3 compares the proposed execution price with a configured freshness-checked multi-source oracle feed and returns structured Oracle Validation findings.",
+  bridgeControls: "For Bridge actions, include action.bridge. Magen3 validates provider-supplied route metadata, configured providers and chains, destination format, fees, quote freshness, output bounds, and confirmation requirements.",
   source: "Optional external agent name",
   targetChain: "Target chain, for example casper-testnet",
   executionWalletAddress: "Public execution-wallet address; never a private key",
@@ -36,6 +37,22 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       quoteAsset: "Quote denomination",
       executionPrice: "Proposed quoteAsset-per-baseAsset execution price",
       quoteTimestamp: "ISO-8601 timestamp for the proposed quote",
+    },
+    bridge: {
+      sourceChain: "Canonical source chain name",
+      destinationChain: "Canonical destination chain name",
+      provider: "Bridge or route provider name",
+      routeId: "Optional provider route identifier",
+      destinationAddress: "Destination-chain recipient address",
+      asset: "Optional bridged asset symbol",
+      feeAmount: "Optional absolute route fee",
+      feeBps: "Optional route fee in basis points",
+      expectedOutput: "Optional quoted destination output",
+      minimumReceived: "Optional minimum accepted destination output",
+      quoteTimestamp: "ISO-8601 time when the route was quoted",
+      quoteExpiresAt: "ISO-8601 route expiry time",
+      sourceConfirmations: "Optional source confirmation requirement",
+      destinationConfirmations: "Optional destination confirmation requirement",
     },
     preflight: {
       paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
@@ -98,6 +115,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         decisions: ["Allowed", "Blocked", "Review Required"],
         threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
+        bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
     },

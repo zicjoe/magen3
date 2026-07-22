@@ -67,3 +67,7 @@ The corresponding Dependabot alert is dismissed as **risk tolerable to this proj
 Magen3 API keys are generated server-side from 24 random bytes and are not user-selected passwords. Their stored SHA-256 digest is used only for exact API-key lookup and constant-time verification; raw keys are not stored. A password-hashing CodeQL finding against this flow is therefore classified as an inaccurate password-credential model, not as evidence of a low-entropy password store.
 
 This classification applies only to generated Connected Agent API keys. User passwords must never be introduced into this hashing flow.
+
+## Bridge Controls security boundary
+
+Bridge Controls validates provider-supplied route metadata and policy boundaries before signing. It does not hold bridge credentials, certify bridge providers, verify provider liquidity or solvency, or prove cross-chain message delivery. Exact bridge contracts remain subject to Contract Validation. Unknown destination-chain address families are reported as unavailable rather than treated as safe.

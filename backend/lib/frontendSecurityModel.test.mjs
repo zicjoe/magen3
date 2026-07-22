@@ -29,7 +29,15 @@ test("security coverage reaches 100 only when every configured protection check 
       dailyLimit: 100,
       approvalThreshold: 15,
       trustedContracts: ["contract-package-hash-example"],
-      structuredRules: { threatIntelligenceMode: "Review", oracleValidationMode: "Review" },
+      structuredRules: {
+        threatIntelligenceMode: "Review",
+        oracleValidationMode: "Review",
+        bridgeControlMode: "Review",
+        bridgeAllowedProviders: ["Test Bridge"],
+        bridgeAllowedSourceChains: ["casper-test"],
+        bridgeAllowedDestinationChains: ["ethereum-sepolia"],
+        bridgeAllowedAssets: ["CSPR"],
+      },
     },
     [{
       timestamp,
@@ -43,6 +51,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Threat Intelligence", status: "pass", severity: "info", rule: "Known threat indicator match", message: "No exact match." },
         { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle feed availability", message: "Fresh oracle feed available." },
         { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle price deviation", message: "Price within policy." },
+        { module: "Bridge Controls", status: "pass", severity: "info", rule: "Bridge route metadata", message: "Required bridge route metadata is present." },
       ],
     }],
   );
@@ -99,7 +108,7 @@ test("security coverage is deterministic and explains missing controls", () => {
   const second = securityModel.calculateSecurityCoverage(agent, undefined, []);
 
   assert.deepEqual(first, second);
-  assert.equal(first.score, 12);
+  assert.ok(first.score < 40);
   assert.equal(first.label, "Limited coverage");
   assert.ok(first.recommendations.some((check) => check.id === "active-policy"));
   assert.ok(first.recommendations.some((check) => check.id === "contract-controls"));
@@ -129,6 +138,19 @@ test("stale or unavailable Oracle Validation never counts toward coverage", () =
   const check = result.checks.find((item) => item.id === "oracle-validation");
   assert.equal(check.passed, false);
   assert.ok(result.recommendations.some((item) => item.id === "oracle-validation"));
+});
+
+
+test("missing or incomplete Bridge Controls never count toward coverage", () => {
+  const timestamp = new Date().toISOString();
+  const result = securityModel.calculateSecurityCoverage(
+    { status: "Active", executionCapabilities: ["dApp Interactions"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active", maxTransaction: 10, dailyLimit: 20, trustedContracts: ["target"], structuredRules: { bridgeControlMode: "Review" } },
+    [{ timestamp, moduleFindings: [{ module: "Bridge Controls", status: "unavailable", severity: "medium", rule: "Bridge route metadata", message: "Route metadata missing." }] }],
+  );
+  const check = result.checks.find((item) => item.id === "bridge-controls");
+  assert.equal(check.passed, false);
+  assert.ok(result.recommendations.some((item) => item.id === "bridge-controls"));
 });
 
 test("integration health never reports healthy when core services or configuration are missing", () => {

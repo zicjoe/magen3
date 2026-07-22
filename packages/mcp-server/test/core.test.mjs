@@ -41,4 +41,7 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.oracleValidation, /execution price/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.outputAsset, /quote asset/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.oracle.executionPrice, /proposed/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.bridgeControls, /provider-supplied/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.destinationChain, /destination chain/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.quoteExpiresAt, /expiry/i);
 });

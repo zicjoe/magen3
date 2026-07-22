@@ -104,7 +104,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Execution Simulation | **Foundation Available** | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable and is reported explicitly. |
 | Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
 | Oracle Validation | **Foundation Available** | Freshness-checked multi-source price comparison, source quorum, confidence, spread, quote freshness, and execution-price deviation controls. No production provider is bundled. |
-| Bridge Controls | **Planned** | No current backend checks. |
+| Bridge Controls | **Foundation Available** | Deterministic provider, chain, asset, destination-format, fee, quote-freshness, output-bound, and confirmation controls for provider-supplied bridge routes. |
 | Compliance Controls | **Planned** | No current backend checks. |
 | Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
 
@@ -221,6 +221,27 @@ pnpm oracle:refresh-example-feed
 
 See [`docs/ORACLE_VALIDATION.md`](docs/ORACLE_VALIDATION.md) for the feed schema, intent fields, policy controls, deployment settings, and security boundary.
 
+### Bridge Controls foundation
+
+Bridge Controls evaluates provider-supplied cross-chain route metadata before wallet signing. It is **Foundation Available**, not Live, because Magen3 does not operate a bridge adapter, certify a bridge provider, verify provider liquidity or solvency, or confirm cross-chain message delivery.
+
+Current deterministic checks include:
+
+- Required source chain, destination chain, provider, route ID, destination address, and asset metadata.
+- Approved provider and source/destination-chain lists.
+- Explicit destination-chain blocks.
+- Allowed bridged assets and maximum bridge amount.
+- Maximum route fee in basis points.
+- Quote age and optional mandatory expiry.
+- Internal consistency between expected output and minimum received.
+- Casper and EVM destination-address structure for recognized chain families.
+- Minimum source and destination confirmation requirements.
+- `Observe`, `Review`, and `Enforce` handling plus `Warn`, `Review`, or `Block` behavior when route metadata is unavailable.
+
+An unknown destination-chain address family is reported as unavailable rather than silently passing. A structurally valid destination does not prove account ownership, bridge safety, destination-chain liveness, or successful delivery.
+
+See [`docs/BRIDGE_CONTROLS.md`](docs/BRIDGE_CONTROLS.md) for the request schema, policy controls, decision behavior, and security boundary.
+
 ## Guided agent registration
 
 The Connected Agents flow uses a six-step wizard:
@@ -261,7 +282,7 @@ Available presets:
 - Enterprise Controlled Automation
 - Custom
 
-Policy-specific maximum slippage, full state simulation, bridge intelligence, sanctions screening, and any unconfigured external provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence and Oracle Validation provide configurable deterministic feed checks but remain Foundation Available rather than claiming comprehensive reputation coverage or guaranteed market truth.
+Policy-specific maximum slippage, full state simulation, provider solvency, cross-chain delivery verification, sanctions screening, and any unconfigured external provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence and Oracle Validation provide configurable deterministic feed checks but remain Foundation Available rather than claiming comprehensive reputation coverage or guaranteed market truth.
 
 ## Structured findings and decisions
 

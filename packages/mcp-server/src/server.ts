@@ -21,6 +21,22 @@ const actionSchema = z.object({
     executionPrice: z.number().finite().positive(),
     quoteTimestamp: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
   }).optional(),
+  bridge: z.object({
+    sourceChain: z.string().min(1),
+    destinationChain: z.string().min(1),
+    provider: z.string().min(1),
+    routeId: z.string().min(1).optional(),
+    destinationAddress: z.string().min(1),
+    asset: z.string().min(1).optional(),
+    feeAmount: z.number().finite().nonnegative().optional(),
+    feeBps: z.number().finite().min(0).max(10000).optional(),
+    expectedOutput: z.number().finite().nonnegative().optional(),
+    minimumReceived: z.number().finite().nonnegative().optional(),
+    quoteTimestamp: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+    quoteExpiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+    sourceConfirmations: z.number().int().nonnegative().optional(),
+    destinationConfirmations: z.number().int().nonnegative().optional(),
+  }).optional(),
   preflight: z.object({
     paymentAmountMotes: z.string().regex(/^[1-9]\d*$/).optional(),
     gasPriceTolerance: z.number().int().positive().optional(),
@@ -47,7 +63,7 @@ export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
     { name: "magen3-execution-firewall", version: "0.2.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence and Oracle Validation feed availability, source quorum, confidence, freshness, and price-deviation evidence. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence, Oracle Validation, and Bridge Controls findings for route metadata, chain boundaries, address format, fees, freshness, and confirmations. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

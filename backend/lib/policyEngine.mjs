@@ -4,6 +4,7 @@ import { evaluateContractValidation } from "./contractValidation.mjs";
 import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
 import { evaluateThreatIntelligence } from "./threatIntelligence.mjs";
 import { evaluateOracleValidation } from "./oracleValidation.mjs";
+import { evaluateBridgeControls } from "./bridgeControls.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -87,6 +88,7 @@ function withStructuredResult({
   policy,
   threatIntelligenceContext = null,
   oracleValidationContext = null,
+  bridgeControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -107,6 +109,7 @@ function withStructuredResult({
     pipelineStages: pipelineStages({ timestamp, decision, agentFound: Boolean(agent), policyFound: Boolean(policy), moduleFindings }),
     threatIntelligenceContext,
     oracleValidationContext,
+    bridgeControlsContext,
   };
 }
 
@@ -273,8 +276,14 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...oracleValidationResult.findings);
   score += oracleValidationResult.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview);
+  const bridgeControlsResult = evaluateBridgeControls({ request, policy });
+  checksPassed.push(...bridgeControlsResult.checksPassed);
+  checksFailed.push(...bridgeControlsResult.checksFailed);
+  moduleFindings.push(...bridgeControlsResult.findings);
+  score += bridgeControlsResult.scoreDelta;
+
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -283,13 +292,13 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, threat-intelligence, or oracle-validation rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, threat-intelligence, oracle-validation, or bridge-control rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, oracle quote, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, oracle quote, bridge route, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({
@@ -306,5 +315,6 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     policy,
     threatIntelligenceContext: threatIntelligenceResult.context,
     oracleValidationContext: oracleValidationResult.context,
+    bridgeControlsContext: bridgeControlsResult.context,
   });
 }

@@ -23,6 +23,23 @@ export interface Magen3ExecutionPreflight {
 }
 
 
+export interface Magen3BridgeRoute {
+  sourceChain: string;
+  destinationChain: string;
+  provider: string;
+  routeId?: string;
+  destinationAddress: string;
+  asset?: string;
+  feeAmount?: number;
+  feeBps?: number;
+  expectedOutput?: number;
+  minimumReceived?: number;
+  quoteTimestamp?: string;
+  quoteExpiresAt?: string;
+  sourceConfirmations?: number;
+  destinationConfirmations?: number;
+}
+
 export interface Magen3OracleQuote {
   /** Asset sold or priced by the proposed action. */
   baseAsset: string;
@@ -52,6 +69,8 @@ export interface Magen3Action {
   chainName?: string;
   /** Optional provider-agnostic price context evaluated against the configured Oracle Validation feed. */
   oracle?: Magen3OracleQuote;
+  /** Provider-supplied cross-chain route metadata evaluated by Bridge Controls before signing. */
+  bridge?: Magen3BridgeRoute;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
 }
@@ -149,6 +168,29 @@ export interface Magen3OracleValidationContext {
   quoteTimestamp?: string;
 }
 
+export interface Magen3BridgeControlsContext {
+  status?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  provider?: string;
+  sourceChain?: string;
+  destinationChain?: string;
+  routeId?: string;
+  asset?: string;
+  amount?: number;
+  destinationAddress?: string;
+  destinationAddressFamily?: string;
+  destinationAddressValid?: boolean;
+  feeBps?: number | null;
+  maxFeeBps?: number;
+  quotedOutput?: number | null;
+  minimumReceived?: number | null;
+  quoteTimestamp?: string;
+  quoteExpiresAt?: string;
+  sourceConfirmations?: number;
+  destinationConfirmations?: number;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -166,6 +208,8 @@ export interface Magen3DecisionResult {
   threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
   /** Sanitized oracle-feed state and deterministic price-integrity evidence. */
   oracleValidationContext?: Magen3OracleValidationContext;
+  /** Deterministic route, chain, address, fee, freshness, and confirmation evidence. */
+  bridgeControlsContext?: Magen3BridgeControlsContext;
 }
 
 export interface Magen3IntentResponse {

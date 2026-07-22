@@ -82,3 +82,40 @@ const decision = await client.evaluateIntent({
 ```
 
 The response may include `oracleValidationContext` plus structured Oracle Validation findings. These report feed availability, pair coverage, reference price, execution-price deviation, source count, confidence, and source spread. Oracle Validation is Foundation Available and requires an operator-configured feed; a passing comparison does not guarantee market accuracy or execution success.
+
+
+## Bridge Controls metadata
+
+Bridge actions can include provider-supplied route metadata:
+
+```ts
+const result = await magen3.checkIntent({
+  executionWalletAddress,
+  action: {
+    type: "Bridge",
+    amount: 10,
+    asset: "CSPR",
+    target: "contract-package-hash-...",
+    targetType: "Bridge Contract",
+    contractIdentifierType: "Package Hash",
+    chainName: "casper-test",
+    bridge: {
+      sourceChain: "casper-test",
+      destinationChain: "ethereum-sepolia",
+      provider: "Reviewed Bridge Adapter",
+      routeId: "route-001",
+      destinationAddress: "0x0000000000000000000000000000000000000001",
+      asset: "CSPR",
+      feeBps: 50,
+      expectedOutput: 9.95,
+      minimumReceived: 9.8,
+      quoteTimestamp: new Date().toISOString(),
+      quoteExpiresAt: new Date(Date.now() + 300000).toISOString(),
+      sourceConfirmations: 2,
+      destinationConfirmations: 12,
+    },
+  },
+});
+```
+
+The response may include `bridgeControlsContext` and structured Bridge Controls findings. Bridge Controls is Foundation Available: it validates submitted route metadata and policy boundaries, but does not certify provider solvency, destination finality, or message delivery.

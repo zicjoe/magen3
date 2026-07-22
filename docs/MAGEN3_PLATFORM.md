@@ -86,11 +86,13 @@ Protection modules live under Agent Shield.
 | Execution Simulation | Foundation Available | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable. |
 | Threat Intelligence | Foundation Available | Deterministic exact matching against a freshness-checked operator feed; no provider is bundled or represented as comprehensive. |
 | Oracle Validation | Foundation Available | Freshness-checked asset-pair availability, source quorum, confidence, cross-source spread, quote freshness, and execution-price deviation. |
-| Bridge Controls | Planned | No current backend checks. |
+| Bridge Controls | Foundation Available | Provider-supplied bridge route metadata, chain allow/block rules, destination formats, fees, quote freshness, output bounds, assets, amounts, and confirmation requirements. |
 | Compliance Controls | Planned | No current backend checks. |
 | Risk Assessment | Live | Deterministic finding aggregation and explainable risk score. |
 
 An unavailable module never silently returns pass.
+
+Bridge Controls remains Foundation Available because the platform validates declared route metadata but does not certify a provider or verify cross-chain message delivery.
 
 ### Wallet Validation decision model
 

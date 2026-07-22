@@ -14,6 +14,7 @@ export const CONTRACT_ACTIONS = new Set([
   "Contract Interaction",
   "RWA Proof Update",
   "Oracle Data Update",
+  "Bridge",
 ]);
 
 export const ENTRY_POINT_REQUIRED_ACTIONS = new Set([
@@ -25,6 +26,7 @@ export const CONTRACT_TARGET_TYPES = new Set([
   "Unknown Contract",
   "RWA Registry",
   "Oracle Feed",
+  "Bridge Contract",
 ]);
 
 const CONTRACT_IDENTIFIER_TYPES = new Map([
@@ -85,6 +87,7 @@ export function expectedTargetTypesForAction(actionType) {
   if (["Swap", "Deposit to Vault", "Contract Interaction"].includes(actionType)) {
     return ["Trusted Contract", "Unknown Contract"];
   }
+  if (actionType === "Bridge") return ["Bridge Contract", "Trusted Contract", "Unknown Contract"];
   if (actionType === "RWA Proof Update") return ["RWA Registry"];
   if (actionType === "Oracle Data Update") return ["Oracle Feed"];
   return [...CONTRACT_TARGET_TYPES];

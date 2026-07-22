@@ -175,6 +175,41 @@ Oracle Validation is **Foundation Available**. For price-sensitive actions, the 
 
 The backend operator configures the feed; agents never submit provider credentials. The active policy controls maximum quote age, maximum price deviation, maximum source spread, minimum confidence, minimum sources, validation mode, and unavailable-feed behavior. Exact asset-pair matching is used and a stale or unavailable feed never counts as a pass.
 
+### Bridge Controls evaluation
+
+Bridge Controls is **Foundation Available**. Bridge and cross-chain transfer intents can include `action.bridge`:
+
+```json
+{
+  "type": "Bridge",
+  "amount": 10,
+  "asset": "CSPR",
+  "target": "contract-package-hash-...",
+  "targetType": "Bridge Contract",
+  "contractIdentifierType": "Package Hash",
+  "chainName": "casper-test",
+  "bridge": {
+    "sourceChain": "casper-test",
+    "destinationChain": "ethereum-sepolia",
+    "provider": "Reviewed Bridge Adapter",
+    "routeId": "route-001",
+    "destinationAddress": "0x0000000000000000000000000000000000000001",
+    "asset": "CSPR",
+    "feeBps": 50,
+    "expectedOutput": 9.95,
+    "minimumReceived": 9.8,
+    "quoteTimestamp": "2026-07-22T15:00:00.000Z",
+    "quoteExpiresAt": "2026-07-22T15:05:00.000Z",
+    "sourceConfirmations": 2,
+    "destinationConfirmations": 12
+  }
+}
+```
+
+The active policy controls approved providers, source and destination chains, blocked destination chains, allowed assets, maximum amount and fee, quote freshness and expiry, confirmation requirements, enforcement mode, and unavailable-metadata behavior. The response includes structured Bridge Controls findings and `bridgeControlsContext`.
+
+Magen3 validates submitted route metadata only. It does not certify bridge provider solvency, liquidity, contract safety, destination finality, or cross-chain delivery.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -193,7 +228,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",

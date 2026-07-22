@@ -97,6 +97,7 @@ type ActionType =
   | "DAO Treasury Payment"
   | "RWA Proof Update"
   | "Oracle Data Update"
+  | "Bridge"
   | "Policy Activation";
 type TargetType =
   | "Trusted Contract"
@@ -104,7 +105,8 @@ type TargetType =
   | "Wallet Address"
   | "DAO Treasury"
   | "RWA Registry"
-  | "Oracle Feed";
+  | "Oracle Feed"
+  | "Bridge Contract";
 
 interface Agent {
   id: string;
@@ -279,6 +281,28 @@ interface DecisionResult {
     sourceCount?: number;
     confidence?: number | null;
     quoteTimestamp?: string;
+  };
+  bridgeControlsContext?: {
+    status?: string;
+    mode?: string;
+    unavailableAction?: string;
+    provider?: string;
+    sourceChain?: string;
+    destinationChain?: string;
+    routeId?: string;
+    asset?: string;
+    amount?: number;
+    destinationAddress?: string;
+    destinationAddressFamily?: string;
+    destinationAddressValid?: boolean;
+    feeBps?: number | null;
+    maxFeeBps?: number;
+    quotedOutput?: number | null;
+    minimumReceived?: number | null;
+    quoteTimestamp?: string;
+    quoteExpiresAt?: string;
+    sourceConfirmations?: number;
+    destinationConfirmations?: number;
   };
 }
 
@@ -854,6 +878,30 @@ function InputField({
         className={INPUT_CLS}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function TextareaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className={LABEL_CLS}>{label}</label>
+      <textarea
+        className={`${INPUT_CLS} min-h-24 resize-y font-mono text-xs`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
       />
     </div>
@@ -1858,7 +1906,7 @@ function AgentRegistrationWizard({
     dailyLimit: 100,
     approvalThreshold: 15,
     trustedContractsText: "",
-    blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update"] as string[],
+    blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update", "Bridge"] as string[],
     riskMode: "Conservative" as RiskMode,
   });
 
@@ -1936,7 +1984,7 @@ function AgentRegistrationWizard({
         dailyLimit: 100,
         approvalThreshold: 15,
         trustedContractsText: "",
-        blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update"],
+        blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update", "Bridge"],
         riskMode: "Conservative",
       });
     }
@@ -2008,7 +2056,20 @@ function AgentRegistrationWizard({
           oracleValidationMinConfidence: typeof policyValues.structuredRules?.oracleValidationMinConfidence === "number" ? policyValues.structuredRules.oracleValidationMinConfidence : 70,
           oracleValidationMinSources: typeof policyValues.structuredRules?.oracleValidationMinSources === "number" ? policyValues.structuredRules.oracleValidationMinSources : 1,
           oracleValidationUnavailableAction: typeof policyValues.structuredRules?.oracleValidationUnavailableAction === "string" ? policyValues.structuredRules.oracleValidationUnavailableAction : "Warn",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction"],
+          bridgeControlMode: typeof policyValues.structuredRules?.bridgeControlMode === "string" ? policyValues.structuredRules.bridgeControlMode : "Review",
+          bridgeControlUnavailableAction: typeof policyValues.structuredRules?.bridgeControlUnavailableAction === "string" ? policyValues.structuredRules.bridgeControlUnavailableAction : "Review",
+          bridgeAllowedProviders: Array.isArray(policyValues.structuredRules?.bridgeAllowedProviders) ? policyValues.structuredRules.bridgeAllowedProviders : [],
+          bridgeAllowedSourceChains: Array.isArray(policyValues.structuredRules?.bridgeAllowedSourceChains) ? policyValues.structuredRules.bridgeAllowedSourceChains : ["casper-test"],
+          bridgeAllowedDestinationChains: Array.isArray(policyValues.structuredRules?.bridgeAllowedDestinationChains) ? policyValues.structuredRules.bridgeAllowedDestinationChains : [],
+          bridgeBlockedDestinationChains: Array.isArray(policyValues.structuredRules?.bridgeBlockedDestinationChains) ? policyValues.structuredRules.bridgeBlockedDestinationChains : [],
+          bridgeAllowedAssets: Array.isArray(policyValues.structuredRules?.bridgeAllowedAssets) ? policyValues.structuredRules.bridgeAllowedAssets : ["CSPR"],
+          bridgeMaxAmount: typeof policyValues.structuredRules?.bridgeMaxAmount === "number" ? policyValues.structuredRules.bridgeMaxAmount : Number(policyValues.maxTransaction) || 50,
+          bridgeMaxFeeBps: typeof policyValues.structuredRules?.bridgeMaxFeeBps === "number" ? policyValues.structuredRules.bridgeMaxFeeBps : 100,
+          bridgeMaxQuoteAgeSeconds: typeof policyValues.structuredRules?.bridgeMaxQuoteAgeSeconds === "number" ? policyValues.structuredRules.bridgeMaxQuoteAgeSeconds : 300,
+          bridgeRequireQuoteExpiry: typeof policyValues.structuredRules?.bridgeRequireQuoteExpiry === "boolean" ? policyValues.structuredRules.bridgeRequireQuoteExpiry : true,
+          bridgeMinSourceConfirmations: typeof policyValues.structuredRules?.bridgeMinSourceConfirmations === "number" ? policyValues.structuredRules.bridgeMinSourceConfirmations : 2,
+          bridgeMinDestinationConfirmations: typeof policyValues.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policyValues.structuredRules.bridgeMinDestinationConfirmations : 12,
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations"],
           configurationOnly: [],
         },
       });
@@ -2218,7 +2279,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence Foundation controls are added to the starter policy in Review mode with a 70% confidence threshold; a configured fresh feed is still required for operational screening. Policy-specific maximum slippage, full stateful simulation, oracle, and bridge controls remain Preview or Planned.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, and Bridge Controls Foundation rules are added in Review mode. External feeds and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and compliance controls are not represented as Live.
                   </div>
                 </>
               )}
@@ -3097,6 +3158,19 @@ function PoliciesPage({
     oracleValidationMinConfidence: "70",
     oracleValidationMinSources: "1",
     oracleValidationUnavailableAction: "Warn",
+    bridgeControlMode: "Review",
+    bridgeControlUnavailableAction: "Review",
+    bridgeAllowedProviders: "",
+    bridgeAllowedSourceChains: "casper-test",
+    bridgeAllowedDestinationChains: "",
+    bridgeBlockedDestinationChains: "",
+    bridgeAllowedAssets: "CSPR",
+    bridgeMaxAmount: "100",
+    bridgeMaxFeeBps: "100",
+    bridgeMaxQuoteAgeSeconds: "300",
+    bridgeRequireQuoteExpiry: "Yes",
+    bridgeMinSourceConfirmations: "2",
+    bridgeMinDestinationConfirmations: "12",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -3125,6 +3199,19 @@ function PoliciesPage({
     oracleValidationMinConfidence: "70",
     oracleValidationMinSources: "1",
     oracleValidationUnavailableAction: "Warn",
+    bridgeControlMode: "Review",
+    bridgeControlUnavailableAction: "Review",
+    bridgeAllowedProviders: "",
+    bridgeAllowedSourceChains: "casper-test",
+    bridgeAllowedDestinationChains: "",
+    bridgeBlockedDestinationChains: "",
+    bridgeAllowedAssets: "CSPR",
+    bridgeMaxAmount: "100",
+    bridgeMaxFeeBps: "100",
+    bridgeMaxQuoteAgeSeconds: "300",
+    bridgeRequireQuoteExpiry: "Yes",
+    bridgeMinSourceConfirmations: "2",
+    bridgeMinDestinationConfirmations: "12",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -3158,6 +3245,19 @@ function PoliciesPage({
         oracleValidationMinConfidence: clampPercentage(form.oracleValidationMinConfidence),
         oracleValidationMinSources: Math.max(1, Math.min(20, Number(form.oracleValidationMinSources) || 1)),
         oracleValidationUnavailableAction: form.oracleValidationUnavailableAction,
+        bridgeControlMode: form.bridgeControlMode,
+        bridgeControlUnavailableAction: form.bridgeControlUnavailableAction,
+        bridgeAllowedProviders: form.bridgeAllowedProviders.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedSourceChains: form.bridgeAllowedSourceChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedDestinationChains: form.bridgeAllowedDestinationChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeBlockedDestinationChains: form.bridgeBlockedDestinationChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedAssets: form.bridgeAllowedAssets.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        bridgeMaxAmount: Math.max(0, Number(form.bridgeMaxAmount) || 0),
+        bridgeMaxFeeBps: Math.max(0, Math.min(10000, Number(form.bridgeMaxFeeBps) || 100)),
+        bridgeMaxQuoteAgeSeconds: Math.max(5, Number(form.bridgeMaxQuoteAgeSeconds) || 300),
+        bridgeRequireQuoteExpiry: form.bridgeRequireQuoteExpiry !== "No",
+        bridgeMinSourceConfirmations: Math.max(0, Number(form.bridgeMinSourceConfirmations) || 0),
+        bridgeMinDestinationConfirmations: Math.max(0, Number(form.bridgeMinDestinationConfirmations) || 0),
       },
     });
     setForm({
@@ -3179,6 +3279,19 @@ function PoliciesPage({
       oracleValidationMinConfidence: "70",
       oracleValidationMinSources: "1",
       oracleValidationUnavailableAction: "Warn",
+      bridgeControlMode: "Review",
+      bridgeControlUnavailableAction: "Review",
+      bridgeAllowedProviders: "",
+      bridgeAllowedSourceChains: "casper-test",
+      bridgeAllowedDestinationChains: "",
+      bridgeBlockedDestinationChains: "",
+      bridgeAllowedAssets: "CSPR",
+      bridgeMaxAmount: "100",
+      bridgeMaxFeeBps: "100",
+      bridgeMaxQuoteAgeSeconds: "300",
+      bridgeRequireQuoteExpiry: "Yes",
+      bridgeMinSourceConfirmations: "2",
+      bridgeMinDestinationConfirmations: "12",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -3204,6 +3317,19 @@ function PoliciesPage({
       oracleValidationMinConfidence: String(typeof policy.structuredRules?.oracleValidationMinConfidence === "number" ? policy.structuredRules.oracleValidationMinConfidence : 70),
       oracleValidationMinSources: String(typeof policy.structuredRules?.oracleValidationMinSources === "number" ? policy.structuredRules.oracleValidationMinSources : 1),
       oracleValidationUnavailableAction: typeof policy.structuredRules?.oracleValidationUnavailableAction === "string" ? policy.structuredRules.oracleValidationUnavailableAction : "Warn",
+      bridgeControlMode: typeof policy.structuredRules?.bridgeControlMode === "string" ? policy.structuredRules.bridgeControlMode : "Observe",
+      bridgeControlUnavailableAction: typeof policy.structuredRules?.bridgeControlUnavailableAction === "string" ? policy.structuredRules.bridgeControlUnavailableAction : "Warn",
+      bridgeAllowedProviders: Array.isArray(policy.structuredRules?.bridgeAllowedProviders) ? (policy.structuredRules.bridgeAllowedProviders as string[]).join("\n") : "",
+      bridgeAllowedSourceChains: Array.isArray(policy.structuredRules?.bridgeAllowedSourceChains) ? (policy.structuredRules.bridgeAllowedSourceChains as string[]).join("\n") : "casper-test",
+      bridgeAllowedDestinationChains: Array.isArray(policy.structuredRules?.bridgeAllowedDestinationChains) ? (policy.structuredRules.bridgeAllowedDestinationChains as string[]).join("\n") : "",
+      bridgeBlockedDestinationChains: Array.isArray(policy.structuredRules?.bridgeBlockedDestinationChains) ? (policy.structuredRules.bridgeBlockedDestinationChains as string[]).join("\n") : "",
+      bridgeAllowedAssets: Array.isArray(policy.structuredRules?.bridgeAllowedAssets) ? (policy.structuredRules.bridgeAllowedAssets as string[]).join("\n") : "CSPR",
+      bridgeMaxAmount: String(typeof policy.structuredRules?.bridgeMaxAmount === "number" ? policy.structuredRules.bridgeMaxAmount : 100),
+      bridgeMaxFeeBps: String(typeof policy.structuredRules?.bridgeMaxFeeBps === "number" ? policy.structuredRules.bridgeMaxFeeBps : 100),
+      bridgeMaxQuoteAgeSeconds: String(typeof policy.structuredRules?.bridgeMaxQuoteAgeSeconds === "number" ? policy.structuredRules.bridgeMaxQuoteAgeSeconds : 300),
+      bridgeRequireQuoteExpiry: policy.structuredRules?.bridgeRequireQuoteExpiry === false ? "No" : "Yes",
+      bridgeMinSourceConfirmations: String(typeof policy.structuredRules?.bridgeMinSourceConfirmations === "number" ? policy.structuredRules.bridgeMinSourceConfirmations : 2),
+      bridgeMinDestinationConfirmations: String(typeof policy.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policy.structuredRules.bridgeMinDestinationConfirmations : 12),
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -3238,6 +3364,19 @@ function PoliciesPage({
         oracleValidationMinConfidence: clampPercentage(editForm.oracleValidationMinConfidence),
         oracleValidationMinSources: Math.max(1, Math.min(20, Number(editForm.oracleValidationMinSources) || 1)),
         oracleValidationUnavailableAction: editForm.oracleValidationUnavailableAction,
+        bridgeControlMode: editForm.bridgeControlMode,
+        bridgeControlUnavailableAction: editForm.bridgeControlUnavailableAction,
+        bridgeAllowedProviders: editForm.bridgeAllowedProviders.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedSourceChains: editForm.bridgeAllowedSourceChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedDestinationChains: editForm.bridgeAllowedDestinationChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeBlockedDestinationChains: editForm.bridgeBlockedDestinationChains.split("\n").map((item) => item.trim()).filter(Boolean),
+        bridgeAllowedAssets: editForm.bridgeAllowedAssets.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        bridgeMaxAmount: Math.max(0, Number(editForm.bridgeMaxAmount) || 0),
+        bridgeMaxFeeBps: Math.max(0, Math.min(10000, Number(editForm.bridgeMaxFeeBps) || 100)),
+        bridgeMaxQuoteAgeSeconds: Math.max(5, Number(editForm.bridgeMaxQuoteAgeSeconds) || 300),
+        bridgeRequireQuoteExpiry: editForm.bridgeRequireQuoteExpiry !== "No",
+        bridgeMinSourceConfirmations: Math.max(0, Number(editForm.bridgeMinSourceConfirmations) || 0),
+        bridgeMinDestinationConfirmations: Math.max(0, Number(editForm.bridgeMinDestinationConfirmations) || 0),
       },
     });
     setEditingPolicy(null);
@@ -3367,6 +3506,30 @@ function PoliciesPage({
                 <SelectField label="Feed Unavailable" value={form.oracleValidationUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, oracleValidationUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
               </div>
             </div>
+            <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">Bridge Controls Foundation</div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Validate provider-supplied routes, chain boundaries, destination formats, quote freshness, fees, assets, amounts, and confirmation requirements before signing.</p>
+                </div>
+                <StatusBadge status="Foundation Available" />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <SelectField label="Control Mode" value={form.bridgeControlMode} onChange={(value) => setForm((current) => ({ ...current, bridgeControlMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                <SelectField label="Route Metadata Unavailable" value={form.bridgeControlUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, bridgeControlUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
+                <SelectField label="Require Quote Expiry" value={form.bridgeRequireQuoteExpiry} onChange={(value) => setForm((current) => ({ ...current, bridgeRequireQuoteExpiry: value }))} options={["Yes", "No"]} />
+                <TextareaField label="Allowed Providers (one per line)" value={form.bridgeAllowedProviders} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedProviders: value }))} />
+                <TextareaField label="Allowed Source Chains" value={form.bridgeAllowedSourceChains} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedSourceChains: value }))} />
+                <TextareaField label="Allowed Destination Chains" value={form.bridgeAllowedDestinationChains} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedDestinationChains: value }))} />
+                <TextareaField label="Blocked Destination Chains" value={form.bridgeBlockedDestinationChains} onChange={(value) => setForm((current) => ({ ...current, bridgeBlockedDestinationChains: value }))} />
+                <TextareaField label="Allowed Assets" value={form.bridgeAllowedAssets} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedAssets: value }))} />
+                <InputField label="Maximum Bridge Amount" value={form.bridgeMaxAmount} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxAmount: value }))} type="number" />
+                <InputField label="Maximum Fee (bps)" value={form.bridgeMaxFeeBps} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxFeeBps: value }))} type="number" />
+                <InputField label="Maximum Quote Age (sec)" value={form.bridgeMaxQuoteAgeSeconds} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxQuoteAgeSeconds: value }))} type="number" />
+                <InputField label="Minimum Source Confirmations" value={form.bridgeMinSourceConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinSourceConfirmations: value }))} type="number" />
+                <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
+              </div>
+            </div>
             <SelectField
               label="Risk Mode"
               value={form.riskMode}
@@ -3458,6 +3621,16 @@ function PoliciesPage({
                   <span>·</span>
                   <span>{typeof pol.structuredRules?.oracleValidationMinSources === "number" ? pol.structuredRules.oracleValidationMinSources : 1} source minimum</span>
                   <span>· unavailable: {typeof pol.structuredRules?.oracleValidationUnavailableAction === "string" ? pol.structuredRules.oracleValidationUnavailableAction : "Warn"}</span>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
+                  <span className="font-semibold text-[#F8FAFC]">Bridge Controls</span>
+                  <span>{typeof pol.structuredRules?.bridgeControlMode === "string" ? pol.structuredRules.bridgeControlMode : "Observe"}</span>
+                  <span>·</span>
+                  <span>{Array.isArray(pol.structuredRules?.bridgeAllowedProviders) ? pol.structuredRules.bridgeAllowedProviders.length : 0} approved providers</span>
+                  <span>·</span>
+                  <span>{Array.isArray(pol.structuredRules?.bridgeAllowedDestinationChains) ? pol.structuredRules.bridgeAllowedDestinationChains.length : 0} approved destinations</span>
+                  <span>· max {typeof pol.structuredRules?.bridgeMaxFeeBps === "number" ? pol.structuredRules.bridgeMaxFeeBps : 100} bps fee</span>
+                  <span>· unavailable: {typeof pol.structuredRules?.bridgeControlUnavailableAction === "string" ? pol.structuredRules.bridgeControlUnavailableAction : "Review"}</span>
                 </div>
                 <div className="flex items-center justify-between pt-3 border-t border-[#1E293B] text-xs text-[#94A3B8]">
                   <span>Created {fmtTs(pol.createdAt)}</span>
@@ -3599,6 +3772,30 @@ function PoliciesPage({
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">Bridge Controls Foundation</div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Validate provider-supplied routes, chain boundaries, destination formats, quote freshness, fees, assets, amounts, and confirmation requirements before signing.</p>
+                </div>
+                <StatusBadge status="Foundation Available" />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <SelectField label="Control Mode" value={editForm.bridgeControlMode} onChange={(value) => setEditForm((current) => ({ ...current, bridgeControlMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                <SelectField label="Route Metadata Unavailable" value={editForm.bridgeControlUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, bridgeControlUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
+                <SelectField label="Require Quote Expiry" value={editForm.bridgeRequireQuoteExpiry} onChange={(value) => setEditForm((current) => ({ ...current, bridgeRequireQuoteExpiry: value }))} options={["Yes", "No"]} />
+                <TextareaField label="Allowed Providers (one per line)" value={editForm.bridgeAllowedProviders} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedProviders: value }))} />
+                <TextareaField label="Allowed Source Chains" value={editForm.bridgeAllowedSourceChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedSourceChains: value }))} />
+                <TextareaField label="Allowed Destination Chains" value={editForm.bridgeAllowedDestinationChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedDestinationChains: value }))} />
+                <TextareaField label="Blocked Destination Chains" value={editForm.bridgeBlockedDestinationChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeBlockedDestinationChains: value }))} />
+                <TextareaField label="Allowed Assets" value={editForm.bridgeAllowedAssets} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedAssets: value }))} />
+                <InputField label="Maximum Bridge Amount" value={editForm.bridgeMaxAmount} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxAmount: value }))} type="number" />
+                <InputField label="Maximum Fee (bps)" value={editForm.bridgeMaxFeeBps} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxFeeBps: value }))} type="number" />
+                <InputField label="Maximum Quote Age (sec)" value={editForm.bridgeMaxQuoteAgeSeconds} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxQuoteAgeSeconds: value }))} type="number" />
+                <InputField label="Minimum Source Confirmations" value={editForm.bridgeMinSourceConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinSourceConfirmations: value }))} type="number" />
+                <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
+              </div>
+            </div>
                 <SelectField
                   label="Risk Mode"
                   value={editForm.riskMode}
@@ -4839,7 +5036,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle Validation provides multi-source price integrity checks, and Bridge Controls evaluates provider-supplied cross-chain routes. Compliance Controls remain Planned.</DocsCallout></div>
               </section>
 
               <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -5261,6 +5458,7 @@ const PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT = `02${"3".repeat(66)}`;
 const PLAYGROUND_DEMO_CONTRACT = `contract-${"4".repeat(64)}`;
 const PLAYGROUND_DEMO_UNAPPROVED_CONTRACT = `contract-package-${"5".repeat(64)}`;
 const PLAYGROUND_THREAT_INTEL_TARGET = `01${"6".repeat(64)}`;
+const PLAYGROUND_DEMO_EVM_RECIPIENT = `0x${"7".repeat(40)}`;
 
 function firstConfiguredContract(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
@@ -5549,6 +5747,115 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       },
     };
   },
+  "Bridge route within policy": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Bridge CSPR through a policy-approved provider and destination route",
+      reason: "Configure the Bridge Controls policy allowlists and add the exact bridge contract to Trusted Targets to isolate route validation.",
+      action: {
+        type: "Bridge",
+        amount: 10,
+        asset: "CSPR",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Bridge Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        chainName: "casper-test",
+        preflight: playgroundPreflight(),
+        bridge: {
+          sourceChain: "casper-test",
+          destinationChain: "ethereum-sepolia",
+          provider: "Test Bridge",
+          routeId: "route-001",
+          destinationAddress: PLAYGROUND_DEMO_EVM_RECIPIENT,
+          asset: "CSPR",
+          feeBps: 50,
+          expectedOutput: 9.95,
+          minimumReceived: 9.8,
+          quoteTimestamp: new Date().toISOString(),
+          quoteExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          sourceConfirmations: 2,
+          destinationConfirmations: 12,
+        },
+      },
+    };
+  },
+  "Unapproved bridge destination": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Verify an unapproved bridge destination chain is reviewed or blocked",
+      reason: "The route intentionally targets base-sepolia while the starter example expects ethereum-sepolia.",
+      action: {
+        type: "Bridge",
+        amount: 10,
+        asset: "CSPR",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Bridge Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        chainName: "casper-test",
+        bridge: {
+          sourceChain: "casper-test",
+          destinationChain: "base-sepolia",
+          provider: "Test Bridge",
+          routeId: "route-unapproved-chain",
+          destinationAddress: PLAYGROUND_DEMO_EVM_RECIPIENT,
+          asset: "CSPR",
+          feeBps: 50,
+          expectedOutput: 9.95,
+          minimumReceived: 9.8,
+          quoteTimestamp: new Date().toISOString(),
+          quoteExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+          sourceConfirmations: 2,
+          destinationConfirmations: 12,
+        },
+      },
+    };
+  },
+  "Expired bridge quote": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Confirm expired bridge routes cannot continue to wallet signing",
+      reason: "The provider route expiry is intentionally in the past.",
+      action: {
+        type: "Bridge",
+        amount: 10,
+        asset: "CSPR",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Bridge Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        chainName: "casper-test",
+        bridge: {
+          sourceChain: "casper-test",
+          destinationChain: "ethereum-sepolia",
+          provider: "Test Bridge",
+          routeId: "route-expired",
+          destinationAddress: PLAYGROUND_DEMO_EVM_RECIPIENT,
+          asset: "CSPR",
+          feeBps: 50,
+          expectedOutput: 9.95,
+          minimumReceived: 9.8,
+          quoteTimestamp: new Date(Date.now() - 60_000).toISOString(),
+          quoteExpiresAt: new Date(Date.now() - 1_000).toISOString(),
+          sourceConfirmations: 2,
+          destinationConfirmations: 12,
+        },
+      },
+    };
+  },
   "Expired preflight": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -5745,7 +6052,7 @@ function IntentPlaygroundPage({
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
             <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, and Oracle Validation are Foundation Available. Oracle Validation compares priced intents with a fresh configured feed; unavailable, stale, low-confidence, divergent, or out-of-policy data is reported honestly and never counted as a pass.</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, and Bridge Controls are Foundation Available. Bridge Controls validates provider-supplied routes, chain boundaries, destination formats, fees, quote freshness, assets, amounts, and confirmation requirements; it does not certify provider solvency or cross-chain delivery.</div>
           </div>
 
           <div>
@@ -5820,6 +6127,25 @@ function IntentPlaygroundPage({
                       <div>Source spread <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.sourceSpreadBps ?? "—"} bps</span></div>
                     </div>
                     {result.result.oracleValidationContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.oracleValidationContext.error}</div>}
+                  </div>
+                )}
+                {result.result.bridgeControlsContext && (
+                  <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">Bridge Controls context</div>
+                      <span className="text-xs font-semibold text-[#22D3EE]">{result.result.bridgeControlsContext.status || "unavailable"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Route <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.sourceChain || "—"} → {result.result.bridgeControlsContext.destinationChain || "—"}</span></div>
+                      <div>Provider <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.provider || "Not supplied"}</span></div>
+                      <div>Route ID <span className="block break-all text-[#F8FAFC]">{result.result.bridgeControlsContext.routeId || "Not supplied"}</span></div>
+                      <div>Asset / amount <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.amount ?? "—"} {result.result.bridgeControlsContext.asset || ""}</span></div>
+                      <div>Fee <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.feeBps ?? "—"} / max {result.result.bridgeControlsContext.maxFeeBps ?? "—"} bps</span></div>
+                      <div>Destination format <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.destinationAddressFamily || "unknown"} · {result.result.bridgeControlsContext.destinationAddressValid === true ? "valid" : result.result.bridgeControlsContext.destinationAddressValid === false ? "invalid" : "unverified"}</span></div>
+                      <div>Quote expiry <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.quoteExpiresAt || "Not supplied"}</span></div>
+                      <div>Source confirmations <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.sourceConfirmations ?? "—"}</span></div>
+                      <div>Destination confirmations <span className="block text-[#F8FAFC]">{result.result.bridgeControlsContext.destinationConfirmations ?? "—"}</span></div>
+                    </div>
                   </div>
                 )}
               </div>

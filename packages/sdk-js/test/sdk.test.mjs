@@ -163,3 +163,56 @@ test("preserves Oracle Validation price metadata in intent payloads", async () =
   assert.equal(captured.action.oracle.quoteAsset, "USD");
   assert.equal(captured.action.oracle.executionPrice, 0.025);
 });
+
+test("preserves Bridge Controls route metadata in intent payloads", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 12, reason: "bridge route passed", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Bridge",
+      amount: 10,
+      asset: "CSPR",
+      target: `contract-package-hash-${"a".repeat(64)}`,
+      targetType: "Bridge Contract",
+      contractIdentifierType: "Package Hash",
+      chainName: "casper-test",
+      bridge: {
+        sourceChain: "casper-test",
+        destinationChain: "ethereum-sepolia",
+        provider: "Test Bridge",
+        routeId: "route-001",
+        destinationAddress: "0x0000000000000000000000000000000000000001",
+        asset: "CSPR",
+        feeBps: 50,
+        expectedOutput: 9.95,
+        minimumReceived: 9.8,
+        quoteTimestamp: "2026-07-22T15:00:00.000Z",
+        quoteExpiresAt: "2026-07-22T15:05:00.000Z",
+        sourceConfirmations: 2,
+        destinationConfirmations: 12,
+      },
+    },
+  });
+
+  assert.equal(captured.action.bridge.provider, "Test Bridge");
+  assert.equal(captured.action.bridge.destinationChain, "ethereum-sepolia");
+  assert.equal(captured.action.bridge.feeBps, 50);
+  assert.equal(captured.action.bridge.destinationConfirmations, 12);
+});

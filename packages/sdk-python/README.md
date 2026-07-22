@@ -82,3 +82,10 @@ decision = client.evaluate_intent({
 ```
 
 The normal decision dictionary may include `oracleValidationContext` and structured Oracle Validation findings. The backend operator controls the feed and policy thresholds. Oracle Validation is Foundation Available; a passing comparison is not a guarantee that a market price is correct or that execution will succeed.
+
+
+## Bridge Controls metadata
+
+Python integrations may include an `action["bridge"]` dictionary with source and destination chains, provider, route ID, destination address, fee, output bounds, quote timestamps, and confirmation requirements. The normal response may include `bridgeControlsContext` and structured Bridge Controls findings.
+
+Bridge Controls is Foundation Available. A passing result means the submitted route metadata satisfied the configured policy; it does not guarantee provider solvency, destination finality, or cross-chain delivery.

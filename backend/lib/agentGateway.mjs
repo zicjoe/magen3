@@ -23,6 +23,10 @@ const ACTION_ALIASES = {
   "rwa proof update": "RWA Proof Update",
   oracle: "Oracle Data Update",
   "oracle data update": "Oracle Data Update",
+  bridge: "Bridge",
+  bridging: "Bridge",
+  "cross-chain transfer": "Bridge",
+  "cross chain transfer": "Bridge",
 };
 
 const TARGET_TYPE_ALIASES = {
@@ -41,6 +45,8 @@ const TARGET_TYPE_ALIASES = {
   oracle: "Oracle Feed",
   feed: "Oracle Feed",
   "oracle feed": "Oracle Feed",
+  bridge: "Bridge Contract",
+  "bridge contract": "Bridge Contract",
 };
 
 function cleanString(value, fallback = "") {
@@ -135,6 +141,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.oracle && typeof body.oracle === "object"
         ? body.oracle
         : {};
+  const bridge = action.bridge && typeof action.bridge === "object"
+    ? action.bridge
+    : action.bridgeRoute && typeof action.bridgeRoute === "object"
+      ? action.bridgeRoute
+      : body.bridge && typeof body.bridge === "object"
+        ? body.bridge
+        : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -187,6 +200,20 @@ export function normalizeAgentGatewayIntent(body = {}) {
     minimumReceived: optionalNumber(preflight.minimumReceived ?? preflight.minimum_received ?? action.minimumReceived ?? action.minimum_received, "minimumReceived"),
     runtimeArgs: normalizeRuntimeArgs(preflight.runtimeArgs ?? preflight.runtime_args ?? action.runtimeArgs ?? action.runtime_args),
     transactionHash: cleanString(preflight.transactionHash ?? preflight.transaction_hash ?? action.transactionHash ?? action.transaction_hash ?? "", ""),
+    bridgeSourceChain: cleanString(bridge.sourceChain || bridge.source_chain || action.bridgeSourceChain || action.bridge_source_chain || body.bridgeSourceChain || body.bridge_source_chain || "", ""),
+    bridgeDestinationChain: cleanString(bridge.destinationChain || bridge.destination_chain || action.bridgeDestinationChain || action.bridge_destination_chain || body.bridgeDestinationChain || body.bridge_destination_chain || body.targetChain || "", ""),
+    bridgeProvider: cleanString(bridge.provider || bridge.bridgeProvider || bridge.bridge_provider || action.bridgeProvider || action.bridge_provider || body.bridgeProvider || body.bridge_provider || "", ""),
+    bridgeRouteId: cleanString(bridge.routeId || bridge.route_id || action.bridgeRouteId || action.bridge_route_id || body.bridgeRouteId || body.bridge_route_id || "", ""),
+    bridgeDestinationAddress: cleanString(bridge.destinationAddress || bridge.destination_address || bridge.recipient || action.bridgeDestinationAddress || action.bridge_destination_address || body.bridgeDestinationAddress || body.bridge_destination_address || "", ""),
+    bridgeAsset: cleanString(bridge.asset || bridge.token || action.bridgeAsset || action.bridge_asset || action.asset || body.asset || "", ""),
+    bridgeFeeAmount: optionalNumber(bridge.feeAmount ?? bridge.fee_amount ?? action.bridgeFeeAmount ?? action.bridge_fee_amount, "bridgeFeeAmount", { min: 0 }),
+    bridgeFeeBps: optionalNumber(bridge.feeBps ?? bridge.fee_bps ?? action.bridgeFeeBps ?? action.bridge_fee_bps, "bridgeFeeBps", { min: 0, max: 10000 }),
+    bridgeExpectedOutput: optionalNumber(bridge.expectedOutput ?? bridge.expected_output ?? action.bridgeExpectedOutput ?? action.bridge_expected_output, "bridgeExpectedOutput", { min: 0 }),
+    bridgeMinimumReceived: optionalNumber(bridge.minimumReceived ?? bridge.minimum_received ?? action.bridgeMinimumReceived ?? action.bridge_minimum_received, "bridgeMinimumReceived", { min: 0 }),
+    bridgeQuoteTimestamp: cleanString(bridge.quoteTimestamp || bridge.quote_timestamp || action.bridgeQuoteTimestamp || action.bridge_quote_timestamp || "", ""),
+    bridgeQuoteExpiresAt: cleanString(bridge.quoteExpiresAt || bridge.quote_expires_at || bridge.expiresAt || bridge.expires_at || action.bridgeQuoteExpiresAt || action.bridge_quote_expires_at || "", ""),
+    bridgeSourceConfirmations: optionalNumber(bridge.sourceConfirmations ?? bridge.source_confirmations ?? action.bridgeSourceConfirmations ?? action.bridge_source_confirmations, "bridgeSourceConfirmations", { integer: true, min: 0 }),
+    bridgeDestinationConfirmations: optionalNumber(bridge.destinationConfirmations ?? bridge.destination_confirmations ?? action.bridgeDestinationConfirmations ?? action.bridge_destination_confirmations, "bridgeDestinationConfirmations", { integer: true, min: 0 }),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

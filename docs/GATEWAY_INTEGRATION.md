@@ -169,6 +169,41 @@ For a priced Swap or DeFi action, include the proposed quote in the intent rathe
 
 The operator-configured feed is evaluated server-side. External agents should inspect Oracle Validation findings and `oracleValidationContext`, including feed status, requested pair, reference price, deviation, source quorum, confidence, and remediation. Never treat a stale/unavailable feed or an Observe-mode warning as proof that a price is safe.
 
+## Add Bridge Controls metadata
+
+For a provider-selected cross-chain route, include `action.bridge` and the exact bridge contract or package identifier used on Casper:
+
+```json
+{
+  "action": {
+    "type": "Bridge",
+    "amount": 10,
+    "asset": "CSPR",
+    "target": "contract-package-hash-...",
+    "targetType": "Bridge Contract",
+    "contractIdentifierType": "Package Hash",
+    "chainName": "casper-test",
+    "bridge": {
+      "sourceChain": "casper-test",
+      "destinationChain": "ethereum-sepolia",
+      "provider": "Reviewed Bridge Adapter",
+      "routeId": "route-001",
+      "destinationAddress": "0x0000000000000000000000000000000000000001",
+      "asset": "CSPR",
+      "feeBps": 50,
+      "expectedOutput": 9.95,
+      "minimumReceived": 9.8,
+      "quoteTimestamp": "2026-07-22T15:00:00.000Z",
+      "quoteExpiresAt": "2026-07-22T15:05:00.000Z",
+      "sourceConfirmations": 2,
+      "destinationConfirmations": 12
+    }
+  }
+}
+```
+
+Inspect `bridgeControlsContext` and Bridge Controls findings. An `Allowed` decision means the declared route satisfies configured controls; it does not prove provider solvency, destination-chain finality, or successful message delivery. Continue only to explicit wallet review and signing.
+
 ## Decision Handling
 
 ```ts

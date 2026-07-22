@@ -73,3 +73,9 @@ The included feed is synthetic and must not be described as real market data. An
 - `magen3_require_allowed`: fail-closed gate recommended for autonomous agents.
 
 Every intent submission may create an audit record and Casper decision-proof workflow through the existing Gateway configuration.
+
+## Bridge Controls boundary
+
+For Bridge actions, send complete provider-supplied route metadata inside `action.bridge`. The MCP schema supports source and destination chains, provider, route ID, destination address, asset, fee, output bounds, quote timestamps, and confirmation requirements. Bridge Controls validates these fields against the active policy before an agent may continue to wallet signing.
+
+A passing Bridge Controls finding does not certify provider solvency, destination finality, or cross-chain delivery. The MCP client must follow the final Magen3 decision and must never bypass Review Required or Blocked.

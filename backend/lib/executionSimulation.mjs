@@ -4,6 +4,7 @@ const VALUE_BEARING_ACTIONS = new Set([
   "Stake",
   "Deposit to Vault",
   "DAO Treasury Payment",
+  "Bridge",
 ]);
 
 const PREFLIGHT_ACTIONS = new Set([

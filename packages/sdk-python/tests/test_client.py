@@ -22,6 +22,30 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(Magen3Error):
             client.require_allowed({"executionWalletAddress": "01abc", "action": {"type": "Transfer", "target": "01def"}})
 
+    def test_bridge_metadata_passes_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed"}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.check_intent({
+            "executionWalletAddress": "01abc",
+            "action": {
+                "type": "Bridge",
+                "amount": 10,
+                "asset": "CSPR",
+                "target": "contract-package-hash-" + "a" * 64,
+                "bridge": {
+                    "sourceChain": "casper-test",
+                    "destinationChain": "ethereum-sepolia",
+                    "provider": "Test Bridge",
+                    "routeId": "route-001",
+                    "destinationAddress": "0x0000000000000000000000000000000000000001"
+                }
+            }
+        })
+        self.assertEqual(captured["payload"]["action"]["bridge"]["provider"], "Test Bridge")
+
 
 if __name__ == "__main__":
     unittest.main()

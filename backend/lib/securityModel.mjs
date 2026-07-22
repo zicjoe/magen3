@@ -62,7 +62,7 @@ export const PROTECTION_MODULES = [
   {
     id: "bridge-controls",
     name: "Bridge Controls",
-    status: "Planned",
+    status: "Foundation Available",
     capabilities: ["Trading", "Wallet Management", "dApp Interactions"],
   },
   {

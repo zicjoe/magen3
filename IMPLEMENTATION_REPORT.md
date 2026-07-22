@@ -1,260 +1,202 @@
-# Magen3 Oracle Validation Foundation — Implementation Report
+# Magen3 Bridge Controls Foundation — Implementation Report
 
-## Release status
+## Release summary
 
-Oracle Validation has moved from **Planned** to **Foundation Available**.
+Bridge Controls has moved from **Planned** to **Foundation Available**.
 
-It is integrated into the real Magen3 Gateway decision path and can deterministically produce **Allowed**, **Blocked**, or **Review Required** outcomes from configured policy rules. It is not marked Live because Magen3 does not bundle or certify a production oracle provider, does not verify cryptographic price attestations, and cannot claim that an operator-supplied feed represents universal market truth.
+This release adds deterministic, provider-agnostic cross-chain route validation to the existing Magen3 Gateway. It preserves the current API endpoint, per-agent authentication model, wallet connection flow, policy records, audit records, Casper proof contract, relayer configuration, SDK authentication, MCP authentication, Railway configuration, and Vercel configuration.
 
-## Implemented protection
+Bridge Controls is not labeled Live because Magen3 does not currently operate a bridge adapter, maintain a certified bridge-provider registry, verify provider liquidity or solvency, observe destination-chain finality, or prove cross-chain message delivery. The module evaluates submitted route metadata and policy boundaries honestly before wallet signing.
 
-For price-sensitive actions such as Swap, Deposit to Vault, Oracle Data Update, or intents carrying explicit oracle metadata, Magen3 now validates:
+## Implemented behavior
 
-- Required base asset, quote asset, and proposed execution price
-- Freshness and availability of the configured oracle feed
-- Exact asset-pair availability
-- Observation freshness
-- Minimum independent-source quorum
-- Minimum aggregate confidence
-- Maximum spread between sources
-- Execution-quote timestamp freshness
-- Maximum deviation between the proposed price and the median reference price
-- Explicit behavior when the feed or requested pair is unavailable
+Bridge and cross-chain transfer intents can include provider-supplied `action.bridge` metadata:
 
-Duplicate observations from the same provider are collapsed case-insensitively to the newest observation. One provider therefore cannot satisfy a multi-source quorum or skew the median by repeating the same source record.
+- Source chain
+- Destination chain
+- Provider
+- Route ID
+- Destination address
+- Bridged asset
+- Absolute fee and/or fee in basis points
+- Expected destination output
+- Minimum received
+- Quote timestamp
+- Quote expiry
+- Source confirmation requirement
+- Destination confirmation requirement
 
-Every result emits structured Oracle Validation findings with status, severity, rule, message, evidence, and remediation. The findings are used by the deterministic Risk Assessment Engine and persisted in Audit Logs.
+The Gateway normalizes these fields without changing the top-level intent endpoint or authentication headers.
+
+## Deterministic checks
+
+Bridge Controls now evaluates:
+
+1. Required route metadata completeness.
+2. Provider-name and route-ID structure.
+3. Approved bridge providers.
+4. Distinct source and destination chains.
+5. Approved source chains.
+6. Approved destination chains.
+7. Explicitly blocked destination chains.
+8. Allowed bridge assets.
+9. Maximum bridge amount.
+10. Maximum route fee in basis points.
+11. Expected-output and minimum-received consistency.
+12. Quote timestamp validity and freshness.
+13. Quote expiry presence and validity when required.
+14. Casper destination public-key or account-hash structure.
+15. EVM destination address structure for recognized EVM chain families.
+16. Minimum source confirmation requirements.
+17. Minimum destination confirmation requirements.
+
+Unknown destination-chain address families produce `unavailable`, not `pass`.
 
 ## Policy controls
 
-The following optional fields are supported under `policy.structuredRules`:
+The existing policy `structuredRules` object now supports:
 
-```json
-{
-  "oracleValidationMode": "Review",
-  "oracleValidationUnavailableAction": "Warn",
-  "oracleValidationMaxAgeSeconds": 120,
-  "oracleValidationMaxDeviationBps": 300,
-  "oracleValidationMaxSourceSpreadBps": 500,
-  "oracleValidationMinConfidence": 70,
-  "oracleValidationMinSources": 2
-}
-```
+- `bridgeControlMode`: `Observe`, `Review`, or `Enforce`
+- `bridgeControlUnavailableAction`: `Warn`, `Review`, or `Block`
+- `bridgeAllowedProviders`
+- `bridgeAllowedSourceChains`
+- `bridgeAllowedDestinationChains`
+- `bridgeBlockedDestinationChains`
+- `bridgeAllowedAssets`
+- `bridgeMaxAmount`
+- `bridgeMaxFeeBps`
+- `bridgeMaxQuoteAgeSeconds`
+- `bridgeRequireQuoteExpiry`
+- `bridgeMinSourceConfirmations`
+- `bridgeMinDestinationConfirmations`
 
-Behavior:
+An explicitly blocked destination chain always blocks execution. Other violations follow the selected Observe, Review, or Enforce mode. Incomplete or unsupported route information follows the configured Warn, Review, or Block unavailable behavior.
 
-- **Observe:** record anomalies without changing the authorization outcome produced by other modules.
-- **Review:** convert Oracle policy violations to Review Required.
-- **Enforce:** block Oracle policy violations.
-- **Warn / Review / Block:** define the result when the feed or requested pair is unavailable.
+## Product integration
 
-Legacy policies remain backward compatible and use Observe-compatible defaults unless Oracle controls are explicitly configured.
+Bridge Controls is connected to:
 
-## Gateway request fields
-
-The existing Gateway endpoint and action envelope are unchanged. Price-sensitive integrations may add:
-
-```json
-{
-  "action": {
-    "type": "Swap",
-    "amount": 10,
-    "asset": "CSPR",
-    "outputAsset": "USD",
-    "oracle": {
-      "baseAsset": "CSPR",
-      "quoteAsset": "USD",
-      "executionPrice": 0.025,
-      "quoteTimestamp": "2026-07-22T15:00:00.000Z"
-    }
-  }
-}
-```
-
-`executionPrice` is quote asset per base asset. When it is absent, Magen3 may derive the proposed price from `expectedOutput / amount` when the required values are valid.
-
-## Feed configuration
-
-No new environment variable is mandatory. With no feed configured, the module reports `unavailable` and follows the active policy’s unavailable-feed behavior.
-
-Configure exactly one source:
-
-```env
-# Inline adapter output
-ORACLE_VALIDATION_FEED_JSON={"version":"1","source":"Reviewed oracle adapter","generatedAt":"CURRENT_ISO_TIMESTAMP","observations":[]}
-
-# Or a local file
-ORACLE_VALIDATION_FEED_PATH=backend/data/oracle-validation.example.json
-
-# Or a remote HTTPS adapter
-ORACLE_VALIDATION_FEED_URL=https://oracle.example/feed.json
-ORACLE_VALIDATION_API_KEY=provider-secret
-
-ORACLE_VALIDATION_CACHE_TTL_MS=60000
-ORACLE_VALIDATION_MAX_FEED_AGE_MS=300000
-ORACLE_VALIDATION_REQUEST_TIMEOUT_MS=2500
-```
-
-Production remote feeds require HTTPS, reject redirects, use bounded response sizes, enforce timeouts, and never expose provider credentials through public status responses.
-
-## Synthetic demonstration feed
-
-The repository includes:
-
-```text
-backend/data/oracle-validation.example.json
-```
-
-Its values are synthetic and intended only for controlled testnet demonstrations. Refresh its timestamps immediately before use:
-
-```bash
-pnpm oracle:refresh-example-feed
-```
-
-Then set:
-
-```env
-ORACLE_VALIDATION_FEED_PATH=backend/data/oracle-validation.example.json
-```
-
-Do not describe the synthetic feed as live market data.
-
-## Product experience
-
-Oracle Validation is now represented in:
-
-- Gateway responses
+- Agent Gateway normalization
+- Deterministic Policy Engine
+- Risk Assessment
 - Structured module findings
-- Adaptive Security Pipeline
-- Risk Assessment and deterministic decision explanations
-- Audit Logs and original-intent evidence
+- Security Pipeline
+- Decision explanations and remediation
+- Audit persistence
+- Original-intent audit evidence
+- Intent Playground
 - Security Coverage
 - Integration Health
-- Dashboard operational status
-- Settings operational status
+- Protection Modules status
+- Agent registration starter-policy defaults
 - Policy creation and editing
-- Intent Playground examples and result context
-- TypeScript SDK types
-- MCP schema and guidance
-- README and developer documentation
+- Policy summary cards
+- TypeScript SDK request and response types
+- Python SDK pass-through tests and documentation
+- MCP schema, boundary guidance, and tests
+- README and platform documentation
 
-The Intent Playground includes compliant-price, excessive-deviation, and stale-quote scenarios.
+## Intent Playground examples
 
-## Operational endpoint
+The Playground includes:
 
-```http
-GET /api/oracle-validation/status
-```
+- Bridge route within policy
+- Unapproved bridge destination
+- Expired bridge quote
 
-The endpoint returns only sanitized operational information:
+The result view displays provider, source and destination chains, route ID, asset and amount, fee limits, destination address family and validity, quote expiry, and confirmation requirements.
 
-- available, stale, or unavailable state
-- safe source label
-- generated and fetched timestamps
-- observation count
-- pair count
-- age and freshness limit
-- sanitized error information
+## Decision behavior
 
-It does not return observations, provider credentials, raw local paths, or raw remote URLs.
+### Allowed
 
-## Database and compatibility
+A complete route can remain Allowed when its provider, chains, asset, amount, fee, quote, destination format, output bounds, and confirmations satisfy the active policy and all other Magen3 modules pass.
 
-There is **no database migration** for this release.
+### Review Required
 
-Preserved:
+Review mode can pause execution for an unapproved provider or chain, insufficient confirmations, excessive route fee, stale quote, unsupported destination-chain address family, or missing route controls.
 
-- Existing Agent IDs
-- Existing API-key hashes and authentication headers
-- Existing Gateway endpoint
-- Existing policies and audit records
-- Casper contract hash and decision-proof relayer flow
-- Wallet connection and signing boundary
-- YieldBot and Codex integration behavior
-- JavaScript and Python SDK authentication
-- MCP authentication model
-- Railway and Vercel configuration
+### Blocked
 
-Oracle fields are additive and optional. Existing integrations that do not submit them continue to work under legacy-compatible policy defaults.
+Enforce mode blocks route violations. An explicitly blocked destination chain always blocks. Expired routes, malformed destination addresses, invalid output bounds, excessive limits, and other enforced route failures stop execution before wallet signing.
+
+## Security boundary
+
+A passing Bridge Controls result does not prove:
+
+- Provider liquidity or solvency
+- Bridge smart-contract safety
+- Destination-chain liveness or finality
+- Recipient ownership of the destination address
+- Route execution success
+- Cross-chain message delivery
+
+Contract Validation still checks the exact Casper bridge Contract Hash or Package Hash. Execution Simulation preflight now also treats Bridge as a value-bearing action. Wallet signing remains outside Magen3 and requires explicit user approval.
+
+## Database and environment
+
+- No database migration is required.
+- No new mandatory environment variable is required.
+- Existing policies remain backward compatible.
+- Existing policies without Bridge Controls fields default to non-breaking Observe/Warn behavior internally.
+- The Casper contract hash is unchanged.
+- Railway and Vercel configuration files are unchanged.
 
 ## Major files changed
 
-### Backend
-
-- `backend/lib/oracleValidation.mjs`
-- `backend/lib/oracleValidation.test.mjs`
-- `backend/lib/oracleValidation.integration.test.mjs`
+- `backend/lib/bridgeControls.mjs`
+- `backend/lib/bridgeControls.test.mjs`
+- `backend/lib/bridgeControls.integration.test.mjs`
+- `backend/lib/bridgeControls.gateway.integration.test.mjs`
 - `backend/lib/agentGateway.mjs`
 - `backend/lib/policyEngine.mjs`
+- `backend/lib/contractValidation.mjs`
+- `backend/lib/executionSimulation.mjs`
 - `backend/lib/securityModel.mjs`
 - `backend/store/memoryStore.mjs`
 - `backend/store/postgresStore.mjs`
 - `backend/server.mjs`
 - `backend/data/seed.mjs`
-- `backend/data/oracle-validation.example.json`
 - `backend/lib/frontendSecurityModel.test.mjs`
-
-### Frontend
-
 - `src/app/App.tsx`
-- `src/app/lib/api.ts`
 - `src/app/lib/securityModel.ts`
-
-### SDK and MCP
-
 - `packages/sdk-js/src/index.ts`
 - `packages/sdk-js/test/sdk.test.mjs`
-- `packages/sdk-js/README.md`
-- `packages/sdk-python/README.md`
 - `packages/mcp-server/src/core.ts`
 - `packages/mcp-server/src/server.ts`
 - `packages/mcp-server/test/core.test.mjs`
-- `packages/mcp-server/README.md`
-
-### Documentation and configuration
-
-- `.env.example`
-- `package.json`
+- `packages/sdk-python/tests/test_client.py`
 - `README.md`
-- `docs/ORACLE_VALIDATION.md`
-- `docs/README.md`
-- `docs/MAGEN3_PLATFORM.md`
+- `SECURITY.md`
+- `docs/BRIDGE_CONTROLS.md`
 - `docs/AGENT_GATEWAY_API.md`
 - `docs/GATEWAY_INTEGRATION.md`
-- `docs/OFFICIAL_SDKS.md`
+- `docs/MAGEN3_PLATFORM.md`
 - `docs/MCP_SERVER.md`
-- `scripts/oracle/refresh-example-feed.mjs`
+- SDK and MCP README files
 
-## Verification performed
+## Verification completed
 
-Verified successfully:
+- 114 backend and security tests passed.
+- 15 focused Bridge Controls unit and policy-integration tests passed.
+- 2 authenticated memory-store Gateway persistence tests passed.
+- Allowed, Review Required, and Blocked bridge outcomes were verified.
+- Bridge findings, pipeline stages, context, and original route metadata were verified in audit records.
+- 7 TypeScript SDK tests passed.
+- 3 Python SDK tests passed.
+- 4 MCP core tests passed.
+- Every backend `.mjs` file passed Node syntax checking.
+- 57 TypeScript/TSX source files passed syntax transpilation.
+- The changed frontend application and security model passed a focused semantic TypeScript check using temporary dependency declarations.
+- The TypeScript SDK passed a real TypeScript build.
 
-- **96/96 backend and security tests**
-- **13 focused Oracle Validation unit tests** within the backend suite
-- **4 Oracle Gateway/policy integration tests** within the backend suite
-- **6/6 JavaScript SDK tests**
-- **2/2 Python SDK tests**
-- **4/4 MCP core tests**
-- All backend and script `.mjs` files passed Node syntax checking
-- **57 TypeScript/TSX source files** passed syntax transpilation
-- Modified frontend source passed a semantic TypeScript check using temporary declarations for unavailable third-party packages
-- TypeScript SDK compiled successfully with the available global TypeScript compiler
-- Authenticated HTTP Gateway smoke test produced **Allowed → Review Required → Blocked** using the real API routes
-- HTTP smoke test verified Oracle pipeline states `completed → warning → failed`
-- Audit record creation was verified for all three outcomes
-- Sanitized `/api/oracle-validation/status` behavior was verified
-- Synthetic-feed timestamp refresh script was verified
+## Verification limitation
 
-The package registry returned HTTP 503 during a clean dependency installation attempt. Therefore these could not be honestly rerun in this sandbox:
+A full fresh dependency installation, complete Vite production build, and full MCP protocol build could not be run in the sandbox because the configured package registry returned HTTP 503 and the public npm registry was not reachable from the environment. No claim is made that those unavailable checks ran here.
 
-- Full root dependency installation
-- Full project `pnpm typecheck` against actual React/Vite packages
-- Complete Vite production build
-- Full MCP server dependency build and stdio startup
+Run locally before pushing:
 
-Run the complete repository verification locally before pushing:
-
-```bash
+```powershell
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
@@ -263,91 +205,54 @@ pnpm mcp:test
 pnpm build
 ```
 
-## Local replacement and run
+## Local run
 
-Keep the existing `.git`, local `.env` files, and private relayer-key files. Replace the remaining project files with the extracted release.
-
-```bash
+```powershell
 pnpm install --frozen-lockfile
 pnpm dev:backend
 ```
 
 In another terminal:
 
-```bash
+```powershell
 pnpm dev:frontend
 ```
 
-No environment changes are required unless Oracle Validation should use a configured feed.
+## Deployment
 
-## Railway and Vercel deployment
+No deployment-command changes are required. After local verification, commit and push to the branch watched by Railway and Vercel. Railway will use the existing backend start command and Vercel will use the existing frontend configuration.
 
-No change is required to `railway.json` or `vercel.json`.
-
-Recommended deployment order:
-
-1. Add optional Oracle feed variables to Railway when needed.
-2. Deploy the backend.
-3. Confirm `/api/health` and `/api/oracle-validation/status`.
-4. Deploy the frontend.
-5. Test the Intent Playground with a fresh controlled feed.
-6. Confirm Oracle findings and pipeline stages appear in Audit Logs.
-
-Keep provider API keys only in Railway variables, never in GitHub or Vercel frontend variables.
-
-## Current module status
-
-### Live
-
-- Identity and Authentication
-- Policy Enforcement
-- Wallet Validation
-- Contract Validation
-- Risk Assessment
-
-### Foundation Available
-
-- Execution Simulation
-- Threat Intelligence
-- Oracle Validation
-
-### Preview
-
-- None
-
-### Planned
-
-- Bridge Controls
-- Compliance Controls
-
-## Suggested commit message
+## Suggested commit
 
 ```text
-feat(oracle-validation): add deterministic price integrity foundation
+feat(bridge-controls): add deterministic cross-chain route protection
+```
 
-Add freshness-checked multi-source price validation, source quorum,
-confidence, spread, quote freshness, and execution-price deviation rules.
+Suggested body:
 
-Integrate Oracle findings with the Gateway, Risk Assessment, Security
-Pipeline, Audit Logs, policies, Security Coverage, Integration Health,
-Intent Playground, SDKs, MCP, operational status, and documentation.
+```text
+Add provider, chain, asset, destination-format, fee, quote-freshness,
+output-bound, amount, and confirmation checks for Bridge intents.
 
-Preserve existing endpoints, authentication, data, Casper integration,
-wallet signing, Railway, Vercel, YieldBot, and Codex compatibility.
+Integrate structured findings with the Gateway, Risk Assessment,
+Security Pipeline, Audit Logs, policies, Security Coverage, Integration
+Health, Intent Playground, SDKs, MCP, and documentation.
+
+Preserve the existing API, authentication, database, Casper proof,
+wallet, YieldBot, Codex, Railway, and Vercel contracts.
 ```
 
 ## Manual QA checklist
 
-- Connect Casper Wallet and confirm wallet-gated pages remain consistent.
-- Register or use a Trading or dApp-capable agent.
-- Create a policy with Oracle mode Review.
-- Configure and refresh the synthetic feed for controlled testing.
-- Run the compliant-price Playground example and confirm Allowed.
-- Run the deviation example and confirm Review Required.
-- Switch the policy to Enforce and confirm the same deviation is Blocked.
-- Run the stale-quote example and confirm the expected policy outcome.
-- Confirm Oracle findings contain pair, reference price, proposed price, deviation, source count, confidence, and remediation.
-- Confirm the Oracle pipeline stage reflects completed, warning, or failed truthfully.
-- Confirm new decisions appear automatically in Audit Logs.
-- Confirm the public status endpoint does not expose raw observations or credentials.
-- Remove or disable the synthetic feed before presenting production-style market coverage.
+1. Connect Casper Wallet.
+2. Open Policies and configure approved bridge providers, source chains, destination chains, assets, fee limits, quote age, and confirmation requirements.
+3. Add the exact bridge Contract Hash or Package Hash to Trusted Targets.
+4. Open Intent Playground and select `Bridge route within policy`.
+5. Confirm Bridge Controls appears in the Security Pipeline and module findings.
+6. Confirm the route context displays provider, chains, fee, destination format, expiry, and confirmations.
+7. Run `Unapproved bridge destination` and confirm Review Required in Review mode.
+8. Switch Bridge Controls to Enforce and confirm the same violation becomes Blocked.
+9. Run `Expired bridge quote` and confirm it cannot proceed under Enforce mode.
+10. Confirm the new decisions appear automatically in Audit Logs with original bridge metadata.
+11. Confirm the Casper decision-proof flow remains available.
+12. Test the layout on desktop and mobile widths.

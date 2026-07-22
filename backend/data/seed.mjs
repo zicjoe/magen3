@@ -6,7 +6,7 @@ export const protectionModules = [
   { id: "execution-simulation", name: "Execution Simulation", group: "Agent Shield", status: "Foundation Available" },
   { id: "threat-intelligence", name: "Threat Intelligence", group: "Agent Shield", status: "Foundation Available" },
   { id: "oracle-validation", name: "Oracle Validation", group: "Agent Shield", status: "Foundation Available" },
-  { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Planned" },
+  { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Foundation Available" },
   { id: "compliance-controls", name: "Compliance Controls", group: "Agent Shield", status: "Planned" },
   { id: "risk-assessment", name: "Risk Assessment", group: "Agent Shield", status: "Live" },
 ];
