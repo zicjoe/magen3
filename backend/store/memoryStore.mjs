@@ -3,6 +3,7 @@ import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMa
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
+import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
@@ -332,6 +333,7 @@ export function createMemoryStore() {
 
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
+      const threatIntelligence = await getThreatIntelligenceSnapshot();
       const result = evaluatePolicy({
         request: {
           ...body,
@@ -342,6 +344,7 @@ export function createMemoryStore() {
         agents: scopedAgents(walletAddress),
         policies: scopedPolicies(walletAddress),
         auditLogs: scopedAuditLogs(walletAddress),
+        threatIntelligence,
       });
       const review = {
         id: makeId("REV"),
@@ -441,7 +444,8 @@ export function createMemoryStore() {
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
       };
-      const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });
+      const threatIntelligence = await getThreatIntelligenceSnapshot();
+      const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress), threatIntelligence });
       const agent = publicAgent(agentRecord);
       const policy = scopedPolicies(walletAddress).find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);

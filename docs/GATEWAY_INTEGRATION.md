@@ -134,6 +134,17 @@ Execution Simulation is Foundation Available. When the execution adapter has pre
 
 Swap adapters may also send `slippageBps`, `expectedOutput`, and `minimumReceived`. Contract adapters may send a JSON `runtimeArgs` summary. Magen3 validates structure and freshness before signing, but full stateful speculative execution remains unavailable. Do not send wallet approvals, transaction-level signatures, raw signed deploys, or wallet secrets. Public contract arguments belong only inside `runtimeArgs`.
 
+## Configure Threat Intelligence behavior
+
+Threat Intelligence is Foundation Available. The Magen3 operator configures the feed on the backend; the external agent does not send provider credentials or a feed URL in each intent. The active policy controls whether matches are observed, require review, or are enforced, plus the minimum confidence and stale/unavailable-feed behavior.
+
+External agents should inspect `moduleFindings` and `threatIntelligenceContext`:
+
+- A fresh no-match finding means only that no configured exact indicator matched the submitted identifier.
+- A match may leave the decision Allowed in Observe mode, require review, or block execution depending on policy.
+- A stale or unavailable feed is never a pass and may require review or block under fail-closed policies.
+- Do not attempt to bypass a decision by changing identifier formatting; Wallet Validation and Contract Validation normalize supported forms before matching.
+
 ## Decision Handling
 
 ```ts
@@ -167,6 +178,7 @@ For Blocked and Review Required outcomes, use these fields to build user guidanc
 - `suggestedResolution`
 - `moduleFindings`
 - `pipelineStages`
+- `threatIntelligenceContext`
 
 The core authorization decision is deterministic. Do not replace it with a language-model decision. A user-facing model may summarize evidence only if it cannot override Agent Shield.
 
@@ -215,3 +227,4 @@ See also:
 - `OFFICIAL_SDKS.md`
 - `MCP_SERVER.md`
 - `CONNECTED_WALLET_EXECUTION.md`
+- `THREAT_INTELLIGENCE.md`

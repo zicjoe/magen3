@@ -46,7 +46,7 @@ const response = await client.checkIntent({
 });
 ```
 
-Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. Execution Simulation additionally evaluates supplied payment, gas, TTL, timestamp, freshness, transaction-hash, swap-bound, and runtime-argument metadata. Full stateful speculative execution remains unavailable. A descriptive `targetType` never grants trust without an exact policy match.
+Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. Execution Simulation additionally evaluates supplied payment, gas, TTL, timestamp, freshness, transaction-hash, swap-bound, and runtime-argument metadata. Threat Intelligence can evaluate the same normalized wallet and contract identities against an operator-configured freshness-checked exact-match feed. Full stateful speculative execution and comprehensive reputation discovery remain unavailable. A descriptive `targetType` never grants trust without an exact policy match.
 
 ## Python
 
@@ -61,6 +61,12 @@ response = client.check_intent(intent)
 ```
 
 Use `require_allowed(intent)` for fail-closed execution control.
+
+## Threat Intelligence response types
+
+The TypeScript result exposes `threatIntelligenceContext` with sanitized feed status, source type/name, freshness timestamps, indicator count, policy mode, confidence threshold, checked identities, and matched indicator summaries. Provider credentials are not part of the SDK response. Python callers receive the same JSON object as a dictionary.
+
+An `Allowed` response can still contain an observed low-confidence or Observe-mode warning. Always authorize from the final decision and `executionApproved`, while presenting module findings for operator awareness.
 
 ## Environment variables for examples
 

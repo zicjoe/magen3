@@ -4,7 +4,7 @@ export const protectionModules = [
   { id: "wallet-validation", name: "Wallet Validation", group: "Agent Shield", status: "Live" },
   { id: "contract-validation", name: "Contract Validation", group: "Agent Shield", status: "Live" },
   { id: "execution-simulation", name: "Execution Simulation", group: "Agent Shield", status: "Foundation Available" },
-  { id: "threat-intelligence", name: "Threat Intelligence", group: "Agent Shield", status: "Preview" },
+  { id: "threat-intelligence", name: "Threat Intelligence", group: "Agent Shield", status: "Foundation Available" },
   { id: "oracle-validation", name: "Oracle Validation", group: "Agent Shield", status: "Planned" },
   { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Planned" },
   { id: "compliance-controls", name: "Compliance Controls", group: "Agent Shield", status: "Planned" },

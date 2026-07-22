@@ -7,6 +7,7 @@ import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMa
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
+import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
@@ -460,6 +461,7 @@ export async function createPostgresStore() {
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
+      const threatIntelligence = await getThreatIntelligenceSnapshot();
       const result = evaluatePolicy({
         request: {
           ...body,
@@ -470,6 +472,7 @@ export async function createPostgresStore() {
         agents,
         policies,
         auditLogs,
+        threatIntelligence,
       });
 
       const [reviewRow] = await db.insert(actionReviewsTable).values({
@@ -609,7 +612,8 @@ export async function createPostgresStore() {
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
       };
-      const result = evaluatePolicy({ request, agents, policies, auditLogs });
+      const threatIntelligence = await getThreatIntelligenceSnapshot();
+      const result = evaluatePolicy({ request, agents, policies, auditLogs, threatIntelligence });
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);

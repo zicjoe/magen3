@@ -199,6 +199,19 @@ interface DashboardStats {
   casperAuditRecords: number;
 }
 
+interface ThreatIntelligenceStatus {
+  status?: "available" | "stale" | "unavailable" | string;
+  sourceType?: string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  indicatorCount?: number;
+  activeIndicatorCount?: number;
+  ageMs?: number | null;
+  maxAgeMs?: number | null;
+  error?: string;
+}
+
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -214,6 +227,21 @@ interface DecisionResult {
   modulesEvaluated?: string[];
   capabilityContext?: ExecutionCapability[];
   pipelineStages?: PipelineStage[];
+  threatIntelligenceContext?: {
+    status?: string;
+    sourceType?: string;
+    sourceName?: string;
+    generatedAt?: string;
+    fetchedAt?: string;
+    indicatorCount?: number;
+    activeIndicatorCount?: number;
+    error?: string;
+    mode?: string;
+    unavailableAction?: string;
+    minConfidence?: number;
+    checkedEntities?: Array<Record<string, unknown>>;
+    matchedIndicators?: Array<Record<string, unknown>>;
+  };
 }
 
 interface CasperPreparedPayload {
@@ -388,6 +416,11 @@ function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): Dashbo
     reviewRequired: auditLogs.filter((log) => log.decision === "Review Required").length,
     casperAuditRecords: auditLogs.filter((log) => isRealCasperDeployHash(log.txHash)).length,
   };
+}
+
+function clampPercentage(value: unknown, fallback = 70) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(0, Math.round(parsed))) : fallback;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -1354,6 +1387,7 @@ function DashboardPage({
   walletConnecting,
   walletError,
   apiOnline,
+  threatIntelligenceStatus,
   auditLogs,
   policies,
   agents,
@@ -1364,6 +1398,7 @@ function DashboardPage({
   walletConnecting: boolean;
   walletError: string;
   apiOnline: boolean;
+  threatIntelligenceStatus: ThreatIntelligenceStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1406,12 +1441,21 @@ function DashboardPage({
   const averageCoverage = agentCoverage.length ? Math.round(agentCoverage.reduce((sum, item) => sum + item.coverage.score, 0) / agentCoverage.length) : 0;
   const agentsNeedingAttention = [...agentCoverage].filter((item) => item.coverage.score < 85).sort((a, b) => a.coverage.score - b.coverage.score).slice(0, 3);
 
+  const threatFeedOperational = threatIntelligenceStatus.status === "available";
+  const activeThreatIndicators = threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0;
+  const threatFeedLabel = threatFeedOperational
+    ? `${activeThreatIndicators} active indicators`
+    : threatIntelligenceStatus.status === "stale"
+      ? "Stale"
+      : "Unavailable";
+
   const operationalItems = [
     { label: "Connected wallet", value: "Active", done: walletConnected },
     { label: "Registered agents", value: String(agents.length), done: agents.length > 0 },
     { label: "Active policies", value: String(policies.filter((policy) => policy.status === "Active").length), done: Boolean(activePolicy) },
     { label: "Audit records", value: String(auditLogs.length), done: auditLogs.length > 0 },
     { label: "Casper proofs", value: String(dashboardStats.casperAuditRecords), done: dashboardStats.casperAuditRecords > 0 },
+    { label: "Threat feed", value: threatFeedLabel, done: threatFeedOperational },
   ];
 
   return (
@@ -1447,7 +1491,7 @@ function DashboardPage({
             </Btn>
           </div>
         </div>
-        <div className="mt-4 grid md:grid-cols-5 gap-2">
+        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-6 gap-2">
           {operationalItems.map((item) => (
             <div key={item.label} className={`rounded-lg border px-3 py-2 text-xs ${
               item.done
@@ -1460,6 +1504,16 @@ function DashboardPage({
               </div>
             </div>
           ))}
+        </div>
+        <div className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
+          threatFeedOperational
+            ? "border-[#22C55E]/25 bg-[#22C55E]/5 text-[#BBF7D0]"
+            : "border-[#F59E0B]/25 bg-[#F59E0B]/5 text-[#FCD34D]"
+        }`}>
+          <span className="font-semibold">Threat Intelligence Foundation:</span>{" "}
+          {threatFeedOperational
+            ? `${threatIntelligenceStatus.sourceName || "Configured feed"} is fresh and exposes ${activeThreatIndicators} active exact-match indicator${activeThreatIndicators === 1 ? "" : "s"}.`
+            : `${threatIntelligenceStatus.status === "stale" ? "The configured feed is stale" : "No fresh feed is available"}. Each policy decides whether that condition warns, requires review, or blocks; it never counts as a pass.`}
         </div>
       </div>
 
@@ -1877,6 +1931,7 @@ function AgentRegistrationWizard({
         blockedActions: existing.blockedActions,
         riskMode: existing.riskMode,
         templateType: existing.templateType || "Existing Policy Template",
+        structuredRules: existing.structuredRules || {},
       } : {
         name: draft.policyName.trim(),
         maxTransaction: draft.maxTransaction,
@@ -1886,6 +1941,7 @@ function AgentRegistrationWizard({
         blockedActions: draft.blockedActions,
         riskMode: draft.riskMode,
         templateType: draft.templateType,
+        structuredRules: {},
       };
 
       const policy = await onCreatePolicy({
@@ -1894,7 +1950,11 @@ function AgentRegistrationWizard({
         status: "Active",
         capabilityScope: capabilities,
         structuredRules: {
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode"],
+          ...(policyValues.structuredRules || {}),
+          threatIntelligenceMode: typeof policyValues.structuredRules?.threatIntelligenceMode === "string" ? policyValues.structuredRules.threatIntelligenceMode : "Review",
+          threatIntelligenceMinConfidence: typeof policyValues.structuredRules?.threatIntelligenceMinConfidence === "number" ? policyValues.structuredRules.threatIntelligenceMinConfidence : 70,
+          threatIntelligenceUnavailableAction: typeof policyValues.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policyValues.structuredRules.threatIntelligenceUnavailableAction : "Warn",
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction"],
           configurationOnly: [],
         },
       });
@@ -2104,7 +2164,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Policy-specific maximum slippage, full stateful simulation, oracle, bridge, and threat-intelligence settings remain Preview or Planned.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence Foundation controls are added to the starter policy in Review mode with a 70% confidence threshold; a configured fresh feed is still required for operational screening. Policy-specific maximum slippage, full stateful simulation, oracle, and bridge controls remain Preview or Planned.
                   </div>
                 </>
               )}
@@ -2973,6 +3033,9 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    threatIntelligenceMode: "Review",
+    threatIntelligenceMinConfidence: "70",
+    threatIntelligenceUnavailableAction: "Warn",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -2991,6 +3054,9 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    threatIntelligenceMode: "Review",
+    threatIntelligenceMinConfidence: "70",
+    threatIntelligenceUnavailableAction: "Warn",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -3014,6 +3080,9 @@ function PoliciesPage({
       structuredRules: {
         blockedContracts: form.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: form.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        threatIntelligenceMode: form.threatIntelligenceMode,
+        threatIntelligenceMinConfidence: clampPercentage(form.threatIntelligenceMinConfidence),
+        threatIntelligenceUnavailableAction: form.threatIntelligenceUnavailableAction,
       },
     });
     setForm({
@@ -3025,6 +3094,9 @@ function PoliciesPage({
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
+      threatIntelligenceMode: "Review",
+      threatIntelligenceMinConfidence: "70",
+      threatIntelligenceUnavailableAction: "Warn",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -3040,6 +3112,9 @@ function PoliciesPage({
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
+      threatIntelligenceMode: typeof policy.structuredRules?.threatIntelligenceMode === "string" ? policy.structuredRules.threatIntelligenceMode : "Observe",
+      threatIntelligenceMinConfidence: String(typeof policy.structuredRules?.threatIntelligenceMinConfidence === "number" ? policy.structuredRules.threatIntelligenceMinConfidence : 70),
+      threatIntelligenceUnavailableAction: typeof policy.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policy.structuredRules.threatIntelligenceUnavailableAction : "Warn",
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -3064,6 +3139,9 @@ function PoliciesPage({
         ...(editingPolicy.structuredRules || {}),
         blockedContracts: editForm.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: editForm.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        threatIntelligenceMode: editForm.threatIntelligenceMode,
+        threatIntelligenceMinConfidence: clampPercentage(editForm.threatIntelligenceMinConfidence),
+        threatIntelligenceUnavailableAction: editForm.threatIntelligenceUnavailableAction,
       },
     });
     setEditingPolicy(null);
@@ -3161,6 +3239,20 @@ function PoliciesPage({
                 <p className="mt-1 text-xs text-[#64748B]">Optional global allowlist. Leave empty for structural entry-point validation only.</p>
               </div>
             </div>
+            <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence Foundation</div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Controls how exact matches from a configured fresh feed affect authorization. Feed absence never counts as a pass.</p>
+                </div>
+                <StatusBadge status="Foundation Available" />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <SelectField label="Match Handling" value={form.threatIntelligenceMode} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                <InputField label="Minimum Confidence (%)" value={form.threatIntelligenceMinConfidence} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceMinConfidence: value }))} type="number" />
+                <SelectField label="Feed Unavailable" value={form.threatIntelligenceUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
+              </div>
+            </div>
             <SelectField
               label="Risk Mode"
               value={form.riskMode}
@@ -3236,6 +3328,13 @@ function PoliciesPage({
                       {pol.riskMode}
                     </div>
                   </div>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
+                  <span className="font-semibold text-[#F8FAFC]">Threat Intelligence</span>
+                  <span>{typeof pol.structuredRules?.threatIntelligenceMode === "string" ? pol.structuredRules.threatIntelligenceMode : "Observe"}</span>
+                  <span>·</span>
+                  <span>{typeof pol.structuredRules?.threatIntelligenceMinConfidence === "number" ? pol.structuredRules.threatIntelligenceMinConfidence : 70}% confidence</span>
+                  <span>· unavailable: {typeof pol.structuredRules?.threatIntelligenceUnavailableAction === "string" ? pol.structuredRules.threatIntelligenceUnavailableAction : "Warn"}</span>
                 </div>
                 <div className="flex items-center justify-between pt-3 border-t border-[#1E293B] text-xs text-[#94A3B8]">
                   <span>Created {fmtTs(pol.createdAt)}</span>
@@ -3342,6 +3441,20 @@ function PoliciesPage({
                     onChange={(event) => setEditForm((current) => ({ ...current, allowedEntryPoints: event.target.value }))}
                     placeholder={"swap\ndeposit\nwithdraw"}
                   />
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence Foundation</div>
+                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Exact indicator matches are deterministic. Choose whether matches are observed, routed to review, or enforced as blocks.</p>
+                  </div>
+                  <StatusBadge status="Foundation Available" />
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <SelectField label="Match Handling" value={editForm.threatIntelligenceMode} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                  <InputField label="Minimum Confidence (%)" value={editForm.threatIntelligenceMinConfidence} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMinConfidence: value }))} type="number" />
+                  <SelectField label="Feed Unavailable" value={editForm.threatIntelligenceUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
@@ -4130,6 +4243,7 @@ const docsSidebar = [
     items: [
       { id: "agent-shield-doc", label: "Agent Shield Overview" },
       { id: "shield-modules-doc", label: "Protection Modules" },
+      { id: "threat-intelligence-doc", label: "Threat Intelligence" },
       { id: "agent-flow-doc", label: "Security Pipeline" },
       { id: "connected-agents-doc", label: "Execution Capabilities" },
     ],
@@ -4178,6 +4292,7 @@ const docsOnThisPage = [
   { id: "architecture", label: "Platform Architecture" },
   { id: "cross-chain-doc", label: "Cross-chain Model" },
   { id: "shield-modules-doc", label: "Protection Modules" },
+  { id: "threat-intelligence-doc", label: "Threat Intelligence" },
   { id: "agent-flow-doc", label: "Agent Shield Flow" },
   { id: "connected-agents-doc", label: "Connected Agents" },
   { id: "api-keys-doc", label: "Agent API Keys" },
@@ -4583,7 +4698,24 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence is Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+              </section>
+
+              <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <h2 className={SECTION_TITLE}>Threat Intelligence Foundation</h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Magen3 can screen normalized Casper wallet, account-hash, Contract Hash, and Package Hash identifiers against an operator-configured JSON feed. Matching is deterministic and exact. A no-match result means only that the configured feed contained no exact indicator for the submitted form; it is not proof that a target is safe.
+                </p>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  {[
+                    ["Observe", "Record exact matches without changing authorization."],
+                    ["Review", "Require human review for medium-or-higher matches above the confidence threshold."],
+                    ["Enforce", "Block high or critical matches and review medium matches."],
+                  ].map(([title, description]) => (
+                    <div key={title} className={`${CARD} p-4`}><h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{description}</p></div>
+                  ))}
+                </div>
+                <div className="mt-5"><DocsCallout type="warning">A stale or unavailable feed never counts as a pass. Policies can Warn, require Review, or Block when the feed cannot be used. No external provider is bundled, so the module remains Foundation Available.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -4987,6 +5119,7 @@ const PLAYGROUND_DEMO_RECIPIENT = `01${"2".repeat(64)}`;
 const PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT = `02${"3".repeat(66)}`;
 const PLAYGROUND_DEMO_CONTRACT = `contract-${"4".repeat(64)}`;
 const PLAYGROUND_DEMO_UNAPPROVED_CONTRACT = `contract-package-${"5".repeat(64)}`;
+const PLAYGROUND_THREAT_INTEL_TARGET = `01${"6".repeat(64)}`;
 
 function firstConfiguredContract(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
@@ -5053,6 +5186,22 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     goal: "Test review behavior for a valid but unapproved wallet",
     reason: "Verify destination controls without using a malformed address.",
     action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT, targetType: "Wallet Address" },
+  }),
+  "Threat intelligence feed match": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Screen a synthetic testnet wallet against the configured Threat Intelligence feed",
+    reason: "Load backend/data/threat-intelligence.example.json as the feed and add the exact target to Trusted Targets to isolate the reputation decision.",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      asset: "CSPR",
+      target: PLAYGROUND_THREAT_INTEL_TARGET,
+      targetType: "Wallet Address",
+      preflight: playgroundPreflight(),
+    },
   }),
   "Malformed wallet": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
@@ -5372,8 +5521,8 @@ function IntentPlaygroundPage({
           </div>
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-            <div className="font-semibold text-[#22D3EE]">Live validation plus execution preflight</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation is Foundation Available: it validates payment, gas, TTL, timestamp, transaction freshness, swap bounds, and runtime-argument structure without claiming that a stateful Casper speculative execution was performed.</div>
+            <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation and Threat Intelligence are Foundation Available. Threat Intelligence performs deterministic exact matching only when a fresh configured feed is available; an unavailable or stale feed is reported honestly and never counted as a pass.</div>
           </div>
 
           <div>
@@ -5419,6 +5568,20 @@ function IntentPlaygroundPage({
                   <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Triggered rule</div><div className="mt-1 text-sm text-[#F8FAFC]">{result.result.triggeredRule || "No blocking rule"}</div></div>
                   <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Audit record</div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{result.auditLog.id}</div></div>
                 </div>
+                {result.result.threatIntelligenceContext && (
+                  <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">Threat Intelligence context</div>
+                      <span className="text-xs font-semibold text-[#22D3EE]">{result.result.threatIntelligenceContext.status || "unavailable"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Source <span className="block text-[#F8FAFC]">{result.result.threatIntelligenceContext.sourceName || "No feed configured"}</span></div>
+                      <div>Active indicators <span className="block text-[#F8FAFC]">{result.result.threatIntelligenceContext.activeIndicatorCount ?? result.result.threatIntelligenceContext.indicatorCount ?? 0}</span></div>
+                      <div>Matches <span className="block text-[#F8FAFC]">{result.result.threatIntelligenceContext.matchedIndicators?.length ?? 0}</span></div>
+                    </div>
+                    {result.result.threatIntelligenceContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.threatIntelligenceContext.error}</div>}
+                  </div>
+                )}
               </div>
               <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} /></div></div>
               <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} />
@@ -5439,10 +5602,12 @@ function SettingsPage({
   agents,
   policies,
   auditLogs,
+  threatIntelligenceStatus,
 }: {
   agents: Agent[];
   policies: Policy[];
   auditLogs: AuditLog[];
+  threatIntelligenceStatus: ThreatIntelligenceStatus;
 }) {
   const [devMode, setDevMode] = useState(false);
   const [copiedSetting, setCopiedSetting] = useState("");
@@ -5455,6 +5620,7 @@ function SettingsPage({
     ["API Base URL", api.baseUrl],
     ["Gateway Intent URL", `${api.baseUrl}/api/agent-gateway/intents`],
     ["Gateway Verify URL", `${api.baseUrl}/api/agent-gateway/me?agentId=YOUR_AGENT_ID`],
+    ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
 
@@ -5488,6 +5654,22 @@ function SettingsPage({
             </span>
           </div>
         </div>
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className={SECTION_TITLE}>Threat Intelligence Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend feed status. Provider credentials and raw configured locations are never displayed.</p></div>
+          <StatusBadge status={threatIntelligenceStatus.status === "available" ? "Foundation Available" : "Inactive"} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Feed state", threatIntelligenceStatus.status || "unavailable"],
+            ["Source", threatIntelligenceStatus.sourceName || "No feed configured"],
+            ["Active indicators", String(threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0)],
+            ["Feed records", String(threatIntelligenceStatus.indicatorCount || 0)],
+          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
+        </div>
+        {threatIntelligenceStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{threatIntelligenceStatus.error}</div>}
       </div>
 
       <div className={`${CARD} p-5`}>
@@ -5604,6 +5786,7 @@ export default function App() {
   const [walletConnecting, setWalletConnecting] = useState(false);
   const [walletError, setWalletError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
+  const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
@@ -5623,6 +5806,22 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const refreshThreatStatus = async () => {
+      try {
+        const payload = await api.threatIntelligenceStatus();
+        if (!cancelled) setThreatIntelligenceStatus(payload.threatIntelligence as ThreatIntelligenceStatus);
+      } catch {
+        if (!cancelled) setThreatIntelligenceStatus((previous) => ({ ...previous, status: "unavailable", error: "Threat Intelligence status endpoint is unavailable." }));
+      }
+    };
+    void refreshThreatStatus();
+    intervalId = setInterval(() => void refreshThreatStatus(), 60_000);
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
   useEffect(() => {
@@ -5892,6 +6091,7 @@ export default function App() {
         walletConnecting={walletConnecting}
         walletError={walletError}
         apiOnline={apiOnline}
+        threatIntelligenceStatus={threatIntelligenceStatus}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -5951,7 +6151,7 @@ export default function App() {
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} />
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} />
     ),
   };
 

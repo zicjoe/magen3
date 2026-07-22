@@ -167,12 +167,19 @@ export const PROTECTION_MODULE_CATALOG: Array<{
   {
     id: "threat-intelligence",
     name: "Threat Intelligence",
-    description: "Adds external risk signals for targets and known attack patterns.",
-    status: "Preview",
+    description: "Screens normalized Casper wallet and contract identities against a configured, freshness-checked intelligence feed.",
+    status: "Foundation Available",
     capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: ["No external threat feed is enforced"],
-    futureChecks: ["Malicious address feeds", "Exploit-pattern detection"],
-    configurable: false,
+    currentChecks: [
+      "Execution-wallet and target identity normalization",
+      "Exact wallet, account-hash, Contract Hash, and Package Hash matching",
+      "Feed availability, freshness, and cache state",
+      "Indicator severity and confidence threshold",
+      "Observe, Review, and Enforce policy modes",
+      "Warn, Review, or Block behavior when the feed is unavailable",
+    ],
+    futureChecks: ["Managed reputation-provider adapters", "Cross-source corroboration", "Behavioral and exploit-pattern intelligence"],
+    configurable: true,
   },
   {
     id: "oracle-validation",
@@ -300,6 +307,7 @@ export function calculateSecurityCoverage(
     dailyLimit?: number;
     approvalThreshold?: number;
     trustedContracts?: string[];
+    structuredRules?: Record<string, unknown>;
   },
   logs: Array<{ timestamp: string; decisionProofStatus?: string; moduleFindings?: ModuleFinding[] }> = [],
 ): CoverageResult {
@@ -317,19 +325,29 @@ export function calculateSecurityCoverage(
   const executionPreflightRelevant = capabilities.some((item) => ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions"].includes(item));
   const executionPreflightObserved = logs.some((log) =>
     hasSubstantiveExecutionPreflightPass(log.moduleFindings || []));
+  const threatIntelligenceMode = typeof policy?.structuredRules?.threatIntelligenceMode === "string"
+    ? policy.structuredRules.threatIntelligenceMode
+    : "";
+  const threatIntelligenceConfigured = ["Observe", "Review", "Enforce"].includes(threatIntelligenceMode);
+  const threatIntelligenceOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Threat Intelligence" &&
+      finding.rule === "Threat feed availability" &&
+      finding.status === "pass"));
   const requiredProtectionObserved = contractRelevant ? contractValidationObserved : walletValidationObserved;
 
   const checks: CoverageCheck[] = [
     { id: "capabilities", label: "Execution capabilities selected", weight: 10, passed: capabilities.length > 0, detail: `${capabilities.length} capability${capabilities.length === 1 ? "" : "ies"} configured.`, recommendation: "Select at least one execution capability.", page: "connected-agents" },
     { id: "active-policy", label: "Active policy assigned", weight: 20, passed: policy?.status === "Active", detail: policy?.status === "Active" ? "An active policy controls gateway decisions." : "No active policy is assigned.", recommendation: "Create or activate a policy for this agent.", page: "policies" },
     { id: "spend-limits", label: "Spend limits configured", weight: 15, passed: Number(policy?.maxTransaction) > 0 && Number(policy?.dailyLimit) > 0, detail: policy ? `Maximum ${policy.maxTransaction} CSPR; daily ${policy.dailyLimit} CSPR.` : "Spend limits are unavailable without a policy.", recommendation: "Configure maximum transaction and daily spending limits.", page: "policies" },
-    { id: "destination-controls", label: "Destination controls", weight: 10, passed: !destinationRelevant || Boolean(policy?.trustedContracts?.length), detail: !destinationRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? `${policy.trustedContracts.length} approved target${policy.trustedContracts.length === 1 ? "" : "s"}.` : "No approved destinations are configured.", recommendation: "Add approved wallet destinations or trusted targets.", page: "policies" },
-    { id: "contract-controls", label: "Contract controls", weight: 10, passed: !contractRelevant || Boolean(policy?.trustedContracts?.length), detail: !contractRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? "Trusted contract controls are configured." : "No trusted contracts are configured.", recommendation: "Add approved contracts for dApp and trading interactions.", page: "policies" },
-    { id: "review-threshold", label: "Human review threshold", weight: 10, passed: !reviewRelevant || Number(policy?.approvalThreshold) > 0, detail: !reviewRelevant ? "Not required by the selected capabilities." : Number(policy?.approvalThreshold) > 0 ? `Review required above ${policy?.approvalThreshold} CSPR.` : "No review threshold is configured.", recommendation: "Configure a review threshold for higher-value actions.", page: "policies" },
+    { id: "destination-controls", label: "Destination controls", weight: 8, passed: !destinationRelevant || Boolean(policy?.trustedContracts?.length), detail: !destinationRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? `${policy.trustedContracts.length} approved target${policy.trustedContracts.length === 1 ? "" : "s"}.` : "No approved destinations are configured.", recommendation: "Add approved wallet destinations or trusted targets.", page: "policies" },
+    { id: "contract-controls", label: "Contract controls", weight: 8, passed: !contractRelevant || Boolean(policy?.trustedContracts?.length), detail: !contractRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? "Trusted contract controls are configured." : "No trusted contracts are configured.", recommendation: "Add approved contracts for dApp and trading interactions.", page: "policies" },
+    { id: "review-threshold", label: "Human review threshold", weight: 8, passed: !reviewRelevant || Number(policy?.approvalThreshold) > 0, detail: !reviewRelevant ? "Not required by the selected capabilities." : Number(policy?.approvalThreshold) > 0 ? `Review required above ${policy?.approvalThreshold} CSPR.` : "No review threshold is configured.", recommendation: "Configure a review threshold for higher-value actions.", page: "policies" },
     { id: "credential", label: "API credential active", weight: 10, passed: agent.status === "Active" && Boolean(agent.apiKeyPreview), detail: agent.apiKeyPreview ? `Credential ${agent.apiKeyPreview} is active.` : "No active credential preview is available.", recommendation: "Rotate or issue an API credential.", page: "connected-agents" },
     { id: "gateway-activity", label: "Recent live protection activity", weight: 3, passed: recentGateway && requiredProtectionObserved, detail: recentGateway && requiredProtectionObserved ? `${contractRelevant ? "Contract Validation" : "Wallet Validation"} was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? `A recent intent exists, but no ${contractRelevant ? "Contract Validation" : "Wallet Validation"} finding is visible yet.` : "No gateway request has been received.", recommendation: `Send a valid ${contractRelevant ? "contract" : "wallet"} intent through the Intent Playground to verify live protection.`, page: "intent-playground" },
     { id: "execution-preflight", label: "Execution preflight observed", weight: 5, passed: !executionPreflightRelevant || executionPreflightObserved, detail: !executionPreflightRelevant ? "Not required by the selected capabilities." : executionPreflightObserved ? "Deterministic transaction-construction preflight has been observed. Full stateful simulation remains unavailable." : "No successful Execution Simulation preflight finding is visible yet.", recommendation: "Send an intent with preflight payment, gas, TTL, timestamp, and action-specific bounds through the Intent Playground.", page: "intent-playground" },
-    { id: "casper-proof", label: "Casper proof recording observed", weight: 4, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
+    { id: "threat-intelligence", label: "Threat intelligence operational", weight: 5, passed: threatIntelligenceConfigured && threatIntelligenceOperational, detail: threatIntelligenceConfigured ? threatIntelligenceOperational ? `${threatIntelligenceMode} mode is configured and a fresh feed check has been observed.` : `${threatIntelligenceMode} mode is configured, but no fresh feed pass is visible yet.` : "Threat Intelligence policy mode is not configured for this policy.", recommendation: threatIntelligenceConfigured ? "Configure a fresh threat feed and submit a wallet or contract intent to verify screening." : "Choose Observe, Review, or Enforce behavior in the policy Threat Intelligence controls.", page: threatIntelligenceConfigured ? "intent-playground" : "policies" },
+    { id: "casper-proof", label: "Casper proof recording observed", weight: 5, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
     { id: "agent-state", label: "Agent configuration complete", weight: 3, passed: agent.status === "Active" && agent.onboardingStatus !== "draft", detail: agent.status === "Active" ? "Agent is active and available to the gateway." : "Agent is not active.", recommendation: "Complete onboarding and ensure the agent is active.", page: "connected-agents" },
   ];
 
@@ -358,6 +376,12 @@ export function deriveIntegrationHealth(
   const simulationFailed = simulationFindings.some((finding) => finding.status === "fail");
   const simulationPassed = hasSubstantiveExecutionPreflightPass(simulationFindings);
   const simulationHealth = simulationFindings.length === 0 ? "unknown" : simulationFailed ? "attention" : simulationPassed ? "observed" : "unknown";
+  const threatFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Threat Intelligence") || [];
+  const threatFailed = threatFindings.some((finding) => finding.status === "fail");
+  const threatUnavailable = threatFindings.some((finding) => finding.status === "unavailable");
+  const threatWarned = threatFindings.some((finding) => finding.status === "warning");
+  const threatFeedPassed = threatFindings.some((finding) => finding.rule === "Threat feed availability" && finding.status === "pass");
+  const threatHealth = threatFindings.length === 0 ? "unknown" : threatFailed || threatWarned ? "attention" : threatUnavailable ? "unavailable" : threatFeedPassed ? "observed" : "unknown";
   const checks = [
     { label: "Gateway connectivity", status: gatewayOnline ? "healthy" : "unavailable", detail: gatewayOnline ? "Backend health check succeeded." : "Backend health check is currently unavailable." },
     { label: "API credential", status: agent.status === "Active" && agent.apiKeyPreview ? "healthy" : "attention", detail: agent.apiKeyPreview || "No credential preview." },
@@ -367,6 +391,7 @@ export function deriveIntegrationHealth(
     { label: "Wallet Validation", status: walletHealth, detail: walletFindings.length === 0 ? "No Wallet Validation finding is available yet." : walletFailed ? "The latest request failed one or more wallet checks." : walletWarned ? "The latest request needs attention before execution." : "The latest request passed the evaluated wallet checks." },
     { label: "Contract Validation", status: contractHealth, detail: contractFindings.length === 0 ? "No Contract Validation finding is available for the latest request." : contractFailed ? "The latest request failed one or more contract checks." : contractWarned ? "The latest contract request needs attention before execution." : "The latest request passed the evaluated contract checks." },
     { label: "Execution preflight", status: simulationHealth, detail: simulationFindings.length === 0 ? "No Execution Simulation finding is available for the latest request." : simulationFailed ? "The latest request failed deterministic transaction-construction preflight." : simulationPassed ? "Deterministic preflight was evaluated. Full stateful speculative execution remains unavailable." : "Full stateful simulation is unavailable and no preflight pass was recorded." },
+    { label: "Threat Intelligence", status: threatHealth, detail: threatFindings.length === 0 ? "No Threat Intelligence finding is available for the latest request." : threatFailed ? "The latest request was blocked by an enforced threat indicator or fail-closed feed rule." : threatWarned ? "The latest request matched an observed or review-level threat signal." : threatUnavailable ? "The configured threat feed was unavailable or stale and did not count as a pass." : threatFeedPassed ? "A fresh configured feed screened the latest normalized identities." : "Threat Intelligence did not produce an operational feed result." },
     { label: "Casper proof service", status: proofState === "recorded" ? "healthy" : proofState === "failed" ? "attention" : "pending", detail: proofState },
     { label: "Audit synchronization", status: latest ? "healthy" : "unknown", detail: latest ? "Latest audit record is visible." : "No audit record is available." },
   ];

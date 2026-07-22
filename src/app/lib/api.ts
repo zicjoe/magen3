@@ -22,11 +22,15 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
     return request<{ ok: boolean; casper: Record<string, unknown> }>("/api/casper/status");
+  },
+
+  threatIntelligenceStatus() {
+    return request<{ ok: boolean; threatIntelligence: Record<string, unknown> }>("/api/threat-intelligence/status");
   },
 
   publicConfig() {

@@ -50,7 +50,7 @@ export const PROTECTION_MODULES = [
   {
     id: "threat-intelligence",
     name: "Threat Intelligence",
-    status: "Preview",
+    status: "Foundation Available",
     capabilities: EXECUTION_CAPABILITIES,
   },
   {

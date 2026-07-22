@@ -84,7 +84,7 @@ Protection modules live under Agent Shield.
 | Wallet Validation | Live | Execution-wallet public-key format, destination format/classification, self-transfer prevention, approved destinations, spend limits, and review thresholds. |
 | Contract Validation | Live | Contract/package identity, target classification, entry points, version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | Foundation Available | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable. |
-| Threat Intelligence | Preview | No external threat feed currently enforced. |
+| Threat Intelligence | Foundation Available | Deterministic exact matching against a freshness-checked operator feed; no provider is bundled or represented as comprehensive. |
 | Oracle Validation | Planned | No current backend checks. |
 | Bridge Controls | Planned | No current backend checks. |
 | Compliance Controls | Planned | No current backend checks. |
@@ -162,7 +162,7 @@ Available starter presets:
 - Enterprise Controlled Automation
 - Custom
 
-The current backend validates structural swap bounds and transaction-construction metadata, but it does not enforce a policy-specific maximum slippage or run full stateful simulation. Oracle freshness, bridge risk, external threat feeds, and compliance screening remain Preview or Planned.
+The current backend validates structural swap bounds and transaction-construction metadata, but it does not enforce a policy-specific maximum slippage or run full stateful simulation. Threat Intelligence can enforce exact matches from a configured fresh feed, while managed reputation-provider coverage, oracle freshness, bridge risk, and compliance screening remain future work.
 
 ## Structured findings
 
@@ -413,6 +413,11 @@ pnpm verify
 ```
 
 Railway continues to use the existing Dockerfile and `railway.json`. Vercel continues to use the existing Vite configuration and `vercel.json`.
+
+### Threat Intelligence deployment
+
+No database migration is required. Configure one of `THREAT_INTELLIGENCE_FEED_JSON`, `THREAT_INTELLIGENCE_FEED_PATH`, or `THREAT_INTELLIGENCE_FEED_URL`. A remote feed may use `THREAT_INTELLIGENCE_API_KEY`. Cache, freshness, and timeout are controlled by `THREAT_INTELLIGENCE_CACHE_TTL_MS`, `THREAT_INTELLIGENCE_MAX_AGE_MS`, and `THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS`. Confirm `/api/threat-intelligence/status` after backend deployment.
+
 
 ## Security model
 

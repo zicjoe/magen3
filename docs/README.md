@@ -8,6 +8,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `AGENT_GATEWAY_API.md` — current gateway authentication and request/response contract.
 - `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
+- `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
 
 ## Developer integrations
 

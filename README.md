@@ -102,7 +102,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Wallet Validation | **Live** | Casper execution-wallet format, wallet destination format/classification, exact self-transfer prevention, approved destinations, transaction and daily limits, and review thresholds. |
 | Contract Validation | **Live** | Contract/package identity, target classification, entry points, package-version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | **Foundation Available** | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable and is reported explicitly. |
-| Threat Intelligence | **Preview** | No external threat feed is enforced. |
+| Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
 | Oracle Validation | **Planned** | No current backend checks. |
 | Bridge Controls | **Planned** | No current backend checks. |
 | Compliance Controls | **Planned** | No current backend checks. |
@@ -124,7 +124,7 @@ Wallet Validation now runs on every authenticated gateway intent before a wallet
 
 Malformed execution wallets, malformed destinations, incorrect transfer classification, self-transfers, and hard policy-limit violations return `Blocked`. Valid but unapproved destinations return `Blocked` in Conservative mode and `Review Required` in Balanced or Aggressive mode.
 
-Wallet format validation is structural. It does not claim that an address is funded, controlled by the requester, reputable, or safe from every threat. Address reputation remains part of the Threat Intelligence roadmap.
+Wallet format validation is structural. It does not claim that an address is funded, controlled by the requester, reputable, or safe from every threat. Threat Intelligence can now compare the submitted normalized identifier with a configured exact-match feed, but it does not derive equivalent account hashes, discover ownership, or guarantee reputation coverage.
 
 Format reference: [Casper Accounts and Cryptographic Keys](https://docs.casper.network/concepts/accounts-and-keys).
 
@@ -144,7 +144,7 @@ Contract Validation now runs on every intent that declares a contract-oriented a
 - Valid but unapproved contracts return `Blocked` in Conservative mode and `Review Required` in Balanced or Aggressive mode.
 - Optional `allowedEntryPoints` policy controls can block unauthorized contract methods.
 
-The `Trusted Contract` label is descriptive only. It never grants trust by itself; the exact contract identifier must match the active policy. Structural validation does not prove that a contract is audited, verified, non-upgradeable, or free of malicious logic. Those deeper checks remain future Contract Validation and Threat Intelligence work.
+The `Trusted Contract` label is descriptive only. It never grants trust by itself; the exact contract identifier must match the active policy. Structural validation does not prove that a contract is audited, verified, non-upgradeable, or free of malicious logic. Threat Intelligence can add configured exact-match indicators, while bytecode analysis, upgrade-authority analysis, and broader provider coverage remain future work.
 
 Format references: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
 
@@ -168,6 +168,30 @@ When supplied, Magen3 validates:
 Malformed supplied preflight data can return `Blocked`. A structurally valid but unusually long TTL or future-dated timestamp can return `Review Required`. Existing integrations that omit preflight metadata remain backward compatible; missing metadata produces explained warnings rather than a fake pass.
 
 Full Casper speculative execution remains unavailable in the current pre-signing Gateway. Casper exposes speculative execution through a separately enabled node service and expects a constructed deploy or transaction. Magen3 does not accept private keys, wallet approvals, transaction-level signatures, or raw signed transactions through the intent endpoint. Public contract arguments remain allowed inside `runtimeArgs`.
+
+### Threat Intelligence foundation
+
+Threat Intelligence now evaluates normalized wallet, account-hash, Contract Hash, and Package Hash identities against an operator-configured JSON feed. It is **Foundation Available**, not Live, because Magen3 does not bundle or endorse an external reputation provider and cannot guarantee the completeness or accuracy of operator-supplied intelligence.
+
+Current behavior:
+
+- Loads one feed from `THREAT_INTELLIGENCE_FEED_JSON`, `THREAT_INTELLIGENCE_FEED_PATH`, or `THREAT_INTELLIGENCE_FEED_URL`.
+- Requires a valid source `generatedAt` timestamp before a feed can count as fresh.
+- Applies a configurable maximum feed age and in-memory cache; missing, invalid, or materially future-dated timestamps are treated as stale.
+- Performs deterministic exact matching only; it does not infer related wallets, derive an account hash from a public key, or equate Contract Hashes with Package Hashes.
+- Records feed availability, checked identities, matched indicator metadata, confidence, severity, source, and remediation in structured findings and audit evidence.
+- Never treats a stale or unavailable feed as a pass.
+- Rejects oversized or malformed feeds and does not expose the configured API key, internal feed path, raw remote URL, or raw loader error in public status responses.
+
+Policy controls under `structuredRules`:
+
+- `threatIntelligenceMode`: `Observe`, `Review`, or `Enforce`.
+- `threatIntelligenceMinConfidence`: integer from `0` to `100`.
+- `threatIntelligenceUnavailableAction`: `Warn`, `Review`, or `Block`.
+
+In `Enforce` mode, high- and critical-severity matches at or above the confidence threshold block execution; medium-severity matches require review. In `Review` mode, medium-or-higher matches require review. `Observe` records a warning without changing the final authorization. A below-threshold match is visible but is not enforced.
+
+The repository includes `backend/data/threat-intelligence.example.json` for local testnet demonstration only. Its indicators are synthetic and must not be represented as production intelligence. See [`docs/THREAT_INTELLIGENCE.md`](docs/THREAT_INTELLIGENCE.md).
 
 ## Guided agent registration
 
@@ -196,6 +220,7 @@ Supported policy fields are enforced by the current backend:
 - Optional allowed entry points through `structuredRules.allowedEntryPoints`
 - Blocked action types
 - Conservative, Balanced, or Aggressive risk mode
+- Threat Intelligence mode, minimum confidence, and unavailable-feed behavior through `structuredRules`
 
 Available presets:
 
@@ -207,7 +232,7 @@ Available presets:
 - Enterprise Controlled Automation
 - Custom
 
-Policy-specific maximum slippage, full state simulation, oracle integrity, bridge intelligence, sanctions screening, and external threat feeds are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation.
+Policy-specific maximum slippage, full state simulation, oracle integrity, bridge intelligence, sanctions screening, and any unconfigured external intelligence provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence provides configurable exact-match feed enforcement but remains Foundation Available rather than claiming broad reputation coverage.
 
 ## Structured findings and decisions
 
@@ -577,6 +602,28 @@ CASPER_RELAYER_SECRET_KEY_PATH=/secure/path/secret_key.pem
 
 Use only one relayer key source in production. Never commit real keys.
 
+### Threat Intelligence foundation
+
+Configure exactly one feed source:
+
+```env
+# Preferred for Railway: JSON stored as a protected environment variable
+THREAT_INTELLIGENCE_FEED_JSON={"version":"1","source":"Reviewed feed","generatedAt":"2026-07-22T12:00:00.000Z","indicators":[]}
+
+# Or a mounted/local file path
+# THREAT_INTELLIGENCE_FEED_PATH=backend/data/threat-intelligence.example.json
+
+# Or a remote HTTPS JSON endpoint
+# THREAT_INTELLIGENCE_FEED_URL=https://security.example/threat-feed.json
+# THREAT_INTELLIGENCE_API_KEY=provider-secret
+
+THREAT_INTELLIGENCE_CACHE_TTL_MS=300000
+THREAT_INTELLIGENCE_MAX_AGE_MS=86400000
+THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS=2500
+```
+
+Do not configure more than one source; precedence is inline JSON, then file path, then remote URL. `THREAT_INTELLIGENCE_API_KEY` is used only as a Bearer credential for the remote feed and is never returned by the API. The example feed is synthetic and intended only for a controlled testnet demo.
+
 ## Verification
 
 ```bash
@@ -603,7 +650,7 @@ The repository retains the existing Dockerfile and `railway.json`.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
 5. Run `pnpm db:migrate` against the production database before relying on the new fields.
-6. Confirm `/api/health`, `/api/public-config`, and `/api/agent-gateway/spec`.
+6. Confirm `/api/health`, `/api/threat-intelligence/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
 
@@ -630,8 +677,9 @@ The existing `vercel.json` remains valid.
 6. Submit an Allowed intent in Intent Playground.
 7. Submit a Review Required intent.
 8. Submit a Blocked intent.
-9. Open the audit detail and show findings, explanation, pipeline, and proof state.
-10. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
+9. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
+10. Open the audit detail and show findings, explanation, pipeline, and proof state.
+11. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
 
 ## Security considerations
 
@@ -642,7 +690,8 @@ The existing `vercel.json` remains valid.
 - Validate action parameters again at the execution boundary.
 - Keep PostgreSQL backups before production migrations.
 - Restrict CORS and Railway environment access.
-- Preview and Planned modules are not authorization signals.
+- Foundation, Preview, and Planned labels describe implementation maturity; only actual findings and the final decision authorize or stop execution.
+- Review the provenance, freshness, confidence, and legal basis of any configured threat feed. An exact no-match is not proof that a target is safe.
 - A high Security Coverage score does not imply invulnerability.
 
 ## Troubleshooting
@@ -653,6 +702,8 @@ The existing `vercel.json` remains valid.
 | Gateway unavailable | Confirm backend health and `VITE_API_URL`. |
 | Invalid agent API key | Use the latest key or rotate it from Connected Agents. |
 | No active policy | Complete onboarding or create an active policy for the agent. |
+| Threat feed unavailable | Configure one feed source, verify JSON structure, and check `/api/threat-intelligence/status`. |
+| Threat feed stale | Publish a current `generatedAt` value or adjust `THREAT_INTELLIGENCE_MAX_AGE_MS` only after reviewing the operational risk. |
 | Audit records appear stale | Confirm the wallet is still connected and the backend bootstrap route is reachable. The UI polls every six seconds. |
 | Decision proof pending | Check relayer configuration, contract hash, funded relayer account, and audit proof error. |
 | Casper Wallet unavailable | Install, unlock, and approve Casper Wallet in the browser. |

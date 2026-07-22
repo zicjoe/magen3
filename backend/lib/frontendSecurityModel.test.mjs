@@ -29,6 +29,7 @@ test("security coverage reaches 100 only when every configured protection check 
       dailyLimit: 100,
       approvalThreshold: 15,
       trustedContracts: ["contract-package-hash-example"],
+      structuredRules: { threatIntelligenceMode: "Review" },
     },
     [{
       timestamp,
@@ -38,6 +39,8 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
         { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
         { module: "Execution Simulation", status: "unavailable", severity: "info", rule: "Stateful speculative execution", message: "Stateful simulation unavailable." },
+        { module: "Threat Intelligence", status: "pass", severity: "info", rule: "Threat feed availability", message: "Fresh feed available." },
+        { module: "Threat Intelligence", status: "pass", severity: "info", rule: "Known threat indicator match", message: "No exact match." },
       ],
     }],
   );
@@ -99,6 +102,18 @@ test("security coverage is deterministic and explains missing controls", () => {
   assert.ok(first.recommendations.some((check) => check.id === "active-policy"));
   assert.ok(first.recommendations.some((check) => check.id === "contract-controls"));
   assert.ok(first.recommendations.some((check) => check.page === "intent-playground"));
+});
+
+test("stale or unavailable Threat Intelligence never counts toward coverage", () => {
+  const timestamp = new Date().toISOString();
+  const result = securityModel.calculateSecurityCoverage(
+    { status: "Active", executionCapabilities: ["Wallet Management"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active", maxTransaction: 10, dailyLimit: 20, trustedContracts: ["target"], structuredRules: { threatIntelligenceMode: "Review" } },
+    [{ timestamp, moduleFindings: [{ module: "Threat Intelligence", status: "unavailable", severity: "low", rule: "Threat feed availability", message: "Feed stale." }] }],
+  );
+  const check = result.checks.find((item) => item.id === "threat-intelligence");
+  assert.equal(check.passed, false);
+  assert.ok(result.recommendations.some((item) => item.id === "threat-intelligence"));
 });
 
 test("integration health never reports healthy when core services or configuration are missing", () => {

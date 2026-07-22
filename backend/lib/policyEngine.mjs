@@ -2,6 +2,7 @@ import { normalizeExecutionCapabilities } from "./securityModel.mjs";
 import { evaluateWalletValidation } from "./walletValidation.mjs";
 import { evaluateContractValidation } from "./contractValidation.mjs";
 import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
+import { evaluateThreatIntelligence } from "./threatIntelligence.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -83,6 +84,7 @@ function withStructuredResult({
   timestamp,
   agent,
   policy,
+  threatIntelligenceContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -101,10 +103,11 @@ function withStructuredResult({
     capabilityContext: normalizeExecutionCapabilities(agent?.executionCapabilities, agent?.type),
     activePolicy: policy ? { id: policy.id, name: policy.name, templateType: policy.templateType || "Custom" } : null,
     pipelineStages: pipelineStages({ timestamp, decision, agentFound: Boolean(agent), policyFound: Boolean(policy), moduleFindings }),
+    threatIntelligenceContext,
   };
 }
 
-export function evaluateAction({ request, agents, policies, auditLogs }) {
+export function evaluateAction({ request, agents, policies, auditLogs, threatIntelligence = {} }) {
   const timestamp = new Date().toISOString();
   const agent = agents.find((item) => item.id === request.agentId);
   const policy = policies.find((item) => item.agentId === request.agentId && item.status === "Active");
@@ -255,8 +258,14 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
   moduleFindings.push(...executionSimulation.findings);
   score += executionSimulation.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview);
+  const threatIntelligenceResult = evaluateThreatIntelligence({ request, policy, snapshot: threatIntelligence });
+  checksPassed.push(...threatIntelligenceResult.checksPassed);
+  checksFailed.push(...threatIntelligenceResult.checksFailed);
+  moduleFindings.push(...threatIntelligenceResult.findings);
+  score += threatIntelligenceResult.scoreDelta;
+
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -265,13 +274,13 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, contract-validation, or execution-preflight rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, or threat-intelligence rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({
@@ -286,5 +295,6 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     timestamp,
     agent,
     policy,
+    threatIntelligenceContext: threatIntelligenceResult.context,
   });
 }

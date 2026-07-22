@@ -57,4 +57,4 @@ Execution Simulation is Foundation Available. Supplied preflight metadata is val
 
 Use `requireAllowed()` when the caller must stop automatically for `Blocked` and `Review Required` decisions. The SDK never signs or broadcasts transactions.
 
-The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, and `suggestedResolution`, so integrations can render deterministic Execution Simulation guidance without parsing free-form text.
+The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, `suggestedResolution`, and sanitized `threatIntelligenceContext`, so integrations can render deterministic preflight and exact-match intelligence guidance without parsing free-form text. Threat Intelligence remains Foundation Available and requires an operator-configured fresh feed.

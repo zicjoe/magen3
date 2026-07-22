@@ -1,295 +1,219 @@
-# Execution Simulation Foundation Upgrade — July 22, 2026
+# Magen3 Threat Intelligence Foundation — Implementation Report
 
-Execution Simulation is now **Foundation Available**. The Agent Gateway deterministically validates safe transaction-construction metadata before wallet signing, persists structured findings and an adaptive pipeline stage, and explicitly reports full stateful Casper speculative execution as unavailable. No database migration, environment-variable change, Gateway route change, or Casper contract change is required.
+**Release:** 1.2.0  
+**Date:** 2026-07-22  
+**Module status:** Foundation Available
 
-See `Magen3-Execution-Simulation-Foundation-Report.md` in the release handoff for the complete verification and compatibility report.
+## Summary
 
----
+This release upgrades Threat Intelligence from Preview to Foundation Available. Magen3 can now screen normalized Casper wallet and contract identifiers against an operator-configured, freshness-checked JSON feed before wallet signing. The implementation is deterministic, policy-controlled, auditable, and backward compatible.
 
-# Magen3 Contract Validation Live Upgrade — Implementation Report
+Threat Intelligence is not marked Live because no external reputation provider is bundled and Magen3 cannot guarantee the provenance, completeness, availability, or accuracy of an operator-supplied feed. A no-match result means only that the configured exact-match feed did not contain the submitted normalized identifier.
 
-## Release summary
+## Implemented behavior
 
-This release upgrades **Contract Validation** from **Foundation Available** to **Live** across the Magen3 Agent Shield execution path.
+### Supported identities
 
-Contract-oriented intents are now evaluated deterministically before Magen3 returns Allowed, Blocked, or Review Required. The findings are included in the Gateway response, Risk Assessment, Security Pipeline, Audit Log, Security Coverage, Integration Health, Intent Playground, policy UI, official SDK guidance, MCP schema, README, and documentation.
+- Casper Ed25519 public keys
+- Casper Secp256k1 public keys
+- `account-hash-...` identifiers
+- Contract Hashes
+- Contract Package Hashes
 
-The implementation preserves the existing Magen3 visual identity, Gateway endpoint, authentication headers, agent IDs, API-key model, policy records, Casper contract configuration, relayer flow, wallet flow, YieldBot compatibility, Codex flow, Railway configuration, and Vercel configuration.
+The module evaluates the execution wallet and target when they can be normalized by the existing Wallet Validation or Contract Validation modules. It does not derive related identities or equate public keys with account hashes.
 
-## Live Contract Validation checks
+### Feed sources
 
-Contract Validation runs whenever the normalized action or target classification is contract-oriented.
+Configure one source. Precedence is inline JSON, local file, then remote URL:
 
-### 1. Contract-target classification
+- `THREAT_INTELLIGENCE_FEED_JSON`
+- `THREAT_INTELLIGENCE_FEED_PATH`
+- `THREAT_INTELLIGENCE_FEED_URL`
 
-- `Contract Interaction`, `Swap`, and `Deposit to Vault` must use `Trusted Contract` or `Unknown Contract`.
-- `RWA Proof Update` must use `RWA Registry`.
-- `Oracle Data Update` must use `Oracle Feed`.
-- A mismatched classification is blocked with evidence and remediation.
+Optional remote credential:
 
-### 2. Casper contract identifier structure
+- `THREAT_INTELLIGENCE_API_KEY`
 
-Magen3 distinguishes:
+Operational controls:
 
-- Contract Hash
-- Contract Package Hash
-- Ambiguous raw or `hash-...` 32-byte identifiers
-- Wallet public keys
-- Account hashes
-- Malformed identifiers
+- `THREAT_INTELLIGENCE_CACHE_TTL_MS`
+- `THREAT_INTELLIGENCE_MAX_AGE_MS`
+- `THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS`
 
-Explicit forms such as `contract-...`, `contract-hash-...`, `contract-package-...`, and `contract-package-hash-...` are classified deterministically. A raw 64-character hash or `hash-...` value requires `contractIdentifierType` to state whether it is a Contract Hash or Package Hash.
+Remote production feeds must use HTTPS. Redirects are rejected. Feed payloads are limited to one megabyte and 10,000 submitted indicators. Provider credentials, raw file paths, raw remote URLs, and raw loader errors are not exposed through public status responses.
 
-Wallet public keys and `account-hash-...` values are rejected when used as contract identifiers.
+### Feed integrity and freshness
 
-### 3. Contract/package type consistency
+- `generatedAt` must be a valid timestamp.
+- Missing or invalid timestamps make the feed stale.
+- Timestamps more than five minutes in the future make the feed stale.
+- Feed age is checked against the configured maximum age.
+- Expired indicators are ignored during evaluation.
+- Duplicate identifiers retain the higher-severity record; equal-severity duplicates retain the higher-confidence record.
+- Stale or unavailable feeds never count as a pass.
 
-When `contractIdentifierType` is supplied, it must match the actual identifier form. A Package Hash declared as a Contract Hash, or the reverse, is blocked.
+### Policy controls
 
-### 4. Entry-point validation
-
-- Direct `Contract Interaction` and user-friendly `Contract Call` actions require `entryPoint`.
-- Entry points must use the supported deterministic character and length rules.
-- High-level actions such as Swap remain backward compatible when the adapter has not resolved an exact entry point; identity and policy checks still run.
-- When an entry point is supplied for any contract action, it is validated and can be restricted by policy.
-
-### 5. Package-version semantics
-
-- `contractVersion` is optional for Package Hash calls.
-- A supplied package version must be a positive integer.
-- `contractVersion` is rejected for a specific Contract Hash because that hash already identifies a concrete contract version.
-
-### 6. Casper network consistency
-
-When `chainName` is supplied, it must match the Gateway's configured `CASPER_CHAIN_NAME`. A mismatch is blocked.
-
-When omitted, the finding records that the configured Gateway chain was used and recommends explicit network binding.
-
-### 7. Explicit blocked-contract enforcement
-
-`structuredRules.blockedContracts` is an exact deny list for Contract Hashes and Package Hashes. A matching contract is blocked regardless of the target label or risk mode.
-
-### 8. Approved-contract enforcement
-
-The existing `trustedContracts` policy list is now the exact approved-contract list.
-
-- Approved exact identifier: pass
-- Unapproved identifier under Conservative mode: Blocked
-- Unapproved identifier under Balanced or Aggressive mode: Review Required
-
-A `targetType` value such as `Trusted Contract` is descriptive only. It never grants trust by itself.
-
-### 9. Entry-point allowlist
-
-`structuredRules.allowedEntryPoints` optionally restricts the permitted entry-point names. A supplied entry point outside the list is blocked.
-
-Every check produces a structured finding containing:
-
-- Module
-- Status: pass, warning, fail, skipped, or unavailable
-- Severity
-- Rule
-- Message
-- Evidence
-- Remediation
-
-## Gateway request additions
-
-The existing request contract is preserved. The following optional action fields are now formally supported:
+Threat Intelligence settings are stored in `policy.structuredRules`:
 
 ```json
 {
-  "action": {
-    "type": "Contract Interaction",
-    "target": "contract-package-hash-<64-hex-characters>",
-    "targetType": "Trusted Contract",
-    "contractIdentifierType": "Package Hash",
-    "entryPoint": "deposit",
-    "contractVersion": 1,
-    "chainName": "casper-test"
-  }
+  "threatIntelligenceMode": "Review",
+  "threatIntelligenceMinConfidence": 70,
+  "threatIntelligenceUnavailableAction": "Warn"
 }
 ```
 
-The Gateway also accepts a nested `action.contract` object and common snake_case equivalents without changing the canonical response shape.
+Modes:
 
-`Contract Call` is normalized to the existing canonical `Contract Interaction` action so SDK and MCP clients can use a more familiar label without breaking policy behavior.
+- `Observe`: record matches without changing authorization.
+- `Review`: medium, high, or critical matches at or above the confidence threshold require review.
+- `Enforce`: high or critical matches block; medium matches require review.
 
-## Decision behavior
+Unavailable-feed behavior:
 
-Contract Validation contributes directly to deterministic authorization:
+- `Warn`: record an unavailable finding and preserve the decision from other implemented modules.
+- `Review`: require human review unless another module blocks.
+- `Block`: fail closed.
 
-- **Allowed** — the identifier, classification, network context, entry point, version semantics, approved-contract control, blocked-contract control, and configured entry-point rules pass.
-- **Blocked** — a hard validation or policy rule fails, including malformed or ambiguous identity, wallet-as-contract misuse, incorrect target type, missing direct-call entry point, invalid package version, network mismatch, blocked contract, disallowed entry point, or Conservative-mode approval failure.
-- **Review Required** — the contract is structurally valid but not approved under Balanced or Aggressive risk mode and no harder blocking rule applies.
+Legacy policies default internally to `Observe`, 70% confidence, and `Warn`, preserving prior integrations.
 
-No language model is used for authorization.
+### Gateway, audit, and UI
 
-## Backward compatibility
+Threat Intelligence is integrated into:
 
-The release preserves:
+- Agent Gateway authorization
+- Structured module findings
+- Risk Assessment
+- Adaptive Security Pipeline
+- Audit evidence and remediation
+- Intent Playground
+- Policy create/edit forms
+- Security Coverage
+- Integration Health
+- Dashboard platform status
+- Settings feed status
+- TypeScript SDK response types
+- MCP guidance and schema
+- README and Docs
 
-- `POST /api/agent-gateway/intents`
-- `GET /api/agent-gateway/me`
-- `x-magen3-agent-key`
-- Bearer API-key authentication
-- Existing Agent IDs and API-key hashes
+New public status route:
+
+```http
+GET /api/threat-intelligence/status
+```
+
+The normal Gateway result can include sanitized `threatIntelligenceContext` with feed state, record counts, active-record counts, policy mode, normalized identities, and match summaries.
+
+## Example feed
+
+A synthetic testnet-only example is included at:
+
+```text
+backend/data/threat-intelligence.example.json
+```
+
+Its entries are not real malicious identities and must not be presented as production intelligence. Update its `generatedAt` timestamp before a controlled demo or configure a suitable maximum age.
+
+## Database migration
+
+No database migration is required. Threat Intelligence policy settings use the existing `structuredRules` JSON object, while findings and evidence use the existing audit JSON fields.
+
+## Compatibility
+
+Preserved without contract changes:
+
+- Existing Agent IDs
+- Existing API-key hashes and authentication headers
 - Existing policies and audit records
-- Existing `trustedContracts` behavior, now enforced by exact contract identity
-- Existing high-level Swap requests when no entry point has been resolved
-- Existing Casper contract hash and decision-proof relayer
-- Existing wallet signing boundary
-- YieldBot, Codex, JavaScript SDK, Python SDK, and MCP authentication models
-- Railway and Vercel configuration
+- Gateway endpoint and request envelope
+- Casper contract hash and proof relayer
+- Wallet connection and signing boundary
+- YieldBot and Codex integration model
+- TypeScript SDK, Python SDK, and MCP authentication model
+- Railway and Vercel deployment configuration
 
-Existing demo policies containing non-hash labels may need their approved target list replaced with exact Casper Contract Hashes or Package Hashes before those contract intents can be Allowed. This is an intentional security correction rather than an API break.
-
-## Policy configuration
-
-The Policies interface now supports:
-
-- **Trusted Targets** — existing exact approved wallet/contract targets
-- **Blocked Contracts** — stored in `structuredRules.blockedContracts`
-- **Allowed Contract Entry Points** — stored in `structuredRules.allowedEntryPoints`
-
-Existing structured policy data is preserved when a policy is edited.
-
-## Security Pipeline and audit integration
-
-Contract-oriented requests now expose a truthful pipeline containing a Contract Validation stage only when that module is evaluated.
-
-New audit records preserve:
-
-- Original contract intent
-- Contract identifier type
-- Entry point
-- Package version when supplied
-- Chain name
-- Active policy
-- Contract Validation findings
-- Passed and failed checks
-- Primary reason
-- Triggered rule
-- Suggested remediation
-- Final decision
-- Pipeline stages
-- Casper decision-proof status and timestamps
-- Execution hash when later attached
-
-## Frontend changes
-
-### Protection Modules
-
-Contract Validation is now marked **Live**, with current checks and remaining future checks explained separately.
-
-### Policies
-
-Policy create/edit forms include blocked-contract and entry-point controls while preserving existing rule fields.
-
-### Intent Playground
-
-Added authenticated examples for:
-
-- Approved contract call
-- Unapproved contract
-- Malformed contract identifier
-- Missing direct-call entry point
-- Wrong Casper chain
-
-The request editor remains fully editable and uses the unchanged live Gateway route.
-
-### Security Coverage
-
-For contract-relevant agents, recent live protection coverage now requires actual Contract Validation evidence rather than decorative configuration points.
-
-### Integration Health
-
-The agent health model reports Contract Validation as:
-
-- Healthy when the latest evaluated contract checks passed
-- Attention when warnings or failures exist
-- Unknown when no real Contract Validation evidence exists
-
-## SDK and MCP changes
-
-The TypeScript SDK action type now documents and accepts:
-
-- `contractIdentifierType`
-- `entryPoint`
-- `contractVersion`
-- `chainName`
-
-The MCP input schema and intent-schema tool expose the same optional fields. Python remains dictionary-based and is compatible without a code-level API change. JavaScript, Python, MCP, Codex, and integration documentation now contain contract-call guidance.
+Existing integrations that omit Threat Intelligence settings continue working.
 
 ## Major files changed
 
-- `backend/lib/contractValidation.mjs`
-- `backend/lib/contractValidation.test.mjs`
-- `backend/lib/contractGateway.integration.test.mjs`
+### Backend
+
+- `backend/lib/threatIntelligence.mjs`
 - `backend/lib/policyEngine.mjs`
-- `backend/lib/agentGateway.mjs`
 - `backend/store/memoryStore.mjs`
 - `backend/store/postgresStore.mjs`
-- `backend/lib/securityModel.mjs`
-- `backend/lib/frontendSecurityModel.test.mjs`
-- `backend/data/seed.mjs`
 - `backend/server.mjs`
-- `src/app/lib/securityModel.ts`
+- `backend/lib/securityModel.mjs`
+- `backend/data/seed.mjs`
+- `backend/data/threat-intelligence.example.json`
+
+### Tests
+
+- `backend/lib/threatIntelligence.test.mjs`
+- `backend/lib/threatIntelligence.integration.test.mjs`
+- `backend/lib/threatIntelligence.gateway.integration.test.mjs`
+- `backend/lib/frontendSecurityModel.test.mjs`
+- `packages/mcp-server/test/core.test.mjs`
+
+### Frontend and shared models
+
 - `src/app/App.tsx`
+- `src/app/lib/api.ts`
+- `src/app/lib/securityModel.ts`
+
+### SDK, MCP, and documentation
+
 - `packages/sdk-js/src/index.ts`
-- `packages/sdk-js/test/sdk.test.mjs`
 - `packages/sdk-js/README.md`
 - `packages/sdk-python/README.md`
-- `packages/mcp-server/src/server.ts`
 - `packages/mcp-server/src/core.ts`
-- `packages/mcp-server/test/core.test.mjs`
+- `packages/mcp-server/src/server.ts`
 - `packages/mcp-server/README.md`
-- `README.md`
-- `docs/MAGEN3_PLATFORM.md`
+- `docs/THREAT_INTELLIGENCE.md`
 - `docs/AGENT_GATEWAY_API.md`
 - `docs/GATEWAY_INTEGRATION.md`
-- `docs/OFFICIAL_SDKS.md`
+- `docs/MAGEN3_PLATFORM.md`
 - `docs/MCP_SERVER.md`
-- `IMPLEMENTATION_REPORT.md`
+- `docs/OFFICIAL_SDKS.md`
+- `README.md`
+- `.env.example`
 
-## Database and migrations
+## Local configuration
 
-This release introduces **no new database columns and no new migration**.
+For the included synthetic feed:
 
-Approved contracts reuse `trustedContracts`. Blocked contracts and allowed entry points use the existing `structuredRules` JSON field. Contract intent metadata uses the existing original-intent and structured audit fields.
+```env
+THREAT_INTELLIGENCE_FEED_PATH=backend/data/threat-intelligence.example.json
+THREAT_INTELLIGENCE_CACHE_TTL_MS=300000
+THREAT_INTELLIGENCE_MAX_AGE_MS=86400000
+THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS=2500
+```
 
-No database backup is required for the user's current disposable demo-data deployment workflow.
+For Railway, inline JSON is usually simplest:
 
-## Environment variables
+```env
+THREAT_INTELLIGENCE_FEED_JSON={"version":"1","source":"Reviewed feed","generatedAt":"CURRENT_ISO_TIMESTAMP","indicators":[]}
+```
 
-No new environment variable is required.
-
-Contract network validation uses the existing:
-
-- `CASPER_CHAIN_NAME`
-
-All current Railway, Vercel, database, RPC, contract-hash, CORS, wallet, and relayer variables remain unchanged.
+Do not set a real provider credential in a committed `.env` file. Store it in Railway variables or another secret manager.
 
 ## Verification completed
 
-Verified in the implementation environment:
+- 78 backend and security-model tests passed.
+- 13 focused Threat Intelligence unit tests passed within that suite.
+- Authenticated memory-store Gateway integration covered Allowed, Blocked, and Review Required outcomes.
+- Audit findings and Threat Intelligence pipeline stages were verified.
+- Five TypeScript SDK tests passed.
+- Two Python SDK tests passed.
+- Four MCP core tests passed using the compiled SDK and transpiled core module.
+- All backend `.mjs` files passed Node syntax checking.
+- 58 TypeScript/TSX files passed syntax transpilation.
+- Modified frontend files passed a local semantic TypeScript check with temporary dependency stubs.
 
-- Backend JavaScript syntax checks
-- **40/40 backend and security tests**
-- Authenticated HTTP Gateway smoke test
-- Allowed direct contract call through the real server route
-- `Contract Call` to `Contract Interaction` normalization
-- Contract Validation findings in the Gateway response
-- Contract Validation stage in the Security Pipeline
-- Audit persistence
-- **4/4 JavaScript SDK tests** using a generated local build
-- **2/2 Python SDK tests**
-- TypeScript/TSX syntax transpilation for **57 source files**
-- Documentation and module-status consistency checks
+The package registry returned HTTP 503, so a fresh dependency installation, full project typecheck against installed React dependency types, Vite production build, and full MCP protocol test could not be repeated in this environment. Run the normal verification locally before pushing:
 
-The package registry returned HTTP 503, so a fresh workspace dependency installation, full root TypeScript project check, Vite production build, and compiled MCP protocol test could not be repeated in this sandbox. The edited MCP source passed TypeScript syntax transpilation. Run the normal complete verification locally before pushing:
-
-```powershell
+```bash
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
@@ -298,26 +222,45 @@ pnpm mcp:test
 pnpm build
 ```
 
-Live Casper Wallet signing, the funded relayer, Railway PostgreSQL, and production Vercel-to-Railway CORS still require verification in the deployed environment.
+## Deployment
 
-## Protection Module status after this release
+No Railway or Vercel configuration file changed. Add the chosen Threat Intelligence environment variables to Railway, then deploy the backend before or alongside the frontend. The frontend reads actual feed state from the backend status endpoint.
+
+Begin production rollout with `Observe` or `Review`. Use `Enforce` and fail-closed outage behavior only after the feed's quality, legal basis, update cadence, and uptime have been validated.
+
+## Manual QA checklist
+
+1. Deploy without a configured feed and confirm Settings shows `unavailable` rather than healthy.
+2. Confirm a policy with unavailable action `Warn` records an unavailable finding without changing an otherwise Allowed decision.
+3. Confirm unavailable action `Review` returns Review Required.
+4. Confirm unavailable action `Block` returns Blocked.
+5. Configure the synthetic feed with a fresh timestamp.
+6. Submit a safe wallet transfer and confirm Threat Intelligence reports a fresh no-match pass.
+7. Submit the Playground feed-match example in Review mode and confirm Review Required.
+8. Repeat in Enforce mode and confirm Blocked.
+9. Confirm the audit record contains Threat Intelligence findings, evidence, remediation, and a pipeline stage.
+10. Confirm `/api/threat-intelligence/status` does not expose a file path, feed URL, credential, or raw loader error.
+11. Make the feed timestamp stale and confirm it never counts as a pass.
+12. Confirm existing YieldBot, SDK, Codex, and MCP intents that omit Threat Intelligence fields remain compatible.
+
+## Current module status
 
 ### Live
 
 - Identity and Authentication
 - Policy Enforcement
 - Wallet Validation
-- **Contract Validation**
+- Contract Validation
 - Risk Assessment
 
 ### Foundation Available
 
-- None
+- Execution Simulation
+- Threat Intelligence
 
 ### Preview
 
-- Execution Simulation
-- Threat Intelligence
+- None
 
 ### Planned
 
@@ -328,15 +271,5 @@ Live Casper Wallet signing, the funded relayer, Railway PostgreSQL, and producti
 ## Suggested commit message
 
 ```text
-feat(contract-validation): enforce live Casper contract checks before execution
-```
-
-Suggested body:
-
-```text
-Add deterministic contract/package identity validation, target classification,
-entry-point and package-version checks, network binding, exact approved and
-blocked contract controls, entry-point allowlists, structured findings, audit
-evidence, pipeline stages, Playground cases, SDK/MCP fields, coverage, health,
-and documentation while preserving the existing Gateway and Casper contracts.
+feat(threat-intelligence): add configurable Casper identity screening foundation
 ```

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createStore } from "./store/index.mjs";
 import { getCasperStatus } from "./casper/auditPayload.mjs";
+import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } from "./lib/threatIntelligence.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -176,9 +177,10 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.1.0",
+        version: "1.2.0",
         storage: store.mode,
         casper: getCasperStatus(),
+        threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
         timestamp: new Date().toISOString(),
       });
     }
@@ -188,9 +190,15 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { ok: true, casper: getCasperStatus() });
     }
 
+    if (route === "GET /api/threat-intelligence/status") {
+      const snapshot = await getThreatIntelligenceSnapshot();
+      return send(res, 200, { ok: true, threatIntelligence: summarizeThreatIntelligenceSnapshot(snapshot) });
+    }
+
 
     if (route === "GET /api/public-config") {
       const casper = getCasperStatus();
+      const threatIntelligence = summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot());
       return send(res, 200, {
         ok: true,
         service: "magen3-api",
@@ -202,8 +210,9 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation"],
+          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence"],
         },
+        threatIntelligence,
         gateway: {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
@@ -312,6 +321,18 @@ const server = createServer(async (req, res) => {
           statefulSimulation: "Unavailable in the current pre-signing Gateway. Casper speculative execution requires a constructed transaction or deploy and is disabled by default on nodes.",
           decisionRule: "Malformed supplied preflight data can block or require review; omitted legacy metadata remains backward compatible and does not silently count as full simulation."
         },
+        threatIntelligence: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/threat-intelligence/status",
+          matching: "Exact normalized matching for Casper execution wallets, wallet destinations, account hashes, Contract Hashes, and Package Hashes.",
+          feedSources: ["THREAT_INTELLIGENCE_FEED_JSON", "THREAT_INTELLIGENCE_FEED_PATH", "THREAT_INTELLIGENCE_FEED_URL"],
+          policyFields: {
+            mode: "structuredRules.threatIntelligenceMode: Observe | Review | Enforce",
+            minimumConfidence: "structuredRules.threatIntelligenceMinConfidence: 0-100",
+            unavailableAction: "structuredRules.threatIntelligenceUnavailableAction: Warn | Review | Block"
+          },
+          decisionRule: "A configured feed produces deterministic exact-match findings. Feed absence or staleness is reported as unavailable and never counted as a pass. No third-party reputation provider is bundled or falsely claimed."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -320,6 +341,7 @@ const server = createServer(async (req, res) => {
           suggestedResolution: "Safe remediation derived from policy evidence",
           moduleFindings: "Structured pass, warning, fail, unavailable, or skipped findings",
           pipelineStages: "Actual security-pipeline state",
+          threatIntelligenceContext: "Sanitized feed status, policy behavior, checked identities, and exact-match indicator summaries",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",

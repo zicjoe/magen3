@@ -39,8 +39,8 @@ const intentSchema = z.object({
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
-    { name: "magen3-execution-firewall", version: "0.1.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { name: "magen3-execution-firewall", version: "0.2.0" },
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence feed availability and exact-match evidence. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

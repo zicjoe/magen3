@@ -78,6 +78,34 @@ export interface Magen3PipelineStage {
   detail?: string;
 }
 
+export interface Magen3ThreatIntelligenceMatch {
+  entityRole?: string;
+  kind?: string;
+  indicatorId?: string;
+  severity?: Magen3FindingSeverity;
+  confidence?: number;
+  categories?: string[];
+  source?: string;
+}
+
+export interface Magen3ThreatIntelligenceContext {
+  status: "available" | "stale" | "unavailable" | string;
+  sourceType?: "inline" | "file" | "remote" | "none" | string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  indicatorCount?: number;
+  activeIndicatorCount?: number;
+  ageMs?: number | null;
+  maxAgeMs?: number | null;
+  error?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  minConfidence?: number;
+  checkedEntities?: Array<{ role?: string; kind?: string; canonical?: string }>;
+  matchedIndicators?: Magen3ThreatIntelligenceMatch[];
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -91,6 +119,8 @@ export interface Magen3DecisionResult {
   suggestedResolution?: string;
   moduleFindings?: Magen3ModuleFinding[];
   pipelineStages?: Magen3PipelineStage[];
+  /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */
+  threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
 }
 
 export interface Magen3IntentResponse {

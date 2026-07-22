@@ -12,6 +12,7 @@ export interface Magen3McpConfig {
 export type ToolTextResult = CallToolResult;
 
 export const INTENT_SCHEMA_DESCRIPTION = {
+  threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
   source: "Optional external agent name",
   targetChain: "Target chain, for example casper-testnet",
   executionWalletAddress: "Public execution-wallet address; never a private key",
@@ -83,7 +84,13 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
     },
     async getIntentSchema(): Promise<ToolTextResult> {
-      return text({ ok: true, schema: INTENT_SCHEMA_DESCRIPTION, decisions: ["Allowed", "Blocked", "Review Required"], signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions." });
+      return text({
+        ok: true,
+        schema: INTENT_SCHEMA_DESCRIPTION,
+        decisions: ["Allowed", "Blocked", "Review Required"],
+        threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
+        signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
+      });
     },
     async checkIntent(intent: Magen3Intent): Promise<ToolTextResult> {
       try {

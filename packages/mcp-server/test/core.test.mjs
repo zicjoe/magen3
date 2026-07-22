@@ -37,4 +37,5 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.paymentAmountMotes, /positive integer/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.ttl, /duration/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.slippageBps, /structure/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.threatIntelligence, /freshness-checked/i);
 });

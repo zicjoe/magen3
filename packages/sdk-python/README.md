@@ -55,4 +55,6 @@ A trusted-looking target label never bypasses policy enforcement. Contract ident
 
 Execution Simulation is Foundation Available. It validates supplied construction metadata without claiming full stateful execution. Never include private keys, wallet approvals, transaction-level signatures, or raw signed transactions. Public contract arguments belong only inside `runtimeArgs`.
 
+Threat Intelligence findings and the sanitized `threatIntelligenceContext` are returned in the normal decision dictionary when the backend is configured with a feed. A no-match result is not a guarantee of safety.
+
 The SDK never signs or broadcasts blockchain transactions.

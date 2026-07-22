@@ -52,6 +52,12 @@ Ask Codex to submit a harmless intent containing `action.preflight.paymentAmount
 
 The MCP schema never accepts private keys, wallet approvals, transaction-level signatures, or raw signed transactions. Public contract arguments may be represented only inside `runtimeArgs`. Full stateful speculative execution remains unavailable; the current module is Foundation Available transaction-construction preflight.
 
+## Threat-intelligence test
+
+After the Magen3 backend operator configures a fresh demonstration feed, ask Codex to submit the synthetic target from `backend/data/threat-intelligence.example.json` without signing or broadcasting anything. Use a policy in Review or Enforce mode. Codex should report the final decision, the Threat Intelligence finding, feed status, severity, confidence, indicator identifier, remediation, and audit-log identifier.
+
+Then disable or age the feed and repeat under each configured unavailable action. A stale or unavailable feed must never be described as a successful screening pass. Do not call the synthetic demonstration record a real malicious address.
+
 ## Tool behavior
 
 - `magen3_verify_agent`: validates Connected Agent credentials and policy.

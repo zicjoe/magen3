@@ -1,0 +1,28 @@
+{
+  "version": "1",
+  "source": "Replace with your reviewed Casper threat feed",
+  "generatedAt": "2026-07-22T00:00:00.000Z",
+  "indicators": [
+    {
+      "id": "demo-testnet-wallet",
+      "value": "016666666666666666666666666666666666666666666666666666666666666666",
+      "severity": "high",
+      "confidence": 95,
+      "categories": ["testnet-demo", "suspected-phishing"],
+      "label": "Synthetic testnet demonstration indicator",
+      "description": "Example only. Replace this record with reviewed intelligence before production use.",
+      "source": "Magen3 example feed"
+    },
+    {
+      "id": "demo-testnet-contract",
+      "value": "contract-7777777777777777777777777777777777777777777777777777777777777777",
+      "identifierType": "Contract Hash",
+      "severity": "critical",
+      "confidence": 99,
+      "categories": ["testnet-demo", "known-exploit"],
+      "label": "Synthetic testnet contract indicator",
+      "description": "Example only. Replace this record with reviewed intelligence before production use.",
+      "source": "Magen3 example feed"
+    }
+  ]
+}

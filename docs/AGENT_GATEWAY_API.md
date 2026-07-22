@@ -140,6 +140,22 @@ Execution Simulation is **Foundation Available**. It validates supplied construc
 
 Never send private keys, secret keys, seed phrases, wallet approvals, transaction-level signatures, or raw signed transactions to the intent endpoint. Such material is rejected before normalization and is not stored in the audit log. Public contract arguments may be represented only inside `action.preflight.runtimeArgs`.
 
+### Threat Intelligence evaluation
+
+Threat Intelligence is **Foundation Available** and requires an operator-configured feed. The Gateway normalizes the submitted execution wallet and target when they are supported wallet, account-hash, Contract Hash, or Package Hash identifiers, then performs deterministic exact matching. It does not derive related identities or claim that a no-match target is safe.
+
+Policy behavior is read from `structuredRules`:
+
+```json
+{
+  "threatIntelligenceMode": "Review",
+  "threatIntelligenceMinConfidence": 70,
+  "threatIntelligenceUnavailableAction": "Warn"
+}
+```
+
+A fresh feed can produce a pass or a structured match finding. A stale or unavailable feed produces `unavailable` or `fail` according to policy and is never counted as a pass. The response exposes only sanitized source and indicator evidence; provider credentials are never returned.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -158,7 +174,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",
@@ -175,7 +191,20 @@ The top-level response preserves the existing contract and adds structured expla
       { "id": "agent-authentication", "label": "Agent authenticated", "status": "completed", "timestamp": "2026-07-21T12:00:00.000Z" },
       { "id": "decision", "label": "Decision returned", "status": "completed", "timestamp": "2026-07-21T12:00:00.000Z" },
       { "id": "casper-proof", "label": "Casper proof", "status": "pending" }
-    ]
+    ],
+    "threatIntelligenceContext": {
+      "status": "available",
+      "sourceType": "remote",
+      "sourceName": "Reviewed Casper intelligence",
+      "generatedAt": "2026-07-21T11:55:00.000Z",
+      "indicatorCount": 182,
+      "activeIndicatorCount": 176,
+      "mode": "Review",
+      "unavailableAction": "Warn",
+      "minConfidence": 70,
+      "checkedEntities": [],
+      "matchedIndicators": []
+    }
   },
   "auditLog": {
     "id": "AUD-...",
@@ -221,6 +250,7 @@ The owner wallet registers the agent, manages credentials, and controls its poli
 | `auditLog.originalIntent` | Normalized external-agent request stored for auditability. |
 | `auditLog.capabilityContext` | Registered capabilities considered for the decision. |
 | `auditLog.moduleFindings` | Structured protection findings used by the deterministic decision engine. |
+| `result.threatIntelligenceContext` | Sanitized feed freshness, checked identities, policy mode, and exact-match indicator summary. |
 | `auditLog.pipelineStages` | Actual recorded state of the security pipeline and proof/execution timeline. |
 | `auditLog.primaryReason` | Main deterministic explanation. |
 | `auditLog.triggeredRule` | Policy rule most directly responsible for the outcome. |
@@ -242,8 +272,9 @@ After an Allowed action is signed and submitted by the execution wallet, attach 
 | Missing or invalid API key | Authentication fails. |
 | Revoked agent | Gateway access is rejected. |
 | No active policy | Magen3 fails closed. |
-| Hard policy, wallet-validation, or contract-validation violation | `Blocked`. |
+| Hard policy, wallet-validation, contract-validation, execution-preflight, or enforced threat-intelligence violation | `Blocked`. |
 | Review threshold or review condition | `Review Required`. |
+| Threat feed stale or unavailable | Warn, Review Required, or Blocked according to the active policy; never silently passed. |
 | Unavailable roadmap module | Reported honestly as `unavailable`; it is not silently counted as protection. |
 
 ## API Discovery

@@ -1,21 +1,34 @@
 {
   "name": "@magen3/mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official local MCP server for the Magen3 Web3 execution firewall.",
   "type": "module",
   "main": "./dist/server.js",
   "bin": {
     "magen3-mcp": "./dist/server.js"
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.mjs"
   },
-  "keywords": ["magen3", "mcp", "casper", "web3", "ai-agent", "execution-firewall"],
+  "keywords": [
+    "magen3",
+    "mcp",
+    "casper",
+    "web3",
+    "ai-agent",
+    "execution-firewall"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@magen3/sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
