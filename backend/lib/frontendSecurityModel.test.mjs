@@ -30,7 +30,11 @@ test("security coverage reaches 100 only when every configured protection check 
       approvalThreshold: 15,
       trustedContracts: ["contract-package-hash-example"],
     },
-    [{ timestamp, decisionProofStatus: "recorded" }],
+    [{
+      timestamp,
+      decisionProofStatus: "recorded",
+      moduleFindings: [{ module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." }],
+    }],
   );
 
   assert.equal(result.score, 100);
@@ -72,7 +76,12 @@ test("integration health never reports healthy when core services or configurati
   const healthy = securityModel.deriveIntegrationHealth(
     { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
     { status: "Active" },
-    [{ timestamp, decision: "Allowed", decisionProofStatus: "recorded" }],
+    [{
+      timestamp,
+      decision: "Allowed",
+      decisionProofStatus: "recorded",
+      moduleFindings: [{ module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." }],
+    }],
     true,
   );
   assert.equal(healthy.overall, "Healthy");

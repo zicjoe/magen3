@@ -68,7 +68,7 @@ export function normalizeAgentGatewayIntent(body = {}) {
   const action = body.action && typeof body.action === "object" ? body.action : body;
   const agentId = requireField(body.agentId || body.agent_id || action.agentId || action.agent_id, "agentId");
   const actionType = normalizeActionType(action.type || action.actionType || action.action_type || body.actionType || body.action_type);
-  const target = requireField(action.target || body.target, "target");
+  const target = cleanString(action.target || body.target, "");
   const amount = Number(action.amount ?? body.amount ?? 0);
 
   if (!Number.isFinite(amount) || amount < 0) {
@@ -81,9 +81,9 @@ export function normalizeAgentGatewayIntent(body = {}) {
     id: makeId("GW"),
     source: cleanString(body.source || body.client || body.agentName || body.agent_name, "external-agent"),
     agentId,
-    executionWalletAddress: requireField(
+    executionWalletAddress: cleanString(
       body.executionWalletAddress || body.execution_wallet_address || body.walletAddress || body.wallet_address || body.wallet,
-      "executionWalletAddress"
+      ""
     ),
     actionType,
     amount,

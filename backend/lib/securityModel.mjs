@@ -32,8 +32,8 @@ export const PROTECTION_MODULES = [
   {
     id: "wallet-validation",
     name: "Wallet Validation",
-    status: "Foundation Available",
-    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "Enterprise Automation"],
+    status: "Live",
+    capabilities: EXECUTION_CAPABILITIES,
   },
   {
     id: "contract-validation",

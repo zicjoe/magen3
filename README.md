@@ -99,7 +99,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | --- | --- | --- |
 | Identity and Authentication | **Live** | Agent existence, active status, and API-key verification. |
 | Policy Enforcement | **Live** | Active-policy lookup and supported deterministic policy fields. |
-| Wallet Validation | **Foundation Available** | Trusted destination behavior and separate owner/execution wallet context. |
+| Wallet Validation | **Live** | Casper execution-wallet format, wallet destination format/classification, exact self-transfer prevention, approved destinations, transaction and daily limits, and review thresholds. |
 | Contract Validation | **Foundation Available** | Trusted contract list and unknown-contract behavior. |
 | Execution Simulation | **Preview** | No backend enforcement yet; findings show `unavailable`, never a silent pass. |
 | Threat Intelligence | **Preview** | No external threat feed is enforced. |
@@ -107,6 +107,26 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Bridge Controls | **Planned** | No current backend checks. |
 | Compliance Controls | **Planned** | No current backend checks. |
 | Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
+
+### Live Wallet Validation
+
+Wallet Validation now runs on every authenticated gateway intent before a wallet may be asked to sign. Its deterministic checks include:
+
+- A non-empty Casper execution-wallet public key is required.
+- Ed25519 execution keys must use the `01` prefix and valid key length.
+- Secp256k1 execution keys must use the `02` prefix and valid key length.
+- Wallet-transfer destinations may use a supported Casper public key or `account-hash-...` identifier.
+- `Transfer` intents must classify the target as `Wallet Address`.
+- Exact source/destination self-transfers are blocked to prevent accidental execution.
+- Wallet destinations are checked against the active policy's Trusted Targets list.
+- Maximum transaction, daily wallet spending, and human-review thresholds are evaluated as Wallet Validation findings.
+- The execution wallet is evaluated independently from the Magen3 owner wallet.
+
+Malformed execution wallets, malformed destinations, incorrect transfer classification, self-transfers, and hard policy-limit violations return `Blocked`. Valid but unapproved destinations return `Blocked` in Conservative mode and `Review Required` in Balanced or Aggressive mode.
+
+Wallet format validation is structural. It does not claim that an address is funded, controlled by the requester, reputable, or safe from every threat. Address reputation remains part of the Threat Intelligence roadmap.
+
+Format reference: [Casper Accounts and Cryptographic Keys](https://docs.casper.network/concepts/accounts-and-keys).
 
 ## Guided agent registration
 

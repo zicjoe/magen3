@@ -176,7 +176,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.0.0",
+        version: "1.1.0",
         storage: store.mode,
         casper: getCasperStatus(),
         timestamp: new Date().toISOString(),
@@ -201,6 +201,7 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
+          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Risk Assessment"],
         },
         gateway: {
           endpoint: "/api/agent-gateway/intents",
@@ -233,17 +234,32 @@ const server = createServer(async (req, res) => {
         requestShape: {
           source: "external-agent-name",
           agentId: "YOUR_AGENT_ID",
-          walletAddress: "execution-wallet-public-key",
-          executionWalletAddress: "execution-wallet-public-key",
-          goal: "Stake idle funds safely",
-          reason: "User strategy asks for low-risk staking",
+          walletAddress: "Casper Ed25519 or Secp256k1 public key",
+          executionWalletAddress: "Casper Ed25519 or Secp256k1 public key",
+          goal: "Transfer funds to an approved wallet safely",
+          reason: "User strategy asks for a policy-checked transfer",
           action: {
-            type: "Stake",
-            amount: 15,
+            type: "Transfer",
+            amount: 5,
             asset: "CSPR",
-            target: "VALIDATOR_OR_CONTRACT_ADDRESS",
-            targetType: "Trusted Contract"
+            target: "Casper public key or account-hash identifier",
+            targetType: "Wallet Address"
           }
+        },
+        walletValidation: {
+          status: "Live",
+          executionWallet: "Required signing public key; account hashes are not accepted as signing wallets",
+          transferTargetType: "Wallet Address",
+          destinationFormats: ["Ed25519 public key", "Secp256k1 public key", "account-hash"],
+          checks: [
+            "Execution wallet format",
+            "Destination format and classification",
+            "Exact self-transfer prevention",
+            "Approved wallet destination",
+            "Maximum transaction amount",
+            "Daily wallet spending limit",
+            "Human-review threshold"
+          ]
         },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",

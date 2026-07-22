@@ -81,7 +81,7 @@ Protection modules live under Agent Shield.
 | --- | --- | --- |
 | Identity and Authentication | Live | Agent ID exists, agent is active, API-key digest matches. |
 | Policy Enforcement | Live | Active policy, blocked actions, max transaction, daily limit, review threshold, risk mode. |
-| Wallet Validation | Foundation Available | Trusted destination behavior and separate owner/execution wallet context. |
+| Wallet Validation | Live | Execution-wallet public-key format, destination format/classification, self-transfer prevention, approved destinations, spend limits, and review thresholds. |
 | Contract Validation | Foundation Available | Trusted contract list and conservative unknown-contract behavior. |
 | Execution Simulation | Preview | No backend enforcement; returns unavailable where relevant. |
 | Threat Intelligence | Preview | No external threat feed currently enforced. |
@@ -91,6 +91,26 @@ Protection modules live under Agent Shield.
 | Risk Assessment | Live | Deterministic finding aggregation and explainable risk score. |
 
 An unavailable module never silently returns pass.
+
+### Wallet Validation decision model
+
+Wallet Validation is a live deterministic module. It evaluates every authenticated gateway intent and emits structured findings for:
+
+1. Execution-wallet presence and Casper signing-public-key format.
+2. Independent owner-wallet and execution-wallet context.
+3. Wallet-target classification for transfer actions.
+4. Destination public-key or account-hash format.
+5. Exact submitted-identifier self-transfer prevention.
+6. Active-policy Trusted Targets membership.
+7. Maximum transaction amount.
+8. Daily wallet spending projection.
+9. Human-review threshold.
+
+The module can emit `pass`, `warning`, `fail`, or `skipped`. A malformed wallet or hard-limit violation never becomes a warning. A valid unapproved destination is handled according to the active risk mode.
+
+This validates structure and configured policy coverage. It does not prove wallet ownership, balance, address reputation, sanctions status, or the absence of compromise. Those require separate verified modules or providers.
+
+Format reference: [Casper Accounts and Cryptographic Keys](https://docs.casper.network/concepts/accounts-and-keys).
 
 ## Policies and templates
 

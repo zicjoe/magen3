@@ -460,7 +460,17 @@ export async function createPostgresStore() {
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
-      const result = evaluatePolicy({ request: body, agents, policies, auditLogs });
+      const result = evaluatePolicy({
+        request: {
+          ...body,
+          walletAddress: body.executionWalletAddress || body.execution_wallet_address || body.walletAddress,
+          executionWalletAddress: body.executionWalletAddress || body.execution_wallet_address || body.walletAddress,
+          agentOwnerWalletAddress: walletAddress,
+        },
+        agents,
+        policies,
+        auditLogs,
+      });
 
       const [reviewRow] = await db.insert(actionReviewsTable).values({
         id: makeId("REV"),
@@ -569,7 +579,7 @@ export async function createPostgresStore() {
         throw err;
       }
       const walletAddress = requireWalletAddress(agentRecord.ownerWalletAddress);
-      const executionWalletAddress = requireWalletAddress(intent.executionWalletAddress);
+      const executionWalletAddress = normalizeWalletAddress(intent.executionWalletAddress);
       const [agents, policies, auditLogs] = await Promise.all([
         listAgents(walletAddress),
         listPolicies(walletAddress),
@@ -579,9 +589,12 @@ export async function createPostgresStore() {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
+        asset: intent.asset,
         target: intent.target,
         targetType: intent.targetType,
         walletAddress: executionWalletAddress,
+        executionWalletAddress,
+        agentOwnerWalletAddress: walletAddress,
       };
       const result = evaluatePolicy({ request, agents, policies, auditLogs });
       const agent = agents.find((item) => item.id === intent.agentId);

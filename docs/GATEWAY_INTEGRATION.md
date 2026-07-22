@@ -59,20 +59,22 @@ curl -X POST "https://YOUR_API_HOST/api/agent-gateway/intents" \
     "source": "YieldBot AI",
     "agentId": "MAG-AGENT-...",
     "targetChain": "casper-testnet",
-    "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-    "goal": "Stake 15 CSPR to a trusted validator",
+    "executionWalletAddress": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "goal": "Transfer 5 CSPR to an approved wallet",
     "reason": "The agent prepared this action and needs Magen3 approval.",
     "action": {
-      "type": "Stake",
-      "amount": 15,
+      "type": "Transfer",
+      "amount": 5,
       "asset": "CSPR",
-      "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
-      "targetType": "Trusted Contract"
+      "target": "01bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "targetType": "Wallet Address"
     }
   }'
 ```
 
 Use only action names accepted by the current backend schema. The in-app Intent Playground includes working examples for the actions available in the current interface.
+
+Wallet Validation is live. The execution wallet must be a valid Casper signing public key. Transfer targets must be classified as `Wallet Address` and use a supported public-key or account-hash format. Never send a private key.
 
 ## Decision Handling
 

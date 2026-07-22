@@ -94,11 +94,19 @@ export const PROTECTION_MODULE_CATALOG: Array<{
   {
     id: "wallet-validation",
     name: "Wallet Validation",
-    description: "Applies destination controls to wallet-oriented actions.",
-    status: "Foundation Available",
-    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "Enterprise Automation"],
-    currentChecks: ["Trusted destination list", "Execution wallet captured separately from owner wallet"],
-    futureChecks: ["Address reputation", "Wallet behavior signals"],
+    description: "Validates the execution wallet, wallet destinations, spend controls, and review thresholds before signing.",
+    status: "Live",
+    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
+    currentChecks: [
+      "Casper execution-wallet public-key format",
+      "Wallet destination format and classification",
+      "Exact self-transfer prevention",
+      "Approved wallet destinations",
+      "Maximum transaction and daily wallet spending limits",
+      "High-value human-review threshold",
+      "Independent owner and execution wallet context",
+    ],
+    futureChecks: ["Address reputation", "On-chain wallet behavior signals", "Public-key to account-hash equivalence checks"],
     configurable: true,
   },
   {
@@ -258,7 +266,7 @@ export function calculateSecurityCoverage(
     approvalThreshold?: number;
     trustedContracts?: string[];
   },
-  logs: Array<{ timestamp: string; decisionProofStatus?: string }> = [],
+  logs: Array<{ timestamp: string; decisionProofStatus?: string; moduleFindings?: ModuleFinding[] }> = [],
 ): CoverageResult {
   const capabilities = normalizeCapabilities(agent.executionCapabilities, agent.type);
   const destinationRelevant = capabilities.some((item) => ["Trading", "Wallet Management", "Treasury Operations", "Enterprise Automation"].includes(item));
@@ -267,6 +275,8 @@ export function calculateSecurityCoverage(
   const lastIntent = agent.lastIntentAt || logs[0]?.timestamp || "";
   const recentGateway = lastIntent ? Date.now() - new Date(lastIntent).getTime() <= 30 * 24 * 60 * 60 * 1000 : false;
   const proofRecorded = logs.some((log) => log.decisionProofStatus === "recorded");
+  const walletValidationObserved = logs.some((log) =>
+    log.moduleFindings?.some((finding) => finding.module === "Wallet Validation"));
 
   const checks: CoverageCheck[] = [
     { id: "capabilities", label: "Execution capabilities selected", weight: 10, passed: capabilities.length > 0, detail: `${capabilities.length} capability${capabilities.length === 1 ? "" : "ies"} configured.`, recommendation: "Select at least one execution capability.", page: "connected-agents" },
@@ -276,7 +286,7 @@ export function calculateSecurityCoverage(
     { id: "contract-controls", label: "Contract controls", weight: 10, passed: !contractRelevant || Boolean(policy?.trustedContracts?.length), detail: !contractRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? "Trusted contract controls are configured." : "No trusted contracts are configured.", recommendation: "Add approved contracts for dApp and trading interactions.", page: "policies" },
     { id: "review-threshold", label: "Human review threshold", weight: 10, passed: !reviewRelevant || Number(policy?.approvalThreshold) > 0, detail: !reviewRelevant ? "Not required by the selected capabilities." : Number(policy?.approvalThreshold) > 0 ? `Review required above ${policy?.approvalThreshold} CSPR.` : "No review threshold is configured.", recommendation: "Configure a review threshold for higher-value actions.", page: "policies" },
     { id: "credential", label: "API credential active", weight: 10, passed: agent.status === "Active" && Boolean(agent.apiKeyPreview), detail: agent.apiKeyPreview ? `Credential ${agent.apiKeyPreview} is active.` : "No active credential preview is available.", recommendation: "Rotate or issue an API credential.", page: "connected-agents" },
-    { id: "gateway-activity", label: "Recent gateway communication", weight: 5, passed: recentGateway, detail: lastIntent ? `Last intent: ${new Date(lastIntent).toLocaleString()}.` : "No gateway request has been received.", recommendation: "Send a test intent through the Intent Playground.", page: "intent-playground" },
+    { id: "gateway-activity", label: "Recent Wallet Validation activity", weight: 5, passed: recentGateway && walletValidationObserved, detail: recentGateway && walletValidationObserved ? `Wallet Validation was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? "A recent intent exists, but no Wallet Validation finding is visible yet." : "No gateway request has been received.", recommendation: "Send a valid wallet intent through the Intent Playground to verify live Wallet Validation.", page: "intent-playground" },
     { id: "casper-proof", label: "Casper proof recording observed", weight: 5, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
     { id: "agent-state", label: "Agent configuration complete", weight: 5, passed: agent.status === "Active" && agent.onboardingStatus !== "draft", detail: agent.status === "Active" ? "Agent is active and available to the gateway." : "Agent is not active.", recommendation: "Complete onboarding and ensure the agent is active.", page: "connected-agents" },
   ];
@@ -289,17 +299,22 @@ export function calculateSecurityCoverage(
 export function deriveIntegrationHealth(
   agent: { status?: string; apiKeyPreview?: string; lastIntentAt?: string },
   policy: { status?: string } | undefined,
-  logs: Array<{ timestamp: string; decision?: string; decisionProofStatus?: string }> = [],
+  logs: Array<{ timestamp: string; decision?: string; decisionProofStatus?: string; moduleFindings?: ModuleFinding[] }> = [],
   gatewayOnline = false,
 ) {
   const latest = logs[0];
   const proofState = latest?.decisionProofStatus || "not observed";
+  const walletFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Wallet Validation") || [];
+  const walletFailed = walletFindings.some((finding) => finding.status === "fail");
+  const walletWarned = walletFindings.some((finding) => finding.status === "warning" || finding.status === "unavailable");
+  const walletHealth = walletFindings.length === 0 ? "unknown" : walletFailed || walletWarned ? "attention" : "healthy";
   const checks = [
     { label: "Gateway connectivity", status: gatewayOnline ? "healthy" : "unavailable", detail: gatewayOnline ? "Backend health check succeeded." : "Backend health check is currently unavailable." },
     { label: "API credential", status: agent.status === "Active" && agent.apiKeyPreview ? "healthy" : "attention", detail: agent.apiKeyPreview || "No credential preview." },
     { label: "Active policy", status: policy?.status === "Active" ? "healthy" : "attention", detail: policy?.status === "Active" ? "Policy is active." : "No active policy." },
     { label: "Last received intent", status: agent.lastIntentAt || latest ? "observed" : "unknown", detail: agent.lastIntentAt || latest?.timestamp || "No intent received." },
     { label: "Last decision", status: latest ? "observed" : "unknown", detail: latest?.decision || "No decision recorded." },
+    { label: "Wallet Validation", status: walletHealth, detail: walletFindings.length === 0 ? "No Wallet Validation finding is available yet." : walletFailed ? "The latest request failed one or more wallet checks." : walletWarned ? "The latest request needs attention before execution." : "The latest request passed the evaluated wallet checks." },
     { label: "Casper proof service", status: proofState === "recorded" ? "healthy" : proofState === "failed" ? "attention" : "pending", detail: proofState },
     { label: "Audit synchronization", status: latest ? "healthy" : "unknown", detail: latest ? "Latest audit record is visible." : "No audit record is available." },
   ];

@@ -332,7 +332,17 @@ export function createMemoryStore() {
 
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
-      const result = evaluatePolicy({ request: body, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });
+      const result = evaluatePolicy({
+        request: {
+          ...body,
+          walletAddress: body.executionWalletAddress || body.execution_wallet_address || body.walletAddress,
+          executionWalletAddress: body.executionWalletAddress || body.execution_wallet_address || body.walletAddress,
+          agentOwnerWalletAddress: walletAddress,
+        },
+        agents: scopedAgents(walletAddress),
+        policies: scopedPolicies(walletAddress),
+        auditLogs: scopedAuditLogs(walletAddress),
+      });
       const review = {
         id: makeId("REV"),
         agentId: body.agentId,
@@ -406,14 +416,17 @@ export function createMemoryStore() {
       const intent = normalizeAgentGatewayIntent(body);
       const agentRecord = requireGatewayAgent(intent.agentId, context.apiKey);
       const walletAddress = requireWalletAddress(agentRecord.ownerWalletAddress);
-      const executionWalletAddress = requireWalletAddress(intent.executionWalletAddress);
+      const executionWalletAddress = normalizeWalletAddress(intent.executionWalletAddress);
       const request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
+        asset: intent.asset,
         target: intent.target,
         targetType: intent.targetType,
         walletAddress: executionWalletAddress,
+        executionWalletAddress,
+        agentOwnerWalletAddress: walletAddress,
       };
       const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress) });
       const agent = publicAgent(agentRecord);

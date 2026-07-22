@@ -65,21 +65,23 @@ Content-Type: application/json
   "source": "YieldBot AI",
   "agentId": "MAG-AGENT-...",
   "targetChain": "casper-testnet",
-  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "goal": "Stake 15 CSPR to a trusted validator",
+  "walletAddress": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "executionWalletAddress": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "goal": "Transfer 5 CSPR to an approved wallet",
   "reason": "The agent prepared this action and needs Magen3 approval before execution.",
   "action": {
-    "type": "Stake",
-    "amount": 15,
+    "type": "Transfer",
+    "amount": 5,
     "asset": "CSPR",
-    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
-    "targetType": "Trusted Contract"
+    "target": "01bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "targetType": "Wallet Address"
   }
 }
 ```
 
-`executionWalletAddress` is the wallet that would sign the real action after an Allowed decision. `walletAddress` remains accepted for compatibility and should describe the same execution wallet.
+`executionWalletAddress` is the wallet that would sign the real action after an Allowed decision. It must be a structurally valid Casper Ed25519 or Secp256k1 public key. `walletAddress` remains accepted for compatibility and should describe the same execution wallet.
+
+For `Transfer`, `targetType` must be `Wallet Address`. The destination must be a supported Casper public key or `account-hash-...` identifier. The Trusted Targets list, transaction limits, daily spending, and review threshold are then evaluated by live Wallet Validation.
 
 ## Decision Response
 
@@ -102,12 +104,12 @@ The top-level response preserves the existing contract and adds structured expla
     "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Risk Assessment"],
     "moduleFindings": [
       {
-        "module": "Policy Enforcement",
+        "module": "Wallet Validation",
         "status": "pass",
         "severity": "info",
-        "rule": "Maximum transaction amount",
-        "message": "15 CSPR is within the 25 CSPR transaction limit.",
-        "evidence": { "received": 15, "maximum": 25 },
+        "rule": "Valid execution wallet format",
+        "message": "Execution wallet uses a valid Ed25519 public key format.",
+        "evidence": { "format": "ed25519-public-key" },
         "remediation": "No change is required."
       }
     ],

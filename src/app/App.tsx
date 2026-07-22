@@ -4520,7 +4520,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, and Risk Assessment. Wallet and Contract Validation have enforceable foundations. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, and Risk Assessment. Contract Validation remains Foundation Available. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -4875,7 +4875,7 @@ codex mcp add magen3 \
                     ["Can Magen3 be cross-chain?", "Yes at the gateway and policy layer. The current implementation records decision proofs on Casper Testnet while future adapters can support more target chains."],
                     ["Is it one API key for the whole app?", "No. Use one API key per connected agent."],
                     ["Is it one API key per policy?", "No. Policies attach to agents. API keys authenticate agents."],
-                    ["Can the execution wallet differ from the owner wallet?", "Yes. The owner wallet manages the agent in Magen3; the execution wallet signs in the external app."],
+                    ["Can the execution wallet differ from the owner wallet?", "Yes. The owner wallet manages the agent in Magen3; the execution wallet signs in the external app. Live Wallet Validation checks the execution public key independently."],
                     ["Does Magen3 sign transactions?", "No. Magen3 checks and records decisions. Wallet signing still happens through the execution wallet."],
                     ["What does Casper Testnet do?", "Casper Testnet is the current proof and audit layer for Magen3 decisions. It records the gateway decision, not the target-chain transaction itself."],
                   ].map(([question, answer]) => (
@@ -4919,6 +4919,10 @@ codex mcp add magen3 \
 // Intent Playground
 // ──────────────────────────────────────────────────────────
 
+const PLAYGROUND_DEMO_EXECUTION_WALLET = `01${"1".repeat(64)}`;
+const PLAYGROUND_DEMO_RECIPIENT = `01${"2".repeat(64)}`;
+const PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT = `02${"3".repeat(66)}`;
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string) => Record<string, unknown>> = {
   Swap: (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
@@ -4934,9 +4938,36 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string) 
     agentId: agent.id,
     walletAddress,
     executionWalletAddress: walletAddress,
-    goal: "Transfer 5 CSPR to an approved destination",
-    reason: "Validate destination and spend controls before signing.",
+    goal: "Transfer 5 CSPR to a policy-approved wallet",
+    reason: "Validate wallet format, destination, spend controls, and review thresholds before signing.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address" },
+  }),
+  "Unapproved wallet": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Test review behavior for a valid but unapproved wallet",
+    reason: "Verify destination controls without using a malformed address.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT, targetType: "Wallet Address" },
+  }),
+  "Malformed wallet": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm malformed wallet destinations are blocked",
+    reason: "Exercise deterministic wallet-address validation.",
     action: { type: "Transfer", amount: 5, asset: "CSPR", target: "RECIPIENT_PUBLIC_KEY", targetType: "Wallet Address" },
+  }),
+  "Self transfer": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm exact self-transfer requests are blocked",
+    reason: "Exercise source and destination comparison.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: walletAddress, targetType: "Wallet Address" },
   }),
   Stake: (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
@@ -4988,7 +5019,7 @@ function IntentPlaygroundPage({
 
   const loadExample = useCallback((name: string, agent = selectedAgent) => {
     if (!agent) return;
-    const payload = PLAYGROUND_EXAMPLES[name](agent, walletAddress || "EXECUTION_WALLET_PUBLIC_KEY");
+    const payload = PLAYGROUND_EXAMPLES[name](agent, walletAddress || PLAYGROUND_DEMO_EXECUTION_WALLET);
     setExample(name);
     setRequestJson(JSON.stringify(payload, null, 2));
     setResult(null);
@@ -5100,6 +5131,11 @@ function IntentPlaygroundPage({
               placeholder="Paste the one-time raw key or rotate the agent key"
             />
             <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">Held only in this page state and sent in the existing <span className="font-mono text-[#94A3B8]">x-magen3-agent-key</span> header. It is not added to the request JSON.</p>
+          </div>
+
+          <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
+            <div className="font-semibold text-[#22D3EE]">Wallet Validation is Live</div>
+            <div className="mt-1">The execution wallet must be a Casper signing public key. Wallet destinations are checked for valid format, correct classification, exact self-transfer, policy approval, transaction limits, daily spend, and human-review thresholds.</div>
           </div>
 
           <div>
