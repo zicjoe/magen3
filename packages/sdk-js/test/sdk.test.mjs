@@ -77,3 +77,47 @@ test("preserves contract validation metadata in intent payloads", async () => {
   assert.equal(captured.action.contractVersion, 1);
   assert.equal(captured.action.chainName, "casper-test");
 });
+
+
+test("preserves execution preflight metadata without signing material", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 12, reason: "preflight passed", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Swap",
+      amount: 10,
+      target: "DEX_ROUTER",
+      preflight: {
+        paymentAmountMotes: "5000000000",
+        gasPriceTolerance: 1,
+        ttl: "30m",
+        timestamp: "2026-07-22T10:00:00.000Z",
+        slippageBps: 300,
+        expectedOutput: 9.8,
+        minimumReceived: 9.5,
+      },
+    },
+  });
+
+  assert.equal(captured.action.preflight.paymentAmountMotes, "5000000000");
+  assert.equal(captured.action.preflight.gasPriceTolerance, 1);
+  assert.equal(captured.action.preflight.slippageBps, 300);
+  assert.equal(captured.action.preflight.minimumReceived, 9.5);
+});

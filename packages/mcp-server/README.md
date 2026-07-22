@@ -43,3 +43,8 @@ Contract-oriented actions may include these optional action fields:
 - `chainName`: optional Casper chain name checked against the Gateway configuration
 
 A `targetType` value such as `Trusted Contract` never grants trust by itself. The exact contract or package identifier must be approved by the active Magen3 policy.
+
+
+## Execution preflight
+
+Actions may include a `preflight` object with `paymentAmountMotes`, `gasPriceTolerance`, `ttl`, `timestamp`, optional swap bounds, runtime arguments, and an optional transaction hash. Magen3 validates this metadata before signing. Full stateful speculative execution remains unavailable, and signing material is never accepted by the intent endpoint.

@@ -36,6 +36,8 @@ test("security coverage reaches 100 only when every configured protection check 
       moduleFindings: [
         { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
+        { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
+        { module: "Execution Simulation", status: "unavailable", severity: "info", rule: "Stateful speculative execution", message: "Stateful simulation unavailable." },
       ],
     }],
   );
@@ -44,6 +46,40 @@ test("security coverage reaches 100 only when every configured protection check 
   assert.equal(result.label, "Strong foundation");
   assert.equal(result.recommendations.length, 0);
   assert.ok(result.checks.every((check) => check.passed));
+});
+
+test("execution-preflight applicability alone does not count as configured construction preflight", () => {
+  const timestamp = new Date().toISOString();
+  const result = securityModel.calculateSecurityCoverage(
+    {
+      status: "Active",
+      type: "Trading Agent",
+      executionCapabilities: ["Trading"],
+      apiKeyPreview: "mg3_live_…f91a",
+      onboardingStatus: "complete",
+      lastIntentAt: timestamp,
+    },
+    {
+      status: "Active",
+      maxTransaction: 25,
+      dailyLimit: 100,
+      approvalThreshold: 15,
+      trustedContracts: ["contract-package-hash-example"],
+    },
+    [{
+      timestamp,
+      decisionProofStatus: "recorded",
+      moduleFindings: [
+        { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
+        { module: "Execution Simulation", status: "pass", severity: "info", rule: "Execution preflight applicability", message: "Applicable only." },
+        { module: "Execution Simulation", status: "unavailable", severity: "info", rule: "Stateful speculative execution", message: "Unavailable." },
+      ],
+    }],
+  );
+
+  const preflight = result.checks.find((check) => check.id === "execution-preflight");
+  assert.equal(preflight.passed, false);
+  assert.ok(result.recommendations.some((check) => check.id === "execution-preflight"));
 });
 
 test("security coverage is deterministic and explains missing controls", () => {
@@ -58,7 +94,7 @@ test("security coverage is deterministic and explains missing controls", () => {
   const second = securityModel.calculateSecurityCoverage(agent, undefined, []);
 
   assert.deepEqual(first, second);
-  assert.equal(first.score, 15);
+  assert.equal(first.score, 13);
   assert.equal(first.label, "Limited coverage");
   assert.ok(first.recommendations.some((check) => check.id === "active-policy"));
   assert.ok(first.recommendations.some((check) => check.id === "contract-controls"));

@@ -28,6 +28,17 @@ export const INTENT_SCHEMA_DESCRIPTION = {
     entryPoint: "Required for direct Contract Interaction/Contract Call actions; optional for high-level actions when not yet resolved",
     contractVersion: "Optional positive package contract version; never use it with a Contract Hash",
     chainName: "Optional Casper chain name, validated against the Gateway configuration",
+    preflight: {
+      paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
+      gasPriceTolerance: "Optional positive integer gas-price tolerance",
+      ttl: "Optional positive duration such as 30m or 1h",
+      timestamp: "Optional ISO-8601 transaction timestamp",
+      slippageBps: "Optional swap slippage in basis points; structure only, not a policy maximum",
+      expectedOutput: "Optional quoted swap output",
+      minimumReceived: "Optional minimum swap output; must not exceed expectedOutput",
+      runtimeArgs: "Optional runtime-argument object without signing material",
+      transactionHash: "Optional 64-character transaction hash after construction",
+    },
   },
 } as const;
 

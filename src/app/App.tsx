@@ -2104,7 +2104,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, and risk mode. Slippage, simulation, oracle, bridge, and threat-intelligence settings remain Preview or Planned.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Policy-specific maximum slippage, full stateful simulation, oracle, bridge, and threat-intelligence settings remain Preview or Planned.
                   </div>
                 </>
               )}
@@ -4583,7 +4583,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence is Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -4992,25 +4992,59 @@ function firstConfiguredContract(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
 }
 
+function firstConfiguredWallet(policy?: Policy) {
+  return policy?.trustedContracts.find((target) => /^(?:01[0-9a-f]{64}|02[0-9a-f]{66}|account-hash-[0-9a-f]{64})$/i.test(target));
+}
+
+function contractIdentifierTypeFor(target: string) {
+  return /^(?:contract-package-|contract-package-hash-|package-)/i.test(target) ? "Package Hash" : "Contract Hash";
+}
+
+function playgroundPreflight(overrides: Record<string, unknown> = {}) {
+  return {
+    paymentAmountMotes: "5000000000",
+    gasPriceTolerance: 1,
+    ttl: "30m",
+    timestamp: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
-  Swap: (agent, walletAddress) => ({
-    source: "Magen3 Intent Playground",
-    agentId: agent.id,
-    walletAddress,
-    executionWalletAddress: walletAddress,
-    goal: "Swap 10 CSPR through an approved execution route",
-    reason: "Test the active policy before requesting a wallet signature.",
-    action: { type: "Swap", amount: 10, asset: "CSPR", target: "DEX_ROUTER_OR_CONTRACT", targetType: "Trusted Contract" },
-  }),
-  Transfer: (agent, walletAddress) => ({
-    source: "Magen3 Intent Playground",
-    agentId: agent.id,
-    walletAddress,
-    executionWalletAddress: walletAddress,
-    goal: "Transfer 5 CSPR to a policy-approved wallet",
-    reason: "Validate wallet format, destination, spend controls, and review thresholds before signing.",
-    action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address" },
-  }),
+  Swap: (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Swap 10 CSPR through a structurally valid execution route",
+      reason: approvedContract ? "Test the active policy and preflight bounds before requesting a wallet signature." : "Validate a structurally valid unapproved route; add the exact contract to Trusted Targets to receive Allowed.",
+      action: {
+        type: "Swap",
+        amount: 10,
+        asset: "CSPR",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        chainName: "casper-test",
+        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 9.8, minimumReceived: 9.5 }),
+      },
+    };
+  },
+  Transfer: (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Transfer 5 CSPR to a structurally valid wallet",
+      reason: approvedWallet ? "Validate wallet format, approved destination, spend controls, and execution preflight before signing." : "Validate a structurally valid unapproved wallet; add it to Trusted Targets to receive Allowed.",
+      action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight() },
+    };
+  },
   "Unapproved wallet": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -5038,15 +5072,18 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     reason: "Exercise source and destination comparison.",
     action: { type: "Transfer", amount: 5, asset: "CSPR", target: walletAddress, targetType: "Wallet Address" },
   }),
-  Stake: (agent, walletAddress) => ({
-    source: "Magen3 Intent Playground",
-    agentId: agent.id,
-    walletAddress,
-    executionWalletAddress: walletAddress,
-    goal: "Stake 15 CSPR with a trusted validator",
-    reason: "Validate the active policy before staking execution.",
-    action: { type: "Stake", amount: 15, asset: "CSPR", target: "VALIDATOR_PUBLIC_KEY", targetType: "Trusted Contract" },
-  }),
+  Stake: (agent, walletAddress, policy) => {
+    const approvedValidator = firstConfiguredWallet(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Stake 15 CSPR with a structurally valid validator public key",
+      reason: approvedValidator ? "Validate the active policy and execution preflight before staking." : "Validate a structurally valid unapproved validator key; add it to Trusted Targets to receive Allowed.",
+      action: { type: "Stake", amount: 15, asset: "CSPR", target: approvedValidator || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight() },
+    };
+  },
   "Contract call": (agent, walletAddress, policy) => {
     const approvedContract = firstConfiguredContract(policy);
     return {
@@ -5062,9 +5099,10 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
         asset: "CSPR",
         target: approvedContract || PLAYGROUND_DEMO_CONTRACT,
         targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
-        contractIdentifierType: "Contract Hash",
+        contractIdentifierType: contractIdentifierTypeFor(approvedContract || PLAYGROUND_DEMO_CONTRACT),
         entryPoint: "call",
         chainName: "casper-test",
+        preflight: playgroundPreflight({ runtimeArgs: { amount: "0" } }),
       },
     };
   },
@@ -5137,6 +5175,54 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       contractIdentifierType: "Contract Hash",
       entryPoint: "call",
       chainName: "casper",
+    },
+  }),
+  "Expired preflight": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm expired transaction metadata is blocked before signing",
+    reason: "Exercise deterministic timestamp and TTL freshness checks.",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      asset: "CSPR",
+      target: PLAYGROUND_DEMO_RECIPIENT,
+      targetType: "Wallet Address",
+      preflight: playgroundPreflight({ timestamp: "2020-01-01T00:00:00.000Z", ttl: "30m" }),
+    },
+  }),
+  "Invalid payment budget": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm malformed payment metadata is blocked",
+    reason: "Exercise positive-integer mote validation.",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      asset: "CSPR",
+      target: PLAYGROUND_DEMO_RECIPIENT,
+      targetType: "Wallet Address",
+      preflight: playgroundPreflight({ paymentAmountMotes: "-1" }),
+    },
+  }),
+  "Invalid swap bounds": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm internally inconsistent swap metadata is blocked",
+    reason: "Exercise slippage and minimum-received structure checks.",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "CSPR",
+      target: "DEX_ROUTER_OR_CONTRACT",
+      targetType: "Trusted Contract",
+      preflight: playgroundPreflight({ slippageBps: 10001, expectedOutput: 9.8, minimumReceived: 10 }),
     },
   }),
 };
@@ -5286,8 +5372,8 @@ function IntentPlaygroundPage({
           </div>
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-            <div className="font-semibold text-[#22D3EE]">Wallet and Contract Validation are Live</div>
-            <div className="mt-1">Wallet intents validate signing keys, destinations, spend controls, and review thresholds. Contract intents validate target classification, Contract Hash or Package Hash structure, entry points, package-version semantics, network binding, and exact policy approval or blocking.</div>
+            <div className="font-semibold text-[#22D3EE]">Live validation plus execution preflight</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation is Foundation Available: it validates payment, gas, TTL, timestamp, transaction freshness, swap bounds, and runtime-argument structure without claiming that a stateful Casper speculative execution was performed.</div>
           </div>
 
           <div>

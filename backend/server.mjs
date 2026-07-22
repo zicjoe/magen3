@@ -201,7 +201,8 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Risk Assessment"],
+          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
+          foundationProtectionModules: ["Execution Simulation"],
         },
         gateway: {
           endpoint: "/api/agent-gateway/intents",
@@ -247,7 +248,18 @@ const server = createServer(async (req, res) => {
             contractIdentifierType: "Contract Hash | Package Hash (required for ambiguous hash- identifiers)",
             entryPoint: "Required for contract-call actions",
             contractVersion: "Optional positive integer for Package Hash calls",
-            chainName: process.env.CASPER_CHAIN_NAME || "casper-test"
+            chainName: process.env.CASPER_CHAIN_NAME || "casper-test",
+            preflight: {
+              paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
+              gasPriceTolerance: "Optional positive integer for Casper 2.x transaction construction",
+              ttl: "Optional duration such as 30m, 1h, or milliseconds",
+              timestamp: "Optional ISO-8601 transaction timestamp",
+              slippageBps: "Optional swap slippage in basis points; structure is validated but no policy maximum is enforced yet",
+              expectedOutput: "Optional quoted swap output",
+              minimumReceived: "Optional minimum swap output; must not exceed expectedOutput",
+              runtimeArgs: "Optional JSON object summarizing contract runtime arguments",
+              transactionHash: "Optional 64-character transaction hash after construction"
+            }
           }
         },
         walletValidation: {
@@ -284,6 +296,21 @@ const server = createServer(async (req, res) => {
             blockedContracts: "structuredRules.blockedContracts",
             allowedEntryPoints: "structuredRules.allowedEntryPoints"
           }
+        },
+        executionSimulation: {
+          status: "Foundation Available",
+          preSigningBoundary: "The Gateway accepts high-level intent metadata only. It rejects wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions. Public contract arguments remain allowed inside runtimeArgs.",
+          deterministicChecks: [
+            "Positive amounts for value-bearing actions",
+            "Payment budget and gas-price tolerance structure",
+            "Transaction TTL and timestamp structure",
+            "Transaction freshness when timestamp and TTL are supplied",
+            "Transaction-hash structure when supplied",
+            "Swap slippage and quote-bound consistency",
+            "Contract runtime-argument object structure"
+          ],
+          statefulSimulation: "Unavailable in the current pre-signing Gateway. Casper speculative execution requires a constructed transaction or deploy and is disabled by default on nodes.",
+          decisionRule: "Malformed supplied preflight data can block or require review; omitted legacy metadata remains backward compatible and does not silently count as full simulation."
         },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",

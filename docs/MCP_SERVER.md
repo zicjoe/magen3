@@ -46,6 +46,12 @@ Ask Codex to submit a harmless contract-call intent without signing or broadcast
 
 For ambiguous raw or `hash-...` identifiers, include `contractIdentifierType` as either `Contract Hash` or `Package Hash`. A `Trusted Contract` target label does not bypass the active policy's exact approved-contract list.
 
+## Execution-preflight test
+
+Ask Codex to submit a harmless intent containing `action.preflight.paymentAmountMotes`, `gasPriceTolerance`, `ttl`, and a current ISO timestamp. Then repeat with an expired timestamp or malformed payment amount. Magen3 should persist Execution Simulation findings and block malformed construction metadata without signing or broadcasting anything.
+
+The MCP schema never accepts private keys, wallet approvals, transaction-level signatures, or raw signed transactions. Public contract arguments may be represented only inside `runtimeArgs`. Full stateful speculative execution remains unavailable; the current module is Foundation Available transaction-construction preflight.
+
 ## Tool behavior
 
 - `magen3_verify_agent`: validates Connected Agent credentials and policy.

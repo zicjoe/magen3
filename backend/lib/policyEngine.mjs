@@ -1,6 +1,7 @@
 import { normalizeExecutionCapabilities } from "./securityModel.mjs";
 import { evaluateWalletValidation } from "./walletValidation.mjs";
 import { evaluateContractValidation } from "./contractValidation.mjs";
+import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -248,20 +249,14 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
   moduleFindings.push(...contractValidation.findings);
   score += contractValidation.scoreDelta;
 
-  if (["Swap", "Deposit to Vault", "Contract Interaction"].includes(request.actionType)) {
-    moduleFindings.push(finding({
-      module: "Execution Simulation",
-      status: "unavailable",
-      severity: "info",
-      rule: "Pre-execution simulation",
-      message: "Execution simulation is not enforced by the current backend and did not contribute a pass result.",
-      evidence: { actionType: request.actionType },
-      remediation: "Treat simulation as Preview until a verified simulation provider is configured.",
-    }));
-  }
+  const executionSimulation = evaluateExecutionSimulation({ request });
+  checksPassed.push(...executionSimulation.checksPassed);
+  checksFailed.push(...executionSimulation.checksFailed);
+  moduleFindings.push(...executionSimulation.findings);
+  score += executionSimulation.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview);
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -270,13 +265,13 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, or contract-validation rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, or execution-preflight rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, destination, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({

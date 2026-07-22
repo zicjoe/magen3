@@ -1,6 +1,27 @@
 export type Magen3Decision = "Allowed" | "Blocked" | "Review Required";
 export type Magen3Risk = "Low" | "Medium" | "High" | "Critical";
 
+export interface Magen3ExecutionPreflight {
+  /** Positive integer string in motes for the proposed payment budget. */
+  paymentAmountMotes?: string;
+  /** Positive integer gas-price tolerance used during Casper 2.x transaction construction. */
+  gasPriceTolerance?: number;
+  /** Positive duration such as 30m, 1h, or milliseconds. */
+  ttl?: string;
+  /** ISO-8601 transaction timestamp. */
+  timestamp?: string;
+  /** Optional swap slippage in basis points. Structure is validated; policy maximum remains Preview. */
+  slippageBps?: number;
+  /** Optional quoted output for swap consistency checks. */
+  expectedOutput?: number;
+  /** Optional minimum received amount; must not exceed expectedOutput. */
+  minimumReceived?: number;
+  /** Runtime-argument summary. Never include signing material or private data. */
+  runtimeArgs?: Record<string, unknown>;
+  /** Optional 64-character transaction hash after construction. */
+  transactionHash?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -15,6 +36,8 @@ export interface Magen3Action {
   contractVersion?: number;
   /** Optional Casper chain name. The Gateway validates it against its configured network. */
   chainName?: string;
+  /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
+  preflight?: Magen3ExecutionPreflight;
 }
 
 export interface Magen3Intent {
@@ -34,6 +57,27 @@ export interface Magen3Identity {
   [key: string]: unknown;
 }
 
+export type Magen3FindingStatus = "pass" | "warning" | "fail" | "unavailable" | "skipped";
+export type Magen3FindingSeverity = "info" | "low" | "medium" | "high" | "critical";
+
+export interface Magen3ModuleFinding {
+  module: string;
+  status: Magen3FindingStatus;
+  severity: Magen3FindingSeverity;
+  rule: string;
+  message: string;
+  evidence?: Record<string, unknown>;
+  remediation?: string;
+}
+
+export interface Magen3PipelineStage {
+  id: string;
+  label: string;
+  status: string;
+  timestamp?: string;
+  detail?: string;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -42,6 +86,11 @@ export interface Magen3DecisionResult {
   recommendedAction: string;
   policyChecksPassed?: string[];
   policyChecksFailed?: string[];
+  primaryReason?: string;
+  triggeredRule?: string;
+  suggestedResolution?: string;
+  moduleFindings?: Magen3ModuleFinding[];
+  pipelineStages?: Magen3PipelineStage[];
 }
 
 export interface Magen3IntentResponse {

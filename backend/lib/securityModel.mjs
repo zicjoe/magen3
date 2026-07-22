@@ -44,8 +44,8 @@ export const PROTECTION_MODULES = [
   {
     id: "execution-simulation",
     name: "Execution Simulation",
-    status: "Preview",
-    capabilities: ["Trading", "dApp Interactions", "Treasury Operations"],
+    status: "Foundation Available",
+    capabilities: ["Trading", "dApp Interactions", "Treasury Operations", "Wallet Management"],
   },
   {
     id: "threat-intelligence",

@@ -116,6 +116,30 @@ Contract Validation applies to `Contract Interaction`, `Swap`, `Deposit to Vault
 - `structuredRules.blockedContracts` always blocks exact matches.
 - `structuredRules.allowedEntryPoints` optionally restricts callable methods.
 
+### Execution preflight metadata
+
+Add an optional `action.preflight` object after the execution adapter has prepared transaction-construction values:
+
+```json
+{
+  "paymentAmountMotes": "5000000000",
+  "gasPriceTolerance": 1,
+  "ttl": "30m",
+  "timestamp": "2026-07-22T10:00:00.000Z",
+  "slippageBps": 300,
+  "expectedOutput": 9.8,
+  "minimumReceived": 9.5,
+  "runtimeArgs": {
+    "amount": "1000000000"
+  },
+  "transactionHash": "optional-64-character-hex-hash"
+}
+```
+
+Execution Simulation is **Foundation Available**. It validates supplied construction metadata and can block malformed or expired requests. It does not claim that the transaction executed against Casper global state. Omitted legacy fields remain backward compatible and produce explained warnings rather than an implicit simulation pass.
+
+Never send private keys, secret keys, seed phrases, wallet approvals, transaction-level signatures, or raw signed transactions to the intent endpoint. Such material is rejected before normalization and is not stored in the audit log. Public contract arguments may be represented only inside `action.preflight.runtimeArgs`.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -134,7 +158,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",

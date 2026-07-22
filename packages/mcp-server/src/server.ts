@@ -14,6 +14,17 @@ const actionSchema = z.object({
   entryPoint: z.string().min(1).optional(),
   contractVersion: z.number().finite().int().nonnegative().optional(),
   chainName: z.string().min(1).optional(),
+  preflight: z.object({
+    paymentAmountMotes: z.string().regex(/^[1-9]\d*$/).optional(),
+    gasPriceTolerance: z.number().int().positive().optional(),
+    ttl: z.string().regex(/^(?:\d+|\d+(?:\.\d+)?(?:ms|s|m|h))$/i).optional(),
+    timestamp: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+    slippageBps: z.number().int().min(0).max(10000).optional(),
+    expectedOutput: z.number().finite().nonnegative().optional(),
+    minimumReceived: z.number().finite().nonnegative().optional(),
+    runtimeArgs: z.record(z.string(), z.unknown()).optional(),
+    transactionHash: z.string().regex(/^(?:transaction-hash-)?[0-9a-f]{64}$/i).optional(),
+  }).optional(),
 });
 const intentSchema = z.object({
   source: z.string().min(1).optional(),

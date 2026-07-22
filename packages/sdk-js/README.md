@@ -16,6 +16,12 @@ const decision = await magen3.checkIntent({
     asset: "CSPR",
     target: "RECIPIENT_PUBLIC_KEY",
     targetType: "Wallet Address",
+    preflight: {
+      paymentAmountMotes: "5000000000",
+      gasPriceTolerance: 1,
+      ttl: "30m",
+      timestamp: new Date().toISOString(),
+    },
   },
 });
 ```
@@ -34,10 +40,21 @@ const decision = await magen3.checkIntent({
     entryPoint: "deposit",
     contractVersion: 1,
     chainName: "casper-test",
+    preflight: {
+      paymentAmountMotes: "5000000000",
+      gasPriceTolerance: 1,
+      ttl: "30m",
+      timestamp: new Date().toISOString(),
+      runtimeArgs: { amount: "1000000000" },
+    },
   },
 });
 ```
 
 For direct Contract Interaction/Contract Call actions, include a valid contract or package identifier and an entry point. High-level actions such as Swap remain backward compatible when the adapter has not yet resolved an exact entry point. `targetType: "Trusted Contract"` is descriptive only; the exact identifier must still match the agent's active policy. `contractVersion` is valid only for a package hash.
 
+Execution Simulation is Foundation Available. Supplied preflight metadata is validated before signing, while full stateful speculative execution remains unavailable. Never put private keys, wallet approvals, transaction-level signatures, or raw signed transactions in an intent. Public contract arguments belong only inside `runtimeArgs`.
+
 Use `requireAllowed()` when the caller must stop automatically for `Blocked` and `Review Required` decisions. The SDK never signs or broadcasts transactions.
+
+The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, and `suggestedResolution`, so integrations can render deterministic Execution Simulation guidance without parsing free-form text.

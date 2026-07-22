@@ -57,6 +57,47 @@ function normalizeTargetType(value) {
   return TARGET_TYPE_ALIASES[raw.toLowerCase()] || raw;
 }
 
+
+function optionalNumber(value, name, { integer = false, min = null, max = null } = {}) {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)) || (min !== null && parsed < min) || (max !== null && parsed > max)) {
+    const err = new Error(`${name} must be a valid ${integer ? "integer" : "number"}`);
+    err.status = 400;
+    throw err;
+  }
+  return parsed;
+}
+
+function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
+  if (!value || typeof value !== "object" || depth > 5) return false;
+  const alwaysForbidden = new Set([
+    "privatekey", "private_key", "secretkey", "secret_key", "mnemonic",
+    "signeddeploy", "signedtransaction", "rawsigneddeploy", "rawsignedtransaction",
+  ]);
+  const signedPayloadFields = new Set([
+    "seed", "approval", "approvals", "signature", "signatures",
+  ]);
+  const insideRuntimeArgs = path.includes("runtimeargs") || path.includes("runtime_args");
+
+  return Object.entries(value).some(([key, child]) => {
+    const normalized = String(key).toLowerCase().replace(/[^a-z_]/g, "");
+    if (alwaysForbidden.has(normalized)) return true;
+    if (!insideRuntimeArgs && signedPayloadFields.has(normalized)) return true;
+    return containsForbiddenSigningMaterial(child, depth + 1, [...path, normalized]);
+  });
+}
+
+function normalizeRuntimeArgs(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("action.preflight.runtimeArgs must be an object when supplied");
+    err.status = 400;
+    throw err;
+  }
+  return Object.fromEntries(Object.entries(value).slice(0, 100));
+}
+
 function requireField(value, name) {
   if (!cleanString(value)) {
     const err = new Error(`${name} is required for Agent Gateway requests`);
@@ -80,6 +121,20 @@ export function normalizeAgentGatewayIntent(body = {}) {
   }
 
   const contract = action.contract && typeof action.contract === "object" ? action.contract : {};
+  const preflight = action.preflight && typeof action.preflight === "object"
+    ? action.preflight
+    : action.executionPreflight && typeof action.executionPreflight === "object"
+      ? action.executionPreflight
+      : body.preflight && typeof body.preflight === "object"
+        ? body.preflight
+        : {};
+
+  if (containsForbiddenSigningMaterial(body)) {
+    const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
+    err.status = 400;
+    throw err;
+  }
+
   const contractVersionRaw = contract.version ?? action.contractVersion ?? action.contract_version ?? body.contractVersion ?? body.contract_version;
   const contractVersion = contractVersionRaw === undefined || contractVersionRaw === null || contractVersionRaw === ""
     ? null
@@ -111,6 +166,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
     entryPoint: cleanString(contract.entryPoint || contract.entry_point || action.entryPoint || action.entry_point || body.entryPoint || body.entry_point, ""),
     contractVersion,
     chainName: cleanString(contract.chainName || contract.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name, ""),
+    paymentAmountMotes: cleanString(preflight.paymentAmountMotes ?? preflight.payment_amount_motes ?? action.paymentAmountMotes ?? action.payment_amount_motes ?? "", ""),
+    gasPriceTolerance: optionalNumber(preflight.gasPriceTolerance ?? preflight.gas_price_tolerance ?? action.gasPriceTolerance ?? action.gas_price_tolerance, "gasPriceTolerance", { integer: true }),
+    ttl: cleanString(preflight.ttl ?? action.ttl ?? "", ""),
+    transactionTimestamp: cleanString(preflight.timestamp ?? preflight.transactionTimestamp ?? preflight.transaction_timestamp ?? action.transactionTimestamp ?? action.transaction_timestamp ?? "", ""),
+    slippageBps: optionalNumber(preflight.slippageBps ?? preflight.slippage_bps ?? action.slippageBps ?? action.slippage_bps, "slippageBps", { integer: true }),
+    expectedOutput: optionalNumber(preflight.expectedOutput ?? preflight.expected_output ?? action.expectedOutput ?? action.expected_output, "expectedOutput"),
+    minimumReceived: optionalNumber(preflight.minimumReceived ?? preflight.minimum_received ?? action.minimumReceived ?? action.minimum_received, "minimumReceived"),
+    runtimeArgs: normalizeRuntimeArgs(preflight.runtimeArgs ?? preflight.runtime_args ?? action.runtimeArgs ?? action.runtime_args),
+    transactionHash: cleanString(preflight.transactionHash ?? preflight.transaction_hash ?? action.transactionHash ?? action.transaction_hash ?? "", ""),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

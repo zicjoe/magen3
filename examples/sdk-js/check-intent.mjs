@@ -10,6 +10,18 @@ const response = await client.checkIntent({
   executionWalletAddress: process.env.CASPER_EXECUTION_WALLET,
   goal: "Validate an external agent intent before execution",
   reason: "SDK integration test",
-  action: { type: "Transfer", amount: 2, asset: "CSPR", target: process.env.CASPER_TARGET ?? process.env.CASPER_EXECUTION_WALLET, targetType: "Wallet Address" },
+  action: {
+    type: "Transfer",
+    amount: 2,
+    asset: "CSPR",
+    target: process.env.CASPER_TARGET ?? process.env.CASPER_EXECUTION_WALLET,
+    targetType: "Wallet Address",
+    preflight: {
+      paymentAmountMotes: "5000000000",
+      gasPriceTolerance: 1,
+      ttl: "30m",
+      timestamp: new Date().toISOString(),
+    },
+  },
 });
 console.log(JSON.stringify({ decision: response.result.decision, risk: response.result.risk, reason: response.result.reason, auditLogId: response.auditLog?.id, nextAction: response.nextAction }, null, 2));

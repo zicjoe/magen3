@@ -29,9 +29,12 @@ test("requireAllowed fails closed when SDK rejects the decision", async () => {
 });
 
 
-test("intent schema describes live contract validation fields", () => {
+test("intent schema describes live contract validation and execution preflight fields", () => {
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.entryPoint, /required/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractIdentifierType, /Contract Hash/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractVersion, /package/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.chainName, /Gateway/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.paymentAmountMotes, /positive integer/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.ttl, /duration/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.slippageBps, /structure/i);
 });

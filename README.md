@@ -101,7 +101,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Policy Enforcement | **Live** | Active-policy lookup and supported deterministic policy fields. |
 | Wallet Validation | **Live** | Casper execution-wallet format, wallet destination format/classification, exact self-transfer prevention, approved destinations, transaction and daily limits, and review thresholds. |
 | Contract Validation | **Live** | Contract/package identity, target classification, entry points, package-version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
-| Execution Simulation | **Preview** | No backend enforcement yet; findings show `unavailable`, never a silent pass. |
+| Execution Simulation | **Foundation Available** | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable and is reported explicitly. |
 | Threat Intelligence | **Preview** | No external threat feed is enforced. |
 | Oracle Validation | **Planned** | No current backend checks. |
 | Bridge Controls | **Planned** | No current backend checks. |
@@ -148,6 +148,27 @@ The `Trusted Contract` label is descriptive only. It never grants trust by itsel
 
 Format references: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
 
+### Execution Simulation foundation
+
+Execution Simulation now provides deterministic transaction-construction preflight inside the Gateway. It does not claim that the contract executed against Casper global state.
+
+When supplied, Magen3 validates:
+
+- Positive amounts for value-bearing actions.
+- Positive-integer payment budgets in motes.
+- Positive-integer gas-price tolerance.
+- Transaction TTL structure.
+- ISO-8601 transaction timestamp structure.
+- Expiry when both timestamp and TTL are present.
+- Optional 64-character transaction-hash structure.
+- Swap slippage bounds between 0 and 10,000 basis points.
+- Internal consistency between `expectedOutput` and `minimumReceived`.
+- Contract runtime arguments are represented as an object.
+
+Malformed supplied preflight data can return `Blocked`. A structurally valid but unusually long TTL or future-dated timestamp can return `Review Required`. Existing integrations that omit preflight metadata remain backward compatible; missing metadata produces explained warnings rather than a fake pass.
+
+Full Casper speculative execution remains unavailable in the current pre-signing Gateway. Casper exposes speculative execution through a separately enabled node service and expects a constructed deploy or transaction. Magen3 does not accept private keys, wallet approvals, transaction-level signatures, or raw signed transactions through the intent endpoint. Public contract arguments remain allowed inside `runtimeArgs`.
+
 ## Guided agent registration
 
 The Connected Agents flow uses a six-step wizard:
@@ -186,7 +207,7 @@ Available presets:
 - Enterprise Controlled Automation
 - Custom
 
-Slippage, state simulation, oracle integrity, bridge intelligence, sanctions screening, and external threat feeds are not represented as live authorization rules.
+Policy-specific maximum slippage, full state simulation, oracle integrity, bridge intelligence, sanctions screening, and external threat feeds are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation.
 
 ## Structured findings and decisions
 
@@ -248,7 +269,13 @@ x-magen3-agent-key: YOUR_AGENT_API_KEY
     "amount": 15,
     "asset": "CSPR",
     "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
-    "targetType": "Trusted Contract"
+    "targetType": "Trusted Contract",
+    "preflight": {
+      "paymentAmountMotes": "5000000000",
+      "gasPriceTolerance": 1,
+      "ttl": "30m",
+      "timestamp": "2026-07-22T10:00:00.000Z"
+    }
   }
 }
 ```
@@ -271,7 +298,16 @@ Contract-call example:
     "targetType": "Trusted Contract",
     "contractIdentifierType": "Contract Hash",
     "entryPoint": "deposit",
-    "chainName": "casper-test"
+    "chainName": "casper-test",
+    "preflight": {
+      "paymentAmountMotes": "5000000000",
+      "gasPriceTolerance": 1,
+      "ttl": "30m",
+      "timestamp": "2026-07-22T10:00:00.000Z",
+      "runtimeArgs": {
+        "amount": "1000000000"
+      }
+    }
   }
 }
 ```
@@ -290,7 +326,7 @@ The in-app Intent Playground:
 
 - Selects an active registered agent
 - Uses the existing API-key authentication contract
-- Provides editable wallet and contract examples, including approved/unapproved contracts, malformed identifiers, missing entry points, and network mismatch cases
+- Provides editable wallet, contract, and execution-preflight examples, including expired metadata, invalid payment budgets, and inconsistent swap bounds
 - Validates JSON before submission
 - Displays the real response, decision, risk, findings, explanation, pipeline, and audit ID
 - Keeps the entered raw key in page state rather than adding it to request JSON or persistent storage
@@ -306,6 +342,7 @@ Security Coverage is deterministic configuration coverage, not a trust or invuln
 - Review thresholds for treasury actions
 - Active credential
 - Recent gateway activity
+- Execution preflight observations for relevant capabilities
 - Casper proof observations
 - Completed active agent configuration
 

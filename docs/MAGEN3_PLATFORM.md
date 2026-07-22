@@ -83,7 +83,7 @@ Protection modules live under Agent Shield.
 | Policy Enforcement | Live | Active policy, blocked actions, max transaction, daily limit, review threshold, risk mode. |
 | Wallet Validation | Live | Execution-wallet public-key format, destination format/classification, self-transfer prevention, approved destinations, spend limits, and review thresholds. |
 | Contract Validation | Live | Contract/package identity, target classification, entry points, version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
-| Execution Simulation | Preview | No backend enforcement; returns unavailable where relevant. |
+| Execution Simulation | Foundation Available | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable. |
 | Threat Intelligence | Preview | No external threat feed currently enforced. |
 | Oracle Validation | Planned | No current backend checks. |
 | Bridge Controls | Planned | No current backend checks. |
@@ -133,6 +133,12 @@ Structural validation does not claim that a contract is audited, verified, or sa
 
 References: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
 
+### Execution Simulation foundation
+
+Execution Simulation evaluates deterministic preflight metadata before wallet signing. Supported checks include payment amount in motes, gas-price tolerance, TTL, timestamp freshness, optional transaction-hash structure, swap slippage structure, quote-bound consistency, and contract runtime-argument structure.
+
+The module intentionally returns an `unavailable` finding for full stateful speculative execution. The Agent Gateway accepts high-level intent metadata and rejects private keys, wallet approvals, transaction-level signatures, and raw signed transactions. Public contract arguments remain available inside `runtimeArgs`. This preserves the pre-signing security boundary while making malformed transaction-construction data enforceable.
+
 ## Policies and templates
 
 Enforced policy fields:
@@ -156,7 +162,7 @@ Available starter presets:
 - Enterprise Controlled Automation
 - Custom
 
-The current backend does not enforce slippage, state simulation, oracle freshness, bridge risk, external threat feeds, or compliance screening. Those areas remain Preview or Planned.
+The current backend validates structural swap bounds and transaction-construction metadata, but it does not enforce a policy-specific maximum slippage or run full stateful simulation. Oracle freshness, bridge risk, external threat feeds, and compliance screening remain Preview or Planned.
 
 ## Structured findings
 

@@ -16,6 +16,12 @@ decision = client.check_intent({
         "asset": "CSPR",
         "target": "RECIPIENT_PUBLIC_KEY",
         "targetType": "Wallet Address",
+        "preflight": {
+            "paymentAmountMotes": "5000000000",
+            "gasPriceTolerance": 1,
+            "ttl": "30m",
+            "timestamp": "2026-07-22T10:00:00.000Z",
+        },
     },
 })
 ```
@@ -34,10 +40,19 @@ decision = client.check_intent({
         "entryPoint": "deposit",
         "contractVersion": 1,
         "chainName": "casper-test",
+        "preflight": {
+            "paymentAmountMotes": "5000000000",
+            "gasPriceTolerance": 1,
+            "ttl": "30m",
+            "timestamp": "2026-07-22T10:00:00.000Z",
+            "runtimeArgs": {"amount": "1000000000"},
+        },
     },
 })
 ```
 
 A trusted-looking target label never bypasses policy enforcement. Contract identifiers, entry points, network context, blocked-contract controls, and approved-contract controls are evaluated by the live Contract Validation module.
+
+Execution Simulation is Foundation Available. It validates supplied construction metadata without claiming full stateful execution. Never include private keys, wallet approvals, transaction-level signatures, or raw signed transactions. Public contract arguments belong only inside `runtimeArgs`.
 
 The SDK never signs or broadcasts blockchain transactions.

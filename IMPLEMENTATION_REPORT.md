@@ -1,3 +1,11 @@
+# Execution Simulation Foundation Upgrade — July 22, 2026
+
+Execution Simulation is now **Foundation Available**. The Agent Gateway deterministically validates safe transaction-construction metadata before wallet signing, persists structured findings and an adaptive pipeline stage, and explicitly reports full stateful Casper speculative execution as unavailable. No database migration, environment-variable change, Gateway route change, or Casper contract change is required.
+
+See `Magen3-Execution-Simulation-Foundation-Report.md` in the release handoff for the complete verification and compatibility report.
+
+---
+
 # Magen3 Contract Validation Live Upgrade — Implementation Report
 
 ## Release summary

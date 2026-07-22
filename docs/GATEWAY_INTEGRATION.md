@@ -96,7 +96,16 @@ curl -X POST "https://YOUR_API_HOST/api/agent-gateway/intents" \
       "contractIdentifierType": "Package Hash",
       "entryPoint": "deposit",
       "contractVersion": 1,
-      "chainName": "casper-test"
+      "chainName": "casper-test",
+      "preflight": {
+        "paymentAmountMotes": "5000000000",
+        "gasPriceTolerance": 1,
+        "ttl": "30m",
+        "timestamp": "2026-07-22T10:00:00.000Z",
+        "runtimeArgs": {
+          "amount": "1000000000"
+        }
+      }
     }
   }'
 ```
@@ -108,6 +117,22 @@ Contract policy controls use:
 - `trustedContracts` for approved exact contract/package identifiers
 - `structuredRules.blockedContracts` for explicit deny rules
 - `structuredRules.allowedEntryPoints` for optional entry-point restrictions
+
+
+## Add Execution Preflight Metadata
+
+Execution Simulation is Foundation Available. When the execution adapter has prepared construction metadata, include `action.preflight`:
+
+```json
+{
+  "paymentAmountMotes": "5000000000",
+  "gasPriceTolerance": 1,
+  "ttl": "30m",
+  "timestamp": "2026-07-22T10:00:00.000Z"
+}
+```
+
+Swap adapters may also send `slippageBps`, `expectedOutput`, and `minimumReceived`. Contract adapters may send a JSON `runtimeArgs` summary. Magen3 validates structure and freshness before signing, but full stateful speculative execution remains unavailable. Do not send wallet approvals, transaction-level signatures, raw signed deploys, or wallet secrets. Public contract arguments belong only inside `runtimeArgs`.
 
 ## Decision Handling
 

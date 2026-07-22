@@ -151,17 +151,30 @@ test("returns deterministic guidance and an adaptive wallet-validation pipeline 
   assert.ok(result.suggestedResolution);
 });
 
-test("does not silently pass execution simulation when the module is unavailable", () => {
+test("runs deterministic execution preflight without silently claiming stateful simulation", () => {
   const result = evaluate({
     actionType: "Swap",
     targetType: "Trusted Contract",
     target: TRUSTED_CONTRACT,
     amount: 10,
+    paymentAmountMotes: "5000000000",
+    gasPriceTolerance: 1,
+    ttl: "30m",
+    transactionTimestamp: new Date().toISOString(),
+    slippageBps: 300,
+    expectedOutput: 9.8,
+    minimumReceived: 9.5,
   });
 
-  const simulation = result.moduleFindings.find((finding) => finding.module === "Execution Simulation");
-  assert.equal(simulation?.status, "unavailable");
-  assert.notEqual(simulation?.status, "pass");
+  assert.ok(result.moduleFindings.some((finding) =>
+    finding.module === "Execution Simulation" &&
+    finding.rule === "Execution preflight applicability" &&
+    finding.status === "pass"));
+  assert.ok(result.moduleFindings.some((finding) =>
+    finding.module === "Execution Simulation" &&
+    finding.rule === "Stateful speculative execution" &&
+    finding.status === "unavailable"));
+  assert.ok(result.pipelineStages.some((stage) => stage.id === "execution-simulation"));
 });
 
 test("blocks revoked agents even outside the authenticated gateway route", () => {

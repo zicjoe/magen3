@@ -35,11 +35,18 @@ const response = await client.checkIntent({
     entryPoint: "deposit",
     contractVersion: 1,
     chainName: "casper-test",
+    preflight: {
+      paymentAmountMotes: "5000000000",
+      gasPriceTolerance: 1,
+      ttl: "30m",
+      timestamp: new Date().toISOString(),
+      runtimeArgs: { amount: "1000000000" },
+    },
   },
 });
 ```
 
-Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. A descriptive `targetType` never grants trust without an exact policy match.
+Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. Execution Simulation additionally evaluates supplied payment, gas, TTL, timestamp, freshness, transaction-hash, swap-bound, and runtime-argument metadata. Full stateful speculative execution remains unavailable. A descriptive `targetType` never grants trust without an exact policy match.
 
 ## Python
 
