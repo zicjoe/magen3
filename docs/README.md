@@ -9,6 +9,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
+- `ORACLE_VALIDATION.md` — price-intent fields, multi-source feed schema, policy limits, freshness, operational status, and security boundary.
 
 ## Developer integrations
 

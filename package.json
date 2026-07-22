@@ -30,7 +30,8 @@
     "sdk:test": "pnpm sdk:build && pnpm --filter @magen3/sdk test && PYTHONPATH=packages/sdk-python/src python3 -m unittest discover -s packages/sdk-python/tests -v",
     "mcp:build": "pnpm sdk:build && pnpm --filter @magen3/mcp-server build",
     "mcp:test": "pnpm mcp:build && pnpm --filter @magen3/mcp-server test",
-    "mcp:start": "node packages/mcp-server/dist/server.js"
+    "mcp:start": "node packages/mcp-server/dist/server.js",
+    "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",

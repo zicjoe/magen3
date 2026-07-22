@@ -8,12 +8,19 @@ const actionSchema = z.object({
   type: z.string().min(1),
   amount: z.number().finite().nonnegative().optional(),
   asset: z.string().min(1).optional(),
+  outputAsset: z.string().min(1).optional(),
   target: z.string().min(1),
   targetType: z.string().min(1).optional(),
   contractIdentifierType: z.enum(["Contract Hash", "Package Hash"]).or(z.string().min(1)).optional(),
   entryPoint: z.string().min(1).optional(),
   contractVersion: z.number().finite().int().nonnegative().optional(),
   chainName: z.string().min(1).optional(),
+  oracle: z.object({
+    baseAsset: z.string().min(1),
+    quoteAsset: z.string().min(1),
+    executionPrice: z.number().finite().positive(),
+    quoteTimestamp: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+  }).optional(),
   preflight: z.object({
     paymentAmountMotes: z.string().regex(/^[1-9]\d*$/).optional(),
     gasPriceTolerance: z.number().int().positive().optional(),
@@ -40,7 +47,7 @@ export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
     { name: "magen3-execution-firewall", version: "0.2.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence feed availability and exact-match evidence. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence and Oracle Validation feed availability, source quorum, confidence, freshness, and price-deviation evidence. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

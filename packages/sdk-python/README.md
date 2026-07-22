@@ -58,3 +58,27 @@ Execution Simulation is Foundation Available. It validates supplied construction
 Threat Intelligence findings and the sanitized `threatIntelligenceContext` are returned in the normal decision dictionary when the backend is configured with a feed. A no-match result is not a guarantee of safety.
 
 The SDK never signs or broadcasts blockchain transactions.
+
+## Oracle Validation
+
+Trading and DeFi intents can submit exact quote metadata without any wallet secret:
+
+```python
+decision = client.evaluate_intent({
+    "action": {
+        "type": "Swap",
+        "amount": 10,
+        "token": "CSPR",
+        "outputAsset": "USD",
+        "target": "contract-package-<64-hex>",
+        "oracle": {
+            "baseAsset": "CSPR",
+            "quoteAsset": "USD",
+            "executionPrice": 0.025,
+            "quoteTimestamp": "2026-07-22T12:00:00.000Z",
+        },
+    }
+})
+```
+
+The normal decision dictionary may include `oracleValidationContext` and structured Oracle Validation findings. The backend operator controls the feed and policy thresholds. Oracle Validation is Foundation Available; a passing comparison is not a guarantee that a market price is correct or that execution will succeed.

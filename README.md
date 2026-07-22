@@ -103,7 +103,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Contract Validation | **Live** | Contract/package identity, target classification, entry points, package-version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | **Foundation Available** | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable and is reported explicitly. |
 | Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
-| Oracle Validation | **Planned** | No current backend checks. |
+| Oracle Validation | **Foundation Available** | Freshness-checked multi-source price comparison, source quorum, confidence, spread, quote freshness, and execution-price deviation controls. No production provider is bundled. |
 | Bridge Controls | **Planned** | No current backend checks. |
 | Compliance Controls | **Planned** | No current backend checks. |
 | Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
@@ -193,6 +193,34 @@ In `Enforce` mode, high- and critical-severity matches at or above the confidenc
 
 The repository includes `backend/data/threat-intelligence.example.json` for local testnet demonstration only. Its indicators are synthetic and must not be represented as production intelligence. See [`docs/THREAT_INTELLIGENCE.md`](docs/THREAT_INTELLIGENCE.md).
 
+
+### Oracle Validation foundation
+
+Oracle Validation evaluates price-sensitive intents against an operator-configured multi-source feed before wallet signing. It is **Foundation Available**, not Live, because Magen3 does not bundle or certify a production oracle provider and does not currently verify cryptographic on-chain price attestations.
+
+Current deterministic checks include:
+
+- Base asset, quote asset, proposed execution price, and quote-timestamp metadata.
+- Feed availability and source `generatedAt` freshness.
+- Exact requested asset-pair availability.
+- Per-observation freshness.
+- Minimum independent-source quorum.
+- Aggregate confidence threshold.
+- Maximum cross-source price spread.
+- Maximum deviation between the proposed execution price and the median reference price.
+- `Observe`, `Review`, and `Enforce` behavior.
+- `Warn`, `Review`, or `Block` behavior when the feed or pair is unavailable.
+
+A stale, unavailable, low-confidence, or divergent feed never counts as a pass. Magen3 stores only sanitized feed context and structured findings in the Gateway response and audit log; provider credentials and raw configured locations remain server-side.
+
+The repository includes `backend/data/oracle-validation.example.json` with synthetic values for a controlled testnet demo. Refresh its timestamps before use:
+
+```bash
+pnpm oracle:refresh-example-feed
+```
+
+See [`docs/ORACLE_VALIDATION.md`](docs/ORACLE_VALIDATION.md) for the feed schema, intent fields, policy controls, deployment settings, and security boundary.
+
 ## Guided agent registration
 
 The Connected Agents flow uses a six-step wizard:
@@ -221,6 +249,7 @@ Supported policy fields are enforced by the current backend:
 - Blocked action types
 - Conservative, Balanced, or Aggressive risk mode
 - Threat Intelligence mode, minimum confidence, and unavailable-feed behavior through `structuredRules`
+- Oracle Validation mode, quote age, maximum deviation, source spread, confidence, source quorum, and unavailable-feed behavior through `structuredRules`
 
 Available presets:
 
@@ -232,7 +261,7 @@ Available presets:
 - Enterprise Controlled Automation
 - Custom
 
-Policy-specific maximum slippage, full state simulation, oracle integrity, bridge intelligence, sanctions screening, and any unconfigured external intelligence provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence provides configurable exact-match feed enforcement but remains Foundation Available rather than claiming broad reputation coverage.
+Policy-specific maximum slippage, full state simulation, bridge intelligence, sanctions screening, and any unconfigured external provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence and Oracle Validation provide configurable deterministic feed checks but remain Foundation Available rather than claiming comprehensive reputation coverage or guaranteed market truth.
 
 ## Structured findings and decisions
 
@@ -624,6 +653,29 @@ THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS=2500
 
 Do not configure more than one source; precedence is inline JSON, then file path, then remote URL. `THREAT_INTELLIGENCE_API_KEY` is used only as a Bearer credential for the remote feed and is never returned by the API. The example feed is synthetic and intended only for a controlled testnet demo.
 
+
+### Oracle Validation foundation
+
+Configure exactly one oracle-feed source:
+
+```env
+# Preferred for Railway: JSON stored as a protected environment variable
+ORACLE_VALIDATION_FEED_JSON={"version":"1","source":"Reviewed oracle adapter","generatedAt":"2026-07-22T15:00:00.000Z","observations":[]}
+
+# Or a mounted/local file path
+# ORACLE_VALIDATION_FEED_PATH=backend/data/oracle-validation.example.json
+
+# Or a remote HTTPS JSON endpoint
+# ORACLE_VALIDATION_FEED_URL=https://oracle.example/feed.json
+# ORACLE_VALIDATION_API_KEY=provider-secret
+
+ORACLE_VALIDATION_CACHE_TTL_MS=60000
+ORACLE_VALIDATION_MAX_FEED_AGE_MS=300000
+ORACLE_VALIDATION_REQUEST_TIMEOUT_MS=2500
+```
+
+Do not configure more than one source; precedence is inline JSON, then file path, then remote URL. The included example feed is synthetic and must be refreshed with `pnpm oracle:refresh-example-feed` immediately before a controlled demo. Confirm `/api/oracle-validation/status` after backend deployment.
+
 ## Verification
 
 ```bash
@@ -678,6 +730,7 @@ The existing `vercel.json` remains valid.
 7. Submit a Review Required intent.
 8. Submit a Blocked intent.
 9. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
+10. Refresh and configure the synthetic Oracle Validation feed, then submit within-bounds, deviation, and stale-quote examples.
 10. Open the audit detail and show findings, explanation, pipeline, and proof state.
 11. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
 

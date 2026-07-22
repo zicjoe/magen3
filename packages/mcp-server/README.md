@@ -53,3 +53,9 @@ Actions may include a `preflight` object with `paymentAmountMotes`, `gasPriceTol
 ## Threat Intelligence
 
 The response can include structured Threat Intelligence findings and sanitized `threatIntelligenceContext`. The backend operator configures the feed; MCP clients never send provider credentials. Stale or unavailable feeds never count as a pass, and the final decision remains the only authorization signal.
+
+## Oracle Validation
+
+For Swap and other oracle-sensitive actions, an MCP client may provide `outputAsset` and `action.oracle` with `baseAsset`, `quoteAsset`, `executionPrice`, and `quoteTimestamp`. Magen3 compares the submitted quote with a configured multi-source reference feed and returns deterministic findings for freshness, source quorum, confidence, cross-source spread, and price deviation.
+
+The MCP client never sends oracle-provider credentials. Those remain backend environment variables. Oracle Validation is Foundation Available, not Live, because Magen3 does not bundle or certify a production oracle feed. Treat the final Magen3 decision—not an individual oracle finding—as the authorization result.

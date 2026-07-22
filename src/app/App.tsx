@@ -212,6 +212,19 @@ interface ThreatIntelligenceStatus {
   error?: string;
 }
 
+interface OracleValidationStatus {
+  status?: "available" | "stale" | "unavailable" | string;
+  sourceType?: string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  observationCount?: number;
+  pairCount?: number;
+  ageMs?: number | null;
+  maxAgeMs?: number | null;
+  error?: string;
+}
+
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -241,6 +254,31 @@ interface DecisionResult {
     minConfidence?: number;
     checkedEntities?: Array<Record<string, unknown>>;
     matchedIndicators?: Array<Record<string, unknown>>;
+  };
+  oracleValidationContext?: {
+    status?: string;
+    sourceType?: string;
+    sourceName?: string;
+    generatedAt?: string;
+    fetchedAt?: string;
+    observationCount?: number;
+    pairCount?: number;
+    error?: string;
+    mode?: string;
+    unavailableAction?: string;
+    maxAgeSeconds?: number;
+    maxDeviationBps?: number;
+    maxSourceSpreadBps?: number;
+    minConfidence?: number;
+    minSources?: number;
+    requestedPair?: string;
+    executionPrice?: number | null;
+    referencePrice?: number | null;
+    deviationBps?: number | null;
+    sourceSpreadBps?: number | null;
+    sourceCount?: number;
+    confidence?: number | null;
+    quoteTimestamp?: string;
   };
 }
 
@@ -1388,6 +1426,7 @@ function DashboardPage({
   walletError,
   apiOnline,
   threatIntelligenceStatus,
+  oracleValidationStatus,
   auditLogs,
   policies,
   agents,
@@ -1399,6 +1438,7 @@ function DashboardPage({
   walletError: string;
   apiOnline: boolean;
   threatIntelligenceStatus: ThreatIntelligenceStatus;
+  oracleValidationStatus: OracleValidationStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1448,6 +1488,12 @@ function DashboardPage({
     : threatIntelligenceStatus.status === "stale"
       ? "Stale"
       : "Unavailable";
+  const oracleFeedOperational = oracleValidationStatus.status === "available";
+  const oracleFeedLabel = oracleFeedOperational
+    ? `${oracleValidationStatus.pairCount || 0} pairs`
+    : oracleValidationStatus.status === "stale"
+      ? "Stale"
+      : "Unavailable";
 
   const operationalItems = [
     { label: "Connected wallet", value: "Active", done: walletConnected },
@@ -1456,6 +1502,7 @@ function DashboardPage({
     { label: "Audit records", value: String(auditLogs.length), done: auditLogs.length > 0 },
     { label: "Casper proofs", value: String(dashboardStats.casperAuditRecords), done: dashboardStats.casperAuditRecords > 0 },
     { label: "Threat feed", value: threatFeedLabel, done: threatFeedOperational },
+    { label: "Oracle feed", value: oracleFeedLabel, done: oracleFeedOperational },
   ];
 
   return (
@@ -1491,7 +1538,7 @@ function DashboardPage({
             </Btn>
           </div>
         </div>
-        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-6 gap-2">
+        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-7 gap-2">
           {operationalItems.map((item) => (
             <div key={item.label} className={`rounded-lg border px-3 py-2 text-xs ${
               item.done
@@ -1954,7 +2001,14 @@ function AgentRegistrationWizard({
           threatIntelligenceMode: typeof policyValues.structuredRules?.threatIntelligenceMode === "string" ? policyValues.structuredRules.threatIntelligenceMode : "Review",
           threatIntelligenceMinConfidence: typeof policyValues.structuredRules?.threatIntelligenceMinConfidence === "number" ? policyValues.structuredRules.threatIntelligenceMinConfidence : 70,
           threatIntelligenceUnavailableAction: typeof policyValues.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policyValues.structuredRules.threatIntelligenceUnavailableAction : "Warn",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction"],
+          oracleValidationMode: typeof policyValues.structuredRules?.oracleValidationMode === "string" ? policyValues.structuredRules.oracleValidationMode : "Review",
+          oracleValidationMaxAgeSeconds: typeof policyValues.structuredRules?.oracleValidationMaxAgeSeconds === "number" ? policyValues.structuredRules.oracleValidationMaxAgeSeconds : 120,
+          oracleValidationMaxDeviationBps: typeof policyValues.structuredRules?.oracleValidationMaxDeviationBps === "number" ? policyValues.structuredRules.oracleValidationMaxDeviationBps : 300,
+          oracleValidationMaxSourceSpreadBps: typeof policyValues.structuredRules?.oracleValidationMaxSourceSpreadBps === "number" ? policyValues.structuredRules.oracleValidationMaxSourceSpreadBps : 500,
+          oracleValidationMinConfidence: typeof policyValues.structuredRules?.oracleValidationMinConfidence === "number" ? policyValues.structuredRules.oracleValidationMinConfidence : 70,
+          oracleValidationMinSources: typeof policyValues.structuredRules?.oracleValidationMinSources === "number" ? policyValues.structuredRules.oracleValidationMinSources : 1,
+          oracleValidationUnavailableAction: typeof policyValues.structuredRules?.oracleValidationUnavailableAction === "string" ? policyValues.structuredRules.oracleValidationUnavailableAction : "Warn",
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction"],
           configurationOnly: [],
         },
       });
@@ -3036,6 +3090,13 @@ function PoliciesPage({
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
+    oracleValidationMode: "Review",
+    oracleValidationMaxAgeSeconds: "120",
+    oracleValidationMaxDeviationBps: "300",
+    oracleValidationMaxSourceSpreadBps: "500",
+    oracleValidationMinConfidence: "70",
+    oracleValidationMinSources: "1",
+    oracleValidationUnavailableAction: "Warn",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -3057,6 +3118,13 @@ function PoliciesPage({
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
+    oracleValidationMode: "Review",
+    oracleValidationMaxAgeSeconds: "120",
+    oracleValidationMaxDeviationBps: "300",
+    oracleValidationMaxSourceSpreadBps: "500",
+    oracleValidationMinConfidence: "70",
+    oracleValidationMinSources: "1",
+    oracleValidationUnavailableAction: "Warn",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -3083,6 +3151,13 @@ function PoliciesPage({
         threatIntelligenceMode: form.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(form.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: form.threatIntelligenceUnavailableAction,
+        oracleValidationMode: form.oracleValidationMode,
+        oracleValidationMaxAgeSeconds: Math.max(5, Number(form.oracleValidationMaxAgeSeconds) || 120),
+        oracleValidationMaxDeviationBps: Math.max(1, Math.min(10000, Number(form.oracleValidationMaxDeviationBps) || 300)),
+        oracleValidationMaxSourceSpreadBps: Math.max(1, Math.min(10000, Number(form.oracleValidationMaxSourceSpreadBps) || 500)),
+        oracleValidationMinConfidence: clampPercentage(form.oracleValidationMinConfidence),
+        oracleValidationMinSources: Math.max(1, Math.min(20, Number(form.oracleValidationMinSources) || 1)),
+        oracleValidationUnavailableAction: form.oracleValidationUnavailableAction,
       },
     });
     setForm({
@@ -3097,6 +3172,13 @@ function PoliciesPage({
       threatIntelligenceMode: "Review",
       threatIntelligenceMinConfidence: "70",
       threatIntelligenceUnavailableAction: "Warn",
+      oracleValidationMode: "Review",
+      oracleValidationMaxAgeSeconds: "120",
+      oracleValidationMaxDeviationBps: "300",
+      oracleValidationMaxSourceSpreadBps: "500",
+      oracleValidationMinConfidence: "70",
+      oracleValidationMinSources: "1",
+      oracleValidationUnavailableAction: "Warn",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -3115,6 +3197,13 @@ function PoliciesPage({
       threatIntelligenceMode: typeof policy.structuredRules?.threatIntelligenceMode === "string" ? policy.structuredRules.threatIntelligenceMode : "Observe",
       threatIntelligenceMinConfidence: String(typeof policy.structuredRules?.threatIntelligenceMinConfidence === "number" ? policy.structuredRules.threatIntelligenceMinConfidence : 70),
       threatIntelligenceUnavailableAction: typeof policy.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policy.structuredRules.threatIntelligenceUnavailableAction : "Warn",
+      oracleValidationMode: typeof policy.structuredRules?.oracleValidationMode === "string" ? policy.structuredRules.oracleValidationMode : "Observe",
+      oracleValidationMaxAgeSeconds: String(typeof policy.structuredRules?.oracleValidationMaxAgeSeconds === "number" ? policy.structuredRules.oracleValidationMaxAgeSeconds : 120),
+      oracleValidationMaxDeviationBps: String(typeof policy.structuredRules?.oracleValidationMaxDeviationBps === "number" ? policy.structuredRules.oracleValidationMaxDeviationBps : 300),
+      oracleValidationMaxSourceSpreadBps: String(typeof policy.structuredRules?.oracleValidationMaxSourceSpreadBps === "number" ? policy.structuredRules.oracleValidationMaxSourceSpreadBps : 500),
+      oracleValidationMinConfidence: String(typeof policy.structuredRules?.oracleValidationMinConfidence === "number" ? policy.structuredRules.oracleValidationMinConfidence : 70),
+      oracleValidationMinSources: String(typeof policy.structuredRules?.oracleValidationMinSources === "number" ? policy.structuredRules.oracleValidationMinSources : 1),
+      oracleValidationUnavailableAction: typeof policy.structuredRules?.oracleValidationUnavailableAction === "string" ? policy.structuredRules.oracleValidationUnavailableAction : "Warn",
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -3142,6 +3231,13 @@ function PoliciesPage({
         threatIntelligenceMode: editForm.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(editForm.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: editForm.threatIntelligenceUnavailableAction,
+        oracleValidationMode: editForm.oracleValidationMode,
+        oracleValidationMaxAgeSeconds: Math.max(5, Number(editForm.oracleValidationMaxAgeSeconds) || 120),
+        oracleValidationMaxDeviationBps: Math.max(1, Math.min(10000, Number(editForm.oracleValidationMaxDeviationBps) || 300)),
+        oracleValidationMaxSourceSpreadBps: Math.max(1, Math.min(10000, Number(editForm.oracleValidationMaxSourceSpreadBps) || 500)),
+        oracleValidationMinConfidence: clampPercentage(editForm.oracleValidationMinConfidence),
+        oracleValidationMinSources: Math.max(1, Math.min(20, Number(editForm.oracleValidationMinSources) || 1)),
+        oracleValidationUnavailableAction: editForm.oracleValidationUnavailableAction,
       },
     });
     setEditingPolicy(null);
@@ -3253,6 +3349,24 @@ function PoliciesPage({
                 <SelectField label="Feed Unavailable" value={form.threatIntelligenceUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
               </div>
             </div>
+            <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">Oracle Validation Foundation</div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Controls freshness, source quorum, confidence, cross-source spread, and maximum price deviation for priced intents. An unavailable feed never counts as a pass.</p>
+                </div>
+                <StatusBadge status="Foundation Available" />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <SelectField label="Validation Mode" value={form.oracleValidationMode} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                <InputField label="Max Quote Age (sec)" value={form.oracleValidationMaxAgeSeconds} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxAgeSeconds: value }))} type="number" />
+                <InputField label="Max Deviation (bps)" value={form.oracleValidationMaxDeviationBps} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxDeviationBps: value }))} type="number" />
+                <InputField label="Max Source Spread (bps)" value={form.oracleValidationMaxSourceSpreadBps} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxSourceSpreadBps: value }))} type="number" />
+                <InputField label="Minimum Confidence (%)" value={form.oracleValidationMinConfidence} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMinConfidence: value }))} type="number" />
+                <InputField label="Minimum Sources" value={form.oracleValidationMinSources} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMinSources: value }))} type="number" />
+                <SelectField label="Feed Unavailable" value={form.oracleValidationUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, oracleValidationUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
+              </div>
+            </div>
             <SelectField
               label="Risk Mode"
               value={form.riskMode}
@@ -3335,6 +3449,15 @@ function PoliciesPage({
                   <span>·</span>
                   <span>{typeof pol.structuredRules?.threatIntelligenceMinConfidence === "number" ? pol.structuredRules.threatIntelligenceMinConfidence : 70}% confidence</span>
                   <span>· unavailable: {typeof pol.structuredRules?.threatIntelligenceUnavailableAction === "string" ? pol.structuredRules.threatIntelligenceUnavailableAction : "Warn"}</span>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
+                  <span className="font-semibold text-[#F8FAFC]">Oracle Validation</span>
+                  <span>{typeof pol.structuredRules?.oracleValidationMode === "string" ? pol.structuredRules.oracleValidationMode : "Observe"}</span>
+                  <span>·</span>
+                  <span>max {typeof pol.structuredRules?.oracleValidationMaxDeviationBps === "number" ? pol.structuredRules.oracleValidationMaxDeviationBps : 300} bps deviation</span>
+                  <span>·</span>
+                  <span>{typeof pol.structuredRules?.oracleValidationMinSources === "number" ? pol.structuredRules.oracleValidationMinSources : 1} source minimum</span>
+                  <span>· unavailable: {typeof pol.structuredRules?.oracleValidationUnavailableAction === "string" ? pol.structuredRules.oracleValidationUnavailableAction : "Warn"}</span>
                 </div>
                 <div className="flex items-center justify-between pt-3 border-t border-[#1E293B] text-xs text-[#94A3B8]">
                   <span>Created {fmtTs(pol.createdAt)}</span>
@@ -3455,6 +3578,24 @@ function PoliciesPage({
                   <SelectField label="Match Handling" value={editForm.threatIntelligenceMode} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMode: value }))} options={["Observe", "Review", "Enforce"]} />
                   <InputField label="Minimum Confidence (%)" value={editForm.threatIntelligenceMinConfidence} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMinConfidence: value }))} type="number" />
                   <SelectField label="Feed Unavailable" value={editForm.threatIntelligenceUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[#F8FAFC]">Oracle Validation Foundation</div>
+                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Compare priced intents with a fresh reference feed and choose whether integrity violations are observed, reviewed, or enforced.</p>
+                  </div>
+                  <StatusBadge status="Foundation Available" />
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <SelectField label="Validation Mode" value={editForm.oracleValidationMode} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMode: value }))} options={["Observe", "Review", "Enforce"]} />
+                  <InputField label="Max Quote Age (sec)" value={editForm.oracleValidationMaxAgeSeconds} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxAgeSeconds: value }))} type="number" />
+                  <InputField label="Max Deviation (bps)" value={editForm.oracleValidationMaxDeviationBps} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxDeviationBps: value }))} type="number" />
+                  <InputField label="Max Source Spread (bps)" value={editForm.oracleValidationMaxSourceSpreadBps} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxSourceSpreadBps: value }))} type="number" />
+                  <InputField label="Minimum Confidence (%)" value={editForm.oracleValidationMinConfidence} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMinConfidence: value }))} type="number" />
+                  <InputField label="Minimum Sources" value={editForm.oracleValidationMinSources} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMinSources: value }))} type="number" />
+                  <SelectField label="Feed Unavailable" value={editForm.oracleValidationUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
@@ -5158,11 +5299,18 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
         type: "Swap",
         amount: 10,
         asset: "CSPR",
+        outputAsset: "USD",
         target,
         targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
         contractIdentifierType: contractIdentifierTypeFor(target),
         chainName: "casper-test",
-        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 9.8, minimumReceived: 9.5 }),
+        oracle: {
+          baseAsset: "CSPR",
+          quoteAsset: "USD",
+          executionPrice: 0.025,
+          quoteTimestamp: new Date().toISOString(),
+        },
+        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 0.25, minimumReceived: 0.24 }),
       },
     };
   },
@@ -5326,6 +5474,81 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       chainName: "casper",
     },
   }),
+  "Oracle price within bounds": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Validate a priced Swap against a fresh multi-source oracle feed",
+      reason: "Configure backend/data/oracle-validation.example.json, refresh its timestamps, and use a trusted contract to isolate Oracle Validation.",
+      action: {
+        type: "Swap",
+        amount: 10,
+        asset: "CSPR",
+        outputAsset: "USD",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        entryPoint: "swap",
+        chainName: "casper-test",
+        oracle: { baseAsset: "CSPR", quoteAsset: "USD", executionPrice: 0.025, quoteTimestamp: new Date().toISOString() },
+        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 0.25, minimumReceived: 0.24 }),
+      },
+    };
+  },
+  "Oracle price deviation": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Confirm excessive execution-price deviation is reviewed or blocked",
+      reason: "The proposed 0.04 USD/CSPR price is intentionally far from the included synthetic 0.025 USD/CSPR reference.",
+      action: {
+        type: "Swap",
+        amount: 10,
+        asset: "CSPR",
+        outputAsset: "USD",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        entryPoint: "swap",
+        chainName: "casper-test",
+        oracle: { baseAsset: "CSPR", quoteAsset: "USD", executionPrice: 0.04, quoteTimestamp: new Date().toISOString() },
+        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 0.4, minimumReceived: 0.38 }),
+      },
+    };
+  },
+  "Stale oracle quote": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Confirm stale execution quotes cannot silently pass Oracle Validation",
+      reason: "The oracle quote timestamp is intentionally older than the default policy freshness window.",
+      action: {
+        type: "Swap",
+        amount: 10,
+        asset: "CSPR",
+        outputAsset: "USD",
+        target,
+        targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        entryPoint: "swap",
+        chainName: "casper-test",
+        oracle: { baseAsset: "CSPR", quoteAsset: "USD", executionPrice: 0.025, quoteTimestamp: new Date(Date.now() - 10 * 60_000).toISOString() },
+        preflight: playgroundPreflight({ slippageBps: 300, expectedOutput: 0.25, minimumReceived: 0.24 }),
+      },
+    };
+  },
   "Expired preflight": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -5522,7 +5745,7 @@ function IntentPlaygroundPage({
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
             <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation and Threat Intelligence are Foundation Available. Threat Intelligence performs deterministic exact matching only when a fresh configured feed is available; an unavailable or stale feed is reported honestly and never counted as a pass.</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, and Oracle Validation are Foundation Available. Oracle Validation compares priced intents with a fresh configured feed; unavailable, stale, low-confidence, divergent, or out-of-policy data is reported honestly and never counted as a pass.</div>
           </div>
 
           <div>
@@ -5582,6 +5805,23 @@ function IntentPlaygroundPage({
                     {result.result.threatIntelligenceContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.threatIntelligenceContext.error}</div>}
                   </div>
                 )}
+                {result.result.oracleValidationContext && (
+                  <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">Oracle Validation context</div>
+                      <span className="text-xs font-semibold text-[#22D3EE]">{result.result.oracleValidationContext.status || "unavailable"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Pair <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.requestedPair || "Not supplied"}</span></div>
+                      <div>Execution / reference <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.executionPrice ?? "—"} / {result.result.oracleValidationContext.referencePrice ?? "—"}</span></div>
+                      <div>Deviation <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.deviationBps ?? "—"} bps</span></div>
+                      <div>Sources <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.sourceCount ?? 0} / minimum {result.result.oracleValidationContext.minSources ?? 1}</span></div>
+                      <div>Confidence <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.confidence ?? "—"}%</span></div>
+                      <div>Source spread <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.sourceSpreadBps ?? "—"} bps</span></div>
+                    </div>
+                    {result.result.oracleValidationContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.oracleValidationContext.error}</div>}
+                  </div>
+                )}
               </div>
               <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} /></div></div>
               <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} />
@@ -5603,11 +5843,13 @@ function SettingsPage({
   policies,
   auditLogs,
   threatIntelligenceStatus,
+  oracleValidationStatus,
 }: {
   agents: Agent[];
   policies: Policy[];
   auditLogs: AuditLog[];
   threatIntelligenceStatus: ThreatIntelligenceStatus;
+  oracleValidationStatus: OracleValidationStatus;
 }) {
   const [devMode, setDevMode] = useState(false);
   const [copiedSetting, setCopiedSetting] = useState("");
@@ -5621,6 +5863,7 @@ function SettingsPage({
     ["Gateway Intent URL", `${api.baseUrl}/api/agent-gateway/intents`],
     ["Gateway Verify URL", `${api.baseUrl}/api/agent-gateway/me?agentId=YOUR_AGENT_ID`],
     ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
+    ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
 
@@ -5670,6 +5913,22 @@ function SettingsPage({
           ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
         </div>
         {threatIntelligenceStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{threatIntelligenceStatus.error}</div>}
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className={SECTION_TITLE}>Oracle Validation Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend oracle-feed status. Provider credentials and raw configured locations are never displayed.</p></div>
+          <StatusBadge status={oracleValidationStatus.status === "available" ? "Foundation Available" : "Inactive"} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Feed state", oracleValidationStatus.status || "unavailable"],
+            ["Source", oracleValidationStatus.sourceName || "No feed configured"],
+            ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
+            ["Observations", String(oracleValidationStatus.observationCount || 0)],
+          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
+        </div>
+        {oracleValidationStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{oracleValidationStatus.error}</div>}
       </div>
 
       <div className={`${CARD} p-5`}>
@@ -5787,6 +6046,7 @@ export default function App() {
   const [walletError, setWalletError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
+  const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
@@ -5821,6 +6081,22 @@ export default function App() {
     };
     void refreshThreatStatus();
     intervalId = setInterval(() => void refreshThreatStatus(), 60_000);
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const refreshOracleStatus = async () => {
+      try {
+        const payload = await api.oracleValidationStatus();
+        if (!cancelled) setOracleValidationStatus(payload.oracleValidation as OracleValidationStatus);
+      } catch {
+        if (!cancelled) setOracleValidationStatus((previous) => ({ ...previous, status: "unavailable", error: "Oracle Validation status endpoint is unavailable." }));
+      }
+    };
+    void refreshOracleStatus();
+    intervalId = setInterval(() => void refreshOracleStatus(), 60_000);
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
@@ -6092,6 +6368,7 @@ export default function App() {
         walletError={walletError}
         apiOnline={apiOnline}
         threatIntelligenceStatus={threatIntelligenceStatus}
+        oracleValidationStatus={oracleValidationStatus}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -6151,7 +6428,7 @@ export default function App() {
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} />
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} />
     ),
   };
 

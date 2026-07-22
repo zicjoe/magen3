@@ -128,6 +128,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.preflight && typeof body.preflight === "object"
         ? body.preflight
         : {};
+  const oracle = action.oracle && typeof action.oracle === "object"
+    ? action.oracle
+    : action.oracleValidation && typeof action.oracleValidation === "object"
+      ? action.oracleValidation
+      : body.oracle && typeof body.oracle === "object"
+        ? body.oracle
+        : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -157,6 +164,11 @@ export function normalizeAgentGatewayIntent(body = {}) {
     actionType,
     amount,
     asset: cleanString(action.asset || body.asset, "CSPR"),
+    outputAsset: cleanString(action.outputAsset || action.output_asset || body.outputAsset || body.output_asset || oracle.quoteAsset || oracle.quote_asset, ""),
+    oracleBaseAsset: cleanString(oracle.baseAsset || oracle.base_asset || action.oracleBaseAsset || action.oracle_base_asset || action.asset || body.asset, ""),
+    oracleQuoteAsset: cleanString(oracle.quoteAsset || oracle.quote_asset || action.oracleQuoteAsset || action.oracle_quote_asset || action.outputAsset || action.output_asset || body.outputAsset || body.output_asset, ""),
+    executionPrice: optionalNumber(oracle.executionPrice ?? oracle.execution_price ?? oracle.price ?? action.executionPrice ?? action.execution_price, "executionPrice", { min: 0 }),
+    quoteTimestamp: cleanString(oracle.quoteTimestamp || oracle.quote_timestamp || oracle.timestamp || action.quoteTimestamp || action.quote_timestamp || "", ""),
     target: cleanString(contract.identifier || contract.hash || action.contractHash || action.contract_hash || action.contractPackageHash || action.contract_package_hash || target, ""),
     targetType: normalizeTargetType(action.targetType || action.target_type || body.targetType || body.target_type),
     contractIdentifierType: cleanString(

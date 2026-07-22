@@ -46,7 +46,7 @@ const response = await client.checkIntent({
 });
 ```
 
-Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. Execution Simulation additionally evaluates supplied payment, gas, TTL, timestamp, freshness, transaction-hash, swap-bound, and runtime-argument metadata. Threat Intelligence can evaluate the same normalized wallet and contract identities against an operator-configured freshness-checked exact-match feed. Full stateful speculative execution and comprehensive reputation discovery remain unavailable. A descriptive `targetType` never grants trust without an exact policy match.
+Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. Execution Simulation additionally evaluates supplied payment, gas, TTL, timestamp, freshness, transaction-hash, swap-bound, and runtime-argument metadata. Threat Intelligence can evaluate normalized wallet and contract identities against an operator-configured freshness-checked exact-match feed. Oracle Validation can compare a declared execution price with a configured multi-source feed using freshness, quorum, confidence, spread, and deviation limits. Full stateful speculative execution, comprehensive reputation discovery, and certified production oracle coverage remain unavailable. A descriptive `targetType` never grants trust without an exact policy match.
 
 ## Python
 
@@ -67,6 +67,13 @@ Use `require_allowed(intent)` for fail-closed execution control.
 The TypeScript result exposes `threatIntelligenceContext` with sanitized feed status, source type/name, freshness timestamps, indicator count, policy mode, confidence threshold, checked identities, and matched indicator summaries. Provider credentials are not part of the SDK response. Python callers receive the same JSON object as a dictionary.
 
 An `Allowed` response can still contain an observed low-confidence or Observe-mode warning. Always authorize from the final decision and `executionApproved`, while presenting module findings for operator awareness.
+
+
+## Oracle Validation request and response types
+
+The TypeScript SDK accepts `action.outputAsset` and `action.oracle` with `baseAsset`, `quoteAsset`, `executionPrice`, and optional `quoteTimestamp`. The result exposes `oracleValidationContext` with sanitized feed state, requested pair, execution and reference prices, deviation, source spread, source count, confidence, and active policy limits. Python callers receive the same JSON structures as dictionaries.
+
+The SDK does not load oracle providers or accept provider credentials; those remain backend operator configuration.
 
 ## Environment variables for examples
 

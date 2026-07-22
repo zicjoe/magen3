@@ -85,7 +85,7 @@ Protection modules live under Agent Shield.
 | Contract Validation | Live | Contract/package identity, target classification, entry points, version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | Foundation Available | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable. |
 | Threat Intelligence | Foundation Available | Deterministic exact matching against a freshness-checked operator feed; no provider is bundled or represented as comprehensive. |
-| Oracle Validation | Planned | No current backend checks. |
+| Oracle Validation | Foundation Available | Freshness-checked asset-pair availability, source quorum, confidence, cross-source spread, quote freshness, and execution-price deviation. |
 | Bridge Controls | Planned | No current backend checks. |
 | Compliance Controls | Planned | No current backend checks. |
 | Risk Assessment | Live | Deterministic finding aggregation and explainable risk score. |
@@ -139,6 +139,25 @@ Execution Simulation evaluates deterministic preflight metadata before wallet si
 
 The module intentionally returns an `unavailable` finding for full stateful speculative execution. The Agent Gateway accepts high-level intent metadata and rejects private keys, wallet approvals, transaction-level signatures, and raw signed transactions. Public contract arguments remain available inside `runtimeArgs`. This preserves the pre-signing security boundary while making malformed transaction-construction data enforceable.
 
+
+### Oracle Validation foundation
+
+Oracle Validation is a deterministic, provider-agnostic price-integrity layer for priced Swap, vault, DeFi, and explicit oracle-data intents. It compares the proposed execution price with the median of fresh observations for an exact asset pair.
+
+Current checks:
+
+1. Base asset, quote asset, execution price, and quote-timestamp metadata.
+2. Fresh configured feed availability.
+3. Exact asset-pair availability and observation freshness.
+4. Minimum independent-source quorum.
+5. Aggregate confidence threshold.
+6. Maximum cross-source spread in basis points.
+7. Maximum execution-price deviation from the median reference.
+8. Observe, Review, or Enforce policy behavior.
+9. Warn, Review, or Block behavior when the feed or requested pair is unavailable.
+
+It remains Foundation Available because no production provider or cryptographically verified on-chain attestation is bundled. A successful result means the submitted price satisfied the configured source and policy constraints; it is not a guarantee of universal market truth or successful contract execution. See `ORACLE_VALIDATION.md`.
+
 ## Policies and templates
 
 Enforced policy fields:
@@ -151,6 +170,8 @@ Enforced policy fields:
 - Optional allowed contract entry points through `structuredRules.allowedEntryPoints`
 - Blocked action types
 - Risk mode
+- Threat Intelligence mode, confidence, and unavailable-feed behavior
+- Oracle Validation mode, quote age, deviation, source spread, confidence, quorum, and unavailable-feed behavior
 
 Available starter presets:
 
@@ -162,7 +183,7 @@ Available starter presets:
 - Enterprise Controlled Automation
 - Custom
 
-The current backend validates structural swap bounds and transaction-construction metadata, but it does not enforce a policy-specific maximum slippage or run full stateful simulation. Threat Intelligence can enforce exact matches from a configured fresh feed, while managed reputation-provider coverage, oracle freshness, bridge risk, and compliance screening remain future work.
+The current backend validates structural swap bounds and transaction-construction metadata, but it does not enforce a policy-specific maximum slippage or run full stateful simulation. Threat Intelligence and Oracle Validation can enforce deterministic checks from configured fresh feeds. Managed provider coverage, cryptographic oracle attestations, bridge risk, and compliance screening remain future work.
 
 ## Structured findings
 
@@ -418,6 +439,11 @@ Railway continues to use the existing Dockerfile and `railway.json`. Vercel cont
 
 No database migration is required. Configure one of `THREAT_INTELLIGENCE_FEED_JSON`, `THREAT_INTELLIGENCE_FEED_PATH`, or `THREAT_INTELLIGENCE_FEED_URL`. A remote feed may use `THREAT_INTELLIGENCE_API_KEY`. Cache, freshness, and timeout are controlled by `THREAT_INTELLIGENCE_CACHE_TTL_MS`, `THREAT_INTELLIGENCE_MAX_AGE_MS`, and `THREAT_INTELLIGENCE_REQUEST_TIMEOUT_MS`. Confirm `/api/threat-intelligence/status` after backend deployment.
 
+
+
+### Oracle Validation deployment
+
+No database migration is required. Configure one of `ORACLE_VALIDATION_FEED_JSON`, `ORACLE_VALIDATION_FEED_PATH`, or `ORACLE_VALIDATION_FEED_URL`. A remote source may use `ORACLE_VALIDATION_API_KEY`. Cache, source freshness, and timeout use `ORACLE_VALIDATION_CACHE_TTL_MS`, `ORACLE_VALIDATION_MAX_FEED_AGE_MS`, and `ORACLE_VALIDATION_REQUEST_TIMEOUT_MS`. The included synthetic feed can be refreshed for a controlled demo with `pnpm oracle:refresh-example-feed`. Confirm `/api/oracle-validation/status` after deployment.
 
 ## Security model
 

@@ -8,6 +8,7 @@ import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from 
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
+import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
@@ -461,7 +462,10 @@ export async function createPostgresStore() {
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
-      const threatIntelligence = await getThreatIntelligenceSnapshot();
+      const [threatIntelligence, oracleValidation] = await Promise.all([
+        getThreatIntelligenceSnapshot(),
+        getOracleValidationSnapshot(),
+      ]);
       const result = evaluatePolicy({
         request: {
           ...body,
@@ -473,6 +477,7 @@ export async function createPostgresStore() {
         policies,
         auditLogs,
         threatIntelligence,
+        oracleValidation,
       });
 
       const [reviewRow] = await db.insert(actionReviewsTable).values({
@@ -612,8 +617,11 @@ export async function createPostgresStore() {
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
       };
-      const threatIntelligence = await getThreatIntelligenceSnapshot();
-      const result = evaluatePolicy({ request, agents, policies, auditLogs, threatIntelligence });
+      const [threatIntelligence, oracleValidation] = await Promise.all([
+        getThreatIntelligenceSnapshot(),
+        getOracleValidationSnapshot(),
+      ]);
+      const result = evaluatePolicy({ request, agents, policies, auditLogs, threatIntelligence, oracleValidation });
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
@@ -652,6 +660,13 @@ export async function createPostgresStore() {
             type: intent.actionType,
             amount: intent.amount,
             asset: intent.asset,
+            outputAsset: intent.outputAsset,
+            oracle: {
+              baseAsset: intent.oracleBaseAsset,
+              quoteAsset: intent.oracleQuoteAsset,
+              executionPrice: intent.executionPrice,
+              quoteTimestamp: intent.quoteTimestamp,
+            },
             target: intent.target,
             targetType: intent.targetType,
             contractIdentifierType: intent.contractIdentifierType,
@@ -746,6 +761,11 @@ export async function createPostgresStore() {
         actionType: gatewayRow.actionType,
         amount: Number(gatewayRow.amount),
         asset: gatewayRow.asset,
+        outputAsset: intent.outputAsset,
+        oracleBaseAsset: intent.oracleBaseAsset,
+        oracleQuoteAsset: intent.oracleQuoteAsset,
+        executionPrice: intent.executionPrice,
+        quoteTimestamp: intent.quoteTimestamp,
         target: gatewayRow.target,
         targetType: gatewayRow.targetType,
         contractIdentifierType: intent.contractIdentifierType,

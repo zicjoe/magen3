@@ -145,6 +145,30 @@ External agents should inspect `moduleFindings` and `threatIntelligenceContext`:
 - A stale or unavailable feed is never a pass and may require review or block under fail-closed policies.
 - Do not attempt to bypass a decision by changing identifier formatting; Wallet Validation and Contract Validation normalize supported forms before matching.
 
+
+## Add Oracle Validation metadata
+
+For a priced Swap or DeFi action, include the proposed quote in the intent rather than provider credentials:
+
+```json
+{
+  "action": {
+    "type": "Swap",
+    "amount": 10,
+    "asset": "CSPR",
+    "outputAsset": "USD",
+    "oracle": {
+      "baseAsset": "CSPR",
+      "quoteAsset": "USD",
+      "executionPrice": 0.025,
+      "quoteTimestamp": "2026-07-22T15:00:00.000Z"
+    }
+  }
+}
+```
+
+The operator-configured feed is evaluated server-side. External agents should inspect Oracle Validation findings and `oracleValidationContext`, including feed status, requested pair, reference price, deviation, source quorum, confidence, and remediation. Never treat a stale/unavailable feed or an Observe-mode warning as proof that a price is safe.
+
 ## Decision Handling
 
 ```ts
@@ -179,6 +203,7 @@ For Blocked and Review Required outcomes, use these fields to build user guidanc
 - `moduleFindings`
 - `pipelineStages`
 - `threatIntelligenceContext`
+- `oracleValidationContext`
 
 The core authorization decision is deterministic. Do not replace it with a language-model decision. A user-facing model may summarize evidence only if it cannot override Agent Shield.
 

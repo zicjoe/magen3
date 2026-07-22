@@ -22,7 +22,7 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
@@ -31,6 +31,10 @@ export const api = {
 
   threatIntelligenceStatus() {
     return request<{ ok: boolean; threatIntelligence: Record<string, unknown> }>("/api/threat-intelligence/status");
+  },
+
+  oracleValidationStatus() {
+    return request<{ ok: boolean; oracleValidation: Record<string, unknown> }>("/api/oracle-validation/status");
   },
 
   publicConfig() {

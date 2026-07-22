@@ -13,6 +13,7 @@ export type ToolTextResult = CallToolResult;
 
 export const INTENT_SCHEMA_DESCRIPTION = {
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
+  oracleValidation: "For priced swaps and DeFi intents, include action.outputAsset plus action.oracle. Magen3 compares the proposed execution price with a configured freshness-checked multi-source oracle feed and returns structured Oracle Validation findings.",
   source: "Optional external agent name",
   targetChain: "Target chain, for example casper-testnet",
   executionWalletAddress: "Public execution-wallet address; never a private key",
@@ -22,13 +23,20 @@ export const INTENT_SCHEMA_DESCRIPTION = {
   action: {
     type: "Action type, for example Transfer, Swap, Stake, or Contract Call",
     amount: "Optional numeric amount",
-    asset: "Optional asset symbol, for example CSPR",
+    asset: "Optional input or base asset symbol, for example CSPR",
+    outputAsset: "Optional output or quote asset symbol, for example USD",
     target: "Destination wallet, contract, validator, or protocol identifier",
     targetType: "Optional target classification. A Trusted Contract label never grants trust without an exact policy match.",
     contractIdentifierType: "Optional explicit Contract Hash or Package Hash semantics for ambiguous raw or hash-prefixed identifiers",
     entryPoint: "Required for direct Contract Interaction/Contract Call actions; optional for high-level actions when not yet resolved",
     contractVersion: "Optional positive package contract version; never use it with a Contract Hash",
     chainName: "Optional Casper chain name, validated against the Gateway configuration",
+    oracle: {
+      baseAsset: "Base asset priced by the intent",
+      quoteAsset: "Quote denomination",
+      executionPrice: "Proposed quoteAsset-per-baseAsset execution price",
+      quoteTimestamp: "ISO-8601 timestamp for the proposed quote",
+    },
     preflight: {
       paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
       gasPriceTolerance: "Optional positive integer gas-price tolerance",
@@ -89,6 +97,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         schema: INTENT_SCHEMA_DESCRIPTION,
         decisions: ["Allowed", "Blocked", "Review Required"],
         threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
+        oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
     },

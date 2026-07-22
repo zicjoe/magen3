@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { createStore } from "./store/index.mjs";
 import { getCasperStatus } from "./casper/auditPayload.mjs";
 import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } from "./lib/threatIntelligence.mjs";
+import { getOracleValidationSnapshot, summarizeOracleValidationSnapshot } from "./lib/oracleValidation.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -181,6 +182,7 @@ const server = createServer(async (req, res) => {
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
+        oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
         timestamp: new Date().toISOString(),
       });
     }
@@ -196,9 +198,18 @@ const server = createServer(async (req, res) => {
     }
 
 
+    if (route === "GET /api/oracle-validation/status") {
+      const snapshot = await getOracleValidationSnapshot();
+      return send(res, 200, { ok: true, oracleValidation: summarizeOracleValidationSnapshot(snapshot) });
+    }
+
+
     if (route === "GET /api/public-config") {
       const casper = getCasperStatus();
-      const threatIntelligence = summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot());
+      const [threatIntelligence, oracleValidation] = await Promise.all([
+        getThreatIntelligenceSnapshot().then(summarizeThreatIntelligenceSnapshot),
+        getOracleValidationSnapshot().then(summarizeOracleValidationSnapshot),
+      ]);
       return send(res, 200, {
         ok: true,
         service: "magen3-api",
@@ -210,9 +221,10 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence"],
+          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation"],
         },
         threatIntelligence,
+        oracleValidation,
         gateway: {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
@@ -268,6 +280,13 @@ const server = createServer(async (req, res) => {
               minimumReceived: "Optional minimum swap output; must not exceed expectedOutput",
               runtimeArgs: "Optional JSON object summarizing contract runtime arguments",
               transactionHash: "Optional 64-character transaction hash after construction"
+            }
+,
+            oracle: {
+              baseAsset: "Required for price-sensitive validation, for example CSPR",
+              quoteAsset: "Required quote asset, for example USD or USDC",
+              executionPrice: "Proposed execution price in quote units per base unit; can be derived from expectedOutput / amount",
+              quoteTimestamp: "ISO-8601 time when the execution quote was produced"
             }
           }
         },
@@ -333,6 +352,31 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "A configured feed produces deterministic exact-match findings. Feed absence or staleness is reported as unavailable and never counted as a pass. No third-party reputation provider is bundled or falsely claimed."
         },
+        oracleValidation: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/oracle-validation/status",
+          purpose: "Compare price-sensitive intents with a configured freshness-checked multi-source oracle feed before wallet signing.",
+          feedSources: ["ORACLE_VALIDATION_FEED_JSON", "ORACLE_VALIDATION_FEED_PATH", "ORACLE_VALIDATION_FEED_URL"],
+          deterministicChecks: [
+            "Asset-pair and execution-price metadata",
+            "Feed freshness and pair availability",
+            "Minimum independent source quorum",
+            "Minimum confidence",
+            "Maximum source spread",
+            "Execution quote freshness",
+            "Maximum deviation from the median reference price"
+          ],
+          policyFields: {
+            mode: "structuredRules.oracleValidationMode: Observe | Review | Enforce",
+            maximumAge: "structuredRules.oracleValidationMaxAgeSeconds",
+            maximumDeviation: "structuredRules.oracleValidationMaxDeviationBps",
+            maximumSourceSpread: "structuredRules.oracleValidationMaxSourceSpreadBps",
+            minimumConfidence: "structuredRules.oracleValidationMinConfidence",
+            minimumSources: "structuredRules.oracleValidationMinSources",
+            unavailableAction: "structuredRules.oracleValidationUnavailableAction: Warn | Review | Block"
+          },
+          decisionRule: "A configured feed can produce deterministic pass, review, or block findings. No oracle provider is bundled, and an unavailable feed never counts as a pass."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -342,6 +386,7 @@ const server = createServer(async (req, res) => {
           moduleFindings: "Structured pass, warning, fail, unavailable, or skipped findings",
           pipelineStages: "Actual security-pipeline state",
           threatIntelligenceContext: "Sanitized feed status, policy behavior, checked identities, and exact-match indicator summaries",
+          oracleValidationContext: "Sanitized oracle-feed state, policy limits, pair, reference price, deviation, source quorum, and confidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",

@@ -38,4 +38,7 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.ttl, /duration/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.slippageBps, /structure/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.threatIntelligence, /freshness-checked/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.oracleValidation, /execution price/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.outputAsset, /quote asset/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.oracle.executionPrice, /proposed/i);
 });

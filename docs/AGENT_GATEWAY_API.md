@@ -156,6 +156,25 @@ Policy behavior is read from `structuredRules`:
 
 A fresh feed can produce a pass or a structured match finding. A stale or unavailable feed produces `unavailable` or `fail` according to policy and is never counted as a pass. The response exposes only sanitized source and indicator evidence; provider credentials are never returned.
 
+
+### Oracle Validation evaluation
+
+Oracle Validation is **Foundation Available**. For price-sensitive actions, the external agent can include `action.outputAsset` and an `action.oracle` object:
+
+```json
+{
+  "outputAsset": "USD",
+  "oracle": {
+    "baseAsset": "CSPR",
+    "quoteAsset": "USD",
+    "executionPrice": 0.025,
+    "quoteTimestamp": "2026-07-22T15:00:00.000Z"
+  }
+}
+```
+
+The backend operator configures the feed; agents never submit provider credentials. The active policy controls maximum quote age, maximum price deviation, maximum source spread, minimum confidence, minimum sources, validation mode, and unavailable-feed behavior. Exact asset-pair matching is used and a stale or unavailable feed never counts as a pass.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -174,7 +193,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",
@@ -204,6 +223,17 @@ The top-level response preserves the existing contract and adds structured expla
       "minConfidence": 70,
       "checkedEntities": [],
       "matchedIndicators": []
+    },
+    "oracleValidationContext": {
+      "status": "available",
+      "sourceName": "Reviewed oracle adapter",
+      "requestedPair": "CSPR/USD",
+      "executionPrice": 0.025,
+      "referencePrice": 0.02505,
+      "deviationBps": 20,
+      "sourceCount": 2,
+      "confidence": 94,
+      "mode": "Review"
     }
   },
   "auditLog": {

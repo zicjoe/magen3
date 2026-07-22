@@ -121,3 +121,45 @@ test("preserves execution preflight metadata without signing material", async ()
   assert.equal(captured.action.preflight.slippageBps, 300);
   assert.equal(captured.action.preflight.minimumReceived, 9.5);
 });
+
+test("preserves Oracle Validation price metadata in intent payloads", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 10, reason: "oracle checks passed", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "CSPR",
+      outputAsset: "USD",
+      target: "DEX_ROUTER",
+      oracle: {
+        baseAsset: "CSPR",
+        quoteAsset: "USD",
+        executionPrice: 0.025,
+        quoteTimestamp: "2026-07-22T15:00:00.000Z",
+      },
+    },
+  });
+
+  assert.equal(captured.action.outputAsset, "USD");
+  assert.equal(captured.action.oracle.baseAsset, "CSPR");
+  assert.equal(captured.action.oracle.quoteAsset, "USD");
+  assert.equal(captured.action.oracle.executionPrice, 0.025);
+});

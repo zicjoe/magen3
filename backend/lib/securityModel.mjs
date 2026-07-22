@@ -56,7 +56,7 @@ export const PROTECTION_MODULES = [
   {
     id: "oracle-validation",
     name: "Oracle Validation",
-    status: "Planned",
+    status: "Foundation Available",
     capabilities: ["Trading", "dApp Interactions"],
   },
   {

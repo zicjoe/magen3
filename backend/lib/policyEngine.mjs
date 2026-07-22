@@ -3,6 +3,7 @@ import { evaluateWalletValidation } from "./walletValidation.mjs";
 import { evaluateContractValidation } from "./contractValidation.mjs";
 import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
 import { evaluateThreatIntelligence } from "./threatIntelligence.mjs";
+import { evaluateOracleValidation } from "./oracleValidation.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -85,6 +86,7 @@ function withStructuredResult({
   agent,
   policy,
   threatIntelligenceContext = null,
+  oracleValidationContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -104,10 +106,11 @@ function withStructuredResult({
     activePolicy: policy ? { id: policy.id, name: policy.name, templateType: policy.templateType || "Custom" } : null,
     pipelineStages: pipelineStages({ timestamp, decision, agentFound: Boolean(agent), policyFound: Boolean(policy), moduleFindings }),
     threatIntelligenceContext,
+    oracleValidationContext,
   };
 }
 
-export function evaluateAction({ request, agents, policies, auditLogs, threatIntelligence = {} }) {
+export function evaluateAction({ request, agents, policies, auditLogs, threatIntelligence = {}, oracleValidation = {} }) {
   const timestamp = new Date().toISOString();
   const agent = agents.find((item) => item.id === request.agentId);
   const policy = policies.find((item) => item.agentId === request.agentId && item.status === "Active");
@@ -264,8 +267,14 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...threatIntelligenceResult.findings);
   score += threatIntelligenceResult.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview);
+  const oracleValidationResult = evaluateOracleValidation({ request, policy, snapshot: oracleValidation });
+  checksPassed.push(...oracleValidationResult.checksPassed);
+  checksFailed.push(...oracleValidationResult.checksFailed);
+  moduleFindings.push(...oracleValidationResult.findings);
+  score += oracleValidationResult.scoreDelta;
+
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -274,13 +283,13 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, or threat-intelligence rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, threat-intelligence, or oracle-validation rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, oracle quote, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({
@@ -296,5 +305,6 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     agent,
     policy,
     threatIntelligenceContext: threatIntelligenceResult.context,
+    oracleValidationContext: oracleValidationResult.context,
   });
 }

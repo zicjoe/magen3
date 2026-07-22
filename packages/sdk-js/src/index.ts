@@ -22,10 +22,24 @@ export interface Magen3ExecutionPreflight {
   transactionHash?: string;
 }
 
+
+export interface Magen3OracleQuote {
+  /** Asset sold or priced by the proposed action. */
+  baseAsset: string;
+  /** Asset used as the quote denomination. */
+  quoteAsset: string;
+  /** Proposed execution price expressed as quoteAsset per baseAsset. */
+  executionPrice: number;
+  /** ISO-8601 timestamp for the proposed execution quote. */
+  quoteTimestamp?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
   asset?: string;
+  /** Optional output or quote asset for price-sensitive actions. */
+  outputAsset?: string;
   target: string;
   targetType?: string;
   /** Explicit Casper identifier semantics for ambiguous raw/hash-prefixed values. */
@@ -36,6 +50,8 @@ export interface Magen3Action {
   contractVersion?: number;
   /** Optional Casper chain name. The Gateway validates it against its configured network. */
   chainName?: string;
+  /** Optional provider-agnostic price context evaluated against the configured Oracle Validation feed. */
+  oracle?: Magen3OracleQuote;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
 }
@@ -106,6 +122,33 @@ export interface Magen3ThreatIntelligenceContext {
   matchedIndicators?: Magen3ThreatIntelligenceMatch[];
 }
 
+
+export interface Magen3OracleValidationContext {
+  status: "available" | "stale" | "unavailable" | string;
+  sourceType?: "inline" | "file" | "remote" | "none" | string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  observationCount?: number;
+  pairCount?: number;
+  error?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  maxAgeSeconds?: number;
+  maxDeviationBps?: number;
+  maxSourceSpreadBps?: number;
+  minConfidence?: number;
+  minSources?: number;
+  requestedPair?: string;
+  executionPrice?: number | null;
+  referencePrice?: number | null;
+  deviationBps?: number | null;
+  sourceSpreadBps?: number | null;
+  sourceCount?: number;
+  confidence?: number | null;
+  quoteTimestamp?: string;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -121,6 +164,8 @@ export interface Magen3DecisionResult {
   pipelineStages?: Magen3PipelineStage[];
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */
   threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
+  /** Sanitized oracle-feed state and deterministic price-integrity evidence. */
+  oracleValidationContext?: Magen3OracleValidationContext;
 }
 
 export interface Magen3IntentResponse {

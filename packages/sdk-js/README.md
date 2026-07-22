@@ -58,3 +58,27 @@ Execution Simulation is Foundation Available. Supplied preflight metadata is val
 Use `requireAllowed()` when the caller must stop automatically for `Blocked` and `Review Required` decisions. The SDK never signs or broadcasts transactions.
 
 The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, `suggestedResolution`, and sanitized `threatIntelligenceContext`, so integrations can render deterministic preflight and exact-match intelligence guidance without parsing free-form text. Threat Intelligence remains Foundation Available and requires an operator-configured fresh feed.
+
+## Oracle Validation
+
+Trading and DeFi intents may include an exact asset pair and execution quote:
+
+```ts
+const decision = await client.evaluateIntent({
+  action: {
+    type: "Swap",
+    amount: 10,
+    token: "CSPR",
+    outputAsset: "USD",
+    target: "contract-package-<64-hex>",
+    oracle: {
+      baseAsset: "CSPR",
+      quoteAsset: "USD",
+      executionPrice: 0.025,
+      quoteTimestamp: new Date().toISOString(),
+    },
+  },
+});
+```
+
+The response may include `oracleValidationContext` plus structured Oracle Validation findings. These report feed availability, pair coverage, reference price, execution-price deviation, source count, confidence, and source spread. Oracle Validation is Foundation Available and requires an operator-configured feed; a passing comparison does not guarantee market accuracy or execution success.

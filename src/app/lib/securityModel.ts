@@ -184,12 +184,21 @@ export const PROTECTION_MODULE_CATALOG: Array<{
   {
     id: "oracle-validation",
     name: "Oracle Validation",
-    description: "Validates oracle freshness and price integrity before dependent actions.",
-    status: "Planned",
+    description: "Compares price-sensitive intents with a configured freshness-checked multi-source oracle feed before signing.",
+    status: "Foundation Available",
     capabilities: ["Trading", "dApp Interactions"],
-    currentChecks: [],
-    futureChecks: ["Price deviation", "Freshness", "Multi-source comparison"],
-    configurable: false,
+    currentChecks: [
+      "Asset-pair and execution-price metadata",
+      "Feed freshness and requested-pair availability",
+      "Independent source quorum and confidence",
+      "Cross-source price spread",
+      "Execution quote freshness",
+      "Maximum deviation from the median reference price",
+      "Observe, Review, and Enforce policy modes",
+      "Warn, Review, or Block behavior when the feed is unavailable",
+    ],
+    futureChecks: ["Managed on-chain oracle adapters", "Cryptographic price attestations", "Protocol-specific oracle routing"],
+    configurable: true,
   },
   {
     id: "bridge-controls",
@@ -334,6 +343,16 @@ export function calculateSecurityCoverage(
       finding.module === "Threat Intelligence" &&
       finding.rule === "Threat feed availability" &&
       finding.status === "pass"));
+  const oracleRelevant = capabilities.some((item) => ["Trading", "dApp Interactions"].includes(item));
+  const oracleMode = typeof policy?.structuredRules?.oracleValidationMode === "string"
+    ? policy.structuredRules.oracleValidationMode
+    : "";
+  const oracleConfigured = ["Observe", "Review", "Enforce"].includes(oracleMode);
+  const oracleOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Oracle Validation" &&
+      finding.rule === "Oracle feed availability" &&
+      finding.status === "pass"));
   const requiredProtectionObserved = contractRelevant ? contractValidationObserved : walletValidationObserved;
 
   const checks: CoverageCheck[] = [
@@ -347,11 +366,14 @@ export function calculateSecurityCoverage(
     { id: "gateway-activity", label: "Recent live protection activity", weight: 3, passed: recentGateway && requiredProtectionObserved, detail: recentGateway && requiredProtectionObserved ? `${contractRelevant ? "Contract Validation" : "Wallet Validation"} was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? `A recent intent exists, but no ${contractRelevant ? "Contract Validation" : "Wallet Validation"} finding is visible yet.` : "No gateway request has been received.", recommendation: `Send a valid ${contractRelevant ? "contract" : "wallet"} intent through the Intent Playground to verify live protection.`, page: "intent-playground" },
     { id: "execution-preflight", label: "Execution preflight observed", weight: 5, passed: !executionPreflightRelevant || executionPreflightObserved, detail: !executionPreflightRelevant ? "Not required by the selected capabilities." : executionPreflightObserved ? "Deterministic transaction-construction preflight has been observed. Full stateful simulation remains unavailable." : "No successful Execution Simulation preflight finding is visible yet.", recommendation: "Send an intent with preflight payment, gas, TTL, timestamp, and action-specific bounds through the Intent Playground.", page: "intent-playground" },
     { id: "threat-intelligence", label: "Threat intelligence operational", weight: 5, passed: threatIntelligenceConfigured && threatIntelligenceOperational, detail: threatIntelligenceConfigured ? threatIntelligenceOperational ? `${threatIntelligenceMode} mode is configured and a fresh feed check has been observed.` : `${threatIntelligenceMode} mode is configured, but no fresh feed pass is visible yet.` : "Threat Intelligence policy mode is not configured for this policy.", recommendation: threatIntelligenceConfigured ? "Configure a fresh threat feed and submit a wallet or contract intent to verify screening." : "Choose Observe, Review, or Enforce behavior in the policy Threat Intelligence controls.", page: threatIntelligenceConfigured ? "intent-playground" : "policies" },
+    { id: "oracle-validation", label: "Oracle validation operational", weight: 5, passed: !oracleRelevant || (oracleConfigured && oracleOperational), detail: !oracleRelevant ? "Not required by the selected capabilities." : oracleConfigured ? oracleOperational ? `${oracleMode} mode is configured and a fresh oracle feed check has been observed.` : `${oracleMode} mode is configured, but no fresh oracle validation pass is visible yet.` : "Oracle Validation policy mode is not configured for this policy.", recommendation: oracleConfigured ? "Configure a fresh oracle feed and submit a priced Swap example through the Intent Playground." : "Configure Oracle Validation limits in the active policy.", page: oracleConfigured ? "intent-playground" : "policies" },
     { id: "casper-proof", label: "Casper proof recording observed", weight: 5, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
     { id: "agent-state", label: "Agent configuration complete", weight: 3, passed: agent.status === "Active" && agent.onboardingStatus !== "draft", detail: agent.status === "Active" ? "Agent is active and available to the gateway." : "Agent is not active.", recommendation: "Complete onboarding and ensure the agent is active.", page: "connected-agents" },
   ];
 
-  const score = checks.reduce((total, check) => total + (check.passed ? check.weight : 0), 0);
+  const totalWeight = checks.reduce((total, check) => total + check.weight, 0);
+  const earnedWeight = checks.reduce((total, check) => total + (check.passed ? check.weight : 0), 0);
+  const score = totalWeight > 0 ? Math.round((earnedWeight / totalWeight) * 100) : 0;
   const label = score >= 85 ? "Strong foundation" : score >= 65 ? "Good coverage" : score >= 40 ? "Needs attention" : "Limited coverage";
   return { score, label, checks, recommendations: checks.filter((check) => !check.passed) };
 }
@@ -382,6 +404,12 @@ export function deriveIntegrationHealth(
   const threatWarned = threatFindings.some((finding) => finding.status === "warning");
   const threatFeedPassed = threatFindings.some((finding) => finding.rule === "Threat feed availability" && finding.status === "pass");
   const threatHealth = threatFindings.length === 0 ? "unknown" : threatFailed || threatWarned ? "attention" : threatUnavailable ? "unavailable" : threatFeedPassed ? "observed" : "unknown";
+  const oracleFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Oracle Validation") || [];
+  const oracleFailed = oracleFindings.some((finding) => finding.status === "fail");
+  const oracleUnavailable = oracleFindings.some((finding) => finding.status === "unavailable");
+  const oracleWarned = oracleFindings.some((finding) => finding.status === "warning");
+  const oracleFeedPassed = oracleFindings.some((finding) => finding.rule === "Oracle feed availability" && finding.status === "pass");
+  const oracleHealth = oracleFindings.length === 0 ? "unknown" : oracleFailed || oracleWarned ? "attention" : oracleUnavailable ? "unavailable" : oracleFeedPassed ? "observed" : "unknown";
   const checks = [
     { label: "Gateway connectivity", status: gatewayOnline ? "healthy" : "unavailable", detail: gatewayOnline ? "Backend health check succeeded." : "Backend health check is currently unavailable." },
     { label: "API credential", status: agent.status === "Active" && agent.apiKeyPreview ? "healthy" : "attention", detail: agent.apiKeyPreview || "No credential preview." },
@@ -392,6 +420,7 @@ export function deriveIntegrationHealth(
     { label: "Contract Validation", status: contractHealth, detail: contractFindings.length === 0 ? "No Contract Validation finding is available for the latest request." : contractFailed ? "The latest request failed one or more contract checks." : contractWarned ? "The latest contract request needs attention before execution." : "The latest request passed the evaluated contract checks." },
     { label: "Execution preflight", status: simulationHealth, detail: simulationFindings.length === 0 ? "No Execution Simulation finding is available for the latest request." : simulationFailed ? "The latest request failed deterministic transaction-construction preflight." : simulationPassed ? "Deterministic preflight was evaluated. Full stateful speculative execution remains unavailable." : "Full stateful simulation is unavailable and no preflight pass was recorded." },
     { label: "Threat Intelligence", status: threatHealth, detail: threatFindings.length === 0 ? "No Threat Intelligence finding is available for the latest request." : threatFailed ? "The latest request was blocked by an enforced threat indicator or fail-closed feed rule." : threatWarned ? "The latest request matched an observed or review-level threat signal." : threatUnavailable ? "The configured threat feed was unavailable or stale and did not count as a pass." : threatFeedPassed ? "A fresh configured feed screened the latest normalized identities." : "Threat Intelligence did not produce an operational feed result." },
+    { label: "Oracle Validation", status: oracleHealth, detail: oracleFindings.length === 0 ? "No Oracle Validation finding is available for the latest request." : oracleFailed ? "The latest request failed an enforced oracle integrity rule." : oracleWarned ? "The latest price-sensitive request requires attention." : oracleUnavailable ? "The configured oracle feed was unavailable or stale and did not count as a pass." : oracleFeedPassed ? "A fresh configured oracle feed evaluated the latest priced intent." : "Oracle Validation did not produce an operational feed result." },
     { label: "Casper proof service", status: proofState === "recorded" ? "healthy" : proofState === "failed" ? "attention" : "pending", detail: proofState },
     { label: "Audit synchronization", status: latest ? "healthy" : "unknown", detail: latest ? "Latest audit record is visible." : "No audit record is available." },
   ];

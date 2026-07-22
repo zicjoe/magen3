@@ -58,6 +58,13 @@ After the Magen3 backend operator configures a fresh demonstration feed, ask Cod
 
 Then disable or age the feed and repeat under each configured unavailable action. A stale or unavailable feed must never be described as a successful screening pass. Do not call the synthetic demonstration record a real malicious address.
 
+
+## Oracle-validation test
+
+Configure and refresh the synthetic oracle feed, then ask Codex to submit a priced Swap with `outputAsset` and `action.oracle`. First use an execution price within the feed range, then a materially divergent price, and finally a stale `quoteTimestamp`. Codex must report the final decision, requested pair, reference price, deviation, source quorum, confidence, triggered rule, remediation, and audit-log identifier without signing or broadcasting anything.
+
+The included feed is synthetic and must not be described as real market data. An unavailable or stale feed never counts as a pass, and MCP clients must authorize only from the final Magen3 decision plus `executionApproved`.
+
 ## Tool behavior
 
 - `magen3_verify_agent`: validates Connected Agent credentials and policy.

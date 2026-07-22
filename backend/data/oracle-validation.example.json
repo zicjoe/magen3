@@ -1,0 +1,25 @@
+{
+  "version": "1",
+  "source": "Magen3 synthetic testnet oracle feed",
+  "generatedAt": "2026-07-22T15:00:00.000Z",
+  "observations": [
+    {
+      "id": "synthetic-cspr-usd-a",
+      "baseAsset": "CSPR",
+      "quoteAsset": "USD",
+      "price": 0.025,
+      "confidence": 95,
+      "source": "synthetic-source-a",
+      "observedAt": "2026-07-22T15:00:00.000Z"
+    },
+    {
+      "id": "synthetic-cspr-usd-b",
+      "baseAsset": "CSPR",
+      "quoteAsset": "USD",
+      "price": 0.0251,
+      "confidence": 92,
+      "source": "synthetic-source-b",
+      "observedAt": "2026-07-22T15:00:00.000Z"
+    }
+  ]
+}

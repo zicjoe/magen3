@@ -29,7 +29,7 @@ test("security coverage reaches 100 only when every configured protection check 
       dailyLimit: 100,
       approvalThreshold: 15,
       trustedContracts: ["contract-package-hash-example"],
-      structuredRules: { threatIntelligenceMode: "Review" },
+      structuredRules: { threatIntelligenceMode: "Review", oracleValidationMode: "Review" },
     },
     [{
       timestamp,
@@ -41,6 +41,8 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Execution Simulation", status: "unavailable", severity: "info", rule: "Stateful speculative execution", message: "Stateful simulation unavailable." },
         { module: "Threat Intelligence", status: "pass", severity: "info", rule: "Threat feed availability", message: "Fresh feed available." },
         { module: "Threat Intelligence", status: "pass", severity: "info", rule: "Known threat indicator match", message: "No exact match." },
+        { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle feed availability", message: "Fresh oracle feed available." },
+        { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle price deviation", message: "Price within policy." },
       ],
     }],
   );
@@ -97,7 +99,7 @@ test("security coverage is deterministic and explains missing controls", () => {
   const second = securityModel.calculateSecurityCoverage(agent, undefined, []);
 
   assert.deepEqual(first, second);
-  assert.equal(first.score, 13);
+  assert.equal(first.score, 12);
   assert.equal(first.label, "Limited coverage");
   assert.ok(first.recommendations.some((check) => check.id === "active-policy"));
   assert.ok(first.recommendations.some((check) => check.id === "contract-controls"));
@@ -114,6 +116,19 @@ test("stale or unavailable Threat Intelligence never counts toward coverage", ()
   const check = result.checks.find((item) => item.id === "threat-intelligence");
   assert.equal(check.passed, false);
   assert.ok(result.recommendations.some((item) => item.id === "threat-intelligence"));
+});
+
+
+test("stale or unavailable Oracle Validation never counts toward coverage", () => {
+  const timestamp = new Date().toISOString();
+  const result = securityModel.calculateSecurityCoverage(
+    { status: "Active", executionCapabilities: ["Trading"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active", maxTransaction: 10, dailyLimit: 20, approvalThreshold: 5, trustedContracts: ["target"], structuredRules: { oracleValidationMode: "Review" } },
+    [{ timestamp, moduleFindings: [{ module: "Oracle Validation", status: "unavailable", severity: "low", rule: "Oracle feed availability", message: "Feed stale." }] }],
+  );
+  const check = result.checks.find((item) => item.id === "oracle-validation");
+  assert.equal(check.passed, false);
+  assert.ok(result.recommendations.some((item) => item.id === "oracle-validation"));
 });
 
 test("integration health never reports healthy when core services or configuration are missing", () => {
