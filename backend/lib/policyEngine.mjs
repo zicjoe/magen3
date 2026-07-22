@@ -1,5 +1,6 @@
 import { normalizeExecutionCapabilities } from "./securityModel.mjs";
 import { evaluateWalletValidation } from "./walletValidation.mjs";
+import { evaluateContractValidation } from "./contractValidation.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -16,14 +17,6 @@ function getDailyUsed(agentId, auditLogs, executionWalletAddress = "") {
       return !normalizedExecutionWallet || !logExecutionWallet || logExecutionWallet === normalizedExecutionWallet;
     })
     .reduce((sum, log) => sum + Number(log.amount || 0), 0);
-}
-
-function targetIsTrusted(request, policy) {
-  const normalizedTarget = String(request.target || "").trim().toLowerCase();
-  const trustedList = (policy.trustedContracts || []).map((contract) => String(contract).trim().toLowerCase());
-  // Preserve the existing trusted-contract classification for backward compatibility.
-  // Wallet destinations never use this shortcut; Wallet Validation requires a policy-listed target.
-  return request.targetType === "Trusted Contract" || Boolean(normalizedTarget && trustedList.includes(normalizedTarget));
 }
 
 function finding({ module, status, severity = "info", rule, message, evidence = {}, remediation = "" }) {
@@ -214,7 +207,6 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
 
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
-  const strictMode = policy.riskMode === "Conservative";
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
   let score = 5;
 
@@ -250,38 +242,11 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
   moduleFindings.push(...walletValidation.findings);
   score += walletValidation.scoreDelta;
 
-  let contractHardBlock = false;
-  let contractNeedsReview = false;
-
-  if (!walletValidation.walletDestination) {
-    const isTrusted = targetIsTrusted(request, policy);
-    if (isTrusted) {
-      const message = "Contract or non-wallet target is trusted or policy-approved";
-      checksPassed.push(message);
-      moduleFindings.push(finding({
-        module: "Contract Validation",
-        status: "pass",
-        rule: "Approved contract or target",
-        message,
-        evidence: { target: request.target, targetType: request.targetType },
-      }));
-    } else {
-      const message = "Contract or non-wallet target is not in the trusted target list";
-      checksFailed.push(message);
-      score += strictMode ? 35 : 25;
-      contractHardBlock = strictMode || request.targetType === "Unknown Contract";
-      contractNeedsReview = !contractHardBlock;
-      moduleFindings.push(finding({
-        module: "Contract Validation",
-        status: contractHardBlock ? "fail" : "warning",
-        severity: contractHardBlock ? "high" : "medium",
-        rule: "Approved contract or target",
-        message,
-        evidence: { target: request.target, targetType: request.targetType, trustedContracts: policy.trustedContracts || [] },
-        remediation: "Use a policy-approved contract or target, or add it after authorized review.",
-      }));
-    }
-  }
+  const contractValidation = evaluateContractValidation({ request, policy });
+  checksPassed.push(...contractValidation.checksPassed);
+  checksFailed.push(...contractValidation.checksFailed);
+  moduleFindings.push(...contractValidation.findings);
+  score += contractValidation.scoreDelta;
 
   if (["Swap", "Deposit to Vault", "Contract Interaction"].includes(request.actionType)) {
     moduleFindings.push(finding({
@@ -295,8 +260,8 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     }));
   }
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractHardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractNeedsReview);
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -305,13 +270,13 @@ export function evaluateAction({ request, agents, policies, auditLogs }) {
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy or wallet-validation rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, or contract-validation rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, destination, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({

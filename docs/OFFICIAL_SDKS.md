@@ -20,6 +20,27 @@ const response = await client.checkIntent(intent);
 
 Use `requireAllowed(intent)` to make an agent fail closed whenever the decision is `Blocked` or `Review Required`.
 
+
+## Contract-call intent
+
+```ts
+const response = await client.checkIntent({
+  executionWalletAddress: "CASPER_PUBLIC_KEY",
+  targetChain: "casper-testnet",
+  action: {
+    type: "Contract Call",
+    target: "contract-package-hash-<64-hex-characters>",
+    targetType: "Trusted Contract",
+    contractIdentifierType: "Package Hash",
+    entryPoint: "deposit",
+    contractVersion: 1,
+    chainName: "casper-test",
+  },
+});
+```
+
+Contract Validation checks identifier structure, action/target classification, required entry-point presence for direct contract calls, optional package version, network context, approved contracts, blocked contracts, and allowed entry points. A descriptive `targetType` never grants trust without an exact policy match.
+
 ## Python
 
 ```bash

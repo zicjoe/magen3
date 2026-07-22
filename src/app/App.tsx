@@ -2971,6 +2971,8 @@ function PoliciesPage({
     dailyLimit: "",
     approvalThreshold: "",
     trustedContracts: "",
+    blockedContracts: "",
+    allowedEntryPoints: "",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -2987,6 +2989,8 @@ function PoliciesPage({
     dailyLimit: "",
     approvalThreshold: "",
     trustedContracts: "",
+    blockedContracts: "",
+    allowedEntryPoints: "",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -3007,6 +3011,10 @@ function PoliciesPage({
       blockedActions: form.blockedActions,
       riskMode: form.riskMode,
       status: "Active",
+      structuredRules: {
+        blockedContracts: form.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
+        allowedEntryPoints: form.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+      },
     });
     setForm({
       name: "",
@@ -3015,6 +3023,8 @@ function PoliciesPage({
       dailyLimit: "",
       approvalThreshold: "",
       trustedContracts: "",
+      blockedContracts: "",
+      allowedEntryPoints: "",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -3028,6 +3038,8 @@ function PoliciesPage({
       dailyLimit: String(policy.dailyLimit),
       approvalThreshold: String(policy.approvalThreshold),
       trustedContracts: policy.trustedContracts.join("\n"),
+      blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
+      allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -3048,6 +3060,11 @@ function PoliciesPage({
       blockedActions: editForm.blockedActions,
       riskMode: editForm.riskMode,
       status: editForm.status,
+      structuredRules: {
+        ...(editingPolicy.structuredRules || {}),
+        blockedContracts: editForm.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
+        allowedEntryPoints: editForm.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+      },
     });
     setEditingPolicy(null);
   }, [editForm, editingPolicy, onUpdatePolicy]);
@@ -3119,6 +3136,30 @@ function PoliciesPage({
                 }
                 placeholder="One contract or wallet address per line"
               />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className={LABEL_CLS}>Blocked Contracts</label>
+                <textarea
+                  className={`${INPUT_CLS} resize-none font-mono text-xs`}
+                  rows={3}
+                  value={form.blockedContracts}
+                  onChange={(event) => setForm((current) => ({ ...current, blockedContracts: event.target.value }))}
+                  placeholder="One Contract Hash or Package Hash per line"
+                />
+                <p className="mt-1 text-xs text-[#64748B]">Exact policy blocklist. A match always produces Blocked.</p>
+              </div>
+              <div>
+                <label className={LABEL_CLS}>Allowed Contract Entry Points</label>
+                <textarea
+                  className={`${INPUT_CLS} resize-none font-mono text-xs`}
+                  rows={3}
+                  value={form.allowedEntryPoints}
+                  onChange={(event) => setForm((current) => ({ ...current, allowedEntryPoints: event.target.value }))}
+                  placeholder={"swap\ndeposit\nwithdraw"}
+                />
+                <p className="mt-1 text-xs text-[#64748B]">Optional global allowlist. Leave empty for structural entry-point validation only.</p>
+              </div>
             </div>
             <SelectField
               label="Risk Mode"
@@ -3280,6 +3321,28 @@ function PoliciesPage({
                   onChange={(e) => setEditForm((p) => ({ ...p, trustedContracts: e.target.value }))}
                   placeholder="One contract or wallet address per line"
                 />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className={LABEL_CLS}>Blocked Contracts</label>
+                  <textarea
+                    className={`${INPUT_CLS} resize-none font-mono text-xs`}
+                    rows={3}
+                    value={editForm.blockedContracts}
+                    onChange={(event) => setEditForm((current) => ({ ...current, blockedContracts: event.target.value }))}
+                    placeholder="One Contract Hash or Package Hash per line"
+                  />
+                </div>
+                <div>
+                  <label className={LABEL_CLS}>Allowed Contract Entry Points</label>
+                  <textarea
+                    className={`${INPUT_CLS} resize-none font-mono text-xs`}
+                    rows={3}
+                    value={editForm.allowedEntryPoints}
+                    onChange={(event) => setEditForm((current) => ({ ...current, allowedEntryPoints: event.target.value }))}
+                    placeholder={"swap\ndeposit\nwithdraw"}
+                  />
+                </div>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
                 <SelectField
@@ -4520,7 +4583,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, and Risk Assessment. Contract Validation remains Foundation Available. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -4922,8 +4985,14 @@ codex mcp add magen3 \
 const PLAYGROUND_DEMO_EXECUTION_WALLET = `01${"1".repeat(64)}`;
 const PLAYGROUND_DEMO_RECIPIENT = `01${"2".repeat(64)}`;
 const PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT = `02${"3".repeat(66)}`;
+const PLAYGROUND_DEMO_CONTRACT = `contract-${"4".repeat(64)}`;
+const PLAYGROUND_DEMO_UNAPPROVED_CONTRACT = `contract-package-${"5".repeat(64)}`;
 
-const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string) => Record<string, unknown>> = {
+function firstConfiguredContract(policy?: Policy) {
+  return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
+}
+
+const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
   Swap: (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -4978,14 +5047,97 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string) 
     reason: "Validate the active policy before staking execution.",
     action: { type: "Stake", amount: 15, asset: "CSPR", target: "VALIDATOR_PUBLIC_KEY", targetType: "Trusted Contract" },
   }),
-  "Contract call": (agent, walletAddress) => ({
+  "Contract call": (agent, walletAddress, policy) => {
+    const approvedContract = firstConfiguredContract(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Call a structurally valid smart contract through Agent Shield",
+      reason: approvedContract ? "Validate an approved contract and entry point before signing." : "Validate a contract call; add this contract to Trusted Targets to receive Allowed.",
+      action: {
+        type: "Contract Interaction",
+        amount: 0,
+        asset: "CSPR",
+        target: approvedContract || PLAYGROUND_DEMO_CONTRACT,
+        targetType: approvedContract ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: "Contract Hash",
+        entryPoint: "call",
+        chainName: "casper-test",
+      },
+    };
+  },
+  "Unapproved contract": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
     walletAddress,
     executionWalletAddress: walletAddress,
-    goal: "Call an approved smart contract",
-    reason: "Validate contract controls before execution.",
-    action: { type: "Contract Interaction", amount: 0, asset: "CSPR", target: "CONTRACT_HASH", targetType: "Trusted Contract" },
+    goal: "Test policy behavior for a valid but unapproved contract package",
+    reason: "Confirm that target labels do not grant trust without an exact policy match.",
+    action: {
+      type: "Contract Interaction",
+      amount: 0,
+      asset: "CSPR",
+      target: PLAYGROUND_DEMO_UNAPPROVED_CONTRACT,
+      targetType: "Unknown Contract",
+      contractIdentifierType: "Package Hash",
+      entryPoint: "call",
+      chainName: "casper-test",
+    },
+  }),
+  "Malformed contract": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm malformed contract identifiers are blocked",
+    reason: "Exercise deterministic Casper contract-identifier validation.",
+    action: {
+      type: "Contract Interaction",
+      amount: 0,
+      asset: "CSPR",
+      target: "CONTRACT_HASH",
+      targetType: "Unknown Contract",
+      contractIdentifierType: "Contract Hash",
+      entryPoint: "call",
+      chainName: "casper-test",
+    },
+  }),
+  "Missing entry point": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm direct contract calls require an entry point",
+    reason: "Exercise contract-call metadata validation.",
+    action: {
+      type: "Contract Interaction",
+      amount: 0,
+      asset: "CSPR",
+      target: PLAYGROUND_DEMO_CONTRACT,
+      targetType: "Unknown Contract",
+      contractIdentifierType: "Contract Hash",
+      chainName: "casper-test",
+    },
+  }),
+  "Wrong contract network": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Confirm cross-network contract intents are blocked",
+    reason: "Exercise chain-name consistency against the configured Magen3 deployment.",
+    action: {
+      type: "Contract Interaction",
+      amount: 0,
+      asset: "CSPR",
+      target: PLAYGROUND_DEMO_CONTRACT,
+      targetType: "Unknown Contract",
+      contractIdentifierType: "Contract Hash",
+      entryPoint: "call",
+      chainName: "casper",
+    },
   }),
 };
 
@@ -5019,12 +5171,12 @@ function IntentPlaygroundPage({
 
   const loadExample = useCallback((name: string, agent = selectedAgent) => {
     if (!agent) return;
-    const payload = PLAYGROUND_EXAMPLES[name](agent, walletAddress || PLAYGROUND_DEMO_EXECUTION_WALLET);
+    const payload = PLAYGROUND_EXAMPLES[name](agent, walletAddress || PLAYGROUND_DEMO_EXECUTION_WALLET, selectedPolicy);
     setExample(name);
     setRequestJson(JSON.stringify(payload, null, 2));
     setResult(null);
     setError("");
-  }, [selectedAgent, walletAddress]);
+  }, [selectedAgent, selectedPolicy, walletAddress]);
 
   useEffect(() => {
     if (!selectedAgent) return;
@@ -5134,8 +5286,8 @@ function IntentPlaygroundPage({
           </div>
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-            <div className="font-semibold text-[#22D3EE]">Wallet Validation is Live</div>
-            <div className="mt-1">The execution wallet must be a Casper signing public key. Wallet destinations are checked for valid format, correct classification, exact self-transfer, policy approval, transaction limits, daily spend, and human-review thresholds.</div>
+            <div className="font-semibold text-[#22D3EE]">Wallet and Contract Validation are Live</div>
+            <div className="mt-1">Wallet intents validate signing keys, destinations, spend controls, and review thresholds. Contract intents validate target classification, Contract Hash or Package Hash structure, entry points, package-version semantics, network binding, and exact policy approval or blocking.</div>
           </div>
 
           <div>

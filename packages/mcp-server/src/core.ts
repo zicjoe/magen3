@@ -23,7 +23,11 @@ export const INTENT_SCHEMA_DESCRIPTION = {
     amount: "Optional numeric amount",
     asset: "Optional asset symbol, for example CSPR",
     target: "Destination wallet, contract, validator, or protocol identifier",
-    targetType: "Optional target classification",
+    targetType: "Optional target classification. A Trusted Contract label never grants trust without an exact policy match.",
+    contractIdentifierType: "Optional explicit Contract Hash or Package Hash semantics for ambiguous raw or hash-prefixed identifiers",
+    entryPoint: "Required for direct Contract Interaction/Contract Call actions; optional for high-level actions when not yet resolved",
+    contractVersion: "Optional positive package contract version; never use it with a Contract Hash",
+    chainName: "Optional Casper chain name, validated against the Gateway configuration",
   },
 } as const;
 

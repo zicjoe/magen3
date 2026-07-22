@@ -239,11 +239,15 @@ const server = createServer(async (req, res) => {
           goal: "Transfer funds to an approved wallet safely",
           reason: "User strategy asks for a policy-checked transfer",
           action: {
-            type: "Transfer",
+            type: "Transfer | Swap | Deposit to Vault | Contract Interaction",
             amount: 5,
             asset: "CSPR",
-            target: "Casper public key or account-hash identifier",
-            targetType: "Wallet Address"
+            target: "Casper wallet identifier, Contract Hash, or Package Hash",
+            targetType: "Wallet Address | Trusted Contract | Unknown Contract",
+            contractIdentifierType: "Contract Hash | Package Hash (required for ambiguous hash- identifiers)",
+            entryPoint: "Required for contract-call actions",
+            contractVersion: "Optional positive integer for Package Hash calls",
+            chainName: process.env.CASPER_CHAIN_NAME || "casper-test"
           }
         },
         walletValidation: {
@@ -260,6 +264,26 @@ const server = createServer(async (req, res) => {
             "Daily wallet spending limit",
             "Human-review threshold"
           ]
+        },
+        contractValidation: {
+          status: "Live",
+          checks: [
+            "Contract target classification",
+            "Contract Hash or Package Hash structure",
+            "Contract/package type consistency",
+            "Contract entry-point structure",
+            "Package-version semantics",
+            "Casper chain-name consistency when supplied",
+            "Blocked-contract enforcement",
+            "Approved-contract enforcement",
+            "Optional policy entry-point allowlist"
+          ],
+          trustRule: "targetType labels never grant trust; the exact contract identifier must be approved by policy",
+          policyFields: {
+            approvedContracts: "Existing trustedContracts list",
+            blockedContracts: "structuredRules.blockedContracts",
+            allowedEntryPoints: "structuredRules.allowedEntryPoints"
+          }
         },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",

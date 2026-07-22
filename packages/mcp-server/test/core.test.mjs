@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createToolHandlers, configFromEnv } from "../dist/core.js";
+import { createToolHandlers, configFromEnv, INTENT_SCHEMA_DESCRIPTION } from "../dist/core.js";
 
 test("configFromEnv fails closed when credentials are missing", () => {
   assert.throws(() => configFromEnv({}), /MAGEN3_GATEWAY_URL/);
@@ -26,4 +26,12 @@ test("requireAllowed fails closed when SDK rejects the decision", async () => {
   const result = await handlers.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def" } });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /Blocked/);
+});
+
+
+test("intent schema describes live contract validation fields", () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.entryPoint, /required/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractIdentifierType, /Contract Hash/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractVersion, /package/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.chainName, /Gateway/i);
 });

@@ -38,3 +38,42 @@ test("normalizes trailing gateway URL slashes without a regular expression", asy
   assert.equal(capturedUrl, "https://api.example/api/agent-gateway/me?agentId=MAG-1");
 });
 
+
+test("preserves contract validation metadata in intent payloads", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 8, reason: "approved contract", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    targetChain: "casper-testnet",
+    action: {
+      type: "Contract Call",
+      target: `contract-package-hash-${"a".repeat(64)}`,
+      targetType: "Trusted Contract",
+      contractIdentifierType: "Package Hash",
+      entryPoint: "deposit",
+      contractVersion: 1,
+      chainName: "casper-test",
+    },
+  });
+
+  assert.equal(captured.action.contractIdentifierType, "Package Hash");
+  assert.equal(captured.action.entryPoint, "deposit");
+  assert.equal(captured.action.contractVersion, 1);
+  assert.equal(captured.action.chainName, "casper-test");
+});

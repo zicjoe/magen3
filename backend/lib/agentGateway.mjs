@@ -14,6 +14,8 @@ const ACTION_ALIASES = {
   vault: "Deposit to Vault",
   contract: "Contract Interaction",
   call: "Contract Interaction",
+  "contract call": "Contract Interaction",
+  "contract_call": "Contract Interaction",
   "contract interaction": "Contract Interaction",
   dao: "DAO Treasury Payment",
   "dao treasury payment": "DAO Treasury Payment",
@@ -77,6 +79,18 @@ export function normalizeAgentGatewayIntent(body = {}) {
     throw err;
   }
 
+  const contract = action.contract && typeof action.contract === "object" ? action.contract : {};
+  const contractVersionRaw = contract.version ?? action.contractVersion ?? action.contract_version ?? body.contractVersion ?? body.contract_version;
+  const contractVersion = contractVersionRaw === undefined || contractVersionRaw === null || contractVersionRaw === ""
+    ? null
+    : Number(contractVersionRaw);
+
+  if (contractVersion !== null && (!Number.isFinite(contractVersion) || contractVersion < 0)) {
+    const err = new Error("contractVersion must be a valid non-negative number when supplied");
+    err.status = 400;
+    throw err;
+  }
+
   return {
     id: makeId("GW"),
     source: cleanString(body.source || body.client || body.agentName || body.agent_name, "external-agent"),
@@ -88,8 +102,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
     actionType,
     amount,
     asset: cleanString(action.asset || body.asset, "CSPR"),
-    target,
+    target: cleanString(contract.identifier || contract.hash || action.contractHash || action.contract_hash || action.contractPackageHash || action.contract_package_hash || target, ""),
     targetType: normalizeTargetType(action.targetType || action.target_type || body.targetType || body.target_type),
+    contractIdentifierType: cleanString(
+      contract.identifierType || contract.identifier_type || contract.type || action.contractIdentifierType || action.contract_identifier_type || body.contractIdentifierType || body.contract_identifier_type,
+      ""
+    ),
+    entryPoint: cleanString(contract.entryPoint || contract.entry_point || action.entryPoint || action.entry_point || body.entryPoint || body.entry_point, ""),
+    contractVersion,
+    chainName: cleanString(contract.chainName || contract.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name, ""),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

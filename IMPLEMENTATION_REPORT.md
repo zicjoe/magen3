@@ -1,57 +1,81 @@
-# Magen3 Wallet Validation Live Upgrade — Implementation Report
+# Magen3 Contract Validation Live Upgrade — Implementation Report
 
 ## Release summary
 
-This release upgrades **Wallet Validation** from **Foundation Available** to **Live** across the Magen3 Agent Shield execution path.
+This release upgrades **Contract Validation** from **Foundation Available** to **Live** across the Magen3 Agent Shield execution path.
 
-Wallet checks now run deterministically before an intent can be returned as Allowed. The findings are included in the Gateway response, Risk Assessment, Security Pipeline, Audit Log, Security Coverage, Integration Health, Intent Playground, README, and in-app documentation.
+Contract-oriented intents are now evaluated deterministically before Magen3 returns Allowed, Blocked, or Review Required. The findings are included in the Gateway response, Risk Assessment, Security Pipeline, Audit Log, Security Coverage, Integration Health, Intent Playground, policy UI, official SDK guidance, MCP schema, README, and documentation.
 
-The implementation preserves the existing Magen3 visual identity, Gateway endpoint, authentication headers, agent IDs, API-key model, policy records, Casper contract configuration, relayer flow, SDKs, MCP server, YieldBot integration, Codex flow, Railway configuration, and Vercel configuration.
+The implementation preserves the existing Magen3 visual identity, Gateway endpoint, authentication headers, agent IDs, API-key model, policy records, Casper contract configuration, relayer flow, wallet flow, YieldBot compatibility, Codex flow, Railway configuration, and Vercel configuration.
 
-## Live Wallet Validation checks
+## Live Contract Validation checks
 
-The Gateway now evaluates the following checks when relevant:
+Contract Validation runs whenever the normalized action or target classification is contract-oriented.
 
-1. **Execution wallet required**
-   - Wallet-controlled execution must include `executionWalletAddress`.
-   - Missing wallet context produces an audited Blocked decision rather than being silently accepted.
+### 1. Contract-target classification
 
-2. **Valid Casper signing-key format**
-   - Accepts structurally valid Casper Ed25519 and Secp256k1 public keys for execution signing.
-   - An account hash is not accepted as the execution signer because it cannot sign a transaction.
+- `Contract Interaction`, `Swap`, and `Deposit to Vault` must use `Trusted Contract` or `Unknown Contract`.
+- `RWA Proof Update` must use `RWA Registry`.
+- `Oracle Data Update` must use `Oracle Feed`.
+- A mismatched classification is blocked with evidence and remediation.
 
-3. **Independent execution-wallet context**
-   - The execution wallet is evaluated independently from the Magen3 owner wallet.
-   - The implementation does not require the agent owner and execution wallet to be the same.
+### 2. Casper contract identifier structure
 
-4. **Wallet-destination classification**
-   - Transfer intents must use `Wallet Address` as their target type.
-   - A transfer disguised as a contract interaction is blocked.
+Magen3 distinguishes:
 
-5. **Valid destination format**
-   - Transfer destinations must be a valid Casper public key or account-hash identifier.
+- Contract Hash
+- Contract Package Hash
+- Ambiguous raw or `hash-...` 32-byte identifiers
+- Wallet public keys
+- Account hashes
+- Malformed identifiers
 
-6. **Accidental self-transfer protection**
-   - An exact normalized match between the submitted execution-wallet identifier and destination is blocked.
-   - The finding states that the comparison is an exact submitted-identifier comparison; it does not falsely claim full public-key-to-account-hash derivation.
+Explicit forms such as `contract-...`, `contract-hash-...`, `contract-package-...`, and `contract-package-hash-...` are classified deterministically. A raw 64-character hash or `hash-...` value requires `contractIdentifierType` to state whether it is a Contract Hash or Package Hash.
 
-7. **Approved-destination policy enforcement**
-   - Existing trusted-target controls are reused for wallet destination allowlisting.
-   - Conservative policy mode blocks an unapproved destination.
-   - Balanced mode routes it to Review Required.
-   - Aggressive mode can allow it with an explicit warning, preserving the existing risk-mode model.
+Wallet public keys and `account-hash-...` values are rejected when used as contract identifiers.
 
-8. **Maximum transaction amount**
-   - Wallet transfers above the active policy limit are blocked.
+### 3. Contract/package type consistency
 
-9. **Wallet-specific daily spending limit**
-   - Daily usage is calculated per agent and execution wallet where wallet evidence exists.
-   - Legacy audit records without wallet evidence are counted conservatively.
+When `contractIdentifierType` is supplied, it must match the actual identifier form. A Package Hash declared as a Contract Hash, or the reverse, is blocked.
 
-10. **High-value review threshold**
-    - Requests above the approval threshold become Review Required when no harder blocking rule applies.
+### 4. Entry-point validation
 
-Every check produces a structured finding with:
+- Direct `Contract Interaction` and user-friendly `Contract Call` actions require `entryPoint`.
+- Entry points must use the supported deterministic character and length rules.
+- High-level actions such as Swap remain backward compatible when the adapter has not resolved an exact entry point; identity and policy checks still run.
+- When an entry point is supplied for any contract action, it is validated and can be restricted by policy.
+
+### 5. Package-version semantics
+
+- `contractVersion` is optional for Package Hash calls.
+- A supplied package version must be a positive integer.
+- `contractVersion` is rejected for a specific Contract Hash because that hash already identifies a concrete contract version.
+
+### 6. Casper network consistency
+
+When `chainName` is supplied, it must match the Gateway's configured `CASPER_CHAIN_NAME`. A mismatch is blocked.
+
+When omitted, the finding records that the configured Gateway chain was used and recommends explicit network binding.
+
+### 7. Explicit blocked-contract enforcement
+
+`structuredRules.blockedContracts` is an exact deny list for Contract Hashes and Package Hashes. A matching contract is blocked regardless of the target label or risk mode.
+
+### 8. Approved-contract enforcement
+
+The existing `trustedContracts` policy list is now the exact approved-contract list.
+
+- Approved exact identifier: pass
+- Unapproved identifier under Conservative mode: Blocked
+- Unapproved identifier under Balanced or Aggressive mode: Review Required
+
+A `targetType` value such as `Trusted Contract` is descriptive only. It never grants trust by itself.
+
+### 9. Entry-point allowlist
+
+`structuredRules.allowedEntryPoints` optionally restricts the permitted entry-point names. A supplied entry point outside the list is blocked.
+
+Every check produces a structured finding containing:
 
 - Module
 - Status: pass, warning, fail, skipped, or unavailable
@@ -61,181 +85,212 @@ Every check produces a structured finding with:
 - Evidence
 - Remediation
 
+## Gateway request additions
+
+The existing request contract is preserved. The following optional action fields are now formally supported:
+
+```json
+{
+  "action": {
+    "type": "Contract Interaction",
+    "target": "contract-package-hash-<64-hex-characters>",
+    "targetType": "Trusted Contract",
+    "contractIdentifierType": "Package Hash",
+    "entryPoint": "deposit",
+    "contractVersion": 1,
+    "chainName": "casper-test"
+  }
+}
+```
+
+The Gateway also accepts a nested `action.contract` object and common snake_case equivalents without changing the canonical response shape.
+
+`Contract Call` is normalized to the existing canonical `Contract Interaction` action so SDK and MCP clients can use a more familiar label without breaking policy behavior.
+
 ## Decision behavior
 
-Wallet Validation contributes directly to deterministic authorization:
+Contract Validation contributes directly to deterministic authorization:
 
-- **Allowed** — required wallet fields and policy checks pass.
-- **Blocked** — a hard wallet or policy rule fails, including missing or malformed signing wallet, malformed destination, exact self-transfer, invalid target classification, policy limit breach, or a conservative-mode allowlist violation.
-- **Review Required** — the request is not hard-blocked but requires approval, such as an unapproved destination under Balanced mode or a high-value transfer above the review threshold.
+- **Allowed** — the identifier, classification, network context, entry point, version semantics, approved-contract control, blocked-contract control, and configured entry-point rules pass.
+- **Blocked** — a hard validation or policy rule fails, including malformed or ambiguous identity, wallet-as-contract misuse, incorrect target type, missing direct-call entry point, invalid package version, network mismatch, blocked contract, disallowed entry point, or Conservative-mode approval failure.
+- **Review Required** — the contract is structurally valid but not approved under Balanced or Aggressive risk mode and no harder blocking rule applies.
 
 No language model is used for authorization.
 
-## Security Pipeline integration
+## Backward compatibility
 
-Wallet requests now expose a truthful pipeline that includes Wallet Validation only when it is evaluated:
-
-1. Intent received
-2. Agent authentication
-3. Agent configuration loaded
-4. Policy loaded
-5. Wallet Validation
-6. Relevant protection checks completed
-7. Risk Assessment
-8. Decision returned
-9. Audit stored
-10. Casper Decision Proof
-
-Pipeline state is generated from real findings rather than decorative animation.
-
-## Audit and explanation improvements
-
-New wallet decisions persist and display:
-
-- Original intent
-- Agent and execution capabilities
-- Execution wallet
-- Destination and target type
-- Active policy
-- Wallet Validation findings
-- Passed and failed checks
-- Primary reason
-- Triggered rule
-- Suggested remediation
-- Final decision
-- Decision hash
-- Casper proof status and timestamps
-- Execution hash when later attached
-- Security Pipeline stages
-
-A request missing its execution wallet is now evaluated and audited as Blocked instead of failing before the policy engine can produce an explanation.
-
-## Frontend changes
-
-### Protection Modules
-
-Wallet Validation is now marked **Live** and explains its current checks honestly.
-
-### Intent Playground
-
-Added wallet-specific examples:
-
-- Valid approved wallet transfer
-- Unapproved destination
-- Malformed execution wallet
-- Malformed destination
-- Exact self-transfer
-
-The Playground continues to use the existing authenticated Gateway endpoint and does not persist raw API keys.
-
-### Security Coverage
-
-Wallet protection coverage now uses actual configuration and recent Wallet Validation evidence. It does not add arbitrary points merely because a card exists in the UI.
-
-### Integration Health
-
-The agent health model now reflects the latest Wallet Validation finding:
-
-- Passed wallet checks contribute positive health evidence.
-- Warning or failed wallet findings produce attention states.
-- Missing real Gateway activity is not reported as healthy.
-
-### Documentation
-
-Updated:
-
-- Landing/in-app product copy
-- Protection Module status matrix
-- In-app Docs
-- README
-- Gateway API guide
-- Integration guide
-
-## Major files changed
-
-- `backend/lib/walletValidation.mjs`
-  - New reusable Wallet Validation engine and Casper identifier classification.
-- `backend/lib/policyEngine.mjs`
-  - Wallet findings, per-wallet daily usage, adaptive stages, and risk aggregation.
-- `backend/lib/agentGateway.mjs`
-  - Allows missing wallet data to reach deterministic evaluation and audit rather than failing before the decision engine.
-- `backend/store/memoryStore.mjs`
-  - Passes execution-wallet and owner-wallet context through all evaluation paths.
-- `backend/store/postgresStore.mjs`
-  - PostgreSQL equivalent of the same evaluation context.
-- `backend/lib/securityModel.mjs`
-  - Wallet Validation status changed to Live.
-- `backend/data/seed.mjs`
-  - Live module status aligned in bootstrap data.
-- `backend/server.mjs`
-  - Public Gateway specification and health metadata updated for Wallet Validation Live.
-- `src/app/lib/securityModel.ts`
-  - Live module definition, coverage logic, recommendations, and integration-health evidence.
-- `src/app/App.tsx`
-  - Wallet Playground examples, Live status, and documentation updates.
-- `backend/lib/walletValidation.test.mjs`
-  - Unit tests for supported identifiers, signing-wallet restrictions, case normalization, and target classification.
-- `backend/lib/walletGateway.integration.test.mjs`
-  - Authenticated memory-store Gateway and audit persistence tests.
-- `backend/lib/policyEngine.test.mjs`
-  - Allowed, Blocked, Review Required, self-transfer, malformed-wallet, destination, daily-limit, and pipeline tests.
-- `backend/lib/frontendSecurityModel.test.mjs`
-  - Coverage and Integration Health fixtures updated with real wallet findings.
-- `README.md`
-- `docs/MAGEN3_PLATFORM.md`
-- `docs/AGENT_GATEWAY_API.md`
-- `docs/GATEWAY_INTEGRATION.md`
-- `IMPLEMENTATION_REPORT.md`
-
-## Database and migration notes
-
-This Wallet Validation release introduces **no new database columns and no new migration**.
-
-It uses the structured findings, original intent, pipeline stages, wallet address, and capability context already supported by the current Agent Shield upgrade.
-
-The existing startup migration remains additive and runs automatically when the Railway backend starts. Because the current records are disposable demo data, no database backup is required for your chosen deployment workflow.
-
-Existing agents, API-key hashes, policies, and audit records remain compatible.
-
-## API compatibility
-
-Preserved without renaming:
+The release preserves:
 
 - `POST /api/agent-gateway/intents`
 - `GET /api/agent-gateway/me`
 - `x-magen3-agent-key`
 - Bearer API-key authentication
-- Existing Agent IDs
-- Existing raw-key one-time display and hashed storage
-- Existing action object and field names
-- Existing policy fields
-- Existing audit routes
-- Existing execution-confirmation route
-- Existing Casper contract hash and relayer configuration
+- Existing Agent IDs and API-key hashes
+- Existing policies and audit records
+- Existing `trustedContracts` behavior, now enforced by exact contract identity
+- Existing high-level Swap requests when no entry point has been resolved
+- Existing Casper contract hash and decision-proof relayer
+- Existing wallet signing boundary
+- YieldBot, Codex, JavaScript SDK, Python SDK, and MCP authentication models
+- Railway and Vercel configuration
 
-The execution wallet remains independent from the owner wallet.
+Existing demo policies containing non-hash labels may need their approved target list replaced with exact Casper Contract Hashes or Package Hashes before those contract intents can be Allowed. This is an intentional security correction rather than an API break.
+
+## Policy configuration
+
+The Policies interface now supports:
+
+- **Trusted Targets** — existing exact approved wallet/contract targets
+- **Blocked Contracts** — stored in `structuredRules.blockedContracts`
+- **Allowed Contract Entry Points** — stored in `structuredRules.allowedEntryPoints`
+
+Existing structured policy data is preserved when a policy is edited.
+
+## Security Pipeline and audit integration
+
+Contract-oriented requests now expose a truthful pipeline containing a Contract Validation stage only when that module is evaluated.
+
+New audit records preserve:
+
+- Original contract intent
+- Contract identifier type
+- Entry point
+- Package version when supplied
+- Chain name
+- Active policy
+- Contract Validation findings
+- Passed and failed checks
+- Primary reason
+- Triggered rule
+- Suggested remediation
+- Final decision
+- Pipeline stages
+- Casper decision-proof status and timestamps
+- Execution hash when later attached
+
+## Frontend changes
+
+### Protection Modules
+
+Contract Validation is now marked **Live**, with current checks and remaining future checks explained separately.
+
+### Policies
+
+Policy create/edit forms include blocked-contract and entry-point controls while preserving existing rule fields.
+
+### Intent Playground
+
+Added authenticated examples for:
+
+- Approved contract call
+- Unapproved contract
+- Malformed contract identifier
+- Missing direct-call entry point
+- Wrong Casper chain
+
+The request editor remains fully editable and uses the unchanged live Gateway route.
+
+### Security Coverage
+
+For contract-relevant agents, recent live protection coverage now requires actual Contract Validation evidence rather than decorative configuration points.
+
+### Integration Health
+
+The agent health model reports Contract Validation as:
+
+- Healthy when the latest evaluated contract checks passed
+- Attention when warnings or failures exist
+- Unknown when no real Contract Validation evidence exists
+
+## SDK and MCP changes
+
+The TypeScript SDK action type now documents and accepts:
+
+- `contractIdentifierType`
+- `entryPoint`
+- `contractVersion`
+- `chainName`
+
+The MCP input schema and intent-schema tool expose the same optional fields. Python remains dictionary-based and is compatible without a code-level API change. JavaScript, Python, MCP, Codex, and integration documentation now contain contract-call guidance.
+
+## Major files changed
+
+- `backend/lib/contractValidation.mjs`
+- `backend/lib/contractValidation.test.mjs`
+- `backend/lib/contractGateway.integration.test.mjs`
+- `backend/lib/policyEngine.mjs`
+- `backend/lib/agentGateway.mjs`
+- `backend/store/memoryStore.mjs`
+- `backend/store/postgresStore.mjs`
+- `backend/lib/securityModel.mjs`
+- `backend/lib/frontendSecurityModel.test.mjs`
+- `backend/data/seed.mjs`
+- `backend/server.mjs`
+- `src/app/lib/securityModel.ts`
+- `src/app/App.tsx`
+- `packages/sdk-js/src/index.ts`
+- `packages/sdk-js/test/sdk.test.mjs`
+- `packages/sdk-js/README.md`
+- `packages/sdk-python/README.md`
+- `packages/mcp-server/src/server.ts`
+- `packages/mcp-server/src/core.ts`
+- `packages/mcp-server/test/core.test.mjs`
+- `packages/mcp-server/README.md`
+- `README.md`
+- `docs/MAGEN3_PLATFORM.md`
+- `docs/AGENT_GATEWAY_API.md`
+- `docs/GATEWAY_INTEGRATION.md`
+- `docs/OFFICIAL_SDKS.md`
+- `docs/MCP_SERVER.md`
+- `IMPLEMENTATION_REPORT.md`
+
+## Database and migrations
+
+This release introduces **no new database columns and no new migration**.
+
+Approved contracts reuse `trustedContracts`. Blocked contracts and allowed entry points use the existing `structuredRules` JSON field. Contract intent metadata uses the existing original-intent and structured audit fields.
+
+No database backup is required for the user's current disposable demo-data deployment workflow.
 
 ## Environment variables
 
-No new environment variables are required.
+No new environment variable is required.
 
-Continue using the current Railway and Vercel values, including:
+Contract network validation uses the existing:
 
-- `DATABASE_URL`
-- `CORS_ORIGIN`
-- `PUBLIC_API_BASE_URL`
-- `VITE_API_URL`
-- `VITE_CASPER_NETWORK`
-- `VITE_CASPER_RPC_URL`
-- `VITE_MAGEN3_CONTRACT_HASH`
-- `MAGEN3_CONTRACT_HASH`
-- `CASPER_NETWORK`
 - `CASPER_CHAIN_NAME`
-- `CASPER_RPC_URL`
-- `CASPER_RECORDING_MODE`
-- One supported relayer secret-key variable when automatic proof recording is enabled
 
-Do not commit `.env`, relayer private keys, wallet secrets, or agent API keys.
+All current Railway, Vercel, database, RPC, contract-hash, CORS, wallet, and relayer variables remain unchanged.
+
+## Verification completed
+
+Verified in the implementation environment:
+
+- Backend JavaScript syntax checks
+- **40/40 backend and security tests**
+- Authenticated HTTP Gateway smoke test
+- Allowed direct contract call through the real server route
+- `Contract Call` to `Contract Interaction` normalization
+- Contract Validation findings in the Gateway response
+- Contract Validation stage in the Security Pipeline
+- Audit persistence
+- **4/4 JavaScript SDK tests** using a generated local build
+- **2/2 Python SDK tests**
+- TypeScript/TSX syntax transpilation for **57 source files**
+- Documentation and module-status consistency checks
+
+The package registry returned HTTP 503, so a fresh workspace dependency installation, full root TypeScript project check, Vite production build, and compiled MCP protocol test could not be repeated in this sandbox. The edited MCP source passed TypeScript syntax transpilation. Run the normal complete verification locally before pushing:
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm sdk:test
+pnpm mcp:test
+pnpm build
+```
+
+Live Casper Wallet signing, the funded relayer, Railway PostgreSQL, and production Vercel-to-Railway CORS still require verification in the deployed environment.
 
 ## Protection Module status after this release
 
@@ -243,12 +298,13 @@ Do not commit `.env`, relayer private keys, wallet secrets, or agent API keys.
 
 - Identity and Authentication
 - Policy Enforcement
-- **Wallet Validation**
+- Wallet Validation
+- **Contract Validation**
 - Risk Assessment
 
 ### Foundation Available
 
-- Contract Validation
+- None
 
 ### Preview
 
@@ -261,113 +317,18 @@ Do not commit `.env`, relayer private keys, wallet secrets, or agent API keys.
 - Bridge Controls
 - Compliance Controls
 
-An unavailable or skipped module never silently contributes a passing security result.
-
-## Verification completed
-
-Verified successfully in the isolated environment:
-
-- Node syntax checks for changed backend modules
-- **25/25 backend and security tests passed**
-- Authenticated memory-store Gateway integration tests
-- Allowed wallet transfer
-- Review Required for an unapproved destination under Balanced mode
-- Blocked malformed execution wallet
-- Blocked malformed destination
-- Blocked exact self-transfer
-- Blocked transfer using an incorrect contract target classification
-- Blocked maximum-transaction violation
-- Blocked daily-limit violation
-- Review-threshold behavior
-- Wallet findings persisted to audit records
-- Wallet Validation pipeline stage persisted to audit records
-- Missing execution wallet returned an audited Blocked decision
-- JavaScript SDK build and **3/3 tests passed**
-- Python SDK **2/2 tests passed**
-- TypeScript/TSX syntax transpilation for the changed frontend files
-- Secret and generated-artifact cleanup checks before packaging
-
-## Verification limitation
-
-A fresh root dependency installation could not complete in the sandbox because the configured package gateway returned HTTP 503 and the public npm registry was unreachable from that environment. Therefore, the following were not re-run for this exact Wallet Validation package:
-
-- Full root `pnpm typecheck`
-- Full Vite production build
-- MCP build and tests
-
-The changed frontend files passed TypeScript syntax transpilation, the backend tests passed, and the SDK tests passed. Run the full repository verification locally before pushing:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test
-pnpm sdk:test
-pnpm mcp:test
-pnpm build
-```
-
-Live Casper Wallet signing, a funded relayer transaction, Railway PostgreSQL startup, Vercel-to-Railway CORS, and production YieldBot/Codex/MCP calls still require your deployed environment.
-
-## Local run
-
-```bash
-cp .env.example .env
-corepack enable
-pnpm install --frozen-lockfile
-pnpm dev:backend
-```
-
-In another terminal:
-
-```bash
-pnpm dev:frontend
-```
-
-## Railway and Vercel deployment
-
-No deployment configuration changes are required.
-
-Your preferred flow is supported:
-
-1. Keep the existing `.git` folder and local secret files.
-2. Replace the source files with this ZIP.
-3. Run the verification commands.
-4. Commit and push to `main`.
-5. Railway and Vercel can deploy from the same repository connections.
-6. Check Railway startup and migration logs before testing the frontend.
-
 ## Suggested commit message
 
 ```text
-feat(wallet-validation): enforce live Casper wallet checks before signing
+feat(contract-validation): enforce live Casper contract checks before execution
 ```
 
-Suggested commit body:
+Suggested body:
 
 ```text
-Add deterministic execution-wallet and destination validation, approved-target
-enforcement, self-transfer protection, wallet-specific spend limits, structured
-findings, audit evidence, pipeline stages, Playground cases, coverage, health,
+Add deterministic contract/package identity validation, target classification,
+entry-point and package-version checks, network binding, exact approved and
+blocked contract controls, entry-point allowlists, structured findings, audit
+evidence, pipeline stages, Playground cases, SDK/MCP fields, coverage, health,
 and documentation while preserving the existing Gateway and Casper contracts.
 ```
-
-## Manual QA checklist
-
-- [ ] Run the full local verification commands before pushing.
-- [ ] Connect the owner Casper Wallet and confirm wallet-gated pages still work.
-- [ ] Register a new agent and retain the one-time API key securely.
-- [ ] Create an active policy with a valid destination in trusted targets.
-- [ ] Send an approved transfer and confirm Allowed.
-- [ ] Remove the destination from the policy under Balanced mode and confirm Review Required.
-- [ ] Use Conservative mode with an unapproved destination and confirm Blocked.
-- [ ] Submit a missing or malformed execution wallet and confirm an explained, audited Blocked result.
-- [ ] Submit a malformed destination and confirm Blocked.
-- [ ] Submit the exact same identifier as execution wallet and destination and confirm Blocked.
-- [ ] Submit a Transfer with a non-wallet target type and confirm Blocked.
-- [ ] Exceed the maximum transaction amount and confirm Blocked.
-- [ ] Exceed the daily wallet limit and confirm Blocked.
-- [ ] Exceed only the review threshold and confirm Review Required.
-- [ ] Confirm Wallet Validation appears in findings and the Security Pipeline.
-- [ ] Confirm the audit record appears automatically without reconnecting the wallet.
-- [ ] Confirm Casper proof status updates according to the live relayer result.
-- [ ] Confirm existing YieldBot, Codex, SDK, and MCP integrations still authenticate with the unchanged Agent ID/key contract.

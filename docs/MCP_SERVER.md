@@ -39,6 +39,13 @@ Use magen3_verify_agent first. Then call magen3_require_allowed before any block
 
 Then test an amount above the policy limit. Codex must stop when the tool returns an error for Blocked and must request human review for Review Required.
 
+
+## Contract-validation test
+
+Ask Codex to submit a harmless contract-call intent without signing or broadcasting it. The action should include the exact contract or package identifier, `entryPoint`, and optional `chainName`. Then repeat with a malformed identifier or missing entry point. Magen3 must return an explained `Blocked` or `Review Required` result and persist the Contract Validation findings in the audit record.
+
+For ambiguous raw or `hash-...` identifiers, include `contractIdentifierType` as either `Contract Hash` or `Package Hash`. A `Trusted Contract` target label does not bypass the active policy's exact approved-contract list.
+
 ## Tool behavior
 
 - `magen3_verify_agent`: validates Connected Agent credentials and policy.

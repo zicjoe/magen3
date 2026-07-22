@@ -76,6 +76,39 @@ Use only action names accepted by the current backend schema. The in-app Intent 
 
 Wallet Validation is live. The execution wallet must be a valid Casper signing public key. Transfer targets must be classified as `Wallet Address` and use a supported public-key or account-hash format. Never send a private key.
 
+
+## Submit a Contract Intent
+
+```bash
+curl -X POST "https://YOUR_API_HOST/api/agent-gateway/intents" \
+  -H "Content-Type: application/json" \
+  -H "x-magen3-agent-key: YOUR_AGENT_API_KEY" \
+  -d '{
+    "source": "Autonomous dApp Agent",
+    "agentId": "MAG-AGENT-...",
+    "targetChain": "casper-testnet",
+    "executionWalletAddress": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "goal": "Call an approved vault contract",
+    "action": {
+      "type": "Contract Interaction",
+      "target": "contract-package-hash-<64-hex-characters>",
+      "targetType": "Trusted Contract",
+      "contractIdentifierType": "Package Hash",
+      "entryPoint": "deposit",
+      "contractVersion": 1,
+      "chainName": "casper-test"
+    }
+  }'
+```
+
+Contract Validation is live. A direct contract call must provide a valid Contract Hash or Package Hash and a structurally valid entry point. High-level actions such as Swap remain compatible when the adapter has not resolved the exact entry point; Magen3 still evaluates contract identity, target classification, network context, and active policy controls. A `Trusted Contract` label never grants trust by itself—the exact identifier must be approved by the active policy.
+
+Contract policy controls use:
+
+- `trustedContracts` for approved exact contract/package identifiers
+- `structuredRules.blockedContracts` for explicit deny rules
+- `structuredRules.allowedEntryPoints` for optional entry-point restrictions
+
 ## Decision Handling
 
 ```ts

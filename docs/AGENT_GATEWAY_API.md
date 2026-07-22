@@ -83,6 +83,39 @@ Content-Type: application/json
 
 For `Transfer`, `targetType` must be `Wallet Address`. The destination must be a supported Casper public key or `account-hash-...` identifier. The Trusted Targets list, transaction limits, daily spending, and review threshold are then evaluated by live Wallet Validation.
 
+### Contract intent
+
+```json
+{
+  "source": "YieldBot AI",
+  "agentId": "MAG-AGENT-...",
+  "executionWalletAddress": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "goal": "Call an approved vault contract",
+  "action": {
+    "type": "Contract Interaction",
+    "amount": 0,
+    "asset": "CSPR",
+    "target": "contract-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "targetType": "Trusted Contract",
+    "contractIdentifierType": "Contract Hash",
+    "entryPoint": "deposit",
+    "chainName": "casper-test"
+  }
+}
+```
+
+Contract Validation applies to `Contract Interaction`, `Swap`, `Deposit to Vault`, `RWA Proof Update`, `Oracle Data Update`, and requests using a contract-oriented target type.
+
+- `contractIdentifierType` accepts `Contract Hash` or `Package Hash`.
+- Explicit `contract-...`, `contract-hash-...`, `contract-package-...`, `contract-package-hash-...`, and `package-...` identifiers are supported.
+- Generic `hash-...` or raw 64-character hashes require `contractIdentifierType` because the bytes alone do not distinguish a contract from a package.
+- `entryPoint` is required for contract-call actions.
+- `contractVersion` is optional for Package Hash calls and must be a positive integer.
+- `chainName` is optional for backward compatibility; when present, it must match the backend `CASPER_CHAIN_NAME`.
+- The `Trusted Contract` label does not grant approval. The exact identifier must appear in the policy's Trusted Targets.
+- `structuredRules.blockedContracts` always blocks exact matches.
+- `structuredRules.allowedEntryPoints` optionally restricts callable methods.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -101,7 +134,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",
@@ -185,7 +218,7 @@ After an Allowed action is signed and submitted by the execution wallet, attach 
 | Missing or invalid API key | Authentication fails. |
 | Revoked agent | Gateway access is rejected. |
 | No active policy | Magen3 fails closed. |
-| Hard policy violation | `Blocked`. |
+| Hard policy, wallet-validation, or contract-validation violation | `Blocked`. |
 | Review threshold or review condition | `Review Required`. |
 | Unavailable roadmap module | Reported honestly as `unavailable`; it is not silently counted as protection. |
 

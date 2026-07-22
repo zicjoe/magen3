@@ -10,6 +10,10 @@ const actionSchema = z.object({
   asset: z.string().min(1).optional(),
   target: z.string().min(1),
   targetType: z.string().min(1).optional(),
+  contractIdentifierType: z.enum(["Contract Hash", "Package Hash"]).or(z.string().min(1)).optional(),
+  entryPoint: z.string().min(1).optional(),
+  contractVersion: z.number().finite().int().nonnegative().optional(),
+  chainName: z.string().min(1).optional(),
 });
 const intentSchema = z.object({
   source: z.string().min(1).optional(),

@@ -33,7 +33,10 @@ test("security coverage reaches 100 only when every configured protection check 
     [{
       timestamp,
       decisionProofStatus: "recorded",
-      moduleFindings: [{ module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." }],
+      moduleFindings: [
+        { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
+        { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
+      ],
     }],
   );
 

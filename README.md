@@ -100,7 +100,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Identity and Authentication | **Live** | Agent existence, active status, and API-key verification. |
 | Policy Enforcement | **Live** | Active-policy lookup and supported deterministic policy fields. |
 | Wallet Validation | **Live** | Casper execution-wallet format, wallet destination format/classification, exact self-transfer prevention, approved destinations, transaction and daily limits, and review thresholds. |
-| Contract Validation | **Foundation Available** | Trusted contract list and unknown-contract behavior. |
+| Contract Validation | **Live** | Contract/package identity, target classification, entry points, package-version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | **Preview** | No backend enforcement yet; findings show `unavailable`, never a silent pass. |
 | Threat Intelligence | **Preview** | No external threat feed is enforced. |
 | Oracle Validation | **Planned** | No current backend checks. |
@@ -128,6 +128,26 @@ Wallet format validation is structural. It does not claim that an address is fun
 
 Format reference: [Casper Accounts and Cryptographic Keys](https://docs.casper.network/concepts/accounts-and-keys).
 
+### Live Contract Validation
+
+Contract Validation now runs on every intent that declares a contract-oriented action or contract target. The module deterministically checks:
+
+- Contract-oriented actions use the correct target classification.
+- The target is a structurally valid Casper Contract Hash or Contract Package Hash.
+- Generic `hash-...` values declare whether they represent a Contract Hash or Package Hash.
+- Wallet public keys and account hashes cannot masquerade as contracts.
+- Direct contract-call actions include a valid entry-point name.
+- Package versions are positive integers when supplied; specific Contract Hash calls do not declare package versions.
+- An explicit `chainName` matches the configured Casper network.
+- Exact policy blocklist matches always return `Blocked`.
+- Exact approved-contract matches can proceed when every other check passes.
+- Valid but unapproved contracts return `Blocked` in Conservative mode and `Review Required` in Balanced or Aggressive mode.
+- Optional `allowedEntryPoints` policy controls can block unauthorized contract methods.
+
+The `Trusted Contract` label is descriptive only. It never grants trust by itself; the exact contract identifier must match the active policy. Structural validation does not prove that a contract is audited, verified, non-upgradeable, or free of malicious logic. Those deeper checks remain future Contract Validation and Threat Intelligence work.
+
+Format references: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
+
 ## Guided agent registration
 
 The Connected Agents flow uses a six-step wizard:
@@ -151,6 +171,8 @@ Supported policy fields are enforced by the current backend:
 - Daily spending limit
 - Human-review threshold
 - Trusted contracts or destinations
+- Blocked contracts through `structuredRules.blockedContracts`
+- Optional allowed entry points through `structuredRules.allowedEntryPoints`
 - Blocked action types
 - Conservative, Balanced, or Aggressive risk mode
 
@@ -233,6 +255,29 @@ x-magen3-agent-key: YOUR_AGENT_API_KEY
 
 The owner wallet that registered the agent and the execution wallet supplied by the external agent may be different.
 
+Contract-call example:
+
+```json
+{
+  "source": "YieldBot AI",
+  "agentId": "MAG-AGENT-...",
+  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+  "goal": "Call an approved vault contract",
+  "action": {
+    "type": "Contract Interaction",
+    "amount": 0,
+    "asset": "CSPR",
+    "target": "contract-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "targetType": "Trusted Contract",
+    "contractIdentifierType": "Contract Hash",
+    "entryPoint": "deposit",
+    "chainName": "casper-test"
+  }
+}
+```
+
+For a Package Hash, use `contractIdentifierType: "Package Hash"`; `contractVersion` is optional and must be a positive integer when supplied.
+
 Machine-readable reference:
 
 ```http
@@ -245,7 +290,7 @@ The in-app Intent Playground:
 
 - Selects an active registered agent
 - Uses the existing API-key authentication contract
-- Provides editable Swap, Transfer, Stake, and Contract Interaction examples supported by the current schema
+- Provides editable wallet and contract examples, including approved/unapproved contracts, malformed identifiers, missing entry points, and network mismatch cases
 - Validates JSON before submission
 - Displays the real response, decision, risk, findings, explanation, pipeline, and audit ID
 - Keeps the entered raw key in page state rather than adding it to request JSON or persistent storage

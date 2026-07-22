@@ -38,7 +38,7 @@ export const PROTECTION_MODULES = [
   {
     id: "contract-validation",
     name: "Contract Validation",
-    status: "Foundation Available",
+    status: "Live",
     capabilities: ["Trading", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
   },
   {

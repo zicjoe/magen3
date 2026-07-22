@@ -7,6 +7,14 @@ export interface Magen3Action {
   asset?: string;
   target: string;
   targetType?: string;
+  /** Explicit Casper identifier semantics for ambiguous raw/hash-prefixed values. */
+  contractIdentifierType?: "Contract Hash" | "Package Hash" | string;
+  /** Contract entry point required for direct Contract Interaction/Contract Call actions. */
+  entryPoint?: string;
+  /** Optional package contract version. Must not be used with a Contract Hash. */
+  contractVersion?: number;
+  /** Optional Casper chain name. The Gateway validates it against its configured network. */
+  chainName?: string;
 }
 
 export interface Magen3Intent {

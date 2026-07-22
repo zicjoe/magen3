@@ -82,7 +82,7 @@ Protection modules live under Agent Shield.
 | Identity and Authentication | Live | Agent ID exists, agent is active, API-key digest matches. |
 | Policy Enforcement | Live | Active policy, blocked actions, max transaction, daily limit, review threshold, risk mode. |
 | Wallet Validation | Live | Execution-wallet public-key format, destination format/classification, self-transfer prevention, approved destinations, spend limits, and review thresholds. |
-| Contract Validation | Foundation Available | Trusted contract list and conservative unknown-contract behavior. |
+| Contract Validation | Live | Contract/package identity, target classification, entry points, version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
 | Execution Simulation | Preview | No backend enforcement; returns unavailable where relevant. |
 | Threat Intelligence | Preview | No external threat feed currently enforced. |
 | Oracle Validation | Planned | No current backend checks. |
@@ -112,6 +112,27 @@ This validates structure and configured policy coverage. It does not prove walle
 
 Format reference: [Casper Accounts and Cryptographic Keys](https://docs.casper.network/concepts/accounts-and-keys).
 
+### Contract Validation decision model
+
+Contract Validation is a live deterministic module for contract-oriented intents. It evaluates:
+
+1. Action and target-type consistency.
+2. Casper Contract Hash or Contract Package Hash structure.
+3. Explicit Contract Hash versus Package Hash semantics for ambiguous `hash-...` identifiers.
+4. Rejection of wallet public keys and account hashes used as contract targets.
+5. Required and structurally valid contract entry points.
+6. Package-version rules.
+7. Optional chain-name consistency against `CASPER_CHAIN_NAME`.
+8. Exact blocked-contract matches from `structuredRules.blockedContracts`.
+9. Exact approved-contract matches from Trusted Targets.
+10. Optional method restrictions from `structuredRules.allowedEntryPoints`.
+
+A `Trusted Contract` target label never grants trust. The exact contract identifier must be approved by policy. A valid unapproved contract is blocked in Conservative mode and requires review in Balanced or Aggressive mode.
+
+Structural validation does not claim that a contract is audited, verified, or safe from every exploit. On-chain metadata discovery, upgrade/admin analysis, and verification signals remain future work.
+
+References: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
+
 ## Policies and templates
 
 Enforced policy fields:
@@ -120,6 +141,8 @@ Enforced policy fields:
 - Daily spending limit
 - Human-review threshold
 - Trusted contract or destination list
+- Blocked contracts through `structuredRules.blockedContracts`
+- Optional allowed contract entry points through `structuredRules.allowedEntryPoints`
 - Blocked action types
 - Risk mode
 

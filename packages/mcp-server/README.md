@@ -31,3 +31,15 @@ node packages/mcp-server/dist/server.js
 ```
 
 See `docs/MCP_SERVER.md` for Codex setup and testing.
+
+
+## Contract intents
+
+Contract-oriented actions may include these optional action fields:
+
+- `contractIdentifierType`: `Contract Hash` or `Package Hash` when an ambiguous raw/hash-prefixed identifier needs explicit semantics
+- `entryPoint`: required for direct Contract Interaction/Contract Call actions; optional for high-level actions such as Swap when the adapter has not resolved it
+- `contractVersion`: optional positive package version; invalid with a Contract Hash
+- `chainName`: optional Casper chain name checked against the Gateway configuration
+
+A `targetType` value such as `Trusted Contract` never grants trust by itself. The exact contract or package identifier must be approved by the active Magen3 policy.
