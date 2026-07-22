@@ -1,16 +1,15 @@
 # Magen3 Agent Gateway API
 
-External agents call the Magen3 Gateway before requesting wallet signing. Magen3 validates the connected agent, checks its active policy, returns a decision, and records the decision for auditability.
+Magen3 is a modular execution firewall for autonomous blockchain agents. External agents call the Gateway before requesting wallet signing or blockchain execution. Agent Shield authenticates the agent, loads its configuration and active policy, runs deterministic protection checks, returns **Allowed**, **Blocked**, or **Review Required**, stores an audit record, and submits a Casper Decision Proof when the relayer is configured.
 
 ## Authentication
 
-Every Connected Agent has its own API key.
+Every registered agent has its own API key.
 
-- One API key per Connected Agent.
-- Not one key for the entire app.
-- Not one key per policy.
-- Policies attach to agents.
+- The Agent ID and API key identify one registered external agent.
+- Policies attach to agents; they do not have separate API keys.
 - Raw API keys are shown once after registration or rotation.
+- Magen3 stores the credential hash and a masked preview, not the recoverable raw key.
 
 Send the key with either header:
 
@@ -31,7 +30,27 @@ GET /api/agent-gateway/me?agentId=MAG-AGENT-...
 x-magen3-agent-key: YOUR_AGENT_API_KEY
 ```
 
-Use this endpoint from an external agent to confirm that the Agent ID, API key, owner wallet scope, and active policy are valid before attempting execution.
+The response confirms the registered agent, execution capabilities, active policy, and whether the Gateway is ready for that identity.
+
+```json
+{
+  "ok": true,
+  "agent": {
+    "id": "MAG-AGENT-...",
+    "name": "YieldBot AI",
+    "status": "Active",
+    "executionCapabilities": ["Trading", "Wallet Management", "dApp Interactions"],
+    "apiKeyPreview": "mg3_live_...f91a"
+  },
+  "activePolicy": {
+    "id": "POL-...",
+    "name": "DeFi Automation Policy",
+    "status": "Active"
+  },
+  "gatewayReady": true,
+  "endpoint": "/api/agent-gateway/intents"
+}
+```
 
 ## Submit Intent
 
@@ -60,7 +79,11 @@ Content-Type: application/json
 }
 ```
 
-## Response Shape
+`executionWalletAddress` is the wallet that would sign the real action after an Allowed decision. `walletAddress` remains accepted for compatibility and should describe the same execution wallet.
+
+## Decision Response
+
+The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
 
 ```json
 {
@@ -71,44 +94,105 @@ Content-Type: application/json
     "risk": "Low",
     "riskScore": 18,
     "reason": "The action matches the active policy.",
-    "recommendedAction": "Request wallet signature before execution"
+    "primaryReason": "The action matches the active policy.",
+    "triggeredRule": "Policy checks passed",
+    "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
+    "recommendedAction": "Request wallet signature before execution",
+    "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Risk Assessment"],
+    "moduleFindings": [
+      {
+        "module": "Policy Enforcement",
+        "status": "pass",
+        "severity": "info",
+        "rule": "Maximum transaction amount",
+        "message": "15 CSPR is within the 25 CSPR transaction limit.",
+        "evidence": { "received": 15, "maximum": 25 },
+        "remediation": "No change is required."
+      }
+    ],
+    "pipelineStages": [
+      { "id": "intent-received", "label": "Intent received", "status": "completed", "timestamp": "2026-07-21T12:00:00.000Z" },
+      { "id": "agent-authentication", "label": "Agent authenticated", "status": "completed", "timestamp": "2026-07-21T12:00:00.000Z" },
+      { "id": "decision", "label": "Decision returned", "status": "completed", "timestamp": "2026-07-21T12:00:00.000Z" },
+      { "id": "casper-proof", "label": "Casper proof", "status": "pending" }
+    ]
   },
   "auditLog": {
-    "id": "audit-...",
+    "id": "AUD-...",
     "shield": "Agent Shield",
     "decision": "Allowed",
-    "txHash": "CASPER_DECISION_PROOF_HASH_OR_EMPTY",
+    "decisionProofStatus": "queued",
+    "txHash": "",
+    "executionStatus": "approved_pending_signature",
     "executionTxHash": ""
   },
   "nextAction": "Request wallet signature before execution"
 }
 ```
 
-## Owner Wallet vs Execution Wallet
-
-The owner wallet registers and manages the Connected Agent inside Magen3.
-
-The execution wallet is supplied by the external agent in each gateway request and signs the real transaction only after Magen3 returns `Allowed`.
-
-These wallets can be different.
-
-## Decision Proof vs Execution Proof
-
-| Field | Meaning |
-| --- | --- |
-| `auditLog.txHash` | Casper Decision Proof hash for Magen3's policy decision. |
-| `auditLog.executionTxHash` | Real execution transaction/deploy hash after wallet signing. |
-
-Blocked and review-required actions can have decision proofs, but they should not have execution hashes.
-
-## Failure States
+### Finding states
 
 | State | Meaning |
 | --- | --- |
-| Unknown agent | Magen3 blocks by default. |
-| Invalid API key | The external agent is not authenticated. |
-| Revoked agent | The agent can no longer call the gateway. |
-| No active policy | Magen3 fails closed. |
-| Policy violation | Magen3 returns `Blocked` or `Review Required`. |
+| `pass` | The implemented check completed and passed. |
+| `warning` | The check produced a review condition or non-blocking concern. |
+| `fail` | The implemented check produced a blocking condition. |
+| `unavailable` | The relevant module is not currently enforced; this is never treated as a pass. |
+| `skipped` | The check was not relevant to this intent or capability context. |
 
-Magen3 does not sign transactions. It checks intent, returns decisions, and records audit evidence.
+### Final decisions
+
+| Decision | External-agent behavior |
+| --- | --- |
+| `Allowed` | The agent may request wallet signing. Magen3 does not sign for the user. |
+| `Blocked` | Stop. Do not submit the blockchain transaction. |
+| `Review Required` | Pause automatic execution and request an authorized human decision. |
+
+Only `Allowed` sets `executionApproved` to `true`.
+
+## Owner Wallet and Execution Wallet
+
+The owner wallet registers the agent, manages credentials, and controls its policy in Magen3. The execution wallet is supplied with each intent and signs the real blockchain action only after an Allowed decision. They can be different wallets.
+
+## Audit and Proof Fields
+
+| Field | Meaning |
+| --- | --- |
+| `auditLog.originalIntent` | Normalized external-agent request stored for auditability. |
+| `auditLog.capabilityContext` | Registered capabilities considered for the decision. |
+| `auditLog.moduleFindings` | Structured protection findings used by the deterministic decision engine. |
+| `auditLog.pipelineStages` | Actual recorded state of the security pipeline and proof/execution timeline. |
+| `auditLog.primaryReason` | Main deterministic explanation. |
+| `auditLog.triggeredRule` | Policy rule most directly responsible for the outcome. |
+| `auditLog.suggestedResolution` | Safe remediation based on policy evidence. |
+| `auditLog.txHash` | Casper Decision Proof deploy/transaction hash when recorded. |
+| `auditLog.executionTxHash` | Real execution deploy/transaction hash attached after an Allowed action is signed and submitted. |
+
+Blocked and review-required actions can receive decision proofs, but they must not receive execution hashes.
+
+## Attach an Execution Hash
+
+After an Allowed action is signed and submitted by the execution wallet, attach its real deploy or transaction hash to the matching audit record using the existing execution-confirmation route exposed by the application integration flow. Magen3 rejects execution hashes for Blocked or Review Required decisions.
+
+## Failure States
+
+| State | Behavior |
+| --- | --- |
+| Unknown Agent ID | Authentication fails; the Gateway does not authorize execution. |
+| Missing or invalid API key | Authentication fails. |
+| Revoked agent | Gateway access is rejected. |
+| No active policy | Magen3 fails closed. |
+| Hard policy violation | `Blocked`. |
+| Review threshold or review condition | `Review Required`. |
+| Unavailable roadmap module | Reported honestly as `unavailable`; it is not silently counted as protection. |
+
+## API Discovery
+
+The running backend exposes the current machine-readable gateway description at:
+
+```http
+GET /api/agent-gateway/spec
+```
+
+Magen3 does not custody keys or sign blockchain transactions. It controls whether an external agent may proceed to the signing step and records the resulting security evidence.

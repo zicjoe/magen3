@@ -176,7 +176,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "0.9.0",
+        version: "1.0.0",
         storage: store.mode,
         casper: getCasperStatus(),
         timestamp: new Date().toISOString(),
@@ -196,6 +196,12 @@ const server = createServer(async (req, res) => {
         service: "magen3-api",
         apiBaseUrl: process.env.PUBLIC_API_BASE_URL || "",
         casper,
+        product: {
+          name: "Magen3 Platform",
+          liveProtectionSystem: "Agent Shield",
+          positioning: "A modular execution firewall for autonomous blockchain agents",
+          decisionModel: ["Allowed", "Blocked", "Review Required"],
+        },
         gateway: {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
@@ -217,7 +223,9 @@ const server = createServer(async (req, res) => {
       return send(res, 200, {
         ok: true,
         name: "Magen3 Agent Gateway API",
-        purpose: "External agents submit structured Web3 action intents to Magen3 before wallet signing or contract execution.",
+        purpose: "External agents submit structured blockchain execution intents to Agent Shield before wallet signing or contract execution.",
+        platform: "Magen3 Platform",
+        protectionSystem: "Agent Shield",
         authRequired: true,
         verifyEndpoint: "GET /api/agent-gateway/me?agentId=YOUR_AGENT_ID",
         endpoint: "POST /api/agent-gateway/intents",
@@ -240,8 +248,13 @@ const server = createServer(async (req, res) => {
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
+          primaryReason: "Deterministic explanation when available",
+          triggeredRule: "Policy rule responsible for the decision when applicable",
+          suggestedResolution: "Safe remediation derived from policy evidence",
+          moduleFindings: "Structured pass, warning, fail, unavailable, or skipped findings",
+          pipelineStages: "Actual security-pipeline state",
           nextAction: "Allowed actions should request user wallet signature before execution",
-          auditLog: "Stored Magen3 audit record",
+          auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",
           execution: "Approved actions can later attach the real execution deploy hash"
         }

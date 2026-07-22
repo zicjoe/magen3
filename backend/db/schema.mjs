@@ -13,6 +13,11 @@ export const agentsTable = pgTable("agents", {
   apiKeyIssuedAt: timestamp("api_key_issued_at", { withTimezone: true }),
   apiKeyRotatedAt: timestamp("api_key_rotated_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  executionCapabilities: jsonb("execution_capabilities").notNull().default(["Custom"]),
+  capabilityConfiguration: jsonb("capability_configuration").notNull().default({}),
+  onboardingStatus: text("onboarding_status").notNull().default("complete"),
+  lastIntentAt: timestamp("last_intent_at", { withTimezone: true }),
+  lastDecisionAt: timestamp("last_decision_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -28,6 +33,9 @@ export const policiesTable = pgTable("policies", {
   riskMode: text("risk_mode").notNull(),
   status: text("status").notNull(),
   ownerWalletAddress: text("owner_wallet_address").notNull().default(""),
+  templateType: text("template_type").notNull().default("Custom"),
+  capabilityScope: jsonb("capability_scope").notNull().default([]),
+  structuredRules: jsonb("structured_rules").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   policyHash: text("policy_hash").notNull(),
 });
@@ -76,6 +84,15 @@ export const auditLogsTable = pgTable("audit_logs", {
   decisionProofError: text("decision_proof_error").notNull().default(""),
   decisionProofMode: text("decision_proof_mode").notNull().default(""),
   decisionProofUpdatedAt: timestamp("decision_proof_updated_at", { withTimezone: true }),
+  originalIntent: jsonb("original_intent").notNull().default({}),
+  pipelineStages: jsonb("pipeline_stages").notNull().default([]),
+  moduleFindings: jsonb("module_findings").notNull().default([]),
+  primaryReason: text("primary_reason").notNull().default(""),
+  triggeredRule: text("triggered_rule").notNull().default(""),
+  suggestedResolution: text("suggested_resolution").notNull().default(""),
+  capabilityContext: jsonb("capability_context").notNull().default([]),
+  proofSubmittedAt: timestamp("proof_submitted_at", { withTimezone: true }),
+  proofConfirmedAt: timestamp("proof_confirmed_at", { withTimezone: true }),
   riskScore: integer("risk_score").notNull(),
 });
 

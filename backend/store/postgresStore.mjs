@@ -8,6 +8,7 @@ import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from 
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
+import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -44,6 +45,11 @@ function normalizeAgent(row) {
     apiKeyIssuedAt: row.apiKeyIssuedAt ? toDate(row.apiKeyIssuedAt).toISOString() : "",
     apiKeyRotatedAt: row.apiKeyRotatedAt ? toDate(row.apiKeyRotatedAt).toISOString() : "",
     revokedAt: row.revokedAt ? toDate(row.revokedAt).toISOString() : "",
+    executionCapabilities: normalizeExecutionCapabilities(row.executionCapabilities, row.type),
+    capabilityConfiguration: row.capabilityConfiguration && typeof row.capabilityConfiguration === "object" ? row.capabilityConfiguration : {},
+    onboardingStatus: row.onboardingStatus || "complete",
+    lastIntentAt: row.lastIntentAt ? toDate(row.lastIntentAt).toISOString() : "",
+    lastDecisionAt: row.lastDecisionAt ? toDate(row.lastDecisionAt).toISOString() : "",
     createdAt: toDate(row.createdAt).toISOString(),
   };
 }
@@ -61,6 +67,9 @@ function normalizePolicy(row) {
     riskMode: row.riskMode,
     status: row.status,
     ownerWalletAddress: row.ownerWalletAddress || "",
+    templateType: row.templateType || "Custom",
+    capabilityScope: normalizeExecutionCapabilities(row.capabilityScope || []),
+    structuredRules: row.structuredRules && typeof row.structuredRules === "object" ? row.structuredRules : {},
     createdAt: toDate(row.createdAt).toISOString(),
     policyHash: row.policyHash,
   };
@@ -95,6 +104,15 @@ function normalizeAuditLog(row) {
     decisionProofError: row.decisionProofError || "",
     decisionProofMode: row.decisionProofMode || "",
     decisionProofUpdatedAt: row.decisionProofUpdatedAt ? toDate(row.decisionProofUpdatedAt).toISOString() : "",
+    originalIntent: row.originalIntent && typeof row.originalIntent === "object" ? row.originalIntent : {},
+    pipelineStages: Array.isArray(row.pipelineStages) ? row.pipelineStages : [],
+    moduleFindings: Array.isArray(row.moduleFindings) ? row.moduleFindings : [],
+    primaryReason: row.primaryReason || row.reason || "",
+    triggeredRule: row.triggeredRule || "",
+    suggestedResolution: row.suggestedResolution || "",
+    capabilityContext: normalizeExecutionCapabilities(row.capabilityContext || []),
+    proofSubmittedAt: row.proofSubmittedAt ? toDate(row.proofSubmittedAt).toISOString() : "",
+    proofConfirmedAt: row.proofConfirmedAt ? toDate(row.proofConfirmedAt).toISOString() : "",
     riskScore: Number(row.riskScore),
   };
 }
@@ -151,6 +169,13 @@ function initialExecutionStatus(decision) {
   return "not_submitted";
 }
 
+function updatePipelineStage(stages, id, status, timestamp = new Date().toISOString(), label = "") {
+  const source = Array.isArray(stages) ? stages : [];
+  const found = source.some((stage) => stage.id === id);
+  const next = source.map((stage) => stage.id === id ? { ...stage, status, timestamp, ...(label ? { label } : {}) } : stage);
+  return found ? next : [...next, { id, label: label || id, status, timestamp }];
+}
+
 function deriveDashboardStats(policies, auditLogs) {
   return {
     activeShields: policies.some((policy) => policy.status === "Active") ? 1 : 0,
@@ -190,11 +215,12 @@ export async function createPostgresStore() {
       const ownerWalletAddress = requireWalletAddress(body.ownerWalletAddress || body.walletAddress);
       const apiKey = makeApiKey();
       const now = new Date();
+      const executionCapabilities = normalizeExecutionCapabilities(body.executionCapabilities, body.type);
 
       const [agent] = await db.insert(agentsTable).values({
         id: makeId("MAG-AGENT"),
         name: String(body.name).trim(),
-        type: body.type || "Custom Agent",
+        type: body.type || legacyTypeFromCapabilities(executionCapabilities),
         purpose: body.purpose || "",
         permissionLevel: body.permissionLevel || "Limited Execution",
         status: "Active",
@@ -202,6 +228,9 @@ export async function createPostgresStore() {
         apiKeyHash: hashSecret(apiKey),
         apiKeyPreview: apiKeyPreview(apiKey),
         apiKeyIssuedAt: now,
+        executionCapabilities,
+        capabilityConfiguration: body.capabilityConfiguration && typeof body.capabilityConfiguration === "object" ? body.capabilityConfiguration : {},
+        onboardingStatus: body.onboardingStatus || "complete",
         createdAt: now,
       }).returning();
 
@@ -311,6 +340,9 @@ export async function createPostgresStore() {
         riskMode: body.riskMode || "Balanced",
         status: "Active",
         ownerWalletAddress: walletAddress,
+        templateType: body.templateType || recommendedPolicyTemplate(normalizeAgent(ownedAgent).executionCapabilities),
+        capabilityScope: normalizeExecutionCapabilities(body.capabilityScope || normalizeAgent(ownedAgent).executionCapabilities, ownedAgent.type),
+        structuredRules: body.structuredRules && typeof body.structuredRules === "object" ? body.structuredRules : {},
         createdAt: new Date(),
         policyHash: makePseudoHash("0xpol"),
       }).returning();
@@ -318,9 +350,10 @@ export async function createPostgresStore() {
       const policy = normalizePolicy(policyRow);
       const agent = normalizeAgent(ownedAgent);
 
+      const policyAuditTimestamp = new Date();
       const auditValues = {
         id: makeId("AUD"),
-        timestamp: new Date(),
+        timestamp: policyAuditTimestamp,
         shield: "Agent Shield",
         agentId: policy.agentId,
         agentName: agent.name,
@@ -341,6 +374,19 @@ export async function createPostgresStore() {
         executionSignedBy: "",
         executionNote: "Policy activation does not execute an external Web3 transaction.",
         executionUpdatedAt: null,
+        originalIntent: { action: "Policy Activation", policyId: policy.id },
+        pipelineStages: [
+          { id: "policy-loaded", label: "Policy created and activated", status: "completed", timestamp: policyAuditTimestamp.toISOString() },
+          { id: "audit-stored", label: "Audit stored", status: "completed", timestamp: policyAuditTimestamp.toISOString() },
+          { id: "casper-proof", label: "Casper decision proof", status: "pending", timestamp: "" },
+        ],
+        moduleFindings: [{ module: "Policy Enforcement", status: "pass", severity: "info", rule: "Active policy", message: `Policy ${policy.name} activated.`, evidence: { policyId: policy.id }, remediation: "" }],
+        primaryReason: `Policy ${policy.name} activated.`,
+        triggeredRule: "Active policy",
+        suggestedResolution: "No action required.",
+        capabilityContext: agent.executionCapabilities,
+        proofSubmittedAt: policyAuditTimestamp,
+        proofConfirmedAt: null,
         riskScore: 4,
       };
       const initialProof = initialDecisionProofState({
@@ -355,8 +401,22 @@ export async function createPostgresStore() {
         decisionProofMode: initialProof.decisionProofMode,
         decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
       }).returning();
+      const proof = await recordDecisionProof(normalizeAuditLog(auditRow));
+      const [recordedAuditRow] = await db.update(auditLogsTable)
+        .set({
+          ...(proof.txHash ? { txHash: proof.txHash } : {}),
+          decisionProofStatus: proof.decisionProofStatus,
+          decisionProofPayloadHash: proof.decisionProofPayloadHash,
+          decisionProofError: proof.decisionProofError,
+          decisionProofMode: proof.decisionProofMode,
+          decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+          proofConfirmedAt: proof.decisionProofStatus === "recorded" ? new Date(proof.decisionProofUpdatedAt || Date.now()) : null,
+          pipelineStages: updatePipelineStage(auditRow.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
+        })
+        .where(eq(auditLogsTable.id, auditRow.id))
+        .returning();
 
-      return { policy, auditLog: normalizeAuditLog(auditRow), agents: await listAgents(walletAddress) };
+      return { policy, auditLog: normalizeAuditLog(recordedAuditRow || auditRow), agents: await listAgents(walletAddress) };
     },
 
     async updatePolicy(id, body) {
@@ -387,6 +447,9 @@ export async function createPostgresStore() {
           blockedActions: Array.isArray(body.blockedActions) ? body.blockedActions : current.blockedActions,
           riskMode: body.riskMode || current.riskMode,
           status: body.status || current.status,
+          templateType: body.templateType || current.templateType || "Custom",
+          capabilityScope: Array.isArray(body.capabilityScope) ? normalizeExecutionCapabilities(body.capabilityScope, ownedAgent.type) : current.capabilityScope,
+          structuredRules: body.structuredRules && typeof body.structuredRules === "object" ? body.structuredRules : current.structuredRules,
         })
         .where(eq(policiesTable.id, id))
         .returning();
@@ -445,6 +508,15 @@ export async function createPostgresStore() {
         executionSignedBy: body.executionSignedBy || "",
         executionNote: body.executionNote || "",
         executionUpdatedAt: body.executionUpdatedAt ? new Date(body.executionUpdatedAt) : null,
+        originalIntent: body.originalIntent && typeof body.originalIntent === "object" ? body.originalIntent : {},
+        pipelineStages: Array.isArray(body.pipelineStages) ? body.pipelineStages : [],
+        moduleFindings: Array.isArray(body.moduleFindings) ? body.moduleFindings : [],
+        primaryReason: body.primaryReason || body.reason || "Magen3 recorded a decision.",
+        triggeredRule: body.triggeredRule || "",
+        suggestedResolution: body.suggestedResolution || "",
+        capabilityContext: normalizeExecutionCapabilities(body.capabilityContext || []),
+        proofSubmittedAt: body.proofSubmittedAt ? new Date(body.proofSubmittedAt) : new Date(),
+        proofConfirmedAt: body.proofConfirmedAt ? new Date(body.proofConfirmedAt) : null,
         riskScore: Number(body.riskScore || 50),
       };
       const initialProof = initialDecisionProofState({
@@ -469,6 +541,8 @@ export async function createPostgresStore() {
           decisionProofError: proof.decisionProofError,
           decisionProofMode: proof.decisionProofMode,
           decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+          proofConfirmedAt: proof.decisionProofStatus === "recorded" ? new Date(proof.decisionProofUpdatedAt || Date.now()) : null,
+          pipelineStages: updatePipelineStage(auditRow.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
         })
         .where(eq(auditLogsTable.id, auditRow.id))
         .returning();
@@ -514,9 +588,10 @@ export async function createPostgresStore() {
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
 
+      const auditTimestamp = new Date();
       const auditValues = {
         id: makeId("AUD"),
-        timestamp: new Date(),
+        timestamp: auditTimestamp,
         shield: "Agent Shield",
         agentId: intent.agentId,
         agentName: agent?.name || intent.agentId,
@@ -537,6 +612,22 @@ export async function createPostgresStore() {
         executionSignedBy: "",
         executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
         executionUpdatedAt: null,
+        originalIntent: {
+          source: intent.source,
+          agentId: intent.agentId,
+          executionWalletAddress,
+          goal: intent.goal,
+          reason: intent.reason,
+          action: { type: intent.actionType, amount: intent.amount, asset: intent.asset, target: intent.target, targetType: intent.targetType },
+        },
+        pipelineStages: updatePipelineStage(result.pipelineStages, "audit-stored", "completed", auditTimestamp.toISOString(), "Audit stored"),
+        moduleFindings: result.moduleFindings || [],
+        primaryReason: result.primaryReason || result.reason,
+        triggeredRule: result.triggeredRule || "",
+        suggestedResolution: result.suggestedResolution || result.recommendedAction,
+        capabilityContext: result.capabilityContext || agent?.executionCapabilities || ["Custom"],
+        proofSubmittedAt: auditTimestamp,
+        proofConfirmedAt: null,
         riskScore: Number(result.riskScore || 50),
       };
       const initialProof = initialDecisionProofState({
@@ -574,6 +665,9 @@ export async function createPostgresStore() {
         status,
         auditLogId: auditLog.id,
       }).returning();
+      await db.update(agentsTable)
+        .set({ lastIntentAt: new Date(intent.receivedAt), lastDecisionAt: auditValues.timestamp })
+        .where(eq(agentsTable.id, intent.agentId));
       const proof = await recordDecisionProof(auditLog);
       const [recordedAuditRow] = await db.update(auditLogsTable)
         .set({
@@ -583,6 +677,8 @@ export async function createPostgresStore() {
           decisionProofError: proof.decisionProofError,
           decisionProofMode: proof.decisionProofMode,
           decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+          proofConfirmedAt: proof.decisionProofStatus === "recorded" ? new Date(proof.decisionProofUpdatedAt || Date.now()) : null,
+          pipelineStages: updatePipelineStage(auditRow.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
         })
         .where(eq(auditLogsTable.id, auditLog.id))
         .returning();
@@ -634,21 +730,25 @@ export async function createPostgresStore() {
 
     async confirmCasperDeploy(id, body) {
       const txHash = validateDeployHash(body?.deployHash);
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current) {
+        const err = new Error("Audit log not found");
+        err.status = 404;
+        throw err;
+      }
+      const now = new Date();
       const [auditRow] = await db.update(auditLogsTable)
         .set({
           txHash,
           decisionProofStatus: "recorded",
           decisionProofError: "",
-          decisionProofUpdatedAt: new Date(),
+          decisionProofUpdatedAt: now,
+          proofConfirmedAt: now,
+          pipelineStages: updatePipelineStage(current.pipelineStages, "casper-proof", "completed", now.toISOString(), "Casper decision proof confirmed"),
         })
         .where(eq(auditLogsTable.id, id))
         .returning();
-
-      if (!auditRow) {
-        const err = new Error("Audit log not found");
-        err.status = 404;
-        throw err;
-      }
 
       return { auditLog: normalizeAuditLog(auditRow), txHash, confirmed: true };
     },
@@ -678,6 +778,7 @@ export async function createPostgresStore() {
           executionSignedBy,
           executionNote,
           executionUpdatedAt: new Date(),
+          pipelineStages: updatePipelineStage(current.pipelineStages, "execution-recorded", "completed", new Date().toISOString(), "Execution recorded"),
         })
         .where(eq(auditLogsTable.id, id))
         .returning();
@@ -703,6 +804,9 @@ export async function createPostgresStore() {
           decisionProofError: proof.decisionProofError,
           decisionProofMode: proof.decisionProofMode,
           decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+          proofSubmittedAt: current.proofSubmittedAt || new Date(),
+          proofConfirmedAt: proof.decisionProofStatus === "recorded" ? new Date(proof.decisionProofUpdatedAt || Date.now()) : current.proofConfirmedAt,
+          pipelineStages: updatePipelineStage(current.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
         })
         .where(eq(auditLogsTable.id, id))
         .returning();

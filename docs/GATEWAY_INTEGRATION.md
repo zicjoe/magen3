@@ -1,69 +1,157 @@
 # Magen3 Gateway Integration
 
-Magen3 is the security gateway. External agents remain independent apps and call Magen3 before requesting wallet signatures.
+Magen3 is the execution-control layer. External agents remain independent applications and call Agent Shield before requesting a wallet signature or submitting a blockchain action.
 
 ## Integration Flow
 
 ```text
-Register Connected Agent in Magen3
--> copy Agent ID and one-time API key
--> attach an active policy
--> external agent verifies its gateway access
--> external agent submits action intent
--> Magen3 returns Allowed / Blocked / Review Required
--> external agent requests wallet signing only if Allowed
+Register agent
+→ select one or more execution capabilities
+→ assign an active policy
+→ copy the Agent ID and one-time API key
+→ verify gateway access
+→ submit every execution intent to Magen3
+→ inspect Allowed / Blocked / Review Required
+→ request wallet signing only when Allowed
+→ attach the execution hash after successful submission
 ```
 
 ## Required Values
 
-| Value | Where it comes from |
+| Value | Source |
 | --- | --- |
-| Agent ID | Connected Agents page |
-| Agent API Key | Shown once after registration or rotation |
-| Gateway URL | Connected Agents page or Settings |
-| Verify URL | Connected Agents page or Settings |
-| Policy | Policies page |
+| Agent ID | Registration completion or Agent Control Center |
+| Agent API key | Shown once after registration or rotation |
+| Gateway URL | Registration quick start, Developer Portal, Settings, or public config |
+| Verify URL | Registration quick start, Developer Portal, Settings, or public config |
+| Active policy | Policy assigned to the registered agent |
+| Execution wallet | Supplied by the external agent for each requested action |
 
-Copy buttons in Magen3 are wired through the shared clipboard helper for Agent ID, Gateway URL, Verify URL, API keys, code snippets, settings endpoints, policy hash, and docs code blocks.
+## Execution Capabilities
 
-## Cross-chain Intent Payload
+A registered agent can select several capabilities rather than one rigid type:
 
-Magen3 is chain-agnostic at the gateway and policy layer. Include `targetChain` so Magen3 can review the intended environment even when the current proof layer is Casper Testnet.
+- Trading
+- Wallet Management
+- Treasury Operations
+- dApp Interactions
+- Enterprise Automation
+- Custom
 
-```json
-{
-  "source": "YieldBot AI",
-  "agentId": "MAG-AGENT-...",
-  "targetChain": "casper-testnet",
-  "walletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
-  "goal": "Stake 15 CSPR to a trusted validator",
-  "reason": "The agent prepared this action and needs Magen3 approval.",
-  "action": {
-    "type": "Stake",
-    "amount": 15,
-    "asset": "CSPR",
-    "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
-    "targetType": "Trusted Contract"
-  }
+Capabilities provide configuration context and recommendations. They do not bypass policy enforcement. The active policy remains the source of enforceable limits.
+
+## Verify the Integration
+
+```bash
+curl "https://YOUR_API_HOST/api/agent-gateway/me?agentId=MAG-AGENT-..." \
+  -H "x-magen3-agent-key: YOUR_AGENT_API_KEY"
+```
+
+Treat `gatewayReady: false` as a stop condition. It normally means that the agent does not have an active policy.
+
+## Submit an Intent
+
+```bash
+curl -X POST "https://YOUR_API_HOST/api/agent-gateway/intents" \
+  -H "Content-Type: application/json" \
+  -H "x-magen3-agent-key: YOUR_AGENT_API_KEY" \
+  -d '{
+    "source": "YieldBot AI",
+    "agentId": "MAG-AGENT-...",
+    "targetChain": "casper-testnet",
+    "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+    "goal": "Stake 15 CSPR to a trusted validator",
+    "reason": "The agent prepared this action and needs Magen3 approval.",
+    "action": {
+      "type": "Stake",
+      "amount": 15,
+      "asset": "CSPR",
+      "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
+      "targetType": "Trusted Contract"
+    }
+  }'
+```
+
+Use only action names accepted by the current backend schema. The in-app Intent Playground includes working examples for the actions available in the current interface.
+
+## Decision Handling
+
+```ts
+const response = await submitIntent(intent);
+
+switch (response.result.decision) {
+  case "Allowed":
+    // Ask the execution wallet to review and sign the real transaction.
+    break;
+  case "Review Required":
+    // Pause automation and request authorized human review.
+    break;
+  case "Blocked":
+    // Stop. Do not submit the transaction.
+    break;
 }
 ```
 
+Do not infer authorization from `risk`, `riskScore`, HTTP success, or a friendly message. The only execution-authorizing condition is:
+
+```ts
+response.result.decision === "Allowed" && response.executionApproved === true
+```
+
+## Deterministic Guidance
+
+For Blocked and Review Required outcomes, use these fields to build user guidance:
+
+- `primaryReason`
+- `triggeredRule`
+- `suggestedResolution`
+- `moduleFindings`
+- `pipelineStages`
+
+The core authorization decision is deterministic. Do not replace it with a language-model decision. A user-facing model may summarize evidence only if it cannot override Agent Shield.
+
 ## API Key Rotation
 
-Raw API keys are shown once. If the external agent loses the key, rotate it in Connected Agents and update the external app.
+Raw API keys are shown once. If the external agent loses a key, rotate it in the Agent Control Center and update that external app immediately.
 
-Rotation affects that connected agent only. It does not rotate keys for every app and it does not create a policy-specific key.
+Rotation affects only the selected agent. Existing Agent IDs, policies, other agents, and Casper proofs are unchanged.
 
-## Recommended External Agent Behavior
+## Secure Credential Handling
 
-- Verify the connected agent before execution.
-- Submit every high-risk Web3 intent to Magen3 before wallet signing.
-- Stop immediately when Magen3 returns `Blocked`.
-- Pause for human review when Magen3 returns `Review Required`.
-- Request wallet signing only when Magen3 returns `Allowed`.
-- Attach the real execution hash back to Magen3 after execution when available.
+- Store the API key in a server-side secret manager or protected environment variable.
+- Never commit it to source control.
+- Never expose it in browser logs, analytics, screenshots, URLs, or audit payloads.
+- Do not reuse one agent credential across unrelated applications.
+- Revoke an agent immediately when its integration should no longer call the Gateway.
+
+## Recommended External-Agent Behavior
+
+1. Verify the registered agent during startup or before high-risk execution.
+2. Submit every supported blockchain intent before wallet signing.
+3. Stop on Blocked.
+4. Pause on Review Required.
+5. Request signing only on Allowed.
+6. Show the wallet the exact transaction it is being asked to sign.
+7. Attach the real execution hash to the corresponding audit record after successful submission.
+8. Treat unavailable modules as missing coverage, not as passed checks.
+
+## Owner Wallet and Execution Wallet
+
+The Magen3 owner wallet registers and manages the agent. The external agent may submit a different execution wallet with each request. The execution wallet is captured in audit evidence and signs the real transaction only after approval.
 
 ## Proof Model
 
-Magen3 records Decision Proofs on Casper Testnet. Execution Proofs come from the external wallet or target execution layer after an allowed action is signed and submitted.
+Magen3 records Decision Proofs on Casper Testnet when the proof relayer is configured. Execution Proofs come from the external wallet or execution layer after an Allowed action is signed and submitted.
+
+The existing Casper contract hash remains unchanged. Gateway and data-model upgrades do not require redeploying the audit contract.
+
+## Playground and SDKs
+
+Use the in-app Intent Playground to validate payloads and inspect pipeline stages before connecting an external agent. The JavaScript/TypeScript SDK, Python SDK, MCP server, Codex skill, and browser-use style integrations all use the same Agent ID, API key, Gateway request, and final decision model.
+
+See also:
+
+- `AGENT_GATEWAY_API.md`
+- `OFFICIAL_SDKS.md`
+- `MCP_SERVER.md`
+- `CONNECTED_WALLET_EXECUTION.md`

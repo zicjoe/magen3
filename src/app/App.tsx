@@ -38,6 +38,20 @@ import {
 } from "lucide-react";
 import { api } from "./lib/api";
 import {
+  CAPABILITY_PACKS,
+  EXECUTION_CAPABILITY_CATALOG,
+  POLICY_TEMPLATES,
+  PROTECTION_MODULE_CATALOG,
+  calculateSecurityCoverage,
+  deriveIntegrationHealth,
+  normalizeCapabilities,
+  recommendedModules,
+  recommendedPolicyTemplate,
+  type ExecutionCapability,
+  type ModuleFinding,
+  type PipelineStage,
+} from "./lib/securityModel";
+import {
   connectCasperWallet,
   disconnectCasperWallet,
   restoreCasperWalletConnection,
@@ -55,13 +69,12 @@ type Page =
   | "connected-agents"
   | "policies"
   | "audit-log"
+  | "intent-playground"
   | "settings"
   | "docs";
 
 type Decision = "Allowed" | "Blocked" | "Review Required";
 type Risk = "Low" | "Medium" | "High" | "Critical";
-type ShieldStatus = "Available" | "Preview" | "Coming Soon";
-type ShieldGroup = "Execution Shields" | "Infrastructure Shields" | "Intelligence Shields";
 type AgentType =
   | "DeFi Agent"
   | "Trading Agent"
@@ -107,9 +120,18 @@ interface Agent {
   apiKeyIssuedAt?: string;
   apiKeyRotatedAt?: string;
   revokedAt?: string;
+  executionCapabilities?: ExecutionCapability[];
+  capabilityConfiguration?: Record<string, unknown>;
+  onboardingStatus?: string;
+  lastIntentAt?: string;
+  lastDecisionAt?: string;
 }
 
-type AgentRegistrationDraft = Pick<Agent, "name" | "type" | "purpose" | "permissionLevel">;
+type AgentRegistrationDraft = Pick<Agent, "name" | "type" | "purpose" | "permissionLevel"> & {
+  executionCapabilities: ExecutionCapability[];
+  capabilityConfiguration?: Record<string, unknown>;
+  onboardingStatus?: string;
+};
 
 interface Policy {
   id: string;
@@ -124,6 +146,9 @@ interface Policy {
   status: "Active" | "Inactive";
   createdAt: string;
   policyHash: string;
+  templateType?: string;
+  capabilityScope?: ExecutionCapability[];
+  structuredRules?: Record<string, unknown>;
 }
 
 interface AuditLog {
@@ -154,6 +179,15 @@ interface AuditLog {
   decisionProofError?: string;
   decisionProofMode?: string;
   decisionProofUpdatedAt?: string;
+  originalIntent?: Record<string, unknown>;
+  pipelineStages?: PipelineStage[];
+  moduleFindings?: ModuleFinding[];
+  primaryReason?: string;
+  triggeredRule?: string;
+  suggestedResolution?: string;
+  capabilityContext?: ExecutionCapability[];
+  proofSubmittedAt?: string;
+  proofConfirmedAt?: string;
   riskScore: number;
 }
 
@@ -165,16 +199,6 @@ interface DashboardStats {
   casperAuditRecords: number;
 }
 
-interface ShieldModule {
-  id: string;
-  name: string;
-  description: string;
-  status: ShieldStatus;
-  group: ShieldGroup;
-  riskCategory: string;
-  icon: string;
-}
-
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -183,6 +207,13 @@ interface DecisionResult {
   policyChecksFailed: string[];
   reason: string;
   recommendedAction: string;
+  primaryReason?: string;
+  triggeredRule?: string;
+  suggestedResolution?: string;
+  moduleFindings?: ModuleFinding[];
+  modulesEvaluated?: string[];
+  capabilityContext?: ExecutionCapability[];
+  pipelineStages?: PipelineStage[];
 }
 
 interface CasperPreparedPayload {
@@ -235,135 +266,6 @@ const initialAgents: Agent[] = [];
 const initialPolicies: Policy[] = [];
 
 const initialAuditLogs: AuditLog[] = [];
-
-const initialDashboardStats: DashboardStats = {
-  activeShields: 0,
-  protectedActions: 0,
-  blockedActions: 0,
-  reviewRequired: 0,
-  casperAuditRecords: 0,
-};
-
-const shieldModulesCatalog: ShieldModule[] = [
-  {
-    id: "shield-agent",
-    name: "Agent Shield",
-    description:
-      "Protect wallets and protocols from unsafe AI-agent actions before they reach the chain.",
-    status: "Available",
-    group: "Execution Shields",
-    riskCategory: "Agent Execution",
-    icon: "bot",
-  },
-  {
-    id: "shield-wallet",
-    name: "Wallet Shield",
-    description:
-      "Review transaction requests, spending limits, and wallet-connected execution before signing.",
-    status: "Preview",
-    group: "Execution Shields",
-    riskCategory: "Wallet Execution",
-    icon: "wallet",
-  },
-  {
-    id: "shield-contract",
-    name: "Contract Shield",
-    description:
-      "Analyze risky smart-contract interactions, upgrades, and admin permission changes.",
-    status: "Preview",
-    group: "Execution Shields",
-    riskCategory: "Smart Contract",
-    icon: "code",
-  },
-  {
-    id: "shield-dao",
-    name: "DAO Shield",
-    description:
-      "Verify that treasury execution matches approved governance decisions.",
-    status: "Preview",
-    group: "Execution Shields",
-    riskCategory: "Governance",
-    icon: "building",
-  },
-  {
-    id: "shield-bridge",
-    name: "Bridge Shield",
-    description:
-      "Check bridge routes, destination addresses, and transfer constraints before cross-chain movement.",
-    status: "Preview",
-    group: "Infrastructure Shields",
-    riskCategory: "Cross-chain Bridge",
-    icon: "globe",
-  },
-  {
-    id: "shield-oracle",
-    name: "Oracle Shield",
-    description:
-      "Detect suspicious data updates before they trigger on-chain decisions.",
-    status: "Preview",
-    group: "Infrastructure Shields",
-    riskCategory: "Data Feed",
-    icon: "globe",
-  },
-  {
-    id: "shield-access",
-    name: "Access Shield",
-    description:
-      "Review privileged access, signer roles, admin changes, and sensitive permissions.",
-    status: "Preview",
-    group: "Infrastructure Shields",
-    riskCategory: "Access Control",
-    icon: "lock",
-  },
-  {
-    id: "shield-rwa",
-    name: "RWA Shield",
-    description:
-      "Check asset verification, proof expiry, and risk status before protocol action.",
-    status: "Preview",
-    group: "Intelligence Shields",
-    riskCategory: "Real World Assets",
-    icon: "database",
-  },
-  {
-    id: "shield-simulation",
-    name: "Simulation Shield",
-    description:
-      "Simulate high-risk execution paths and highlight policy conflicts before approval.",
-    status: "Preview",
-    group: "Intelligence Shields",
-    riskCategory: "Execution Simulation",
-    icon: "activity",
-  },
-  {
-    id: "shield-threat-intel",
-    name: "Threat Intel Shield",
-    description:
-      "Use risk signals and known threat patterns to flag unsafe targets or behavior.",
-    status: "Preview",
-    group: "Intelligence Shields",
-    riskCategory: "Threat Intelligence",
-    icon: "shield",
-  },
-];
-
-const shieldModuleGroups: { group: ShieldGroup; description: string; modules: ShieldModule[] }[] = [
-  {
-    group: "Execution Shields",
-    description: "Policy checks for actions that directly reach wallets, contracts, agents, or DAOs.",
-    modules: shieldModulesCatalog.filter((module) => module.group === "Execution Shields"),
-  },
-  {
-    group: "Infrastructure Shields",
-    description: "Controls for bridge, oracle, and access-control surfaces that can amplify execution risk.",
-    modules: shieldModulesCatalog.filter((module) => module.group === "Infrastructure Shields"),
-  },
-  {
-    group: "Intelligence Shields",
-    description: "Risk intelligence and simulation layers for context-aware execution decisions.",
-    modules: shieldModulesCatalog.filter((module) => module.group === "Intelligence Shields"),
-  },
-];
 
 // ──────────────────────────────────────────────────────────
 // Utility helpers
@@ -545,10 +447,13 @@ function RiskBadge({ risk }: { risk: Risk }) {
 function StatusBadge({
   status,
 }: {
-  status: "Available" | "Preview" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused" | "Revoked";
+  status: "Available" | "Live" | "Foundation Available" | "Preview" | "Planned" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused" | "Revoked";
 }) {
   const map: Record<string, string> = {
     Available: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
+    Live: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
+    "Foundation Available": "bg-[#22D3EE]/10 text-[#22D3EE] border-[#22D3EE]/30",
+    Planned: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20",
     Active: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
     "Policy Active": "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
     Preview: "bg-[#22D3EE]/10 text-[#22D3EE] border-[#22D3EE]/30",
@@ -564,6 +469,253 @@ function StatusBadge({
     >
       {status}
     </span>
+  );
+}
+
+
+function CapabilityChips({ capabilities, compact = false }: { capabilities?: ExecutionCapability[]; compact?: boolean }) {
+  const items = normalizeCapabilities(capabilities);
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((capability) => (
+        <span
+          key={capability}
+          className={`inline-flex rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 font-semibold text-[#22D3EE] ${compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs"}`}
+        >
+          {capability}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CoverageCard({
+  agent,
+  policy,
+  logs,
+  onNavigate,
+  compact = false,
+}: {
+  agent: Agent;
+  policy?: Policy;
+  logs: AuditLog[];
+  onNavigate?: (page: Page) => void;
+  compact?: boolean;
+}) {
+  const coverage = calculateSecurityCoverage(agent, policy, logs);
+  return (
+    <div className={`${CARD} ${compact ? "p-3" : "p-4"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Coverage</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className={`${compact ? "text-xl" : "text-3xl"} font-bold font-['Space_Grotesk'] text-[#F8FAFC]`}>{coverage.score}%</span>
+            <span className="text-xs font-semibold text-[#22D3EE]">{coverage.label}</span>
+          </div>
+        </div>
+        <ShieldCheck size={compact ? 18 : 22} className="text-[#22D3EE]" />
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#1E293B]">
+        <div className="h-full rounded-full bg-[#22D3EE] transition-all" style={{ width: `${coverage.score}%` }} />
+      </div>
+      {!compact && (
+        <>
+          <div className="mt-4 space-y-2">
+            {coverage.recommendations.slice(0, 3).map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                onClick={() => item.page && onNavigate?.(item.page as Page)}
+                className="flex w-full items-start gap-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5 text-left hover:border-[#334155]"
+              >
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-[#F59E0B]" />
+                <span className="text-xs leading-relaxed text-[#94A3B8]">{item.recommendation}</span>
+              </button>
+            ))}
+            {coverage.recommendations.length === 0 && (
+              <div className="rounded-lg border border-[#22C55E]/20 bg-[#22C55E]/10 p-2.5 text-xs text-[#BBF7D0]">
+                All currently measurable configuration checks are covered.
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">
+            Coverage reflects configured protection and observed integration state. It is not a guarantee against every exploit.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PipelineTimeline({ stages }: { stages?: PipelineStage[] }) {
+  const items = Array.isArray(stages) && stages.length > 0 ? stages : [
+    { id: "intent-received", label: "Intent received", status: "pending" as const },
+    { id: "agent-authentication", label: "Agent authentication", status: "pending" as const },
+    { id: "policy-loaded", label: "Policy loaded", status: "pending" as const },
+    { id: "protection-checks", label: "Protection checks", status: "pending" as const },
+    { id: "risk-assessment", label: "Risk assessment", status: "pending" as const },
+    { id: "decision", label: "Decision", status: "pending" as const },
+    { id: "audit-stored", label: "Audit stored", status: "pending" as const },
+    { id: "casper-proof", label: "Casper decision proof", status: "pending" as const },
+  ];
+  const classMap: Record<string, string> = {
+    completed: "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]",
+    warning: "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]",
+    failed: "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]",
+    pending: "border-[#1E293B] bg-[#0B1220] text-[#94A3B8]",
+    skipped: "border-[#1E293B] bg-[#050B14] text-[#64748B]",
+  };
+  return (
+    <div className="space-y-2">
+      {items.map((stage, index) => (
+        <div key={`${stage.id}-${index}`} className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${classMap[stage.status] || classMap.pending}`}>
+              {stage.status === "completed" ? <CheckCircle size={14} /> : stage.status === "failed" ? <XCircle size={14} /> : stage.status === "warning" ? <AlertTriangle size={14} /> : <span>{index + 1}</span>}
+            </span>
+            {index < items.length - 1 && <span className="h-5 w-px bg-[#1E293B]" />}
+          </div>
+          <div className="min-w-0 flex-1 pt-1">
+            <div className="text-sm font-medium text-[#F8FAFC]">{stage.label}</div>
+            <div className="mt-0.5 text-xs capitalize text-[#94A3B8]">
+              {stage.status}{stage.timestamp ? ` · ${fmtTs(stage.timestamp)}` : ""}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FindingsPanel({ findings }: { findings?: ModuleFinding[] }) {
+  const items = Array.isArray(findings) ? findings : [];
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-4 text-sm text-[#94A3B8]">No structured module findings are available for this legacy record.</div>;
+  }
+  const classMap: Record<string, string> = {
+    pass: "border-[#22C55E]/25 bg-[#22C55E]/5",
+    warning: "border-[#F59E0B]/25 bg-[#F59E0B]/5",
+    fail: "border-[#EF4444]/25 bg-[#EF4444]/5",
+    unavailable: "border-[#22D3EE]/20 bg-[#22D3EE]/5",
+    skipped: "border-[#1E293B] bg-[#0B1220]",
+  };
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <div key={`${item.module}-${item.rule}-${index}`} className={`rounded-xl border p-3 ${classMap[item.status] || classMap.skipped}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold text-sm text-[#F8FAFC]">{item.module}</div>
+            <span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8]">{item.status}</span>
+          </div>
+          <div className="mt-1 text-xs font-medium text-[#22D3EE]">{item.rule}</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{item.message}</p>
+          {item.remediation && <p className="mt-2 text-xs leading-relaxed text-[#F8FAFC]"><span className="font-semibold">Resolution:</span> {item.remediation}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IntegrationHealthPanel({ agent, policy, logs, apiOnline }: { agent: Agent; policy?: Policy; logs: AuditLog[]; apiOnline: boolean }) {
+  const health = deriveIntegrationHealth(agent, policy, logs, apiOnline);
+  return (
+    <div className={`${CARD} p-4`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Integration Health</div>
+          <div className="mt-1 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{health.overall}</div>
+        </div>
+        <Activity size={20} className={health.overall === "Healthy" ? "text-[#22C55E]" : "text-[#F59E0B]"} />
+      </div>
+      <div className="mt-3 space-y-2">
+        {health.checks.map((check) => (
+          <div key={check.label} className="flex items-start justify-between gap-3 rounded-lg bg-[#0B1220] p-2.5">
+            <div>
+              <div className="text-xs font-medium text-[#F8FAFC]">{check.label}</div>
+              <div className="mt-0.5 text-[11px] text-[#94A3B8]">{check.detail}</div>
+            </div>
+            <span className={`mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${check.status === "healthy" ? "bg-[#22C55E]" : check.status === "attention" || check.status === "unavailable" ? "bg-[#F59E0B]" : "bg-[#64748B]"}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentInsightsPanel({ agent, logs }: { agent: Agent; logs: AuditLog[] }) {
+  const scoped = logs.filter((log) => log.agentId === agent.id);
+  const counts = {
+    total: scoped.length,
+    allowed: scoped.filter((log) => log.decision === "Allowed").length,
+    blocked: scoped.filter((log) => log.decision === "Blocked").length,
+    review: scoped.filter((log) => log.decision === "Review Required").length,
+  };
+
+  const blockReasons = new Map<string, number>();
+  const triggeredRules = new Map<string, number>();
+  const capabilityUsage = new Map<string, number>();
+  for (const log of scoped) {
+    if (log.decision === "Blocked") {
+      const reason = log.primaryReason || log.triggeredRule || log.reason || "Unspecified policy reason";
+      blockReasons.set(reason, (blockReasons.get(reason) || 0) + 1);
+    }
+    if (log.triggeredRule) {
+      triggeredRules.set(log.triggeredRule, (triggeredRules.get(log.triggeredRule) || 0) + 1);
+    }
+    for (const capability of normalizeCapabilities(log.capabilityContext, agent.type)) {
+      capabilityUsage.set(capability, (capabilityUsage.get(capability) || 0) + 1);
+    }
+  }
+
+  const topEntry = (values: Map<string, number>) =>
+    [...values.entries()].sort((left, right) => right[1] - left[1])[0];
+  const topBlockReason = topEntry(blockReasons);
+  const topTriggeredRule = topEntry(triggeredRules);
+  const capabilitySummary = [...capabilityUsage.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3);
+
+  return (
+    <div className={`${CARD} p-4`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Agent Insights</div>
+          <div className="mt-1 text-sm text-[#94A3B8]">Observed gateway decisions only; no opaque reputation score.</div>
+        </div>
+        <TrendingUp size={20} className="text-[#22D3EE]" />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          ["Total", counts.total],
+          ["Allowed", counts.allowed],
+          ["Blocked", counts.blocked],
+          ["Review", counts.review],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5">
+            <div className="text-lg font-bold text-[#F8FAFC]">{String(value)}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{String(label)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Most common block reason</div>
+          <div className="mt-1 text-xs leading-relaxed text-[#F8FAFC]">{topBlockReason ? `${topBlockReason[0]} (${topBlockReason[1]})` : "No blocked decisions observed."}</div>
+        </div>
+        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Most frequent triggered rule</div>
+          <div className="mt-1 text-xs leading-relaxed text-[#F8FAFC]">{topTriggeredRule ? `${topTriggeredRule[0]} (${topTriggeredRule[1]})` : "No triggered-rule evidence yet."}</div>
+        </div>
+      </div>
+      <div className="mt-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Capability context observed</div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {(capabilitySummary.length ? capabilitySummary : normalizeCapabilities(agent.executionCapabilities, agent.type).map((capability) => [capability, 0] as [string, number])).map(([capability, count]) => (
+            <span key={capability} className="rounded-full border border-[#1E293B] bg-[#050B14] px-2.5 py-1 text-xs text-[#94A3B8]">{capability}{count ? ` · ${count}` : " · no intent yet"}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -779,10 +931,11 @@ function BrandLogo({ className = "h-8 w-8" }: { className?: string }) {
 
 const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-  { id: "shields", label: "Shield Modules", icon: <Shield size={18} /> },
+  { id: "shields", label: "Agent Shield", icon: <Shield size={18} /> },
   { id: "connected-agents", label: "Connected Agents", icon: <Bot size={18} /> },
   { id: "policies", label: "Policies", icon: <FileText size={18} /> },
   { id: "audit-log", label: "Audit Logs", icon: <Scroll size={18} /> },
+  { id: "intent-playground", label: "Intent Playground", icon: <Send size={18} /> },
   { id: "settings", label: "Settings", icon: <Settings size={18} /> },
 ];
 
@@ -799,7 +952,7 @@ function Sidebar({
 }) {
   return (
     <aside
-      className={`flex flex-col bg-[#0B1220] border-r border-[#1E293B] ${collapsed ? "w-16" : "w-60"} min-h-screen`}
+      className={`sticky top-0 flex h-screen flex-col bg-[#0B1220] border-r border-[#1E293B] ${collapsed ? "w-16" : "w-60"} flex-shrink-0`}
     >
       {/* Logo */}
       <div className={`flex items-center border-b border-[#1E293B] py-5 ${collapsed ? "gap-1 px-1" : "gap-3 px-4"}`}>
@@ -966,8 +1119,8 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
           <a href="#how-it-works" className="hover:text-[#F8FAFC] transition-colors">
             How It Works
           </a>
-          <a href="#shield-modules" className="hover:text-[#F8FAFC] transition-colors">
-            Shield Modules
+          <a href="#protection-modules" className="hover:text-[#F8FAFC] transition-colors">
+            Protection Modules
           </a>
           <a href="#decision-proof" className="hover:text-[#F8FAFC] transition-colors">
             Decision Proof
@@ -1004,8 +1157,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
             firewall for autonomous agents.
           </h1>
           <p className="text-xl text-[#94A3B8] max-w-3xl mx-auto mb-12 leading-relaxed">
-            Protect wallets, AI agents, smart contracts, DAOs, RWA protocols, and
-            oracle-driven actions before unsafe execution reaches the blockchain.
+            Register autonomous agents, define what they may execute, evaluate every intent through Agent Shield, and stop unsafe actions before wallet signing.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Btn variant="primary" size="lg" onClick={onLaunchApp}>
@@ -1022,9 +1174,9 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
           {/* Stats */}
           <div className="mt-20 grid grid-cols-3 gap-8 max-w-2xl mx-auto">
             {[
-              { v: "Live", l: "Casper Wallet" },
-              { v: "10", l: "Shield Modules" },
-              { v: "On-chain", l: "Decision Proof" },
+              { v: "Live", l: "Agent Shield" },
+              { v: "6", l: "Execution Capabilities" },
+              { v: "Casper", l: "Decision Proofs" },
             ].map((s) => (
               <div key={s.l} className="text-center">
                 <div className="text-3xl font-bold text-[#22D3EE] font-['Space_Grotesk']">
@@ -1046,8 +1198,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
             The Problem
           </h2>
           <p className="text-[#94A3B8] text-lg max-w-2xl mx-auto">
-            Autonomous AI agents and smart contracts execute actions with speed
-            and scale that humans cannot monitor in real time.
+            Autonomous agents are gaining the ability to execute swaps, transfers, staking actions, contract calls, and treasury operations. The critical risk is what they are permitted to execute.
           </p>
         </div>
         <div className="grid md:grid-cols-3 gap-6">
@@ -1085,42 +1236,22 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
       <section id="how-it-works" className="bg-[#0B1220] py-24">
         <div className="max-w-6xl mx-auto px-8">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
-              How Magen3 Works
-            </h2>
-            <p className="text-[#94A3B8] text-lg">
-              Three-stage firewall between intent and execution.
-            </p>
+            <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">From agent registration to verifiable decision</h2>
+            <p className="text-[#94A3B8] text-lg">Magen3 sits between agent intent and blockchain execution.</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {[
-              {
-                n: "01",
-                title: "Intercept",
-                desc: "Every agent action request is captured before it reaches the blockchain.",
-                color: "text-[#22D3EE]",
-              },
-              {
-                n: "02",
-                title: "Analyze",
-                desc: "Magen3 checks the action against your active Shield policies and risk rules.",
-                color: "text-[#22D3EE]",
-              },
-              {
-                n: "03",
-                title: "Decide & Record",
-                desc: "Decision is returned (Allowed / Blocked / Review Required) and recorded on Casper Testnet.",
-                color: "text-[#22D3EE]",
-              },
-            ].map((s) => (
-              <div key={s.n} className="relative">
-                <div className="text-6xl font-bold font-['Space_Grotesk'] text-[#1E293B] mb-4">
-                  {s.n}
-                </div>
-                <h3 className={`text-xl font-bold ${s.color} mb-3 font-['Space_Grotesk']`}>
-                  {s.title}
-                </h3>
-                <p className="text-[#94A3B8] leading-relaxed">{s.desc}</p>
+              ["01", "Register Agent", "Create a per-agent identity and one-time API credential."],
+              ["02", "Select Capabilities", "Choose one or more execution capabilities that describe what the agent can do."],
+              ["03", "Assign Policy", "Use secure starter rules or customize the limits that Magen3 actually enforces."],
+              ["04", "Send Intent", "The external agent submits the proposed action before asking a wallet to sign."],
+              ["05", "Evaluate Pipeline", "Agent Shield authenticates, loads configuration and policy, runs relevant checks, and assesses risk."],
+              ["06", "Decide and Prove", "Magen3 returns Allowed, Blocked, or Review Required, stores the audit, and submits a Casper decision proof."],
+            ].map(([number, title, description]) => (
+              <div key={number} className={`${CARD} p-5`}>
+                <div className="text-4xl font-bold font-['Space_Grotesk'] text-[#1E293B]">{number}</div>
+                <h3 className="mt-3 text-lg font-bold font-['Space_Grotesk'] text-[#22D3EE]">{title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{description}</p>
               </div>
             ))}
           </div>
@@ -1165,61 +1296,26 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
         </div>
       </section>
 
-      {/* Shield Modules */}
-      <section id="shield-modules" className="max-w-6xl mx-auto px-8 py-24">
+      {/* Agent Shield protection modules */}
+      <section id="protection-modules" className="max-w-6xl mx-auto px-8 py-24">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold font-['Space_Grotesk'] mb-4">
-            Shield Modules
-          </h2>
-          <p className="text-[#94A3B8] text-lg">
-            Specialized protection layers for every Web3 threat surface.
-          </p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-xs font-semibold text-[#22C55E]"><ShieldCheck size={13} /> Agent Shield is live</div>
+          <h2 className="mt-4 text-4xl font-bold font-['Space_Grotesk']">Protection Modules under Agent Shield</h2>
+          <p className="mx-auto mt-3 max-w-3xl text-lg text-[#94A3B8]">Capabilities determine relevant recommendations. Module status is shown honestly: Live, Foundation Available, Preview, or Planned.</p>
         </div>
-        <div className="space-y-10">
-          {shieldModuleGroups.map((group) => (
-            <div key={group.group}>
-              <div className="mb-4">
-                <h3 className="font-['Space_Grotesk'] text-xl font-semibold text-[#F8FAFC]">
-                  {group.group}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-[#94A3B8]">
-                  {group.description}
-                </p>
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {group.modules.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`${CARD} p-6 hover:border-[#22D3EE]/30`}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="p-2.5 bg-[#22D3EE]/10 rounded-lg">
-                        <Shield size={20} className="text-[#22D3EE]" />
-                      </div>
-                      <StatusBadge
-                        status={
-                          m.status === "Available"
-                            ? "Available"
-                            : m.status === "Preview"
-                            ? "Preview"
-                            : "Coming Soon"
-                        }
-                      />
-                    </div>
-                    <h4 className="font-semibold text-[#F8FAFC] mb-2 font-['Space_Grotesk']">
-                      {m.name}
-                    </h4>
-                    <p className="text-sm text-[#94A3B8] leading-relaxed mb-4">
-                      {m.description}
-                    </p>
-                    <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2 py-1 rounded">
-                      {m.riskCategory}
-                    </span>
-                  </div>
-                ))}
-              </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {PROTECTION_MODULE_CATALOG.map((module) => (
+            <div key={module.id} className={`${CARD} p-6`}>
+              <div className="flex items-start justify-between gap-3"><div className="rounded-lg bg-[#22D3EE]/10 p-2.5"><Shield size={20} className="text-[#22D3EE]" /></div><StatusBadge status={module.status} /></div>
+              <h3 className="mt-4 font-semibold text-[#F8FAFC] font-['Space_Grotesk']">{module.name}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{module.description}</p>
+              <div className="mt-4 border-t border-[#1E293B] pt-3"><div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Current implementation</div><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{module.currentChecks.length ? module.currentChecks.join(" · ") : "No backend checks are currently implemented."}</p></div>
             </div>
           ))}
+        </div>
+        <div className="mt-12">
+          <h3 className="text-center text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Built for different autonomous agents</h3>
+          <div className="mt-5 flex flex-wrap justify-center gap-2"><CapabilityChips capabilities={EXECUTION_CAPABILITY_CATALOG.map((capability) => capability.id)} /></div>
         </div>
       </section>
 
@@ -1233,7 +1329,7 @@ function LandingPage({ onLaunchApp, onOpenDocs }: { onLaunchApp: () => void; onO
             Ready to protect your agents?
           </h2>
           <p className="text-[#94A3B8] text-lg mb-10">
-            Connect your Casper wallet and deploy your first Shield in minutes.
+            Connect your Casper wallet, register an autonomous agent, assign an enforceable policy, and test its first intent.
           </p>
           <Btn variant="primary" size="lg" onClick={onLaunchApp}>
             Launch App <ArrowRight size={18} />
@@ -1257,6 +1353,7 @@ function DashboardPage({
   onConnectWallet,
   walletConnecting,
   walletError,
+  apiOnline,
   auditLogs,
   policies,
   agents,
@@ -1266,6 +1363,7 @@ function DashboardPage({
   onConnectWallet: () => void;
   walletConnecting: boolean;
   walletError: string;
+  apiOnline: boolean;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1299,6 +1397,15 @@ function DashboardPage({
     ...item,
     pct: Math.round((item.count / totalRiskRecords) * 100),
   }));
+  const today = new Date();
+  const decisionsToday = auditLogs.filter((log) => isSameDay(new Date(log.timestamp), today));
+  const agentCoverage = agents.map((agent) => {
+    const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
+    return { agent, coverage: calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), agentLogs) };
+  });
+  const averageCoverage = agentCoverage.length ? Math.round(agentCoverage.reduce((sum, item) => sum + item.coverage.score, 0) / agentCoverage.length) : 0;
+  const agentsNeedingAttention = [...agentCoverage].filter((item) => item.coverage.score < 85).sort((a, b) => a.coverage.score - b.coverage.score).slice(0, 3);
+
   const operationalItems = [
     { label: "Connected wallet", value: "Active", done: walletConnected },
     { label: "Registered agents", value: String(agents.length), done: agents.length > 0 },
@@ -1309,38 +1416,12 @@ function DashboardPage({
 
   return (
     <div className="space-y-6">
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard
-          label="Active Shields"
-          value={dashboardStats.activeShields}
-          icon={<Shield size={20} />}
-          color="cyan"
-        />
-        <StatCard
-          label="Protected Actions"
-          value={dashboardStats.protectedActions}
-          icon={<ShieldCheck size={20} />}
-          color="green"
-        />
-        <StatCard
-          label="Blocked Actions"
-          value={dashboardStats.blockedActions}
-          icon={<ShieldX size={20} />}
-          color="red"
-        />
-        <StatCard
-          label="Review Required"
-          value={dashboardStats.reviewRequired}
-          icon={<Clock size={20} />}
-          color="amber"
-        />
-        <StatCard
-          label="Casper Records"
-          value={dashboardStats.casperAuditRecords}
-          icon={<Database size={20} />}
-          color="purple"
-        />
+        <StatCard label="Connected Agents" value={agents.length} icon={<Bot size={20} />} color="cyan" />
+        <StatCard label="Decisions Today" value={decisionsToday.length} icon={<Activity size={20} />} color="purple" />
+        <StatCard label="Allowed" value={decisionsToday.filter((log) => log.decision === "Allowed").length} icon={<ShieldCheck size={20} />} color="green" />
+        <StatCard label="Blocked" value={decisionsToday.filter((log) => log.decision === "Blocked").length} icon={<ShieldX size={20} />} color="red" />
+        <StatCard label="Review Required" value={decisionsToday.filter((log) => log.decision === "Review Required").length} icon={<Clock size={20} />} color="amber" />
       </div>
 
       <div className={`${CARD_GLOW} p-5`}>
@@ -1348,10 +1429,10 @@ function DashboardPage({
           <div>
             <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
               <Activity size={14} />
-              Gateway Status
+              Platform Status
             </div>
             <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-              Real wallet-scoped activity
+              {apiOnline ? "Magen3 Gateway online" : "Magen3 Gateway unavailable"}
             </h2>
             <p className="text-sm text-[#94A3B8] mt-1 max-w-3xl">
               Dashboard numbers come from the connected wallet, registered agents, active policies, saved audit records, and confirmed Casper decision proofs.
@@ -1379,6 +1460,28 @@ function DashboardPage({
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
+        <div className={`${CARD_GLOW} p-5`}>
+          <div className="flex items-start justify-between gap-4">
+            <div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Coverage</div><div className="mt-2 text-4xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{averageCoverage}%</div><div className="mt-1 text-sm text-[#94A3B8]">Average configured protection across registered agents.</div></div>
+            <ShieldCheck size={25} className="text-[#22D3EE]" />
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#1E293B]"><div className="h-full rounded-full bg-[#22D3EE] transition-all" style={{ width: `${averageCoverage}%` }} /></div>
+          <p className="mt-3 text-xs leading-relaxed text-[#64748B]">Coverage measures configured controls and observed integration state. It is not a guarantee against every exploit.</p>
+        </div>
+        <div className={`${CARD} p-5`}>
+          <div className="flex items-center justify-between gap-3"><div><h2 className={SECTION_TITLE}>Agents Needing Attention</h2><p className="mt-1 text-xs text-[#94A3B8]">Highest-impact configuration improvements.</p></div><Btn variant="secondary" size="sm" onClick={() => onNavigate("connected-agents")}>Manage Agents</Btn></div>
+          <div className="mt-4 space-y-2">
+            {agentsNeedingAttention.length === 0 ? <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4 text-sm text-[#BBF7D0]">All registered agents have a strong configuration foundation.</div> : agentsNeedingAttention.map(({ agent, coverage }) => (
+              <div key={agent.id} className="flex flex-col gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0"><div className="font-semibold text-[#F8FAFC]">{agent.name}</div><div className="mt-1 truncate text-xs text-[#94A3B8]">{coverage.recommendations[0]?.recommendation || "Review the agent configuration."}</div></div>
+                <div className="shrink-0 text-right"><div className="text-lg font-bold text-[#F8FAFC]">{coverage.score}%</div><div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">coverage</div></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1482,69 +1585,599 @@ function DashboardPage({
 }
 
 // ──────────────────────────────────────────────────────────
-// Shields Page
+// Agent Shield Page
 // ──────────────────────────────────────────────────────────
 
-function ShieldsPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
+function AgentShieldPage({
+  agents,
+  policies,
+  auditLogs,
+  apiOnline,
+  onNavigate,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+  apiOnline: boolean;
+  onNavigate: (p: Page) => void;
+}) {
+  const activeAgents = agents.filter((agent) => agent.status === "Active");
+  const coverages = activeAgents.map((agent) => calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), auditLogs.filter((log) => log.agentId === agent.id)));
+  const averageCoverage = coverages.length ? Math.round(coverages.reduce((sum, item) => sum + item.score, 0) / coverages.length) : 0;
+  const latestLog = auditLogs[0];
+  const statusCounts = PROTECTION_MODULE_CATALOG.reduce<Record<string, number>>((acc, module) => {
+    acc[module.status] = (acc[module.status] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-          Shield Modules
-        </h1>
-        <p className="text-[#94A3B8] text-sm mt-1">
-          Available and upcoming protection modules for your Web3 stack.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E]">
+            <ShieldCheck size={13} /> Agent Shield Live
+          </div>
+          <h1 className="mt-3 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Agent Shield</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">
+            The live pre-execution protection system for autonomous blockchain agents. Agent Shield authenticates the agent, loads its configuration and policy, runs relevant checks, returns Allowed / Blocked / Review Required, stores the audit record, and submits a Casper decision proof.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Btn variant="secondary" onClick={() => onNavigate("intent-playground")}><Send size={16} /> Test Intent</Btn>
+          <Btn variant="primary" onClick={() => onNavigate("connected-agents")}><Plus size={16} /> Register Agent</Btn>
+        </div>
       </div>
-      <div className="space-y-8">
-        {shieldModuleGroups.map((group) => (
-          <section key={group.group} className="space-y-4">
-            <div>
-              <h2 className="font-['Space_Grotesk'] text-lg font-semibold text-[#F8FAFC]">
-                {group.group}
-              </h2>
-              <p className="mt-1 text-sm leading-relaxed text-[#94A3B8]">
-                {group.description}
-              </p>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {[
+          ["Connected Agents", agents.length, Bot],
+          ["Active Policies", policies.filter((policy) => policy.status === "Active").length, FileText],
+          ["Average Coverage", `${averageCoverage}%`, ShieldCheck],
+          ["Decisions", auditLogs.length, Activity],
+          ["Gateway", apiOnline ? "Online" : "Unavailable", Server],
+        ].map(([label, value, Icon]) => {
+          const MetricIcon = Icon as typeof Bot;
+          return (
+            <div key={String(label)} className={`${CARD} p-4`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{String(value)}</div>
+                  <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{String(label)}</div>
+                </div>
+                <MetricIcon size={18} className="text-[#22D3EE]" />
+              </div>
             </div>
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {group.modules.map((m) => (
-                <div key={m.id} className={`${CARD_GLOW} p-6 flex flex-col`}>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-3 bg-[#22D3EE]/10 rounded-xl">
-                      <Shield size={22} className="text-[#22D3EE]" />
-                    </div>
-                    <StatusBadge status={m.status} />
+          );
+        })}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className={`${CARD_GLOW} p-5`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className={SECTION_TITLE}>Security Pipeline</h2>
+              <p className="mt-1 text-sm text-[#94A3B8]">Every intent follows this deterministic flow. Only relevant checks are evaluated.</p>
+            </div>
+            {latestLog && <DecisionBadge decision={latestLog.decision} />}
+          </div>
+          <div className="mt-5">
+            <PipelineTimeline stages={latestLog?.pipelineStages} />
+          </div>
+        </div>
+
+        <div className={`${CARD_GLOW} p-5`}>
+          <h2 className={SECTION_TITLE}>Current Protection Status</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">Statuses reflect actual backend enforcement, foundation work, and roadmap state.</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {(["Live", "Foundation Available", "Preview", "Planned"] as const).map((status) => (
+              <div key={status} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">
+                <StatusBadge status={status} />
+                <div className="mt-2 text-2xl font-bold text-[#F8FAFC]">{statusCounts[status] || 0}</div>
+                <div className="mt-1 text-xs text-[#94A3B8]">protection modules</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
+            A module marked unavailable in an audit finding did not contribute a pass result. Planned and Preview modules never silently authorize execution.
+          </div>
+        </div>
+      </div>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className={SECTION_TITLE}>Agent Shield Protection Modules</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">Modules are selected and recommended according to each agent’s execution capabilities.</p>
+        </div>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {PROTECTION_MODULE_CATALOG.map((module) => (
+            <div key={module.id} className={`${CARD} flex flex-col p-5`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]"><Shield size={20} /></div>
+                <StatusBadge status={module.status} />
+              </div>
+              <h3 className="mt-4 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{module.name}</h3>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-[#94A3B8]">{module.description}</p>
+              <div className="mt-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Used by</div>
+                <CapabilityChips capabilities={module.capabilities} compact />
+              </div>
+              <div className="mt-4 border-t border-[#1E293B] pt-4">
+                <div className="text-xs font-semibold text-[#F8FAFC]">Current checks</div>
+                <div className="mt-2 space-y-1">
+                  {(module.currentChecks.length ? module.currentChecks : ["No current backend checks"]).map((check) => (
+                    <div key={check} className="flex items-start gap-2 text-xs text-[#94A3B8]"><span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#22D3EE]" />{check}</div>
+                  ))}
+                </div>
+              </div>
+              {module.futureChecks.length > 0 && (
+                <div className="mt-3 rounded-lg bg-[#0B1220] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Future checks</div>
+                  <div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{module.futureChecks.join(" · ")}</div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+function AgentRegistrationWizard({
+  open,
+  policies,
+  onClose,
+  onRegisterAgent,
+  onCreatePolicy,
+  onCreated,
+}: {
+  open: boolean;
+  policies: Policy[];
+  onClose: () => void;
+  onRegisterAgent: (agent: AgentRegistrationDraft) => Promise<Agent | undefined> | Agent | undefined;
+  onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
+  onCreated: (agent: Agent) => void;
+}) {
+  const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
+  const [copied, setCopied] = useState("");
+  const [draft, setDraft] = useState({
+    name: "",
+    purpose: "",
+    permissionLevel: "Limited Execution" as PermissionLevel,
+    executionCapabilities: ["Trading"] as ExecutionCapability[],
+    policyMode: "recommended" as "recommended" | "existing" | "custom",
+    templateType: "Conservative Trading",
+    existingPolicyId: "",
+    policyName: "Conservative Trading Policy",
+    maxTransaction: 25,
+    dailyLimit: 100,
+    approvalThreshold: 15,
+    trustedContractsText: "",
+    blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update"] as string[],
+    riskMode: "Conservative" as RiskMode,
+  });
+
+  const steps = ["Agent Details", "Capabilities", "Protection", "Starter Policy", "Review", "Quick Start"];
+  const capabilities = normalizeCapabilities(draft.executionCapabilities);
+  const modules = recommendedModules(capabilities);
+  const selectedExistingPolicy = policies.find((policy) => policy.id === draft.existingPolicyId);
+
+  const applyTemplate = useCallback((templateName: string) => {
+    const template = POLICY_TEMPLATES[templateName] || POLICY_TEMPLATES.Custom;
+    setDraft((current) => ({
+      ...current,
+      templateType: templateName,
+      policyName: templateName === "Custom" ? `${current.name || "Agent"} Custom Policy` : `${templateName} Policy`,
+      maxTransaction: template.maxTransaction,
+      dailyLimit: template.dailyLimit,
+      approvalThreshold: template.approvalThreshold,
+      trustedContractsText: template.trustedContracts.join("\n"),
+      blockedActions: [...template.blockedActions],
+      riskMode: template.riskMode,
+    }));
+  }, []);
+
+  const toggleCapability = useCallback((capability: ExecutionCapability) => {
+    setDraft((current) => {
+      const selected = current.executionCapabilities.includes(capability)
+        ? current.executionCapabilities.filter((item) => item !== capability)
+        : [...current.executionCapabilities, capability];
+      const safe = selected.length > 0 ? selected : current.executionCapabilities;
+      const recommended = recommendedPolicyTemplate(safe);
+      const template = POLICY_TEMPLATES[recommended];
+      return {
+        ...current,
+        executionCapabilities: safe,
+        ...(current.policyMode === "recommended" ? {
+          templateType: recommended,
+          policyName: `${recommended} Policy`,
+          maxTransaction: template.maxTransaction,
+          dailyLimit: template.dailyLimit,
+          approvalThreshold: template.approvalThreshold,
+          trustedContractsText: template.trustedContracts.join("\n"),
+          blockedActions: [...template.blockedActions],
+          riskMode: template.riskMode,
+        } : {}),
+      };
+    });
+  }, []);
+
+  const canContinue = step === 1
+    ? Boolean(draft.name.trim() && draft.purpose.trim())
+    : step === 2
+      ? capabilities.length > 0
+      : step === 4
+        ? draft.policyMode === "existing"
+          ? Boolean(selectedExistingPolicy)
+          : Boolean(draft.policyName.trim() && draft.maxTransaction > 0 && draft.dailyLimit > 0 && draft.approvalThreshold >= 0)
+        : true;
+
+  const closeWizard = useCallback(() => {
+    if (step === 6) {
+      setStep(1);
+      setCreatedAgent(null);
+      setError("");
+      setCopied("");
+      setDraft({
+        name: "",
+        purpose: "",
+        permissionLevel: "Limited Execution",
+        executionCapabilities: ["Trading"],
+        policyMode: "recommended",
+        templateType: "Conservative Trading",
+        existingPolicyId: "",
+        policyName: "Conservative Trading Policy",
+        maxTransaction: 25,
+        dailyLimit: 100,
+        approvalThreshold: 15,
+        trustedContractsText: "",
+        blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update"],
+        riskMode: "Conservative",
+      });
+    }
+    onClose();
+  }, [onClose, step]);
+
+  const createAgentAndPolicy = useCallback(async () => {
+    setSubmitting(true);
+    setError("");
+    try {
+      const legacyType: AgentType = capabilities.includes("Treasury Operations")
+        ? "Treasury Agent"
+        : capabilities.includes("Trading")
+          ? "Trading Agent"
+          : capabilities.includes("dApp Interactions")
+            ? "DeFi Agent"
+            : "Custom Agent";
+      const agent = await onRegisterAgent({
+        name: draft.name.trim(),
+        purpose: draft.purpose.trim(),
+        permissionLevel: draft.permissionLevel,
+        type: legacyType,
+        executionCapabilities: capabilities,
+        capabilityConfiguration: {
+          recommendedModules: modules.map((module) => module.id),
+          configurationVersion: 1,
+        },
+        onboardingStatus: "complete",
+      });
+      if (!agent) throw new Error("The agent could not be registered.");
+
+      const existing = draft.policyMode === "existing" ? selectedExistingPolicy : undefined;
+      const policyValues = existing ? {
+        name: `${agent.name} · ${existing.name}`,
+        maxTransaction: existing.maxTransaction,
+        dailyLimit: existing.dailyLimit,
+        approvalThreshold: existing.approvalThreshold,
+        trustedContracts: existing.trustedContracts,
+        blockedActions: existing.blockedActions,
+        riskMode: existing.riskMode,
+        templateType: existing.templateType || "Existing Policy Template",
+      } : {
+        name: draft.policyName.trim(),
+        maxTransaction: draft.maxTransaction,
+        dailyLimit: draft.dailyLimit,
+        approvalThreshold: draft.approvalThreshold,
+        trustedContracts: draft.trustedContractsText.split("\n").map((item) => item.trim()).filter(Boolean),
+        blockedActions: draft.blockedActions,
+        riskMode: draft.riskMode,
+        templateType: draft.templateType,
+      };
+
+      const policy = await onCreatePolicy({
+        ...policyValues,
+        agentId: agent.id,
+        status: "Active",
+        capabilityScope: capabilities,
+        structuredRules: {
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode"],
+          configurationOnly: [],
+        },
+      });
+      if (!policy) {
+        setError("The agent was registered, but the starter policy could not be created. Create a policy from the Policies page before sending intents.");
+      }
+      setCreatedAgent(agent);
+      onCreated(agent);
+      setStep(6);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to complete agent registration.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [capabilities, draft, modules, onCreatePolicy, onCreated, onRegisterAgent, selectedExistingPolicy]);
+
+  const copyValue = useCallback(async (label: string, value: string) => {
+    if (!value) return;
+    const ok = await writeClipboard(value);
+    setCopied(ok ? label : "failed");
+    setTimeout(() => setCopied(""), 1500);
+  }, []);
+
+  if (!open) return null;
+
+  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
+  const verifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
+  const requestExample = createdAgent ? `curl -X POST "${gatewayUrl}" \\
+  -H "Content-Type: application/json" \\
+  -H "x-magen3-agent-key: ${createdAgent.apiKey || "PASTE_AGENT_API_KEY"}" \\
+  -d '{
+    "source": "${createdAgent.name}",
+    "agentId": "${createdAgent.id}",
+    "executionWalletAddress": "EXECUTION_WALLET_PUBLIC_KEY",
+    "goal": "Describe the intended blockchain action",
+    "action": {
+      "type": "Stake",
+      "amount": 15,
+      "asset": "CSPR",
+      "target": "VALIDATOR_OR_CONTRACT_ADDRESS",
+      "targetType": "Trusted Contract"
+    }
+  }'` : "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
+      <div className="absolute inset-0 bg-black/70" />
+      <div className={`${CARD_GLOW} relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden`}>
+        <div className="border-b border-[#1E293B] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Guided Onboarding</div>
+              <h2 className="mt-1 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Register and protect an external agent</h2>
+              <p className="mt-1 text-sm text-[#94A3B8]">Configure identity, execution capabilities, protection, policy, and integration credentials.</p>
+            </div>
+            <button type="button" onClick={closeWizard} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]" aria-label="Close registration wizard"><X size={18} /></button>
+          </div>
+          <div className="mt-5 grid grid-cols-6 gap-2">
+            {steps.map((label, index) => {
+              const number = index + 1;
+              const active = step === number;
+              const completed = step > number;
+              return (
+                <div key={label} className="min-w-0">
+                  <div className={`h-1.5 rounded-full ${completed ? "bg-[#22C55E]" : active ? "bg-[#22D3EE]" : "bg-[#1E293B]"}`} />
+                  <div className={`mt-1 hidden truncate text-[10px] font-semibold sm:block ${active ? "text-[#22D3EE]" : completed ? "text-[#22C55E]" : "text-[#64748B]"}`}>{number}. {label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+          {step === 1 && (
+            <div className="mx-auto max-w-2xl space-y-5">
+              <div>
+                <h3 className={SECTION_TITLE}>Agent Details</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">Name the external agent and describe the blockchain work it performs.</p>
+              </div>
+              <InputField label="Agent Name" value={draft.name} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} placeholder="e.g. YieldBot AI" />
+              <div>
+                <label className={LABEL_CLS}>Agent Purpose</label>
+                <textarea className={`${INPUT_CLS} resize-none`} rows={4} value={draft.purpose} onChange={(event) => setDraft((current) => ({ ...current, purpose: event.target.value }))} placeholder="Describe what this agent prepares or executes and who uses it." />
+              </div>
+              <SelectField label="Permission Level" value={draft.permissionLevel} onChange={(value) => setDraft((current) => ({ ...current, permissionLevel: value as PermissionLevel }))} options={["Read Only", "Limited Execution", "Full Execution with Review"]} />
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-6">
+              <div>
+                <h3 className={SECTION_TITLE}>Execution Capabilities</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">Select one or more capabilities. These recommend protection and policy defaults; they do not replace the editable policy.</p>
+              </div>
+              <div>
+                <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#64748B]">Convenience packs</div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {CAPABILITY_PACKS.map((pack) => (
+                    <button type="button" key={pack.name} onClick={() => setDraft((current) => {
+                      const recommendation = recommendedPolicyTemplate(pack.capabilities);
+                      const template = POLICY_TEMPLATES[recommendation];
+                      return {
+                        ...current,
+                        executionCapabilities: [...pack.capabilities],
+                        ...(current.policyMode === "recommended" ? {
+                          templateType: recommendation,
+                          policyName: `${recommendation} Policy`,
+                          maxTransaction: template.maxTransaction,
+                          dailyLimit: template.dailyLimit,
+                          approvalThreshold: template.approvalThreshold,
+                          trustedContractsText: template.trustedContracts.join("\n"),
+                          blockedActions: [...template.blockedActions],
+                          riskMode: template.riskMode,
+                        } : {}),
+                      };
+                    })} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4 text-left hover:border-[#22D3EE]/40">
+                      <div className="font-semibold text-[#F8FAFC]">{pack.name}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{pack.description}</p>
+                      <div className="mt-3"><CapabilityChips capabilities={pack.capabilities} compact /></div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {EXECUTION_CAPABILITY_CATALOG.map((capability) => {
+                  const selected = capabilities.includes(capability.id);
+                  return (
+                    <button type="button" key={capability.id} onClick={() => toggleCapability(capability.id)} className={`rounded-xl border p-4 text-left transition-colors ${selected ? "border-[#22D3EE]/50 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold text-[#F8FAFC]">{capability.id}</div>
+                        <span className={`flex h-5 w-5 items-center justify-center rounded border ${selected ? "border-[#22D3EE] bg-[#22D3EE] text-[#050B14]" : "border-[#334155]"}`}>{selected && <CheckCircle size={14} />}</span>
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{capability.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-5">
+              <div>
+                <h3 className={SECTION_TITLE}>Recommended Protection</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">Recommendations are derived from the selected capabilities. Statuses distinguish current enforcement from roadmap work.</p>
+              </div>
+              <CapabilityChips capabilities={capabilities} />
+              <div className="grid gap-3 md:grid-cols-2">
+                {modules.map((module) => (
+                  <div key={module.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+                    <div className="flex items-start justify-between gap-3"><div className="font-semibold text-[#F8FAFC]">{module.name}</div><StatusBadge status={module.status} /></div>
+                    <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{module.description}</p>
+                    <div className="mt-3 text-[11px] text-[#64748B]">{module.configurable ? "Configuration available through policy fields." : "No live configuration is exposed yet."}</div>
                   </div>
-                  <h3 className="font-bold text-[#F8FAFC] text-lg mb-2 font-['Space_Grotesk']">
-                    {m.name}
-                  </h3>
-                  <p className="text-sm text-[#94A3B8] leading-relaxed mb-4 flex-1">
-                    {m.description}
-                  </p>
-                  <div className="flex items-center justify-between pt-4 border-t border-[#1E293B]">
-                    <span className="text-xs text-[#94A3B8] bg-[#0B1220] px-2.5 py-1 rounded-full">
-                      {m.riskCategory}
-                    </span>
-                    {m.status === "Available" ? (
-                      <Btn
-                        variant="primary"
-                        size="sm"
-                        onClick={() => onNavigate("connected-agents")}
-                      >
-                        Open Shield
-                      </Btn>
-                    ) : (
-                      <Btn variant="secondary" size="sm" disabled>
-                        Preview
-                      </Btn>
-                    )}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-5">
+              <div>
+                <h3 className={SECTION_TITLE}>Starter Policy</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">Prefill only fields the current backend enforces. You can edit them now or later.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {(["recommended", "existing", "custom"] as const).map((mode) => (
+                  <button type="button" key={mode} onClick={() => {
+                    setDraft((current) => ({ ...current, policyMode: mode }));
+                    if (mode === "recommended") applyTemplate(recommendedPolicyTemplate(capabilities));
+                    if (mode === "custom") applyTemplate("Custom");
+                  }} className={`rounded-xl border p-4 text-left ${draft.policyMode === mode ? "border-[#22D3EE]/50 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220]"}`}>
+                    <div className="font-semibold capitalize text-[#F8FAFC]">{mode === "existing" ? "Use existing as template" : `${mode} policy`}</div>
+                    <p className="mt-1 text-xs text-[#94A3B8]">{mode === "recommended" ? "Capability-aware secure defaults." : mode === "existing" ? "Clone values from a current policy without rebinding it." : "Start from editable general defaults."}</p>
+                  </button>
+                ))}
+              </div>
+
+              {draft.policyMode === "existing" ? (
+                <div>
+                  <label className={LABEL_CLS}>Existing Policy Template</label>
+                  <select className={INPUT_CLS} value={draft.existingPolicyId} onChange={(event) => setDraft((current) => ({ ...current, existingPolicyId: event.target.value }))}>
+                    <option value="">Select a policy to clone</option>
+                    {policies.map((policy) => (
+                      <option key={policy.id} value={policy.id}>{policy.name} · {policy.riskMode} · {policy.maxTransaction} CSPR max</option>
+                    ))}
+                  </select>
+                  {policies.length === 0 && <div className="mt-2 rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">No existing policies are available. Choose Recommended or Custom to continue.</div>}
+                  <p className="mt-2 text-xs leading-relaxed text-[#64748B]">The values are cloned into a new policy for this agent. The original policy and its agent binding are not changed.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SelectField label="Policy Template" value={draft.templateType} onChange={applyTemplate} options={Object.keys(POLICY_TEMPLATES)} />
+                    <InputField label="Policy Name" value={draft.policyName} onChange={(value) => setDraft((current) => ({ ...current, policyName: value }))} />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <InputField label="Maximum Transaction (CSPR)" type="number" value={String(draft.maxTransaction)} onChange={(value) => setDraft((current) => ({ ...current, maxTransaction: Number(value) }))} />
+                    <InputField label="Daily Limit (CSPR)" type="number" value={String(draft.dailyLimit)} onChange={(value) => setDraft((current) => ({ ...current, dailyLimit: Number(value) }))} />
+                    <InputField label="Review Threshold (CSPR)" type="number" value={String(draft.approvalThreshold)} onChange={(value) => setDraft((current) => ({ ...current, approvalThreshold: Number(value) }))} />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SelectField label="Risk Mode" value={draft.riskMode} onChange={(value) => setDraft((current) => ({ ...current, riskMode: value as RiskMode }))} options={["Conservative", "Balanced", "Aggressive"]} />
+                    <div>
+                      <label className={LABEL_CLS}>Trusted Contracts / Destinations</label>
+                      <textarea className={`${INPUT_CLS} resize-none font-mono text-xs`} rows={4} value={draft.trustedContractsText} onChange={(event) => setDraft((current) => ({ ...current, trustedContractsText: event.target.value }))} placeholder="One address or contract per line" />
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, and risk mode. Slippage, simulation, oracle, bridge, and threat-intelligence settings remain Preview or Planned.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="space-y-5">
+              <div>
+                <h3 className={SECTION_TITLE}>Review Configuration</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">Confirm the agent identity, capabilities, protection recommendations, and enforced starter policy.</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className={`${CARD} p-4`}>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Agent</div>
+                  <div className="mt-2 text-lg font-bold text-[#F8FAFC]">{draft.name}</div>
+                  <p className="mt-1 text-sm text-[#94A3B8]">{draft.purpose}</p>
+                  <div className="mt-3"><CapabilityChips capabilities={capabilities} /></div>
+                </div>
+                <div className={`${CARD} p-4`}>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Policy</div>
+                  <div className="mt-2 text-lg font-bold text-[#F8FAFC]">{selectedExistingPolicy?.name || draft.policyName}</div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-[#0B1220] p-2 text-[#94A3B8]">Max Tx <span className="block text-[#F8FAFC]">{selectedExistingPolicy?.maxTransaction ?? draft.maxTransaction} CSPR</span></div>
+                    <div className="rounded-lg bg-[#0B1220] p-2 text-[#94A3B8]">Daily <span className="block text-[#F8FAFC]">{selectedExistingPolicy?.dailyLimit ?? draft.dailyLimit} CSPR</span></div>
+                    <div className="rounded-lg bg-[#0B1220] p-2 text-[#94A3B8]">Review <span className="block text-[#F8FAFC]">{selectedExistingPolicy?.approvalThreshold ?? draft.approvalThreshold} CSPR</span></div>
+                    <div className="rounded-lg bg-[#0B1220] p-2 text-[#94A3B8]">Mode <span className="block text-[#F8FAFC]">{selectedExistingPolicy?.riskMode ?? draft.riskMode}</span></div>
                   </div>
                 </div>
-              ))}
+              </div>
+              <div className={`${CARD} p-4`}>
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Recommended modules</div>
+                <div className="mt-3 flex flex-wrap gap-2">{modules.map((module) => <span key={module.id} className="inline-flex items-center gap-2 rounded-full border border-[#1E293B] bg-[#0B1220] px-3 py-1.5 text-xs text-[#F8FAFC]">{module.name}<StatusBadge status={module.status} /></span>)}</div>
+              </div>
             </div>
-          </section>
-        ))}
+          )}
+
+          {step === 6 && createdAgent && (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-[#22C55E]/30 bg-[#22C55E]/10 p-4">
+                <div className="flex items-start gap-3"><CheckCircle size={22} className="flex-shrink-0 text-[#22C55E]" /><div><h3 className="font-bold text-[#F8FAFC]">Agent registration complete</h3><p className="mt-1 text-sm text-[#BBF7D0]">Copy the raw API key now. Magen3 stores only its hash and preview after this session.</p></div></div>
+              </div>
+              {error && <div className="rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-3 text-sm text-[#F59E0B]">{error}</div>}
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ["Agent ID", createdAgent.id],
+                  ["API Key", createdAgent.apiKey || "Not available—rotate from Credentials"],
+                  ["Gateway URL", gatewayUrl],
+                  ["Verify URL", `${verifyUrl}?agentId=${createdAgent.id}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                    <div className="flex items-center justify-between gap-2"><span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span><button type="button" onClick={() => copyValue(label, value)} className="text-[#22D3EE] hover:text-[#F8FAFC]"><Copy size={13} /></button></div>
+                    <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+                  </div>
+                ))}
+              </div>
+              {copied === "failed" && <div className="text-xs text-[#F59E0B]">Browser clipboard access was blocked. Select and copy the value manually.</div>}
+              <div className="rounded-xl border border-[#1E293B] bg-[#020617] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3"><div><div className="font-semibold text-[#F8FAFC]">Quick-start cURL</div><div className="text-xs text-[#94A3B8]">Uses the real current gateway route and header.</div></div><Btn variant="outline" size="sm" onClick={() => copyValue("quick start", requestExample)}><Copy size={13} /> {copied === "quick start" ? "Copied" : "Copy"}</Btn></div>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-[#94A3B8]"><code>{requestExample}</code></pre>
+              </div>
+            </div>
+          )}
+
+          {error && step !== 6 && <div className="mt-5 rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-[#1E293B] p-4 sm:px-6">
+          <Btn variant="secondary" onClick={() => step > 1 && step < 6 ? setStep((current) => current - 1) : closeWizard()} disabled={submitting}>{step > 1 && step < 6 ? "Back" : step === 6 ? "Close" : "Cancel"}</Btn>
+          {step < 5 && <Btn variant="primary" onClick={() => setStep((current) => current + 1)} disabled={!canContinue}><ArrowRight size={15} /> Next</Btn>}
+          {step === 5 && <Btn variant="primary" onClick={createAgentAndPolicy} disabled={submitting || !canContinue}>{submitting ? "Creating…" : "Create Agent and Policy"}</Btn>}
+          {step === 6 && <Btn variant="primary" onClick={closeWizard}>Open Agent Control Center</Btn>}
+        </div>
       </div>
     </div>
   );
@@ -1560,6 +2193,8 @@ function ConnectedAgentsPage({
   onRegisterAgent,
   onRotateAgentApiKey,
   onRevokeAgent,
+  onCreatePolicy,
+  onNavigate,
   auditLogs,
   walletAddress,
   apiOnline,
@@ -1569,16 +2204,12 @@ function ConnectedAgentsPage({
   onRegisterAgent: (agent: AgentRegistrationDraft) => Promise<Agent | undefined> | Agent | undefined;
   onRotateAgentApiKey: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   onRevokeAgent: (id: string) => Promise<Agent | undefined> | Agent | undefined;
+  onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
+  onNavigate: (page: Page) => void;
   auditLogs: AuditLog[];
   walletAddress: string;
   apiOnline: boolean;
 }) {
-  const [form, setForm] = useState({
-    name: "",
-    type: "DeFi Agent" as AgentType,
-    purpose: "",
-    permissionLevel: "Limited Execution" as PermissionLevel,
-  });
   const [latestCredentials, setLatestCredentials] = useState<Agent | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [copied, setCopied] = useState("");
@@ -1740,22 +2371,6 @@ ${snippet}
 `;
   }, [envTemplate, gatewayUrl, gatewayVerifyUrl]);
 
-  const registerAgent = useCallback(async () => {
-    if (!form.name.trim()) return;
-    const created = await onRegisterAgent({
-      name: form.name,
-      type: form.type,
-      purpose: form.purpose,
-      permissionLevel: form.permissionLevel,
-    });
-    if (created) {
-      setLatestCredentials(created);
-      setSelectedAgentId(created.id);
-      setShowRegister(false);
-    }
-    setForm({ name: "", type: "DeFi Agent", purpose: "", permissionLevel: "Limited Execution" });
-  }, [form, onRegisterAgent]);
-
   const rotateKey = useCallback(async (agentId: string) => {
     const rotated = await onRotateAgentApiKey(agentId);
     if (rotated) {
@@ -1793,7 +2408,8 @@ ${snippet}
       !query ||
       agent.name.toLowerCase().includes(query) ||
       agent.id.toLowerCase().includes(query) ||
-      agent.type.toLowerCase().includes(query);
+      agent.type.toLowerCase().includes(query) ||
+      normalizeCapabilities(agent.executionCapabilities, agent.type).some((capability) => capability.toLowerCase().includes(query));
     const matchesStatus =
       statusFilter === "All" ||
       (statusFilter === "No Policy" ? !policy : agent.status === statusFilter);
@@ -1924,7 +2540,7 @@ ${snippet}
                 className={`${INPUT_CLS} pl-9`}
                 value={agentSearch}
                 onChange={(e) => setAgentSearch(e.target.value)}
-                placeholder="Search by name, ID, or type"
+                placeholder="Search by name, ID, or capability"
               />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1969,7 +2585,9 @@ ${snippet}
               </div>
             ) : filteredAgents.map((agent) => {
               const assignedPolicy = getActivePolicy(policies, agent.id);
-              const latestLog = auditLogs.find((log) => log.agentId === agent.id);
+              const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
+              const latestLog = agentLogs[0];
+              const coverage = calculateSecurityCoverage(agent, assignedPolicy, agentLogs);
               const active = selectedAgent?.id === agent.id;
               return (
                 <button
@@ -1994,10 +2612,11 @@ ${snippet}
                     </div>
                     <StatusBadge status={assignedPolicy ? "Active" : "Inactive"} />
                   </div>
+                  <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(agent.executionCapabilities, agent.type)} compact /></div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-lg bg-[#050B14] p-2">
-                      <div className="text-[#94A3B8]">Type</div>
-                      <div className="truncate text-[#F8FAFC]">{agent.type}</div>
+                      <div className="text-[#94A3B8]">Security Coverage</div>
+                      <div className="truncate font-semibold text-[#F8FAFC]">{coverage.score}%</div>
                     </div>
                     <div className="rounded-lg bg-[#050B14] p-2">
                       <div className="text-[#94A3B8]">Last Decision</div>
@@ -2034,7 +2653,7 @@ ${snippet}
               { id: "overview", label: "Overview", icon: Eye },
               { id: "integration", label: "Integration", icon: Code2 },
               { id: "activity", label: "Activity", icon: Activity },
-              { id: "security", label: "Security", icon: Lock },
+              { id: "security", label: "Credentials", icon: Lock },
             ] as const;
             return (
               <div className="space-y-5">
@@ -2046,7 +2665,8 @@ ${snippet}
                       <StatusBadge status={selectedPolicy ? "Active" : "Inactive"} />
                     </div>
                     <p className="text-sm text-[#94A3B8]">{selectedAgent.purpose || "No purpose added yet."}</p>
-                    <div className="mt-2 text-xs text-[#94A3B8]">{selectedAgent.type} · {selectedAgent.permissionLevel}</div>
+                    <div className="mt-2 text-xs text-[#94A3B8]">{selectedAgent.permissionLevel}</div>
+                    <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type)} /></div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Btn variant="secondary" size="sm" onClick={() => copyText("agent id", selectedAgent.id)}>
@@ -2076,6 +2696,18 @@ ${snippet}
 
                 {activeTab === "overview" && (
                   <div className="space-y-4">
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} onNavigate={onNavigate} />
+                      <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} />
+                    </div>
+                    <AgentInsightsPanel agent={selectedAgent} logs={auditLogs} />
+                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div><h3 className="text-sm font-semibold text-[#F8FAFC]">Execution Capabilities</h3><p className="mt-1 text-xs text-[#94A3B8]">Capabilities shape recommendations and relevant module coverage; the active policy remains the authorization source.</p></div>
+                        <Btn variant="secondary" size="sm" onClick={() => onNavigate("policies")}><FileText size={14} /> Manage Policy</Btn>
+                      </div>
+                      <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type)} /></div>
+                    </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       {[
                         ["Agent ID", selectedAgent.id],
@@ -2299,76 +2931,18 @@ ${snippet}
         </div>
       </div>
 
-      {showRegister && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowRegister(false)} />
-          <div className={`${CARD_GLOW} relative w-full max-w-xl p-6`}>
-            <div className="flex items-start justify-between gap-4 mb-5">
-              <div>
-                <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Register External Agent</h2>
-                <p className="text-sm text-[#94A3B8] mt-1">
-                  Add the external app or autonomous agent that will call Magen3 before execution.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowRegister(false)}
-                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <InputField
-                label="Agent Name"
-                value={form.name}
-                onChange={(v) => setForm((p) => ({ ...p, name: v }))}
-                placeholder="e.g. YieldBot AI"
-              />
-              <SelectField
-                label="Agent Type"
-                value={form.type}
-                onChange={(v) => setForm((p) => ({ ...p, type: v as AgentType }))}
-                options={[
-                  "DeFi Agent",
-                  "Trading Agent",
-                  "Treasury Agent",
-                  "RWA Agent",
-                  "Oracle Agent",
-                  "Custom Agent",
-                ]}
-              />
-              <div>
-                <label className={LABEL_CLS}>Agent Purpose</label>
-                <textarea
-                  className={`${INPUT_CLS} resize-none`}
-                  rows={3}
-                  value={form.purpose}
-                  onChange={(e) => setForm((p) => ({ ...p, purpose: e.target.value }))}
-                  placeholder="Describe what this external agent does..."
-                />
-              </div>
-              <SelectField
-                label="Permission Level"
-                value={form.permissionLevel}
-                onChange={(v) => setForm((p) => ({ ...p, permissionLevel: v as PermissionLevel }))}
-                options={[
-                  "Read Only",
-                  "Limited Execution",
-                  "Full Execution with Review",
-                ]}
-              />
-              <div className="flex justify-end gap-2 pt-2">
-                <Btn variant="secondary" onClick={() => setShowRegister(false)}>
-                  Cancel
-                </Btn>
-                <Btn variant="primary" onClick={registerAgent}>
-                  <Plus size={16} /> Register Agent
-                </Btn>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AgentRegistrationWizard
+        open={showRegister}
+        policies={policies}
+        onClose={() => setShowRegister(false)}
+        onRegisterAgent={onRegisterAgent}
+        onCreatePolicy={onCreatePolicy}
+        onCreated={(agent) => {
+          setLatestCredentials(agent);
+          setSelectedAgentId(agent.id);
+          setActiveTab("overview");
+        }}
+      />
     </div>
   );
 }
@@ -2386,7 +2960,7 @@ function PoliciesPage({
 }: {
   agents: Agent[];
   policies: Policy[];
-  onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<void> | void;
+  onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
   onUpdatePolicy: (id: string, policy: Partial<Policy>) => Promise<void> | void;
   walletAddress: string;
 }) {
@@ -2787,6 +3361,12 @@ function AuditLogPage({
     : undefined;
 
   useEffect(() => {
+    if (!selected) return;
+    const refreshed = auditLogs.find((log) => log.id === selected.id);
+    if (refreshed && refreshed !== selected) setSelected(refreshed);
+  }, [auditLogs, selected?.id]);
+
+  useEffect(() => {
     setCasperPrepared(null);
     setCasperError("");
     setDeployHash(selected?.txHash && isRealCasperDeployHash(selected.txHash) ? normalizeCasperDeployHash(selected.txHash) : "");
@@ -2902,8 +3482,6 @@ function AuditLogPage({
         >
           <option className="bg-[#0B1220]">All</option>
           <option className="bg-[#0B1220]">Agent Shield</option>
-          <option className="bg-[#0B1220]">Contract Shield</option>
-          <option className="bg-[#0B1220]">DAO Shield</option>
         </select>
         <select
           className={`${INPUT_CLS} w-auto min-w-36`}
@@ -3125,6 +3703,37 @@ function AuditLogPage({
                   {selected.reason}
                 </p>
               </div>
+
+              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Security Guidance</div>
+                <div className="mt-3 space-y-3 text-sm">
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Why this happened</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.primaryReason || selected.reason || "Magen3 returned this decision from the active deterministic policy."}</p></div>
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Policy rule</span><p className="mt-1 text-[#F8FAFC]">{selected.triggeredRule || "No single blocking rule was recorded."}</p></div>
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Suggested resolution</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.suggestedResolution || (selected.decision === "Allowed" ? "Proceed to wallet signing only after confirming the displayed execution parameters." : "Review the active policy and change only authorized request parameters before retrying.")}</p></div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Execution Capabilities</div>
+                <div className="mt-2"><CapabilityChips capabilities={normalizeCapabilities(selected.capabilityContext)} /></div>
+              </div>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Pipeline</div>
+                <div className="mt-4"><PipelineTimeline stages={selected.pipelineStages} /></div>
+              </div>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Protection Findings</div>
+                <div className="mt-3"><FindingsPanel findings={selected.moduleFindings} /></div>
+              </div>
+
+              {selected.originalIntent && (
+                <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Original Intent</summary>
+                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify(selected.originalIntent, null, 2)}</pre>
+                </details>
+              )}
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-3">Proof Timeline</div>
@@ -3454,17 +4063,16 @@ const docsSidebar = [
     ],
   },
   {
-    group: "Shield Modules",
+    group: "Agent Shield",
     items: [
-      { id: "shield-modules-doc", label: "Shield Overview" },
-      { id: "shield-modules-doc", label: "Execution Shields" },
-      { id: "shield-modules-doc", label: "Infrastructure Shields" },
-      { id: "shield-modules-doc", label: "Intelligence Shields" },
-      { id: "agent-shield-doc", label: "Agent Shield" },
+      { id: "agent-shield-doc", label: "Agent Shield Overview" },
+      { id: "shield-modules-doc", label: "Protection Modules" },
+      { id: "agent-flow-doc", label: "Security Pipeline" },
+      { id: "connected-agents-doc", label: "Execution Capabilities" },
     ],
   },
   {
-    group: "Agent Shield",
+    group: "Agent Management",
     items: [
       { id: "connected-agents-doc", label: "Connected Agents" },
       { id: "api-keys-doc", label: "Agent API Keys" },
@@ -3506,7 +4114,7 @@ const docsOnThisPage = [
   { id: "intro", label: "What is Magen3?" },
   { id: "architecture", label: "Platform Architecture" },
   { id: "cross-chain-doc", label: "Cross-chain Model" },
-  { id: "shield-modules-doc", label: "Shield Modules" },
+  { id: "shield-modules-doc", label: "Protection Modules" },
   { id: "agent-flow-doc", label: "Agent Shield Flow" },
   { id: "connected-agents-doc", label: "Connected Agents" },
   { id: "api-keys-doc", label: "Agent API Keys" },
@@ -3616,7 +4224,7 @@ function DocsFlowArrow() {
 function DocsPage() {
   const [search, setSearch] = useState("");
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    new Set(["Getting Started", "Shield Modules", "Agent Shield", "Developer Platform"])
+    new Set(["Getting Started", "Agent Shield", "Agent Management", "Developer Platform"])
   );
 
   const filteredSidebar = docsSidebar
@@ -3729,13 +4337,12 @@ Content-Type: application/json
               Magen3 Docs
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">
-              Developer and security documentation for Magen3 Shield modules, policy enforcement,
-              agent gateway integrations, and Casper decision proofs.
+              Developer and security documentation for the Magen3 Platform, Agent Shield, execution capabilities, protection modules, policies, integrations, audit logs, and Casper decision proofs.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <DocsBadge label="Casper Testnet" variant="warning" />
               <DocsBadge label="Cross-chain Gateway" variant="info" />
-              <DocsBadge label="Modular Shields" variant="info" />
+              <DocsBadge label="Agent Shield Live" variant="live" />
               <DocsBadge label="Policy Gateway" variant="info" />
               <DocsBadge label="Decision Proofs" variant="live" />
             </div>
@@ -3751,44 +4358,40 @@ Content-Type: application/json
                   What is Magen3?
                 </h2>
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
-                  Magen3 is a modular Web3 execution firewall. It checks risky actions from AI agents,
-                  smart contracts, DAOs, RWA workflows, and oracle-driven systems before those actions
-                  reach the blockchain or target execution environment.
+                  Magen3 is a modular execution firewall for autonomous blockchain agents. It protects an agent before wallet signing or blockchain execution by authenticating the caller, loading its execution capabilities and active policy, running relevant protection checks, assessing risk, and returning Allowed, Blocked, or Review Required.
                 </p>
                 <p className="mt-4 text-base leading-relaxed text-[#94A3B8]">
-                  Magen3 sits between <span className="font-semibold text-[#F8FAFC]">intent</span> and{" "}
-                  <span className="font-semibold text-[#F8FAFC]">execution</span>. It gives Web3 teams a
-                  policy layer, gateway layer, and audit layer for controlling high-risk actions before
-                  wallet signing or protocol execution.
+                  Magen3 sits between <span className="font-semibold text-[#F8FAFC]">agent intent</span> and{" "}
+                  <span className="font-semibold text-[#F8FAFC]">execution</span>. Agent Shield is the live centerpiece; protection modules live under it rather than being presented as separate live products.
                 </p>
               </section>
 
               <section id="architecture" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Platform Architecture</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Magen3 is built around four layers that work together to protect high-risk Web3 actions.
+                  Magen3 coordinates the complete pre-execution journey through a single platform architecture.
                 </p>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   {[
                     {
                       icon: Layers,
-                      title: "Shield Modules",
-                      desc: "Protection modules for different Web3 execution surfaces.",
+                      title: "Agent Shield",
+                      desc: "Coordinates authentication, configuration, policy, relevant protection checks, risk assessment, decision, audit, and proof.",
                     },
                     {
                       icon: FileText,
-                      title: "Policy Engine",
-                      desc: "Rules that decide whether an action is Allowed, Blocked, or requires Review.",
+                      title: "Policy and Risk Engines",
+                      desc: "Deterministic rules and structured findings produce Allowed, Blocked, or Review Required.",
                     },
                     {
                       icon: Server,
-                      title: "Gateway API",
-                      desc: "External agents and apps submit chain-aware action intents before execution.",
+                      title: "Gateway and Integrations",
+                      desc: "External agents connect through HTTP, SDKs, MCP, Codex skills, or compatible autonomous runtimes.",
                     },
                     {
                       icon: Database,
-                      title: "Casper Decision Proofs",
-                      desc: "Policy decisions can be recorded on Casper for verifiable audit trails.",
+                      title: "Audit and Casper Proof",
+                      desc: "Every decision is stored with its pipeline, findings, explanation, and proof state.",
                     },
                   ].map((card) => {
                     const Icon = card.icon;
@@ -3858,11 +4461,12 @@ Content-Type: application/json
                 <h2 className={SECTION_TITLE}>Quick Start</h2>
                 <div className="mt-5 grid gap-3">
                   {[
-                    "Connect Casper Wallet as the owner wallet.",
-                    "Register a Connected Agent and copy the one-time API key.",
-                    "Create an active policy for that agent.",
-                    "Send agent intents to the Magen3 Gateway before wallet signing.",
-                    "Review audit logs and attach Casper decision proofs.",
+                    "Connect Casper Wallet as the Magen3 owner wallet.",
+                    "Register an agent through the guided wizard and select one or more execution capabilities.",
+                    "Accept or customize the recommended protection and starter policy.",
+                    "Copy the one-time Agent ID and API key into the external agent.",
+                    "Test the real request format in Intent Playground, then send every production intent before wallet signing.",
+                    "Review structured findings, timeline stages, audit logs, and Casper decision-proof status.",
                   ].map((step, index) => (
                     <div key={step} className="flex gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#22D3EE]/10 text-xs font-bold text-[#22D3EE]">
@@ -3881,6 +4485,8 @@ Content-Type: application/json
                     ["Connected Agent", "The external AI app, bot, or autonomous system calling Magen3."],
                     ["Agent ID", "The public identifier for the connected agent."],
                     ["Agent API Key", "The secret credential used by that agent to call the gateway."],
+                    ["Execution Capabilities", "One or more descriptions of what the agent can execute: Trading, Wallet Management, Treasury Operations, dApp Interactions, Enterprise Automation, or Custom."],
+                    ["Protection Modules", "Relevant Agent Shield checks with honest Live, Foundation Available, Preview, or Planned status."],
                     ["Target Chain", "The chain or execution environment the external agent intends to use."],
                     ["Execution Wallet", "The wallet that signs the real transaction after approval."],
                     ["Decision", "Allowed, Blocked, or Review Required."],
@@ -3895,64 +4501,32 @@ Content-Type: application/json
               </section>
 
               <section id="shield-modules-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
-                <h2 className={SECTION_TITLE}>Shield Modules</h2>
+                <h2 className={SECTION_TITLE}>Agent Shield Protection Modules</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Magen3 is not only Agent Shield. Agent Shield is the first live module; the broader
-                  platform is designed around grouped Shields for different execution surfaces.
+                  Protection modules live under Agent Shield. Status is based on the current backend, not marketing language. Preview and Planned modules do not silently contribute a pass result.
                 </p>
-                <div className="mt-5 space-y-5">
-                  {shieldModuleGroups.map((group) => (
-                    <div key={group.group} className="overflow-hidden rounded-xl border border-[#1E293B]">
-                      <div className="border-b border-[#1E293B] bg-[#0B1220] px-4 py-3">
-                        <h3 className="font-['Space_Grotesk'] text-sm font-semibold text-[#F8FAFC]">
-                          {group.group}
-                        </h3>
-                        <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">
-                          {group.description}
-                        </p>
-                      </div>
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#050B14]">
-                          <tr className="border-b border-[#1E293B]">
-                            {["Shield", "Status", "Purpose"].map((heading) => (
-                              <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
-                                {heading}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#1E293B]">
-                          {group.modules.map((module) => (
-                            <tr key={module.id} className="bg-[#111827]">
-                              <td className="px-4 py-3 font-semibold text-[#F8FAFC]">{module.name}</td>
-                              <td className="px-4 py-3">
-                                <DocsBadge
-                                  label={module.status === "Available" ? "Live" : module.status}
-                                  variant={module.status === "Available" ? "live" : "preview"}
-                                />
-                              </td>
-                              <td className="px-4 py-3 text-[#94A3B8]">{module.description}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
+                <div className="mt-5 overflow-x-auto rounded-xl border border-[#1E293B]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#050B14]"><tr className="border-b border-[#1E293B]">{["Module", "Status", "Current checks", "Capabilities"].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{heading}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-[#1E293B]">
+                      {PROTECTION_MODULE_CATALOG.map((module) => (
+                        <tr key={module.id} className="bg-[#111827] align-top">
+                          <td className="px-4 py-3"><div className="font-semibold text-[#F8FAFC]">{module.name}</div><div className="mt-1 max-w-xs text-xs leading-relaxed text-[#94A3B8]">{module.description}</div></td>
+                          <td className="px-4 py-3"><StatusBadge status={module.status} /></td>
+                          <td className="px-4 py-3 text-xs leading-relaxed text-[#94A3B8]">{module.currentChecks.length ? module.currentChecks.join(" · ") : "No backend checks implemented."}</td>
+                          <td className="px-4 py-3"><CapabilityChips capabilities={module.capabilities} compact /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="mt-5">
-                  <DocsCallout type="info">
-                    <span className="font-semibold text-[#F8FAFC]">Agent Shield is live first.</span> Other
-                    Shields show the broader architecture and future protection surfaces.
-                  </DocsCallout>
-                </div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, and Risk Assessment. Wallet and Contract Validation have enforceable foundations. Simulation and Threat Intelligence are Preview. Oracle, Bridge, and Compliance controls are Planned.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Agent Shield</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Agent Shield protects autonomous agents before they execute wallet or protocol actions.
-                  External agents submit intent, Magen3 checks the active policy, and only approved actions
-                  should continue to wallet signing.
+                  Agent Shield is the live protection system for autonomous agents. It authenticates the agent, loads its execution-capability configuration and effective policy, runs only relevant checks, produces structured findings, performs deterministic risk assessment, stores the audit record, and submits the Casper decision proof.
                 </p>
               </section>
 
@@ -3960,17 +4534,17 @@ Content-Type: application/json
                 <h2 className={SECTION_TITLE}>Agent Shield Flow</h2>
                 <div className="mt-5 overflow-x-auto rounded-xl border border-[#1E293B] bg-[#0B1220] p-5">
                   <div className="flex min-w-max items-center gap-2">
-                    <DocsFlowStep label="External Agent" sub="Submits intent" />
+                    <DocsFlowStep label="Intent received" />
                     <DocsFlowArrow />
-                    <DocsFlowStep label="Magen3 Gateway" sub="Receives request" />
+                    <DocsFlowStep label="Agent authenticated" />
                     <DocsFlowArrow />
-                    <DocsFlowStep label="Policy Check" sub="Evaluates rules" />
+                    <DocsFlowStep label="Configuration + policy" />
                     <DocsFlowArrow />
-                    <DocsFlowStep label="Decision" sub="Allowed / Blocked / Review" />
+                    <DocsFlowStep label="Relevant checks" />
                     <DocsFlowArrow />
-                    <DocsFlowStep label="Wallet Signature" sub="Only if Allowed" />
+                    <DocsFlowStep label="Risk + decision" />
                     <DocsFlowArrow />
-                    <DocsFlowStep label="Casper Proof" sub="Audit record" />
+                    <DocsFlowStep label="Audit + Casper proof" />
                   </div>
                 </div>
                 <div className="mt-5">
@@ -3984,16 +4558,16 @@ Content-Type: application/json
               <section id="connected-agents-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Connected Agents</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Connected Agents are external AI apps, bots, or autonomous systems allowed to call Magen3.
-                  The owner wallet registers the agent, while the execution wallet signs the real transaction
-                  in the external app.
+                  Connected Agents are external AI apps, bots, or autonomous systems allowed to call Magen3. Each agent can select multiple execution capabilities. Capabilities drive protection and starter-policy recommendations, while the active policy remains the source of authorization.
                 </p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
                   {[
                     ["Agent ID", "Identifies the external agent."],
                     ["API Key", "Authenticates each gateway request."],
-                    ["Policy", "Controls what the agent can do."],
-                    ["Audit Logs", "Track every decision and proof state."],
+                    ["Capabilities", "Describe the agent’s execution surfaces and drive relevant recommendations."],
+                    ["Policy", "Deterministically controls what the agent can do."],
+                    ["Security Coverage", "Explains configuration completeness without claiming invulnerability."],
+                    ["Integration Health", "Uses gateway, credential, policy, recent intent, audit, and proof data."],
                   ].map(([title, desc]) => (
                     <div key={title} className={`${CARD} p-4`}>
                       <h3 className="text-sm font-semibold text-[#22D3EE]">{title}</h3>
@@ -4297,7 +4871,7 @@ codex mcp add magen3 \
                 <h2 className={SECTION_TITLE}>FAQ</h2>
                 <div className="mt-5 space-y-3">
                   {[
-                    ["Is Magen3 only Agent Shield?", "No. Agent Shield is the first live Shield. Magen3 is built as a modular Shield platform."],
+                    ["What is live in Magen3?", "Agent Shield is live as the complete agent-protection flow. Individual protection modules are labeled Live, Foundation Available, Preview, or Planned according to real implementation status."],
                     ["Can Magen3 be cross-chain?", "Yes at the gateway and policy layer. The current implementation records decision proofs on Casper Testnet while future adapters can support more target chains."],
                     ["Is it one API key for the whole app?", "No. Use one API key per connected agent."],
                     ["Is it one API key per policy?", "No. Policies attach to agents. API keys authenticate agents."],
@@ -4336,6 +4910,249 @@ codex mcp add magen3 \
           </aside>
         </div>
       </main>
+    </div>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────
+// Intent Playground
+// ──────────────────────────────────────────────────────────
+
+const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string) => Record<string, unknown>> = {
+  Swap: (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Swap 10 CSPR through an approved execution route",
+    reason: "Test the active policy before requesting a wallet signature.",
+    action: { type: "Swap", amount: 10, asset: "CSPR", target: "DEX_ROUTER_OR_CONTRACT", targetType: "Trusted Contract" },
+  }),
+  Transfer: (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Transfer 5 CSPR to an approved destination",
+    reason: "Validate destination and spend controls before signing.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: "RECIPIENT_PUBLIC_KEY", targetType: "Wallet Address" },
+  }),
+  Stake: (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Stake 15 CSPR with a trusted validator",
+    reason: "Validate the active policy before staking execution.",
+    action: { type: "Stake", amount: 15, asset: "CSPR", target: "VALIDATOR_PUBLIC_KEY", targetType: "Trusted Contract" },
+  }),
+  "Contract call": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground",
+    agentId: agent.id,
+    walletAddress,
+    executionWalletAddress: walletAddress,
+    goal: "Call an approved smart contract",
+    reason: "Validate contract controls before execution.",
+    action: { type: "Contract Interaction", amount: 0, asset: "CSPR", target: "CONTRACT_HASH", targetType: "Trusted Contract" },
+  }),
+};
+
+function IntentPlaygroundPage({
+  agents,
+  policies,
+  auditLogs,
+  walletAddress,
+  onSubmitGatewayIntent,
+  onNavigate,
+}: {
+  agents: Agent[];
+  policies: Policy[];
+  auditLogs: AuditLog[];
+  walletAddress: string;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
+  onNavigate: (page: Page) => void;
+}) {
+  const activeAgents = agents.filter((agent) => agent.status === "Active");
+  const [agentId, setAgentId] = useState(activeAgents[0]?.id || "");
+  const [apiKey, setApiKey] = useState(activeAgents[0]?.apiKey || "");
+  const [example, setExample] = useState("Transfer");
+  const [requestJson, setRequestJson] = useState("");
+  const [result, setResult] = useState<AgentGatewayResponse | null>(null);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedAgent = activeAgents.find((agent) => agent.id === agentId) || activeAgents[0];
+  const selectedPolicy = selectedAgent ? getActivePolicy(policies, selectedAgent.id) : undefined;
+  const selectedLogs = selectedAgent ? auditLogs.filter((log) => log.agentId === selectedAgent.id) : [];
+
+  const loadExample = useCallback((name: string, agent = selectedAgent) => {
+    if (!agent) return;
+    const payload = PLAYGROUND_EXAMPLES[name](agent, walletAddress || "EXECUTION_WALLET_PUBLIC_KEY");
+    setExample(name);
+    setRequestJson(JSON.stringify(payload, null, 2));
+    setResult(null);
+    setError("");
+  }, [selectedAgent, walletAddress]);
+
+  useEffect(() => {
+    if (!selectedAgent) return;
+    setAgentId(selectedAgent.id);
+    if (selectedAgent.apiKey) setApiKey(selectedAgent.apiKey);
+    loadExample(example, selectedAgent);
+  // The selected agent is the source of truth for the generated payload.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAgent?.id]);
+
+  const submit = useCallback(async () => {
+    setError("");
+    setResult(null);
+    if (!selectedAgent) {
+      setError("Register an active agent before testing an intent.");
+      return;
+    }
+    if (!apiKey.trim()) {
+      setError("Enter the raw API key. Magen3 never recovers stored keys; rotate the key if it is no longer available.");
+      return;
+    }
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(requestJson) as Record<string, unknown>;
+    } catch {
+      setError("The request body is not valid JSON.");
+      return;
+    }
+    if (parsed.agentId !== selectedAgent.id) {
+      setError("The request agentId must match the selected registered agent.");
+      return;
+    }
+    if (!parsed.action || typeof parsed.action !== "object") {
+      setError("The request must include an action object supported by the gateway.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      setResult(await onSubmitGatewayIntent(parsed, apiKey.trim()));
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to submit the intent.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [apiKey, onSubmitGatewayIntent, requestJson, selectedAgent]);
+
+  if (activeAgents.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Intent Playground</h1>
+          <p className="mt-1 text-sm text-[#94A3B8]">Test the real Magen3 Gateway request format before integrating an external agent.</p>
+        </div>
+        <EmptyState
+          title="Register an active agent first"
+          description="The Playground uses a real Agent ID, active policy, and API credential. It does not simulate a healthy integration."
+          action={<Btn variant="primary" onClick={() => onNavigate("connected-agents")}><Plus size={16} /> Register Agent</Btn>}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]"><Code2 size={13} /> Real Gateway Contract</div>
+          <h1 className="mt-3 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Intent Playground</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">Submit an authenticated intent to the existing gateway, inspect deterministic findings and pipeline stages, and open the resulting audit record.</p>
+        </div>
+        <Btn variant="secondary" onClick={() => onNavigate("audit-log")}><Scroll size={16} /> Open Audit Logs</Btn>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+        <div className={`${CARD_GLOW} p-5 space-y-4`}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className={LABEL_CLS}>Registered Agent</label>
+              <select
+                className={`${INPUT_CLS} cursor-pointer`}
+                value={selectedAgent?.id || ""}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const next = activeAgents.find((agent) => agent.id === value);
+                  setAgentId(value);
+                  setApiKey(next?.apiKey || "");
+                  if (next) loadExample(example, next);
+                }}
+              >
+                {activeAgents.map((agent) => <option key={agent.id} value={agent.id} className="bg-[#0B1220]">{agent.name}</option>)}
+              </select>
+            </div>
+            <SelectField label="Example" value={example} onChange={(value) => loadExample(value)} options={Object.keys(PLAYGROUND_EXAMPLES)} />
+          </div>
+
+          <div>
+            <label className={LABEL_CLS}>Agent API Key</label>
+            <input
+              className={INPUT_CLS}
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder="Paste the one-time raw key or rotate the agent key"
+            />
+            <p className="mt-1.5 text-xs leading-relaxed text-[#64748B]">Held only in this page state and sent in the existing <span className="font-mono text-[#94A3B8]">x-magen3-agent-key</span> header. It is not added to the request JSON.</p>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <label className={LABEL_CLS}>Gateway Request JSON</label>
+              <button type="button" onClick={() => loadExample(example)} className="text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]">Reset example</button>
+            </div>
+            <textarea
+              className={`${INPUT_CLS} min-h-[390px] resize-y font-mono text-xs leading-relaxed`}
+              value={requestJson}
+              onChange={(event) => setRequestJson(event.target.value)}
+              spellCheck={false}
+            />
+          </div>
+
+          {error && <div className="rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-[#94A3B8]">Policy: <span className="text-[#F8FAFC]">{selectedPolicy?.name || "No active policy"}</span></div>
+            <Btn variant="primary" onClick={submit} disabled={submitting}><Send size={16} /> {submitting ? "Evaluating…" : "Evaluate Intent"}</Btn>
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          {selectedAgent && <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} apiOnline />}
+          {!result ? (
+            <div className={`${CARD} p-8`}>
+              <EmptyState title="No request submitted" description="Choose an example, edit the request, and evaluate it against the selected agent’s real active policy." />
+            </div>
+          ) : (
+            <>
+              <div className={`${CARD_GLOW} p-5`}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={result.result.decision} /><RiskBadge risk={result.result.risk} /></div>
+                    <h2 className="mt-3 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{result.result.primaryReason || result.result.reason}</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{result.result.suggestedResolution || result.result.recommendedAction}</p>
+                  </div>
+                  <div className="rounded-xl border border-[#1E293B] bg-[#050B14] px-3 py-2 text-right text-xs text-[#94A3B8]">
+                    Risk score<div className="mt-1 text-2xl font-bold text-[#F8FAFC]">{result.result.riskScore}</div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Triggered rule</div><div className="mt-1 text-sm text-[#F8FAFC]">{result.result.triggeredRule || "No blocking rule"}</div></div>
+                  <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Audit record</div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{result.auditLog.id}</div></div>
+                </div>
+              </div>
+              <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} /></div></div>
+              <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} />
+              <details className={`${CARD} p-5`}><summary className="cursor-pointer text-sm font-semibold text-[#F8FAFC]">Raw gateway response</summary><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(result, null, 2)}</pre></details>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -4536,6 +5353,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
 
     if (!walletConnected || !walletAddress) {
       setAgents([]);
@@ -4546,24 +5364,30 @@ export default function App() {
       };
     }
 
-    api.bootstrap(walletAddress)
-      .then((payload) => {
+    const refresh = async () => {
+      try {
+        const payload = await api.bootstrap(walletAddress);
         if (cancelled) return;
-        if (Array.isArray(payload.agents)) setAgents(payload.agents as Agent[]);
+        if (Array.isArray(payload.agents)) {
+          setAgents((previous) => payload.agents.map((agent: Agent) => ({
+            ...agent,
+            apiKey: previous.find((item) => item.id === agent.id)?.apiKey,
+          })));
+        }
         if (Array.isArray(payload.policies)) setPolicies(payload.policies as Policy[]);
         if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
         setApiOnline(true);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setApiOnline(false);
-          setAgents([]);
-          setPolicies([]);
-          setAuditLogs([]);
-        }
-      });
+      } catch {
+        if (!cancelled) setApiOnline(false);
+      }
+    };
+
+    void refresh();
+    intervalId = setInterval(() => void refresh(), 6000);
+
     return () => {
       cancelled = true;
+      if (intervalId) clearInterval(intervalId);
     };
   }, [walletConnected, walletAddress]);
 
@@ -4694,10 +5518,12 @@ export default function App() {
 
     try {
       const response = await api.createPolicy({ ...policy, walletAddress });
-      setPolicies((prev) => [response.policy as Policy, ...prev]);
+      const created = response.policy as Policy;
+      setPolicies((prev) => [created, ...prev]);
       if (Array.isArray(response.agents)) setAgents(response.agents as Agent[]);
       if (response.auditLog) setAuditLogs((prev) => [response.auditLog as AuditLog, ...prev]);
       setApiOnline(true);
+      return created;
     } catch (error) {
       setApiOnline(false);
       setWalletError(error instanceof Error ? error.message : "Unable to create policy.");
@@ -4791,6 +5617,7 @@ export default function App() {
         onConnectWallet={connectWallet}
         walletConnecting={walletConnecting}
         walletError={walletError}
+        apiOnline={apiOnline}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -4804,12 +5631,22 @@ export default function App() {
         onRegisterAgent={onRegisterAgent}
         onRotateAgentApiKey={onRotateAgentApiKey}
         onRevokeAgent={onRevokeAgent}
+        onCreatePolicy={onCreatePolicy}
+        onNavigate={navigate}
         auditLogs={auditLogs}
         walletAddress={walletAddress}
         apiOnline={apiOnline}
       />
     ),
-    shields: <ShieldsPage onNavigate={navigate} />,
+    shields: (
+      <AgentShieldPage
+        agents={agents}
+        policies={policies}
+        auditLogs={auditLogs}
+        apiOnline={apiOnline}
+        onNavigate={navigate}
+      />
+    ),
     policies: (
       <PoliciesPage
         agents={agents}
@@ -4817,6 +5654,16 @@ export default function App() {
         onCreatePolicy={onCreatePolicy}
         onUpdatePolicy={onUpdatePolicy}
         walletAddress={walletAddress}
+      />
+    ),
+    "intent-playground": (
+      <IntentPlaygroundPage
+        agents={agents}
+        policies={policies}
+        auditLogs={auditLogs}
+        walletAddress={walletAddress}
+        onSubmitGatewayIntent={onSubmitGatewayIntent}
+        onNavigate={navigate}
       />
     ),
     "audit-log": (

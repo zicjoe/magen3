@@ -1,20 +1,24 @@
 # Magen3 Documentation
 
-This folder contains current product and integration documentation for Magen3.
+Current product and integration documentation for the Magen3 Platform and Agent Shield.
 
-## Current Docs
+## Product and architecture
 
-- `MAGEN3_PLATFORM.md` - platform overview, architecture, shield modules, security model, proofs, troubleshooting, and FAQ.
-- `AGENT_GATEWAY_API.md` - gateway authentication and API request/response reference.
-- `GATEWAY_INTEGRATION.md` - how external agents connect to Magen3 before wallet signing.
-- `CONNECTED_WALLET_EXECUTION.md` - execution wallet and proof notes.
-- `CASPER_DEPLOYMENT_PLAYBOOK.md` - Casper contract and relayer deployment reference.
+- `MAGEN3_PLATFORM.md` — product model, execution capabilities, protection modules, Security Pipeline, Risk Assessment, Security Coverage, Intent Playground, audit records, proofs, compatibility, deployment, and troubleshooting.
+- `AGENT_GATEWAY_API.md` — current gateway authentication and request/response contract.
+- `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
+- `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
 
-## Archived Notes
+## Developer integrations
 
-Older build notes, recording scripts, and historic walkthroughs live in `archive/`. They are kept for project history and should not be treated as current public product documentation.
+- `OFFICIAL_SDKS.md` — official TypeScript and Python SDKs.
+- `MCP_SERVER.md` — official MCP server and Codex integration.
+- `AGENT_SKILLS_KIT.md` — exported agent instruction and environment templates, where present.
 
-## SDK integration
+## Casper
 
-- [Official TypeScript and Python SDKs](./OFFICIAL_SDKS.md)
-- [Official MCP Server for Codex and external agents](./MCP_SERVER.md)
+- `CASPER_DEPLOYMENT_PLAYBOOK.md` — audit-registry contract and relayer deployment reference.
+
+## Archived notes
+
+Historic build notes, recording scripts, and old walkthroughs live in `archive/`. They are retained for project history and should not override the current README, in-app Docs, or `MAGEN3_PLATFORM.md`.

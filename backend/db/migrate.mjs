@@ -15,6 +15,11 @@ export async function runMigrations() {
       api_key_issued_at TIMESTAMPTZ,
       api_key_rotated_at TIMESTAMPTZ,
       revoked_at TIMESTAMPTZ,
+      execution_capabilities JSONB NOT NULL DEFAULT '["Custom"]'::jsonb,
+      capability_configuration JSONB NOT NULL DEFAULT '{}'::jsonb,
+      onboarding_status TEXT NOT NULL DEFAULT 'complete',
+      last_intent_at TIMESTAMPTZ,
+      last_decision_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -32,6 +37,9 @@ export async function runMigrations() {
       risk_mode TEXT NOT NULL,
       status TEXT NOT NULL,
       owner_wallet_address TEXT NOT NULL DEFAULT '',
+      template_type TEXT NOT NULL DEFAULT 'Custom',
+      capability_scope JSONB NOT NULL DEFAULT '[]'::jsonb,
+      structured_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       policy_hash TEXT NOT NULL
     );
@@ -110,6 +118,15 @@ export async function runMigrations() {
       decision_proof_error TEXT NOT NULL DEFAULT '',
       decision_proof_mode TEXT NOT NULL DEFAULT '',
       decision_proof_updated_at TIMESTAMPTZ,
+      original_intent JSONB NOT NULL DEFAULT '{}'::jsonb,
+      pipeline_stages JSONB NOT NULL DEFAULT '[]'::jsonb,
+      module_findings JSONB NOT NULL DEFAULT '[]'::jsonb,
+      primary_reason TEXT NOT NULL DEFAULT '',
+      triggered_rule TEXT NOT NULL DEFAULT '',
+      suggested_resolution TEXT NOT NULL DEFAULT '',
+      capability_context JSONB NOT NULL DEFAULT '[]'::jsonb,
+      proof_submitted_at TIMESTAMPTZ,
+      proof_confirmed_at TIMESTAMPTZ,
       risk_score INTEGER NOT NULL
     );
   `);
@@ -124,8 +141,48 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_issued_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_rotated_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS execution_capabilities JSONB NOT NULL DEFAULT '["Custom"]'::jsonb;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS capability_configuration JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'complete';`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_intent_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS last_decision_at TIMESTAMPTZ;`);
+  await pool.query(`
+    UPDATE agents
+    SET execution_capabilities = CASE type
+      WHEN 'DeFi Agent' THEN '["Trading", "dApp Interactions"]'::jsonb
+      WHEN 'Trading Agent' THEN '["Trading"]'::jsonb
+      WHEN 'Treasury Agent' THEN '["Treasury Operations", "Wallet Management"]'::jsonb
+      WHEN 'RWA Agent' THEN '["Enterprise Automation", "dApp Interactions"]'::jsonb
+      WHEN 'Oracle Agent' THEN '["dApp Interactions"]'::jsonb
+      ELSE '["Custom"]'::jsonb
+    END
+    WHERE execution_capabilities IS NULL
+       OR jsonb_typeof(execution_capabilities) <> 'array'
+       OR CASE
+            WHEN jsonb_typeof(execution_capabilities) = 'array' THEN jsonb_array_length(execution_capabilities) = 0
+            ELSE TRUE
+          END
+       OR execution_capabilities = '["Custom"]'::jsonb;
+  `);
   await pool.query(`UPDATE agents SET status = 'Active' WHERE status IN ('No Policy', 'Policy Active', 'Paused');`);
   await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS owner_wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS template_type TEXT NOT NULL DEFAULT 'Custom';`);
+  await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS capability_scope JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE policies ADD COLUMN IF NOT EXISTS structured_rules JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`
+    UPDATE policies
+    SET capability_scope = agents.execution_capabilities
+    FROM agents
+    WHERE policies.agent_id = agents.id
+      AND (
+        policies.capability_scope IS NULL
+        OR jsonb_typeof(policies.capability_scope) <> 'array'
+        OR CASE
+             WHEN jsonb_typeof(policies.capability_scope) = 'array' THEN jsonb_array_length(policies.capability_scope) = 0
+             ELSE TRUE
+           END
+      );
+  `);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS agent_owner_wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_wallet_address TEXT NOT NULL DEFAULT '';`);
@@ -140,6 +197,15 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_error TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_mode TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_updated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS original_intent JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS pipeline_stages JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS module_findings JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS primary_reason TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS triggered_rule TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS suggested_resolution TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS capability_context JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS proof_submitted_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS proof_confirmed_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS agent_owner_wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS execution_wallet_address TEXT NOT NULL DEFAULT '';`);
@@ -148,6 +214,7 @@ export async function runMigrations() {
   await pool.query(`UPDATE agent_gateway_requests SET execution_wallet_address = wallet_address WHERE execution_wallet_address IS NULL OR execution_wallet_address = '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_owner_wallet_address ON agents(owner_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_api_key_hash ON agents(api_key_hash);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agents_last_intent_at ON agents(last_intent_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_policies_owner_wallet_address ON policies(owner_wallet_address);`);
   await pool.query(`
     UPDATE agents

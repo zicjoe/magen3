@@ -71,3 +71,51 @@ test("blocks wallet-address transfers when Transfer is blocked", () => {
 
   assert.equal(result.decision, "Blocked");
 });
+
+test("returns structured findings, pipeline stages, and deterministic guidance", () => {
+  const result = evaluate({
+    target: "unknown-wallet-address",
+    amount: 30,
+  });
+
+  assert.equal(result.decision, "Review Required");
+  assert.ok(Array.isArray(result.moduleFindings));
+  assert.ok(result.moduleFindings.some((finding) => finding.status === "warning"));
+  assert.ok(Array.isArray(result.pipelineStages));
+  assert.ok(result.pipelineStages.some((stage) => stage.id === "risk-assessment"));
+  assert.ok(result.primaryReason);
+  assert.ok(result.triggeredRule);
+  assert.ok(result.suggestedResolution);
+});
+
+test("does not silently pass execution simulation when the module is unavailable", () => {
+  const result = evaluate({
+    actionType: "Swap",
+    targetType: "Trusted Contract",
+    target: basePolicy.trustedContracts[0],
+    amount: 10,
+  });
+
+  const simulation = result.moduleFindings.find((finding) => finding.module === "Execution Simulation");
+  assert.equal(simulation?.status, "unavailable");
+  assert.notEqual(simulation?.status, "pass");
+});
+
+test("blocks revoked agents even outside the authenticated gateway route", () => {
+  const result = evaluateAction({
+    request: {
+      agentId: agent.id,
+      actionType: "Transfer",
+      amount: 1,
+      target: basePolicy.trustedContracts[0],
+      targetType: "Wallet Address",
+      walletAddress: "execution-wallet",
+    },
+    agents: [{ ...agent, status: "Revoked" }],
+    policies: [basePolicy],
+    auditLogs: [],
+  });
+
+  assert.equal(result.decision, "Blocked");
+  assert.equal(result.moduleFindings[0].rule, "Active agent required");
+});

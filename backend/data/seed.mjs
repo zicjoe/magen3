@@ -1,12 +1,15 @@
-export const shieldModules = [
-  { id: "shield-agent", name: "Agent Shield", group: "Execution Shields", status: "Available" },
-  { id: "shield-wallet", name: "Wallet Shield", group: "Execution Shields", status: "Preview" },
-  { id: "shield-contract", name: "Contract Shield", group: "Execution Shields", status: "Preview" },
-  { id: "shield-dao", name: "DAO Shield", group: "Execution Shields", status: "Preview" },
-  { id: "shield-bridge", name: "Bridge Shield", group: "Infrastructure Shields", status: "Preview" },
-  { id: "shield-oracle", name: "Oracle Shield", group: "Infrastructure Shields", status: "Preview" },
-  { id: "shield-access", name: "Access Shield", group: "Infrastructure Shields", status: "Preview" },
-  { id: "shield-rwa", name: "RWA Shield", group: "Intelligence Shields", status: "Preview" },
-  { id: "shield-simulation", name: "Simulation Shield", group: "Intelligence Shields", status: "Preview" },
-  { id: "shield-threat-intel", name: "Threat Intel Shield", group: "Intelligence Shields", status: "Preview" },
+export const protectionModules = [
+  { id: "identity-authentication", name: "Identity and Authentication", group: "Agent Shield", status: "Live" },
+  { id: "policy-enforcement", name: "Policy Enforcement", group: "Agent Shield", status: "Live" },
+  { id: "wallet-validation", name: "Wallet Validation", group: "Agent Shield", status: "Foundation Available" },
+  { id: "contract-validation", name: "Contract Validation", group: "Agent Shield", status: "Foundation Available" },
+  { id: "execution-simulation", name: "Execution Simulation", group: "Agent Shield", status: "Preview" },
+  { id: "threat-intelligence", name: "Threat Intelligence", group: "Agent Shield", status: "Preview" },
+  { id: "oracle-validation", name: "Oracle Validation", group: "Agent Shield", status: "Planned" },
+  { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Planned" },
+  { id: "compliance-controls", name: "Compliance Controls", group: "Agent Shield", status: "Planned" },
+  { id: "risk-assessment", name: "Risk Assessment", group: "Agent Shield", status: "Live" },
 ];
+
+// Preserve the existing bootstrap response field for backward compatibility.
+export const shieldModules = protectionModules;

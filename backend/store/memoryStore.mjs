@@ -4,6 +4,7 @@ import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from 
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
+import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
@@ -28,6 +29,13 @@ function initialExecutionStatus(decision) {
 
 function normalizeAgentStatus(status) {
   return status === "Revoked" ? "Revoked" : "Active";
+}
+
+function updatePipelineStage(stages, id, status, timestamp = new Date().toISOString(), label = "") {
+  const source = Array.isArray(stages) ? stages : [];
+  const found = source.some((stage) => stage.id === id);
+  const next = source.map((stage) => stage.id === id ? { ...stage, status, timestamp, ...(label ? { label } : {}) } : stage);
+  return found ? next : [...next, { id, label: label || id, status, timestamp }];
 }
 
 export function createMemoryStore() {
@@ -125,11 +133,12 @@ export function createMemoryStore() {
       const ownerWalletAddress = requireWalletAddress(body.ownerWalletAddress || body.walletAddress);
       const apiKey = makeApiKey();
       const now = new Date().toISOString();
+      const executionCapabilities = normalizeExecutionCapabilities(body.executionCapabilities, body.type);
 
       const agent = {
         id: makeId("MAG-AGENT"),
         name: String(body.name).trim(),
-        type: body.type || "Custom Agent",
+        type: body.type || legacyTypeFromCapabilities(executionCapabilities),
         purpose: body.purpose || "",
         permissionLevel: body.permissionLevel || "Limited Execution",
         status: "Active",
@@ -139,6 +148,11 @@ export function createMemoryStore() {
         apiKeyIssuedAt: now,
         apiKeyRotatedAt: "",
         revokedAt: "",
+        executionCapabilities,
+        capabilityConfiguration: body.capabilityConfiguration && typeof body.capabilityConfiguration === "object" ? body.capabilityConfiguration : {},
+        onboardingStatus: body.onboardingStatus || "complete",
+        lastIntentAt: "",
+        lastDecisionAt: "",
         createdAt: now,
       };
       agents = [agent, ...agents];
@@ -218,14 +232,18 @@ export function createMemoryStore() {
         riskMode: body.riskMode || "Balanced",
         status: "Active",
         ownerWalletAddress: walletAddress,
+        templateType: body.templateType || recommendedPolicyTemplate(agent.executionCapabilities),
+        capabilityScope: normalizeExecutionCapabilities(body.capabilityScope || agent.executionCapabilities, agent.type),
+        structuredRules: body.structuredRules && typeof body.structuredRules === "object" ? body.structuredRules : {},
         createdAt: new Date().toISOString(),
         policyHash: makePseudoHash("0xpol"),
       };
       policies = [policy, ...policies];
 
+      const policyAuditTimestamp = new Date().toISOString();
       const auditLog = {
         id: makeId("AUD"),
-        timestamp: new Date().toISOString(),
+        timestamp: policyAuditTimestamp,
         shield: "Agent Shield",
         agentId: policy.agentId,
         agentName: agent.name,
@@ -246,10 +264,36 @@ export function createMemoryStore() {
         executionSignedBy: "",
         executionNote: "Policy activation does not execute an external Web3 transaction.",
         executionUpdatedAt: "",
+        decisionProofStatus: "queued",
+        decisionProofPayloadHash: "",
+        decisionProofError: "",
+        decisionProofMode: "",
+        decisionProofUpdatedAt: "",
+        originalIntent: { action: "Policy Activation", policyId: policy.id },
+        pipelineStages: [
+          { id: "policy-loaded", label: "Policy created and activated", status: "completed", timestamp: policyAuditTimestamp },
+          { id: "audit-stored", label: "Audit stored", status: "completed", timestamp: policyAuditTimestamp },
+          { id: "casper-proof", label: "Casper decision proof", status: "pending", timestamp: "" },
+        ],
+        moduleFindings: [{ module: "Policy Enforcement", status: "pass", severity: "info", rule: "Active policy", message: `Policy ${policy.name} activated.`, evidence: { policyId: policy.id }, remediation: "" }],
+        primaryReason: `Policy ${policy.name} activated.`,
+        triggeredRule: "Active policy",
+        suggestedResolution: "No action required.",
+        capabilityContext: agent.executionCapabilities,
+        proofSubmittedAt: policyAuditTimestamp,
+        proofConfirmedAt: "",
         riskScore: 4,
       };
+      Object.assign(auditLog, initialDecisionProofState(auditLog));
       auditLogs = [auditLog, ...auditLogs];
-      return { policy, auditLog, agents: scopedAgents(walletAddress) };
+      const proof = await recordDecisionProof(auditLog);
+      auditLogs = auditLogs.map((log) => log.id === auditLog.id ? {
+        ...log,
+        ...proof,
+        proofConfirmedAt: proof.decisionProofStatus === "recorded" ? (proof.decisionProofUpdatedAt || new Date().toISOString()) : log.proofConfirmedAt,
+        pipelineStages: updatePipelineStage(log.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
+      } : log);
+      return { policy, auditLog: auditLogs.find((log) => log.id === auditLog.id) || auditLog, agents: scopedAgents(walletAddress) };
     },
 
     async updatePolicy(id, body) {
@@ -277,6 +321,9 @@ export function createMemoryStore() {
         blockedActions: Array.isArray(body.blockedActions) ? body.blockedActions : current.blockedActions,
         riskMode: body.riskMode || current.riskMode,
         status: body.status || current.status,
+        templateType: body.templateType || current.templateType || "Custom",
+        capabilityScope: Array.isArray(body.capabilityScope) ? normalizeExecutionCapabilities(body.capabilityScope) : current.capabilityScope,
+        structuredRules: body.structuredRules && typeof body.structuredRules === "object" ? body.structuredRules : current.structuredRules,
       };
 
       policies = policies.map((policy) => policy.id === id ? updatedPolicy : policy);
@@ -337,6 +384,15 @@ export function createMemoryStore() {
         decisionProofError: body.decisionProofError || "",
         decisionProofMode: body.decisionProofMode || "",
         decisionProofUpdatedAt: body.decisionProofUpdatedAt || "",
+        originalIntent: body.originalIntent && typeof body.originalIntent === "object" ? body.originalIntent : {},
+        pipelineStages: Array.isArray(body.pipelineStages) ? body.pipelineStages : [],
+        moduleFindings: Array.isArray(body.moduleFindings) ? body.moduleFindings : [],
+        primaryReason: body.primaryReason || body.reason || "Magen3 recorded a decision.",
+        triggeredRule: body.triggeredRule || "",
+        suggestedResolution: body.suggestedResolution || "",
+        capabilityContext: Array.isArray(body.capabilityContext) ? body.capabilityContext : [],
+        proofSubmittedAt: body.proofSubmittedAt || "",
+        proofConfirmedAt: body.proofConfirmedAt || "",
         riskScore: Number(body.riskScore || 50),
       };
       Object.assign(auditLog, initialDecisionProofState(auditLog));
@@ -363,9 +419,10 @@ export function createMemoryStore() {
       const agent = publicAgent(agentRecord);
       const policy = scopedPolicies(walletAddress).find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
+      const auditTimestamp = new Date().toISOString();
       const auditLog = {
         id: makeId("AUD"),
-        timestamp: new Date().toISOString(),
+        timestamp: auditTimestamp,
         shield: "Agent Shield",
         agentId: intent.agentId,
         agentName: agent?.name || intent.agentId,
@@ -391,6 +448,22 @@ export function createMemoryStore() {
         decisionProofError: "",
         decisionProofMode: "",
         decisionProofUpdatedAt: "",
+        originalIntent: {
+          source: intent.source,
+          agentId: intent.agentId,
+          executionWalletAddress,
+          goal: intent.goal,
+          reason: intent.reason,
+          action: { type: intent.actionType, amount: intent.amount, asset: intent.asset, target: intent.target, targetType: intent.targetType },
+        },
+        pipelineStages: updatePipelineStage(result.pipelineStages, "audit-stored", "completed", auditTimestamp, "Audit stored"),
+        moduleFindings: result.moduleFindings || [],
+        primaryReason: result.primaryReason || result.reason,
+        triggeredRule: result.triggeredRule || "",
+        suggestedResolution: result.suggestedResolution || result.recommendedAction,
+        capabilityContext: result.capabilityContext || agent.executionCapabilities || ["Custom"],
+        proofSubmittedAt: auditTimestamp,
+        proofConfirmedAt: "",
         riskScore: Number(result.riskScore || 50),
       };
       Object.assign(auditLog, initialDecisionProofState(auditLog));
@@ -406,9 +479,15 @@ export function createMemoryStore() {
         auditLogId: auditLog.id,
       };
       gatewayRequests = [gatewayRequest, ...gatewayRequests];
+      agents = agents.map((item) => item.id === agentRecord.id ? { ...item, lastIntentAt: intent.receivedAt, lastDecisionAt: auditLog.timestamp } : item);
       auditLogs = [auditLog, ...auditLogs];
       const proof = await recordDecisionProof(auditLog);
-      auditLogs = auditLogs.map((log) => log.id === auditLog.id ? { ...log, ...proof } : log);
+      auditLogs = auditLogs.map((log) => log.id === auditLog.id ? {
+        ...log,
+        ...proof,
+        proofConfirmedAt: proof.decisionProofStatus === "recorded" ? (proof.decisionProofUpdatedAt || new Date().toISOString()) : log.proofConfirmedAt,
+        pipelineStages: (log.pipelineStages || []).map((stage) => stage.id === "casper-proof" ? { ...stage, status: proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", timestamp: proof.decisionProofUpdatedAt || stage.timestamp } : stage),
+      } : log);
       const recordedAuditLog = auditLogs.find((log) => log.id === auditLog.id) || auditLog;
       const casperPayload = buildAuditDecisionPayload(auditLog);
       return {
@@ -440,6 +519,8 @@ export function createMemoryStore() {
         decisionProofStatus: "recorded",
         decisionProofError: "",
         decisionProofUpdatedAt: new Date().toISOString(),
+        proofConfirmedAt: new Date().toISOString(),
+        pipelineStages: (log.pipelineStages || []).map((stage) => stage.id === "casper-proof" ? { ...stage, status: "completed", timestamp: new Date().toISOString() } : stage),
       } : log);
       const auditLog = auditLogs.find((log) => log.id === id);
       if (!auditLog) {
@@ -470,6 +551,7 @@ export function createMemoryStore() {
         executionSignedBy: normalizeWalletAddress(body?.signedBy || body?.walletAddress || ""),
         executionNote: String(body?.note || "Real execution transaction signed after Magen3 approval.").trim(),
         executionUpdatedAt: new Date().toISOString(),
+        pipelineStages: [...(log.pipelineStages || []).filter((stage) => stage.id !== "execution-recorded"), { id: "execution-recorded", label: "Execution recorded", status: "completed", timestamp: new Date().toISOString() }],
       } : log);
       return { auditLog: auditLogs.find((log) => log.id === id), executionTxHash, confirmed: true };
     },
