@@ -75,6 +75,12 @@ The TypeScript SDK accepts `action.outputAsset` and `action.oracle` with `baseAs
 
 The SDK does not load oracle providers or accept provider credentials; those remain backend operator configuration.
 
+## Compliance Controls request and response types
+
+The TypeScript SDK accepts `action.compliance` with non-sensitive jurisdiction codes, counterparty type, attestation statuses, provider labels, opaque references, timestamps, Travel Rule workflow status/reference/hash, screening status, risk rating, and opaque VASP IDs. The response can include sanitized `complianceControlsContext` and structured Compliance Controls findings. Python callers receive the same JSON structures as dictionaries.
+
+Do not place names, identity documents, dates of birth, addresses, contact information, documents, selfies, or biometric data in SDK requests. Compliance Controls is Foundation Available and provider-agnostic; it validates configured evidence and policy boundaries but does not make a legal determination.
+
 ## Environment variables for examples
 
 ```text

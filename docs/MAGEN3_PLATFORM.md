@@ -87,7 +87,7 @@ Protection modules live under Agent Shield.
 | Threat Intelligence | Foundation Available | Deterministic exact matching against a freshness-checked operator feed; no provider is bundled or represented as comprehensive. |
 | Oracle Validation | Foundation Available | Freshness-checked asset-pair availability, source quorum, confidence, cross-source spread, quote freshness, and execution-price deviation. |
 | Bridge Controls | Foundation Available | Provider-supplied bridge route metadata, chain allow/block rules, destination formats, fees, quote freshness, output bounds, assets, amounts, and confirmation requirements. |
-| Compliance Controls | Planned | No current backend checks. |
+| Compliance Controls | Foundation Available | Non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, freshness, and exact configured-feed checks. |
 | Risk Assessment | Live | Deterministic finding aggregation and explainable risk score. |
 
 An unavailable module never silently returns pass.

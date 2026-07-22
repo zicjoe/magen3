@@ -223,12 +223,20 @@ export const PROTECTION_MODULE_CATALOG: Array<{
   {
     id: "compliance-controls",
     name: "Compliance Controls",
-    description: "Adds policy-driven compliance checks for controlled organization workflows.",
-    status: "Planned",
+    description: "Evaluates non-sensitive compliance attestations, Travel Rule evidence, jurisdictions, counterparties, and configured screening data before signing.",
+    status: "Foundation Available",
     capabilities: ["Treasury Operations", "Enterprise Automation"],
-    currentChecks: [],
-    futureChecks: ["Sanctions screening", "KYC/AML attestations", "Jurisdiction rules"],
-    configurable: false,
+    currentChecks: [
+      "Policy-scoped originator and beneficiary attestation status",
+      "Travel Rule evidence references and hashes without raw personal data",
+      "Jurisdiction allow, review, and block controls",
+      "Counterparty type and compliance risk-rating limits",
+      "Current screening-result evidence from accepted providers",
+      "Exact configured wallet, account-hash, contract, package, VASP, and jurisdiction matches",
+      "Warn, Review, or Block behavior when screening evidence is unavailable",
+    ],
+    futureChecks: ["Managed sanctions-provider adapters", "Travel Rule network adapters", "Jurisdiction-specific legal rule packs"],
+    configurable: true,
   },
   {
     id: "risk-assessment",
@@ -377,6 +385,19 @@ export function calculateSecurityCoverage(
       finding.module === "Bridge Controls" &&
       finding.rule === "Bridge route metadata" &&
       finding.status === "pass"));
+  const complianceRelevant = capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item));
+  const complianceEnabled = policy?.structuredRules?.complianceControlsEnabled === true;
+  const complianceMode = typeof policy?.structuredRules?.complianceControlMode === "string"
+    ? policy.structuredRules.complianceControlMode
+    : "";
+  const complianceConfigured = complianceEnabled && ["Observe", "Review", "Enforce"].includes(complianceMode) &&
+    Array.isArray(policy?.structuredRules?.complianceRequiredActions) &&
+    Array.isArray(policy?.structuredRules?.complianceAllowedCounterpartyTypes);
+  const complianceOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Compliance Controls" &&
+      ["Compliance feed availability", "Sanctions screening result"].includes(finding.rule) &&
+      finding.status === "pass"));
   const requiredProtectionObserved = contractRelevant ? contractValidationObserved : walletValidationObserved;
 
   const checks: CoverageCheck[] = [
@@ -392,6 +413,7 @@ export function calculateSecurityCoverage(
     { id: "threat-intelligence", label: "Threat intelligence operational", weight: 5, passed: threatIntelligenceConfigured && threatIntelligenceOperational, detail: threatIntelligenceConfigured ? threatIntelligenceOperational ? `${threatIntelligenceMode} mode is configured and a fresh feed check has been observed.` : `${threatIntelligenceMode} mode is configured, but no fresh feed pass is visible yet.` : "Threat Intelligence policy mode is not configured for this policy.", recommendation: threatIntelligenceConfigured ? "Configure a fresh threat feed and submit a wallet or contract intent to verify screening." : "Choose Observe, Review, or Enforce behavior in the policy Threat Intelligence controls.", page: threatIntelligenceConfigured ? "intent-playground" : "policies" },
     { id: "oracle-validation", label: "Oracle validation operational", weight: 5, passed: !oracleRelevant || (oracleConfigured && oracleOperational), detail: !oracleRelevant ? "Not required by the selected capabilities." : oracleConfigured ? oracleOperational ? `${oracleMode} mode is configured and a fresh oracle feed check has been observed.` : `${oracleMode} mode is configured, but no fresh oracle validation pass is visible yet.` : "Oracle Validation policy mode is not configured for this policy.", recommendation: oracleConfigured ? "Configure a fresh oracle feed and submit a priced Swap example through the Intent Playground." : "Configure Oracle Validation limits in the active policy.", page: oracleConfigured ? "intent-playground" : "policies" },
     { id: "bridge-controls", label: "Bridge controls configured", weight: 5, passed: !bridgeRelevant || (bridgeConfigured && bridgeOperational), detail: !bridgeRelevant ? "Not required by the selected capabilities." : bridgeConfigured ? bridgeOperational ? `${bridgeMode} mode is configured and a complete bridge route has been evaluated.` : `${bridgeMode} mode is configured, but no complete Bridge Controls pass is visible yet.` : "Bridge provider, chain, and asset allowlists are not fully configured.", recommendation: bridgeConfigured ? "Submit a complete Bridge example through the Intent Playground to verify route controls." : "Configure approved bridge providers, chains, assets, fees, quote age, and finality requirements in the policy.", page: bridgeConfigured ? "intent-playground" : "policies" },
+    { id: "compliance-controls", label: "Compliance controls configured", weight: 5, passed: !complianceRelevant || (complianceConfigured && complianceOperational), detail: !complianceRelevant ? "Not required by the selected capabilities." : complianceConfigured ? complianceOperational ? `${complianceMode} mode is configured and current compliance screening evidence has been observed.` : `${complianceMode} mode is configured, but no current screening or configured-feed pass is visible yet.` : "Compliance Controls are not fully configured for this treasury or enterprise agent.", recommendation: complianceConfigured ? "Submit a complete compliance-evidence example through the Intent Playground." : "Configure required actions, attestation evidence, jurisdiction controls, screening behavior, and accepted providers in the policy.", page: complianceConfigured ? "intent-playground" : "policies" },
     { id: "casper-proof", label: "Casper proof recording observed", weight: 5, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
     { id: "agent-state", label: "Agent configuration complete", weight: 3, passed: agent.status === "Active" && agent.onboardingStatus !== "draft", detail: agent.status === "Active" ? "Agent is active and available to the gateway." : "Agent is not active.", recommendation: "Complete onboarding and ensure the agent is active.", page: "connected-agents" },
   ];
@@ -441,6 +463,12 @@ export function deriveIntegrationHealth(
   const bridgeWarned = bridgeFindings.some((finding) => finding.status === "warning");
   const bridgePassed = bridgeFindings.some((finding) => finding.rule === "Bridge route metadata" && finding.status === "pass");
   const bridgeHealth = bridgeFindings.length === 0 ? "unknown" : bridgeFailed || bridgeWarned ? "attention" : bridgeUnavailable ? "unavailable" : bridgePassed ? "observed" : "unknown";
+  const complianceFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Compliance Controls") || [];
+  const complianceFailed = complianceFindings.some((finding) => finding.status === "fail");
+  const complianceUnavailable = complianceFindings.some((finding) => finding.status === "unavailable");
+  const complianceWarned = complianceFindings.some((finding) => finding.status === "warning");
+  const compliancePassed = complianceFindings.some((finding) => ["Compliance feed availability", "Sanctions screening result"].includes(finding.rule) && finding.status === "pass");
+  const complianceHealth = complianceFindings.length === 0 ? "unknown" : complianceFailed || complianceWarned ? "attention" : complianceUnavailable ? "unavailable" : compliancePassed ? "observed" : "unknown";
   const checks = [
     { label: "Gateway connectivity", status: gatewayOnline ? "healthy" : "unavailable", detail: gatewayOnline ? "Backend health check succeeded." : "Backend health check is currently unavailable." },
     { label: "API credential", status: agent.status === "Active" && agent.apiKeyPreview ? "healthy" : "attention", detail: agent.apiKeyPreview || "No credential preview." },
@@ -453,6 +481,7 @@ export function deriveIntegrationHealth(
     { label: "Threat Intelligence", status: threatHealth, detail: threatFindings.length === 0 ? "No Threat Intelligence finding is available for the latest request." : threatFailed ? "The latest request was blocked by an enforced threat indicator or fail-closed feed rule." : threatWarned ? "The latest request matched an observed or review-level threat signal." : threatUnavailable ? "The configured threat feed was unavailable or stale and did not count as a pass." : threatFeedPassed ? "A fresh configured feed screened the latest normalized identities." : "Threat Intelligence did not produce an operational feed result." },
     { label: "Oracle Validation", status: oracleHealth, detail: oracleFindings.length === 0 ? "No Oracle Validation finding is available for the latest request." : oracleFailed ? "The latest request failed an enforced oracle integrity rule." : oracleWarned ? "The latest price-sensitive request requires attention." : oracleUnavailable ? "The configured oracle feed was unavailable or stale and did not count as a pass." : oracleFeedPassed ? "A fresh configured oracle feed evaluated the latest priced intent." : "Oracle Validation did not produce an operational feed result." },
     { label: "Bridge Controls", status: bridgeHealth, detail: bridgeFindings.length === 0 ? "No Bridge Controls finding is available for the latest request." : bridgeFailed ? "The latest bridge route failed an enforced provider, chain, fee, quote, address, or finality rule." : bridgeWarned ? "The latest bridge route requires attention before signing." : bridgeUnavailable ? "Required bridge route metadata or policy configuration was unavailable and did not count as a pass." : bridgePassed ? "A complete provider-supplied bridge route was evaluated." : "Bridge Controls did not produce a complete route result." },
+    { label: "Compliance Controls", status: complianceHealth, detail: complianceFindings.length === 0 ? "No Compliance Controls finding is available for the latest request." : complianceFailed ? "The latest request failed an enforced compliance, attestation, jurisdiction, screening, or exact-match rule." : complianceWarned ? "The latest controlled workflow requires authorized compliance review." : complianceUnavailable ? "Required screening evidence or the configured compliance feed was unavailable and did not count as a pass." : compliancePassed ? "Current non-sensitive screening evidence or a configured feed evaluated the latest request." : "Compliance Controls did not produce an operational screening result." },
     { label: "Casper proof service", status: proofState === "recorded" ? "healthy" : proofState === "failed" ? "attention" : "pending", detail: proofState },
     { label: "Audit synchronization", status: latest ? "healthy" : "unknown", detail: latest ? "Latest audit record is visible." : "No audit record is available." },
   ];

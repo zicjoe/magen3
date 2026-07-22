@@ -1,0 +1,43 @@
+{
+  "version": "1",
+  "source": "Magen3 synthetic compliance demonstration feed",
+  "generatedAt": "2026-07-22T20:09:58.249Z",
+  "indicators": [
+    {
+      "id": "synthetic-sanctions-wallet",
+      "identifierType": "Wallet",
+      "value": "018888888888888888888888888888888888888888888888888888888888888888",
+      "action": "Block",
+      "label": "Synthetic sanctions match",
+      "reason": "Test-only exact match for demonstrating Compliance Controls.",
+      "program": "Magen3 Demo",
+      "list": "Synthetic Test List",
+      "source": "Magen3",
+      "reference": "DEMO-SANCTIONS-001"
+    },
+    {
+      "id": "synthetic-review-package",
+      "identifierType": "Package Hash",
+      "value": "contract-package-9999999999999999999999999999999999999999999999999999999999999999",
+      "action": "Review",
+      "label": "Synthetic manual-review package",
+      "reason": "Test-only package match for demonstrating manual review.",
+      "program": "Magen3 Demo",
+      "list": "Synthetic Test List",
+      "source": "Magen3",
+      "reference": "DEMO-REVIEW-002"
+    }
+  ],
+  "restrictedJurisdictions": [
+    {
+      "id": "synthetic-jurisdiction-review",
+      "code": "ZZ",
+      "action": "Review",
+      "label": "Synthetic jurisdiction review",
+      "reason": "Reserved test code used only for the Magen3 demonstration.",
+      "program": "Magen3 Demo",
+      "source": "Magen3",
+      "reference": "DEMO-JURISDICTION-001"
+    }
+  ]
+}

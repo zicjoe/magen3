@@ -31,7 +31,8 @@
     "mcp:build": "pnpm sdk:build && pnpm --filter @magen3/mcp-server build",
     "mcp:test": "pnpm mcp:build && pnpm --filter @magen3/mcp-server test",
     "mcp:start": "node packages/mcp-server/dist/server.js",
-    "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs"
+    "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs",
+    "compliance:refresh-example-feed": "node scripts/compliance/refresh-example-feed.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",

@@ -51,6 +51,41 @@ export interface Magen3OracleQuote {
   quoteTimestamp?: string;
 }
 
+
+export interface Magen3ComplianceAttestation {
+  status: "Verified" | "Pending" | "Rejected" | "Expired" | "Not Provided" | string;
+  /** Approved provider label. Never place names, documents, or personal identity data here. */
+  provider?: string;
+  /** Opaque verification reference. */
+  reference?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+}
+
+export interface Magen3ComplianceEvidence {
+  originatorJurisdiction?: string;
+  beneficiaryJurisdiction?: string;
+  counterpartyType?: "VASP" | "Self-hosted Wallet" | "Organization" | "Individual" | "Unknown" | string;
+  originatorAttestation?: Magen3ComplianceAttestation;
+  beneficiaryAttestation?: Magen3ComplianceAttestation;
+  travelRule?: {
+    status: "Complete" | "Incomplete" | "Not Required" | "Not Provided" | string;
+    /** Opaque evidence reference; never raw originator or beneficiary data. */
+    reference?: string;
+    /** Optional SHA-256-style hash of evidence held by an authorized provider. */
+    dataHash?: string;
+  };
+  screening?: {
+    status: "Clear" | "Match" | "Review" | "Unavailable" | "Not Provided" | string;
+    provider?: string;
+    reference?: string;
+    screenedAt?: string;
+  };
+  riskRating?: "Low" | "Medium" | "High" | "Critical" | "Unknown" | string;
+  originatorVaspId?: string;
+  beneficiaryVaspId?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -71,6 +106,8 @@ export interface Magen3Action {
   oracle?: Magen3OracleQuote;
   /** Provider-supplied cross-chain route metadata evaluated by Bridge Controls before signing. */
   bridge?: Magen3BridgeRoute;
+  /** Non-sensitive compliance status evidence and opaque references evaluated before signing. */
+  compliance?: Magen3ComplianceEvidence;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
 }
@@ -191,6 +228,33 @@ export interface Magen3BridgeControlsContext {
   destinationConfirmations?: number;
 }
 
+
+export interface Magen3ComplianceControlsContext {
+  status?: "available" | "stale" | "unavailable" | string;
+  sourceType?: "inline" | "file" | "remote" | "none" | string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  indicatorCount?: number;
+  activeIndicatorCount?: number;
+  jurisdictionCount?: number;
+  activeJurisdictionCount?: number;
+  error?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  originatorJurisdiction?: string;
+  beneficiaryJurisdiction?: string;
+  counterpartyType?: string;
+  originatorAttestationStatus?: string;
+  beneficiaryAttestationStatus?: string;
+  travelRuleStatus?: string;
+  screeningStatus?: string;
+  riskRating?: string;
+  checkedEntities?: Array<Record<string, unknown>>;
+  matchedIndicators?: Array<Record<string, unknown>>;
+  matchedJurisdictions?: Array<Record<string, unknown>>;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -210,6 +274,8 @@ export interface Magen3DecisionResult {
   oracleValidationContext?: Magen3OracleValidationContext;
   /** Deterministic route, chain, address, fee, freshness, and confirmation evidence. */
   bridgeControlsContext?: Magen3BridgeControlsContext;
+  /** Sanitized compliance policy, evidence status, and configured exact-match context. */
+  complianceControlsContext?: Magen3ComplianceControlsContext;
 }
 
 export interface Magen3IntentResponse {

@@ -3,6 +3,7 @@ import { createStore } from "./store/index.mjs";
 import { getCasperStatus } from "./casper/auditPayload.mjs";
 import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } from "./lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot, summarizeOracleValidationSnapshot } from "./lib/oracleValidation.mjs";
+import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } from "./lib/complianceControls.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -183,6 +184,7 @@ const server = createServer(async (req, res) => {
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
         oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
+        complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
         timestamp: new Date().toISOString(),
       });
     }
@@ -203,12 +205,18 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { ok: true, oracleValidation: summarizeOracleValidationSnapshot(snapshot) });
     }
 
+    if (route === "GET /api/compliance-controls/status") {
+      const snapshot = await getComplianceControlsSnapshot();
+      return send(res, 200, { ok: true, complianceControls: summarizeComplianceControlsSnapshot(snapshot) });
+    }
+
 
     if (route === "GET /api/public-config") {
       const casper = getCasperStatus();
-      const [threatIntelligence, oracleValidation] = await Promise.all([
+      const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot().then(summarizeThreatIntelligenceSnapshot),
         getOracleValidationSnapshot().then(summarizeOracleValidationSnapshot),
+        getComplianceControlsSnapshot().then(summarizeComplianceControlsSnapshot),
       ]);
       return send(res, 200, {
         ok: true,
@@ -221,10 +229,11 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls"],
+          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls"],
         },
         threatIntelligence,
         oracleValidation,
+        complianceControls,
         gateway: {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
@@ -303,7 +312,41 @@ const server = createServer(async (req, res) => {
               quoteExpiresAt: "ISO-8601 route expiry time",
               sourceConfirmations: "Source-chain confirmation requirement declared by the route",
               destinationConfirmations: "Destination-chain confirmation requirement declared by the route"
+            },
+            compliance: {
+              originatorJurisdiction: "Two-letter jurisdiction code; do not submit names or identity documents",
+              beneficiaryJurisdiction: "Two-letter jurisdiction code",
+              counterpartyType: "VASP | Self-hosted Wallet | Organization | Individual",
+              originatorAttestation: {
+                status: "Verified | Pending | Rejected | Expired",
+                provider: "Approved provider label",
+                reference: "Opaque verification reference",
+                issuedAt: "ISO-8601",
+                expiresAt: "ISO-8601"
+              },
+              beneficiaryAttestation: {
+                status: "Verified | Pending | Rejected | Expired",
+                provider: "Approved provider label",
+                reference: "Opaque verification reference",
+                issuedAt: "ISO-8601",
+                expiresAt: "ISO-8601"
+              },
+              travelRule: {
+                status: "Complete | Incomplete | Not Required",
+                reference: "Opaque workflow reference",
+                dataHash: "Optional 32-byte hash"
+              },
+              screening: {
+                status: "Clear | Match | Review | Unavailable",
+                provider: "Approved screening provider",
+                reference: "Opaque screening reference",
+                screenedAt: "ISO-8601"
+              },
+              riskRating: "Low | Medium | High | Critical",
+              originatorVaspId: "Optional opaque VASP identifier",
+              beneficiaryVaspId: "Optional opaque VASP identifier"
             }
+
           }
         },
         walletValidation: {
@@ -426,6 +469,41 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "Bridge Controls can deterministically pass, require review, or block when a bridge adapter supplies complete route metadata. It does not certify provider solvency, destination-chain liveness, or cross-chain message delivery."
         },
+        complianceControls: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/compliance-controls/status",
+          purpose: "Evaluate non-sensitive compliance attestations, jurisdiction policy, counterparty classification, Travel Rule evidence, sanctions-screening evidence, and exact configured-feed matches before wallet signing.",
+          privacyBoundary: "The Gateway rejects raw personal identity data. Submit only statuses, two-letter jurisdiction codes, provider labels, opaque references, VASP identifiers, and hashes.",
+          feedSources: ["COMPLIANCE_CONTROLS_FEED_JSON", "COMPLIANCE_CONTROLS_FEED_PATH", "COMPLIANCE_CONTROLS_FEED_URL"],
+          deterministicChecks: [
+            "Originator and beneficiary attestation status, provider, reference, freshness, and expiry",
+            "Allowed, review, and blocked jurisdiction policy",
+            "Allowed counterparty types",
+            "Travel Rule completion evidence above a policy threshold",
+            "Maximum compliance risk rating",
+            "Current sanctions-screening attestation",
+            "Exact wallet, account-hash, contract, package, bridge-destination, and VASP identifier matches",
+            "Warn, Review, or Block behavior when required screening is unavailable"
+          ],
+          policyFields: {
+            enabled: "structuredRules.complianceControlsEnabled",
+            mode: "structuredRules.complianceControlMode: Observe | Review | Enforce",
+            unavailableAction: "structuredRules.complianceUnavailableAction: Warn | Review | Block",
+            requiredActions: "structuredRules.complianceRequiredActions",
+            requireOriginator: "structuredRules.complianceRequireOriginatorAttestation",
+            requireBeneficiary: "structuredRules.complianceRequireBeneficiaryAttestation",
+            requireTravelRule: "structuredRules.complianceRequireTravelRule",
+            travelRuleThreshold: "structuredRules.complianceTravelRuleThreshold",
+            requireSanctionsScreening: "structuredRules.complianceRequireSanctionsScreening",
+            allowedJurisdictions: "structuredRules.complianceAllowedJurisdictions",
+            blockedJurisdictions: "structuredRules.complianceBlockedJurisdictions",
+            reviewJurisdictions: "structuredRules.complianceReviewJurisdictions",
+            allowedCounterpartyTypes: "structuredRules.complianceAllowedCounterpartyTypes",
+            acceptedProviders: "structuredRules.complianceAcceptedProviders",
+            maximumRiskRating: "structuredRules.complianceMaximumRiskRating"
+          },
+          decisionRule: "Configured exact matches and rejected attestations can block; missing required evidence can warn, require review, or block according to policy. This module provides technical controls and evidence handling, not legal advice or a guarantee of regulatory compliance."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -437,6 +515,7 @@ const server = createServer(async (req, res) => {
           threatIntelligenceContext: "Sanitized feed status, policy behavior, checked identities, and exact-match indicator summaries",
           oracleValidationContext: "Sanitized oracle-feed state, policy limits, pair, reference price, deviation, source quorum, and confidence",
           bridgeControlsContext: "Sanitized route, provider, chain, asset, fee, quote-expiry, destination-format, and finality evidence",
+          complianceControlsContext: "Sanitized feed state, jurisdictions, attestation statuses, Travel Rule evidence status, screening status, risk rating, and exact-match summaries",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",

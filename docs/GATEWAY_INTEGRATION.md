@@ -204,6 +204,14 @@ For a provider-selected cross-chain route, include `action.bridge` and the exact
 
 Inspect `bridgeControlsContext` and Bridge Controls findings. An `Allowed` decision means the declared route satisfies configured controls; it does not prove provider solvency, destination-chain finality, or successful message delivery. Continue only to explicit wallet review and signing.
 
+## Add Compliance Controls evidence
+
+For actions covered by the active policy, send non-sensitive verification and screening evidence under `action.compliance`. Use provider labels, opaque references, timestamps, two-letter jurisdiction codes, status values, and optional data hashes. Do not send names, identity documents, addresses, contact information, documents, selfies, or biometrics; the Gateway rejects raw personal identity data.
+
+External verification providers remain responsible for personal-data handling. Magen3 evaluates the submitted status and freshness against the policy, records structured findings, and returns a sanitized `complianceControlsContext`. An optional operator-configured exact-match feed can add wallet, account-hash, contract/package, VASP-ID, and jurisdiction restrictions.
+
+Authorize only from the final `Allowed` decision and `executionApproved`. A clear screening status, valid attestation, or configured-feed no-match does not guarantee legal compliance. See `COMPLIANCE_CONTROLS.md`.
+
 ## Decision Handling
 
 ```ts
@@ -239,6 +247,8 @@ For Blocked and Review Required outcomes, use these fields to build user guidanc
 - `pipelineStages`
 - `threatIntelligenceContext`
 - `oracleValidationContext`
+- `bridgeControlsContext`
+- `complianceControlsContext`
 
 The core authorization decision is deterministic. Do not replace it with a language-model decision. A user-facing model may summarize evidence only if it cannot override Agent Shield.
 

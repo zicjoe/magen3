@@ -1,198 +1,172 @@
-# Magen3 Bridge Controls Foundation — Implementation Report
+# Magen3 Compliance Controls Foundation — Implementation Report
 
 ## Release summary
 
-Bridge Controls has moved from **Planned** to **Foundation Available**.
+Compliance Controls has moved from **Planned** to **Foundation Available**.
 
-This release adds deterministic, provider-agnostic cross-chain route validation to the existing Magen3 Gateway. It preserves the current API endpoint, per-agent authentication model, wallet connection flow, policy records, audit records, Casper proof contract, relayer configuration, SDK authentication, MCP authentication, Railway configuration, and Vercel configuration.
+This release adds a deterministic, provider-agnostic compliance evidence layer to the existing Magen3 Gateway before wallet signing. It preserves the current Gateway endpoint, per-agent authentication, agent and policy records, audit model, Casper decision-proof contract, relayer, wallet boundary, SDK authentication, MCP authentication, Railway configuration, and Vercel configuration.
 
-Bridge Controls is not labeled Live because Magen3 does not currently operate a bridge adapter, maintain a certified bridge-provider registry, verify provider liquidity or solvency, observe destination-chain finality, or prove cross-chain message delivery. The module evaluates submitted route metadata and policy boundaries honestly before wallet signing.
+Compliance Controls is not labeled Live because Magen3 does not bundle or certify a KYC/KYB provider, sanctions-data provider, legal rules engine, or jurisdiction-specific compliance determination. The module validates operator-configured policy, non-sensitive evidence, and exact configured-feed matches honestly.
 
-## Implemented behavior
+## Implemented evidence model
 
-Bridge and cross-chain transfer intents can include provider-supplied `action.bridge` metadata:
+Policy-covered intents may include `action.compliance` with:
 
-- Source chain
-- Destination chain
-- Provider
-- Route ID
-- Destination address
-- Bridged asset
-- Absolute fee and/or fee in basis points
-- Expected destination output
-- Minimum received
-- Quote timestamp
-- Quote expiry
-- Source confirmation requirement
-- Destination confirmation requirement
+- Originator and beneficiary two-letter jurisdiction codes
+- Counterparty type
+- Originator and beneficiary attestation status
+- Evidence-provider labels
+- Opaque attestation references
+- Attestation issue and expiry times
+- Travel Rule workflow status
+- Opaque Travel Rule reference
+- Optional 32-byte data hash
+- Screening status, provider, opaque reference, and timestamp
+- Low, Medium, High, or Critical risk rating
+- Opaque originator and beneficiary VASP identifiers
 
-The Gateway normalizes these fields without changing the top-level intent endpoint or authentication headers.
+The Gateway rejects raw names, dates of birth, passport and identity-document numbers, national or tax identifiers, residential addresses, email addresses, phone numbers, uploaded documents, selfies, and biometric data.
 
 ## Deterministic checks
 
-Bridge Controls now evaluates:
+Compliance Controls now evaluates:
 
-1. Required route metadata completeness.
-2. Provider-name and route-ID structure.
-3. Approved bridge providers.
-4. Distinct source and destination chains.
-5. Approved source chains.
-6. Approved destination chains.
-7. Explicitly blocked destination chains.
-8. Allowed bridge assets.
-9. Maximum bridge amount.
-10. Maximum route fee in basis points.
-11. Expected-output and minimum-received consistency.
-12. Quote timestamp validity and freshness.
-13. Quote expiry presence and validity when required.
-14. Casper destination public-key or account-hash structure.
-15. EVM destination address structure for recognized EVM chain families.
-16. Minimum source confirmation requirements.
-17. Minimum destination confirmation requirements.
+1. Whether the action is covered by the active compliance policy.
+2. Required evidence presence.
+3. Originator and beneficiary attestation status.
+4. Evidence-provider allowlists.
+5. Attestation issue-time freshness and expiry.
+6. Travel Rule workflow status above the configured amount threshold.
+7. Screening status and freshness.
+8. Originator and beneficiary jurisdiction format and policy.
+9. Allowed, review, and blocked jurisdictions.
+10. Allowed counterparty types.
+11. Maximum risk rating.
+12. Exact wallet, account-hash, Contract Hash, Package Hash, and VASP-ID matches from an operator feed.
+13. Exact configured jurisdiction restrictions.
+14. Feed generated time, freshness, record expiry, size, count, cache, timeout, and source safety.
+15. Warn, Review, or Block behavior when required evidence or configured intelligence is unavailable.
 
-Unknown destination-chain address families produce `unavailable`, not `pass`.
+A configured hard-block identity match, blocked jurisdiction, screening match, or rejected required attestation stops execution. A stale, unavailable, or incomplete source never silently becomes a pass.
 
 ## Policy controls
 
-The existing policy `structuredRules` object now supports:
+The existing `structuredRules` object now supports:
 
-- `bridgeControlMode`: `Observe`, `Review`, or `Enforce`
-- `bridgeControlUnavailableAction`: `Warn`, `Review`, or `Block`
-- `bridgeAllowedProviders`
-- `bridgeAllowedSourceChains`
-- `bridgeAllowedDestinationChains`
-- `bridgeBlockedDestinationChains`
-- `bridgeAllowedAssets`
-- `bridgeMaxAmount`
-- `bridgeMaxFeeBps`
-- `bridgeMaxQuoteAgeSeconds`
-- `bridgeRequireQuoteExpiry`
-- `bridgeMinSourceConfirmations`
-- `bridgeMinDestinationConfirmations`
+- `complianceControlsEnabled`
+- `complianceControlMode`: `Observe`, `Review`, or `Enforce`
+- `complianceUnavailableAction`: `Warn`, `Review`, or `Block`
+- `complianceRequiredActions`
+- `complianceRequireOriginatorAttestation`
+- `complianceRequireBeneficiaryAttestation`
+- `complianceRequireTravelRule`
+- `complianceTravelRuleThreshold`
+- `complianceRequireSanctionsScreening`
+- `complianceAllowedJurisdictions`
+- `complianceBlockedJurisdictions`
+- `complianceReviewJurisdictions`
+- `complianceAllowedCounterpartyTypes`
+- `complianceAcceptedProviders`
+- `complianceMaxAttestationAgeSeconds`
+- `complianceMaxScreeningAgeSeconds`
+- `complianceMaximumRiskRating`
 
-An explicitly blocked destination chain always blocks execution. Other violations follow the selected Observe, Review, or Enforce mode. Incomplete or unsupported route information follows the configured Warn, Review, or Block unavailable behavior.
+Legacy policies without compliance fields remain backward compatible and skip the module rather than changing existing decisions.
+
+## Optional configured feed
+
+The backend supports one optional source, with this precedence:
+
+1. `COMPLIANCE_CONTROLS_FEED_JSON`
+2. `COMPLIANCE_CONTROLS_FEED_PATH`
+3. `COMPLIANCE_CONTROLS_FEED_URL`
+
+Optional operating variables:
+
+- `COMPLIANCE_CONTROLS_API_KEY`
+- `COMPLIANCE_CONTROLS_CACHE_TTL_MS`
+- `COMPLIANCE_CONTROLS_MAX_AGE_MS`
+- `COMPLIANCE_CONTROLS_REQUEST_TIMEOUT_MS`
+
+Remote production feeds require HTTPS. Redirects, oversized responses, excessive record counts, stale feed timestamps, and expired entries are handled safely. Public status responses do not expose credentials, raw paths, raw URLs, loader details, or feed contents.
+
+The included `backend/data/compliance-controls.example.json` is entirely synthetic. Refresh it before a controlled testnet demonstration with:
+
+```bash
+pnpm compliance:refresh-example-feed
+```
 
 ## Product integration
 
-Bridge Controls is connected to:
+Compliance Controls is connected to:
 
-- Agent Gateway normalization
-- Deterministic Policy Engine
-- Risk Assessment
+- Agent Gateway normalization and raw-PII rejection
+- Policy Engine and deterministic Risk Assessment
 - Structured module findings
 - Security Pipeline
 - Decision explanations and remediation
 - Audit persistence
-- Original-intent audit evidence
-- Intent Playground
 - Security Coverage
 - Integration Health
-- Protection Modules status
-- Agent registration starter-policy defaults
+- Dashboard and Settings status
+- Agent registration starter policies
 - Policy creation and editing
-- Policy summary cards
-- TypeScript SDK request and response types
-- Python SDK pass-through tests and documentation
-- MCP schema, boundary guidance, and tests
-- README and platform documentation
+- Intent Playground examples
+- TypeScript SDK
+- Python SDK pass-through tests
+- MCP schema and instructions
+- Public config, health, and sanitized status endpoints
+- README and product/integration documentation
 
-## Intent Playground examples
+## Status endpoint
 
-The Playground includes:
+```http
+GET /api/compliance-controls/status
+```
 
-- Bridge route within policy
-- Unapproved bridge destination
-- Expired bridge quote
+It returns sanitized availability, source type/name, freshness, record counts, and safe error information.
 
-The result view displays provider, source and destination chains, route ID, asset and amount, fee limits, destination address family and validity, quote expiry, and confirmation requirements.
+## Intent Playground cases
 
-## Decision behavior
+- Compliance evidence complete
+- Incomplete Travel Rule evidence
+- Rejected beneficiary attestation
+- Configured compliance feed match
 
-### Allowed
+The response displays Compliance Controls findings, policy rule, non-sensitive evidence, suggested remediation, pipeline state, audit identifier, and proof state.
 
-A complete route can remain Allowed when its provider, chains, asset, amount, fee, quote, destination format, output bounds, and confirmations satisfy the active policy and all other Magen3 modules pass.
+## Database and deployment
 
-### Review Required
+There is **no database migration** and no new mandatory environment variable.
 
-Review mode can pause execution for an unapproved provider or chain, insufficient confirmations, excessive route fee, stale quote, unsupported destination-chain address family, or missing route controls.
+No change was made to:
 
-### Blocked
+- Agent IDs or API-key hashes
+- Gateway endpoint or authentication headers
+- Existing policies or audit records
+- Casper contract hash
+- Decision-proof relayer flow
+- Wallet connection or signing boundary
+- YieldBot or Codex authentication flow
+- Railway or Vercel configuration
 
-Enforce mode blocks route violations. An explicitly blocked destination chain always blocks. Expired routes, malformed destination addresses, invalid output bounds, excessive limits, and other enforced route failures stop execution before wallet signing.
+## Verification performed
 
-## Security boundary
-
-A passing Bridge Controls result does not prove:
-
-- Provider liquidity or solvency
-- Bridge smart-contract safety
-- Destination-chain liveness or finality
-- Recipient ownership of the destination address
-- Route execution success
-- Cross-chain message delivery
-
-Contract Validation still checks the exact Casper bridge Contract Hash or Package Hash. Execution Simulation preflight now also treats Bridge as a value-bearing action. Wallet signing remains outside Magen3 and requires explicit user approval.
-
-## Database and environment
-
-- No database migration is required.
-- No new mandatory environment variable is required.
-- Existing policies remain backward compatible.
-- Existing policies without Bridge Controls fields default to non-breaking Observe/Warn behavior internally.
-- The Casper contract hash is unchanged.
-- Railway and Vercel configuration files are unchanged.
-
-## Major files changed
-
-- `backend/lib/bridgeControls.mjs`
-- `backend/lib/bridgeControls.test.mjs`
-- `backend/lib/bridgeControls.integration.test.mjs`
-- `backend/lib/bridgeControls.gateway.integration.test.mjs`
-- `backend/lib/agentGateway.mjs`
-- `backend/lib/policyEngine.mjs`
-- `backend/lib/contractValidation.mjs`
-- `backend/lib/executionSimulation.mjs`
-- `backend/lib/securityModel.mjs`
-- `backend/store/memoryStore.mjs`
-- `backend/store/postgresStore.mjs`
-- `backend/server.mjs`
-- `backend/data/seed.mjs`
-- `backend/lib/frontendSecurityModel.test.mjs`
-- `src/app/App.tsx`
-- `src/app/lib/securityModel.ts`
-- `packages/sdk-js/src/index.ts`
-- `packages/sdk-js/test/sdk.test.mjs`
-- `packages/mcp-server/src/core.ts`
-- `packages/mcp-server/src/server.ts`
-- `packages/mcp-server/test/core.test.mjs`
-- `packages/sdk-python/tests/test_client.py`
-- `README.md`
-- `SECURITY.md`
-- `docs/BRIDGE_CONTROLS.md`
-- `docs/AGENT_GATEWAY_API.md`
-- `docs/GATEWAY_INTEGRATION.md`
-- `docs/MAGEN3_PLATFORM.md`
-- `docs/MCP_SERVER.md`
-- SDK and MCP README files
-
-## Verification completed
-
-- 114 backend and security tests passed.
-- 15 focused Bridge Controls unit and policy-integration tests passed.
-- 2 authenticated memory-store Gateway persistence tests passed.
-- Allowed, Review Required, and Blocked bridge outcomes were verified.
-- Bridge findings, pipeline stages, context, and original route metadata were verified in audit records.
-- 7 TypeScript SDK tests passed.
-- 3 Python SDK tests passed.
-- 4 MCP core tests passed.
-- Every backend `.mjs` file passed Node syntax checking.
-- 57 TypeScript/TSX source files passed syntax transpilation.
-- The changed frontend application and security model passed a focused semantic TypeScript check using temporary dependency declarations.
-- The TypeScript SDK passed a real TypeScript build.
+- 130 backend and security tests passed.
+- 16 focused Compliance Controls tests passed.
+- Authenticated Allowed, Review Required, and Blocked compliance outcomes were verified and persisted.
+- Raw personal identity fields were verified as rejected before audit persistence.
+- 8 TypeScript SDK tests passed after a real SDK TypeScript build.
+- 4 Python SDK tests passed.
+- 4 MCP core tests passed using a temporary local build harness.
+- Every backend and script `.mjs` file passed Node syntax checking.
+- 57 TypeScript/TSX source files passed TypeScript syntax transpilation.
+- A partial root TypeScript check showed no project-local diagnostics beyond missing third-party packages and their type declarations.
+- `/api/health` and `/api/compliance-controls/status` were exercised against the running memory-store server with the synthetic feed.
 
 ## Verification limitation
 
-A full fresh dependency installation, complete Vite production build, and full MCP protocol build could not be run in the sandbox because the configured package registry returned HTTP 503 and the public npm registry was not reachable from the environment. No claim is made that those unavailable checks ran here.
+The configured package registry returned HTTP 503 before dependencies could be installed. Therefore, the full dependency-backed root typecheck, Vite production build, MCP protocol startup test, and complete `pnpm verify` command could not be run in this environment.
 
 Run locally before pushing:
 
@@ -205,54 +179,90 @@ pnpm mcp:test
 pnpm build
 ```
 
-## Local run
+## Major files changed
 
-```powershell
-pnpm install --frozen-lockfile
-pnpm dev:backend
-```
+- `backend/lib/complianceControls.mjs`
+- `backend/lib/complianceControls.test.mjs`
+- `backend/lib/complianceControls.integration.test.mjs`
+- `backend/lib/complianceControls.gateway.integration.test.mjs`
+- `backend/lib/agentGateway.mjs`
+- `backend/lib/policyEngine.mjs`
+- `backend/store/memoryStore.mjs`
+- `backend/store/postgresStore.mjs`
+- `backend/server.mjs`
+- `backend/data/compliance-controls.example.json`
+- `backend/data/seed.mjs`
+- `src/app/App.tsx`
+- `src/app/lib/api.ts`
+- `src/app/lib/securityModel.ts`
+- `packages/sdk-js/src/index.ts`
+- `packages/mcp-server/src/core.ts`
+- `packages/mcp-server/src/server.ts`
+- `scripts/compliance/refresh-example-feed.mjs`
+- `.env.example`
+- `README.md`
+- `docs/COMPLIANCE_CONTROLS.md`
+- Gateway, SDK, MCP, and platform documentation
 
-In another terminal:
+## Current protection-module status
 
-```powershell
-pnpm dev:frontend
-```
+### Live
 
-## Deployment
+- Identity and Authentication
+- Policy Enforcement
+- Wallet Validation
+- Contract Validation
+- Risk Assessment
 
-No deployment-command changes are required. After local verification, commit and push to the branch watched by Railway and Vercel. Railway will use the existing backend start command and Vercel will use the existing frontend configuration.
+### Foundation Available
+
+- Execution Simulation
+- Threat Intelligence
+- Oracle Validation
+- Bridge Controls
+- Compliance Controls
+
+### Preview
+
+- None
+
+### Planned
+
+- None
 
 ## Suggested commit
 
 ```text
-feat(bridge-controls): add deterministic cross-chain route protection
+feat(compliance-controls): add non-sensitive compliance evidence foundation
 ```
 
 Suggested body:
 
 ```text
-Add provider, chain, asset, destination-format, fee, quote-freshness,
-output-bound, amount, and confirmation checks for Bridge intents.
+Add policy-driven attestation, Travel Rule evidence, jurisdiction,
+counterparty, screening, risk-rating, freshness, and exact configured-feed
+checks before wallet signing.
 
-Integrate structured findings with the Gateway, Risk Assessment,
-Security Pipeline, Audit Logs, policies, Security Coverage, Integration
-Health, Intent Playground, SDKs, MCP, and documentation.
+Reject raw personal identity data and persist only non-sensitive status,
+provider, opaque-reference, timestamp, jurisdiction, and hash evidence.
 
-Preserve the existing API, authentication, database, Casper proof,
-wallet, YieldBot, Codex, Railway, and Vercel contracts.
+Integrate Compliance Controls with the Gateway, Risk Assessment, Security
+Pipeline, Audit Logs, policies, Security Coverage, Integration Health,
+Intent Playground, SDKs, MCP, status endpoints, and documentation while
+preserving existing API, Casper proof, Railway, and Vercel contracts.
 ```
 
 ## Manual QA checklist
 
-1. Connect Casper Wallet.
-2. Open Policies and configure approved bridge providers, source chains, destination chains, assets, fee limits, quote age, and confirmation requirements.
-3. Add the exact bridge Contract Hash or Package Hash to Trusted Targets.
-4. Open Intent Playground and select `Bridge route within policy`.
-5. Confirm Bridge Controls appears in the Security Pipeline and module findings.
-6. Confirm the route context displays provider, chains, fee, destination format, expiry, and confirmations.
-7. Run `Unapproved bridge destination` and confirm Review Required in Review mode.
-8. Switch Bridge Controls to Enforce and confirm the same violation becomes Blocked.
-9. Run `Expired bridge quote` and confirm it cannot proceed under Enforce mode.
-10. Confirm the new decisions appear automatically in Audit Logs with original bridge metadata.
-11. Confirm the Casper decision-proof flow remains available.
-12. Test the layout on desktop and mobile widths.
+1. Connect Casper Wallet and open Policies.
+2. Enable Compliance Controls for a test agent.
+3. Select Review mode and configure required actions and evidence.
+4. Run `Compliance evidence complete` in Intent Playground.
+5. Confirm Compliance Controls appears in findings and the Security Pipeline.
+6. Run `Incomplete Travel Rule evidence` and confirm Review Required.
+7. Run `Rejected beneficiary attestation` and confirm Blocked.
+8. Refresh and configure the synthetic feed, then run `Configured compliance feed match`.
+9. Confirm no raw personal identity data appears in the request, response, or audit record.
+10. Confirm new audit records appear automatically and retain the Casper proof flow.
+11. Check `/api/compliance-controls/status` and Settings operational status.
+12. Repeat on desktop and mobile layouts.

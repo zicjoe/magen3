@@ -5,6 +5,7 @@ import { initialDecisionProofState, recordDecisionProof } from "../casper/decisi
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
+import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
@@ -334,9 +335,10 @@ export function createMemoryStore() {
 
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
-      const [threatIntelligence, oracleValidation] = await Promise.all([
+      const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot(),
         getOracleValidationSnapshot(),
+        getComplianceControlsSnapshot(),
       ]);
       const result = evaluatePolicy({
         request: {
@@ -350,6 +352,7 @@ export function createMemoryStore() {
         auditLogs: scopedAuditLogs(walletAddress),
         threatIntelligence,
         oracleValidation,
+        complianceControls,
       });
       const review = {
         id: makeId("REV"),
@@ -464,15 +467,39 @@ export function createMemoryStore() {
         bridgeQuoteExpiresAt: intent.bridgeQuoteExpiresAt,
         bridgeSourceConfirmations: intent.bridgeSourceConfirmations,
         bridgeDestinationConfirmations: intent.bridgeDestinationConfirmations,
+        complianceOriginatorJurisdiction: intent.complianceOriginatorJurisdiction,
+        complianceBeneficiaryJurisdiction: intent.complianceBeneficiaryJurisdiction,
+        complianceCounterpartyType: intent.complianceCounterpartyType,
+        complianceOriginatorAttestationStatus: intent.complianceOriginatorAttestationStatus,
+        complianceOriginatorAttestationProvider: intent.complianceOriginatorAttestationProvider,
+        complianceOriginatorAttestationReference: intent.complianceOriginatorAttestationReference,
+        complianceOriginatorAttestationIssuedAt: intent.complianceOriginatorAttestationIssuedAt,
+        complianceOriginatorAttestationExpiresAt: intent.complianceOriginatorAttestationExpiresAt,
+        complianceBeneficiaryAttestationStatus: intent.complianceBeneficiaryAttestationStatus,
+        complianceBeneficiaryAttestationProvider: intent.complianceBeneficiaryAttestationProvider,
+        complianceBeneficiaryAttestationReference: intent.complianceBeneficiaryAttestationReference,
+        complianceBeneficiaryAttestationIssuedAt: intent.complianceBeneficiaryAttestationIssuedAt,
+        complianceBeneficiaryAttestationExpiresAt: intent.complianceBeneficiaryAttestationExpiresAt,
+        complianceTravelRuleStatus: intent.complianceTravelRuleStatus,
+        complianceTravelRuleReference: intent.complianceTravelRuleReference,
+        complianceTravelRuleDataHash: intent.complianceTravelRuleDataHash,
+        complianceScreeningStatus: intent.complianceScreeningStatus,
+        complianceScreeningProvider: intent.complianceScreeningProvider,
+        complianceScreeningReference: intent.complianceScreeningReference,
+        complianceScreenedAt: intent.complianceScreenedAt,
+        complianceRiskRating: intent.complianceRiskRating,
+        complianceOriginatorVaspId: intent.complianceOriginatorVaspId,
+        complianceBeneficiaryVaspId: intent.complianceBeneficiaryVaspId,
         walletAddress: executionWalletAddress,
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
       };
-      const [threatIntelligence, oracleValidation] = await Promise.all([
+      const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot(),
         getOracleValidationSnapshot(),
+        getComplianceControlsSnapshot(),
       ]);
-      const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress), threatIntelligence, oracleValidation });
+      const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress), threatIntelligence, oracleValidation, complianceControls });
       const agent = publicAgent(agentRecord);
       const policy = scopedPolicies(walletAddress).find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
@@ -554,6 +581,39 @@ export function createMemoryStore() {
               quoteExpiresAt: intent.bridgeQuoteExpiresAt,
               sourceConfirmations: intent.bridgeSourceConfirmations,
               destinationConfirmations: intent.bridgeDestinationConfirmations,
+            },
+            compliance: {
+              originatorJurisdiction: intent.complianceOriginatorJurisdiction,
+              beneficiaryJurisdiction: intent.complianceBeneficiaryJurisdiction,
+              counterpartyType: intent.complianceCounterpartyType,
+              originatorAttestation: {
+                status: intent.complianceOriginatorAttestationStatus,
+                provider: intent.complianceOriginatorAttestationProvider,
+                reference: intent.complianceOriginatorAttestationReference,
+                issuedAt: intent.complianceOriginatorAttestationIssuedAt,
+                expiresAt: intent.complianceOriginatorAttestationExpiresAt,
+              },
+              beneficiaryAttestation: {
+                status: intent.complianceBeneficiaryAttestationStatus,
+                provider: intent.complianceBeneficiaryAttestationProvider,
+                reference: intent.complianceBeneficiaryAttestationReference,
+                issuedAt: intent.complianceBeneficiaryAttestationIssuedAt,
+                expiresAt: intent.complianceBeneficiaryAttestationExpiresAt,
+              },
+              travelRule: {
+                status: intent.complianceTravelRuleStatus,
+                reference: intent.complianceTravelRuleReference,
+                dataHash: intent.complianceTravelRuleDataHash,
+              },
+              screening: {
+                status: intent.complianceScreeningStatus,
+                provider: intent.complianceScreeningProvider,
+                reference: intent.complianceScreeningReference,
+                screenedAt: intent.complianceScreenedAt,
+              },
+              riskRating: intent.complianceRiskRating,
+              originatorVaspId: intent.complianceOriginatorVaspId,
+              beneficiaryVaspId: intent.complianceBeneficiaryVaspId,
             },
           },
         },

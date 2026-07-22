@@ -216,3 +216,46 @@ test("preserves Bridge Controls route metadata in intent payloads", async () => 
   assert.equal(captured.action.bridge.feeBps, 50);
   assert.equal(captured.action.bridge.destinationConfirmations, 12);
 });
+
+test("preserves non-sensitive Compliance Controls evidence in intent payloads", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 8, reason: "compliance checks passed", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      target: "01def",
+      compliance: {
+        originatorJurisdiction: "NG",
+        beneficiaryJurisdiction: "US",
+        counterpartyType: "VASP",
+        originatorAttestation: { status: "Verified", provider: "Verified Provider", reference: "ORIGINATOR-001" },
+        beneficiaryAttestation: { status: "Verified", provider: "Verified Provider", reference: "BENEFICIARY-001" },
+        travelRule: { status: "Complete", reference: "TRAVEL-RULE-001", dataHash: "a".repeat(64) },
+        screening: { status: "Clear", provider: "Verified Provider", reference: "SCREEN-001", screenedAt: "2026-07-22T15:00:00.000Z" },
+        riskRating: "Low",
+      },
+    },
+  });
+
+  assert.equal(captured.action.compliance.travelRule.status, "Complete");
+  assert.equal(captured.action.compliance.screening.status, "Clear");
+  assert.equal(captured.action.compliance.originatorAttestation.reference, "ORIGINATOR-001");
+});

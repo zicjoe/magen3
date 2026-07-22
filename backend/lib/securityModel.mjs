@@ -68,7 +68,7 @@ export const PROTECTION_MODULES = [
   {
     id: "compliance-controls",
     name: "Compliance Controls",
-    status: "Planned",
+    status: "Foundation Available",
     capabilities: ["Treasury Operations", "Enterprise Automation"],
   },
   {

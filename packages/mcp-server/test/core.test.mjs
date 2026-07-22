@@ -44,4 +44,7 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.bridgeControls, /provider-supplied/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.destinationChain, /destination chain/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.quoteExpiresAt, /expiry/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.complianceControls, /non-sensitive/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.compliance.travelRule, /opaque/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.compliance.screening, /Clear/i);
 });

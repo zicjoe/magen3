@@ -210,6 +210,50 @@ The active policy controls approved providers, source and destination chains, bl
 
 Magen3 validates submitted route metadata only. It does not certify bridge provider solvency, liquidity, contract safety, destination finality, or cross-chain delivery.
 
+### Compliance Controls evaluation
+
+Compliance Controls is **Foundation Available**. Actions covered by the active policy may include non-sensitive evidence under `action.compliance`:
+
+```json
+{
+  "originatorJurisdiction": "NG",
+  "beneficiaryJurisdiction": "GB",
+  "counterpartyType": "VASP",
+  "originatorAttestation": {
+    "status": "Verified",
+    "provider": "Reviewed Identity Provider",
+    "reference": "att_originator_123",
+    "issuedAt": "2026-07-22T12:00:00.000Z",
+    "expiresAt": "2026-07-23T12:00:00.000Z"
+  },
+  "beneficiaryAttestation": {
+    "status": "Verified",
+    "provider": "Reviewed Identity Provider",
+    "reference": "att_beneficiary_456",
+    "issuedAt": "2026-07-22T12:00:00.000Z",
+    "expiresAt": "2026-07-23T12:00:00.000Z"
+  },
+  "travelRule": {
+    "status": "Complete",
+    "reference": "travel_rule_789",
+    "dataHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "screening": {
+    "status": "Clear",
+    "provider": "Reviewed Screening Provider",
+    "reference": "screening_123",
+    "screenedAt": "2026-07-22T12:00:00.000Z"
+  },
+  "riskRating": "Low",
+  "originatorVaspId": "vasp-originator",
+  "beneficiaryVaspId": "vasp-beneficiary"
+}
+```
+
+The Gateway rejects raw names, dates of birth, identity-document and tax identifiers, addresses, contact information, documents, selfies, and biometric data. Verification providers retain personal data; Magen3 accepts only statuses, provider labels, opaque references, timestamps, jurisdiction codes, and hashes.
+
+The active policy controls required actions, attestation and screening requirements, Travel Rule threshold, jurisdiction and counterparty rules, accepted providers, freshness, maximum risk rating, enforcement mode, and unavailable-evidence behavior. An optional operator-configured feed provides exact wallet, account-hash, contract/package, VASP-ID, and jurisdiction matches. A clear result or feed no-match is not a guarantee of legal compliance.
+
 ## Decision Response
 
 The top-level response preserves the existing contract and adds structured explanation data inside `result` and `auditLog`.
@@ -228,7 +272,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",

@@ -79,3 +79,9 @@ Every intent submission may create an audit record and Casper decision-proof wor
 For Bridge actions, send complete provider-supplied route metadata inside `action.bridge`. The MCP schema supports source and destination chains, provider, route ID, destination address, asset, fee, output bounds, quote timestamps, and confirmation requirements. Bridge Controls validates these fields against the active policy before an agent may continue to wallet signing.
 
 A passing Bridge Controls finding does not certify provider solvency, destination finality, or cross-chain delivery. The MCP client must follow the final Magen3 decision and must never bypass Review Required or Blocked.
+
+## Compliance Controls boundary
+
+For policy-covered transfers, treasury payments, or Bridge actions, MCP clients may submit only non-sensitive evidence under `action.compliance`: jurisdiction codes, counterparty type, attestation and screening status, provider labels, opaque references, timestamps, optional data hashes, risk rating, and opaque VASP IDs. The MCP schema rejects raw names, identity documents, addresses, contact details, documents, selfies, and biometrics.
+
+Test with the Intent Playground examples or the synthetic record in `backend/data/compliance-controls.example.json` after refreshing it. Codex should report the final decision, triggered Compliance Controls rule, sanitized evidence, remediation, and audit-log identifier without signing or broadcasting anything. A feed no-match or clear screening status is not a guarantee of legal compliance.

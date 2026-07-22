@@ -105,7 +105,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
 | Oracle Validation | **Foundation Available** | Freshness-checked multi-source price comparison, source quorum, confidence, spread, quote freshness, and execution-price deviation controls. No production provider is bundled. |
 | Bridge Controls | **Foundation Available** | Deterministic provider, chain, asset, destination-format, fee, quote-freshness, output-bound, and confirmation controls for provider-supplied bridge routes. |
-| Compliance Controls | **Planned** | No current backend checks. |
+| Compliance Controls | **Foundation Available** | Policy-driven non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, freshness, and exact configured-feed checks. No compliance provider or legal determination is bundled. |
 | Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
 
 ### Live Wallet Validation
@@ -242,6 +242,34 @@ An unknown destination-chain address family is reported as unavailable rather th
 
 See [`docs/BRIDGE_CONTROLS.md`](docs/BRIDGE_CONTROLS.md) for the request schema, policy controls, decision behavior, and security boundary.
 
+### Compliance Controls foundation
+
+Compliance Controls evaluates non-sensitive compliance evidence and operator-configured exact-match restrictions before wallet signing. It is **Foundation Available**, not Live, because Magen3 does not bundle or certify a KYC/KYB provider, sanctions-data provider, legal rules engine, or jurisdiction-specific compliance determination.
+
+Current deterministic checks include:
+
+- Originator and beneficiary attestation status, provider, opaque reference, issue time, and expiry.
+- Opaque Travel Rule workflow status, reference, and optional data hash.
+- Originator and beneficiary two-letter jurisdiction policy.
+- Counterparty type policy for VASPs, self-hosted wallets, organizations, and individuals.
+- External screening status, provider, opaque reference, and freshness.
+- Maximum permitted risk rating.
+- Exact wallet, account-hash, Contract Hash, Package Hash, and VASP-ID matches from a configured feed.
+- Feed-generated timestamp, expiry, cache, size, timeout, and unavailable behavior.
+- `Observe`, `Review`, and `Enforce` handling plus `Warn`, `Review`, or `Block` behavior when required evidence is unavailable.
+
+The Gateway rejects names, dates of birth, identity-document numbers, residential addresses, email addresses, phone numbers, documents, selfies, and biometric data. External verification systems should retain personal data and send Magen3 only status, provider labels, opaque references, timestamps, jurisdiction codes, and hashes.
+
+A clear screening result or exact-feed no-match does not guarantee regulatory compliance. Policy configuration and operator-supplied evidence remain subject to the operator's legal and risk review.
+
+The repository includes `backend/data/compliance-controls.example.json` with synthetic test records. Refresh its timestamp before a controlled demo:
+
+```bash
+pnpm compliance:refresh-example-feed
+```
+
+See [`docs/COMPLIANCE_CONTROLS.md`](docs/COMPLIANCE_CONTROLS.md) for the evidence schema, policy controls, feed format, privacy boundary, and deployment guidance.
+
 ## Guided agent registration
 
 The Connected Agents flow uses a six-step wizard:
@@ -271,6 +299,8 @@ Supported policy fields are enforced by the current backend:
 - Conservative, Balanced, or Aggressive risk mode
 - Threat Intelligence mode, minimum confidence, and unavailable-feed behavior through `structuredRules`
 - Oracle Validation mode, quote age, maximum deviation, source spread, confidence, source quorum, and unavailable-feed behavior through `structuredRules`
+- Bridge Controls provider, chain, asset, amount, fee, quote, destination, and confirmation boundaries through `structuredRules`
+- Compliance Controls attestation, Travel Rule, jurisdiction, counterparty, screening, risk, provider, freshness, and unavailable-evidence behavior through `structuredRules`
 
 Available presets:
 
@@ -282,7 +312,7 @@ Available presets:
 - Enterprise Controlled Automation
 - Custom
 
-Policy-specific maximum slippage, full state simulation, provider solvency, cross-chain delivery verification, sanctions screening, and any unconfigured external provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence and Oracle Validation provide configurable deterministic feed checks but remain Foundation Available rather than claiming comprehensive reputation coverage or guaranteed market truth.
+Policy-specific maximum slippage, full state simulation, provider solvency, cross-chain delivery verification, legal determinations, and any unconfigured external provider are not represented as live authorization rules. Structural swap bounds and transaction-construction preflight are available through Execution Simulation. Threat Intelligence and Oracle Validation provide configurable deterministic feed checks but remain Foundation Available rather than claiming comprehensive reputation coverage or guaranteed market truth.
 
 ## Structured findings and decisions
 
@@ -697,6 +727,28 @@ ORACLE_VALIDATION_REQUEST_TIMEOUT_MS=2500
 
 Do not configure more than one source; precedence is inline JSON, then file path, then remote URL. The included example feed is synthetic and must be refreshed with `pnpm oracle:refresh-example-feed` immediately before a controlled demo. Confirm `/api/oracle-validation/status` after backend deployment.
 
+### Compliance Controls foundation
+
+Configure at most one optional restriction-feed source:
+
+```env
+# Preferred for Railway: JSON stored as a protected environment variable
+COMPLIANCE_CONTROLS_FEED_JSON={"version":"1","source":"Reviewed compliance feed","generatedAt":"2026-07-22T18:00:00.000Z","indicators":[],"restrictedJurisdictions":[]}
+
+# Or a mounted/local file path
+# COMPLIANCE_CONTROLS_FEED_PATH=backend/data/compliance-controls.example.json
+
+# Or a remote HTTPS JSON endpoint
+# COMPLIANCE_CONTROLS_FEED_URL=https://compliance.example/feed.json
+# COMPLIANCE_CONTROLS_API_KEY=provider-secret
+
+COMPLIANCE_CONTROLS_CACHE_TTL_MS=300000
+COMPLIANCE_CONTROLS_MAX_AGE_MS=86400000
+COMPLIANCE_CONTROLS_REQUEST_TIMEOUT_MS=2500
+```
+
+Feed precedence is inline JSON, then file path, then remote URL. Provider credentials, raw locations, and feed contents are never returned by the public status endpoint. The included feed is synthetic and should be refreshed with `pnpm compliance:refresh-example-feed` immediately before a controlled demo. Confirm `/api/compliance-controls/status` after backend deployment.
+
 ## Verification
 
 ```bash
@@ -723,7 +775,7 @@ The repository retains the existing Dockerfile and `railway.json`.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
 5. Run `pnpm db:migrate` against the production database before relying on the new fields.
-6. Confirm `/api/health`, `/api/threat-intelligence/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
+6. Confirm `/api/health`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
 
@@ -752,8 +804,9 @@ The existing `vercel.json` remains valid.
 8. Submit a Blocked intent.
 9. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
 10. Refresh and configure the synthetic Oracle Validation feed, then submit within-bounds, deviation, and stale-quote examples.
-10. Open the audit detail and show findings, explanation, pipeline, and proof state.
-11. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
+11. Configure the synthetic Compliance Controls feed and submit complete-evidence, incomplete-Travel-Rule, and exact-match examples.
+12. Open the audit detail and show findings, explanation, pipeline, and proof state.
+13. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
 
 ## Security considerations
 
@@ -767,6 +820,8 @@ The existing `vercel.json` remains valid.
 - Foundation, Preview, and Planned labels describe implementation maturity; only actual findings and the final decision authorize or stop execution.
 - Review the provenance, freshness, confidence, and legal basis of any configured threat feed. An exact no-match is not proof that a target is safe.
 - A high Security Coverage score does not imply invulnerability.
+- Never submit raw personal identity data to Magen3. Keep PII with the external verification provider and send only non-sensitive statuses, opaque references, timestamps, jurisdiction codes, and hashes.
+- Treat Compliance Controls as a deterministic policy and evidence layer, not legal advice or a guarantee of regulatory compliance.
 
 ## Troubleshooting
 
@@ -778,6 +833,8 @@ The existing `vercel.json` remains valid.
 | No active policy | Complete onboarding or create an active policy for the agent. |
 | Threat feed unavailable | Configure one feed source, verify JSON structure, and check `/api/threat-intelligence/status`. |
 | Threat feed stale | Publish a current `generatedAt` value or adjust `THREAT_INTELLIGENCE_MAX_AGE_MS` only after reviewing the operational risk. |
+| Compliance feed unavailable | Configure one feed source when exact matching is required, verify JSON structure, and check `/api/compliance-controls/status`. Policy unavailable behavior still applies when no feed is configured. |
+| Compliance request rejected | Remove names, identity documents, addresses, contact information, biometrics, and other raw PII. Submit only supported non-sensitive evidence fields. |
 | Audit records appear stale | Confirm the wallet is still connected and the backend bootstrap route is reachable. The UI polls every six seconds. |
 | Decision proof pending | Check relayer configuration, contract hash, funded relayer account, and audit proof error. |
 | Casper Wallet unavailable | Install, unlock, and approve Casper Wallet in the browser. |

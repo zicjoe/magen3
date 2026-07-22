@@ -66,3 +66,7 @@ The MCP client never sends oracle-provider credentials. Those remain backend env
 For `Bridge` actions, provide `action.bridge` with the provider-supplied source and destination chains, provider, route ID, destination address, asset, fee, output bounds, quote timestamps, and confirmation requirements. Inspect `bridgeControlsContext` and structured Bridge Controls findings before continuing.
 
 Bridge Controls is Foundation Available. It validates declared route metadata and configured policy boundaries but does not certify a bridge provider, destination-chain finality, or cross-chain message delivery.
+
+## Compliance Controls
+
+The MCP schema accepts non-sensitive compliance evidence under `action.compliance` and rejects raw names, identity documents, addresses, contact information, documents, selfies, and biometrics. Inspect the final decision, structured Compliance Controls findings, and sanitized `complianceControlsContext`. A clear result or feed no-match does not guarantee legal compliance.

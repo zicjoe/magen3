@@ -71,3 +71,9 @@ This classification applies only to generated Connected Agent API keys. User pas
 ## Bridge Controls security boundary
 
 Bridge Controls validates provider-supplied route metadata and policy boundaries before signing. It does not hold bridge credentials, certify bridge providers, verify provider liquidity or solvency, or prove cross-chain message delivery. Exact bridge contracts remain subject to Contract Validation. Unknown destination-chain address families are reported as unavailable rather than treated as safe.
+
+## Compliance Controls privacy and legal boundary
+
+Compliance Controls accepts only non-sensitive status evidence, provider labels, opaque references, timestamps, two-letter jurisdiction codes, optional hashes, risk ratings, and opaque VASP identifiers. The Agent Gateway rejects names, dates of birth, identity-document and tax identifiers, residential addresses, contact information, documents, selfies, and biometric data.
+
+Magen3 does not bundle or certify a KYC/KYB provider, sanctions-data provider, legal rules engine, or jurisdiction-specific compliance determination. Operators are responsible for provider due diligence, data licensing, privacy, retention, and legal review. A clear screening result or exact-feed no-match is not a guarantee of compliance.

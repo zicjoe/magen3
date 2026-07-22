@@ -119,3 +119,7 @@ const result = await magen3.checkIntent({
 ```
 
 The response may include `bridgeControlsContext` and structured Bridge Controls findings. Bridge Controls is Foundation Available: it validates submitted route metadata and policy boundaries, but does not certify provider solvency, destination finality, or message delivery.
+
+## Compliance Controls evidence
+
+TypeScript integrations may provide `action.compliance` with non-sensitive status, provider, opaque reference, timestamp, jurisdiction, hash, risk-rating, and VASP-ID fields. The response may include sanitized `complianceControlsContext` and structured findings. Raw personal identity data is rejected. Compliance Controls is Foundation Available and does not make a legal determination.

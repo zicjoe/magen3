@@ -4,6 +4,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { configFromEnv, createClient, createToolHandlers } from "./core.js";
 
+
+const complianceAttestationSchema = z.object({
+  status: z.enum(["Verified", "Pending", "Rejected", "Expired", "Not Provided"]).or(z.string().min(1)),
+  provider: z.string().min(1).max(96).optional(),
+  reference: z.string().min(1).max(128).optional(),
+  issuedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+  expiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+}).strict();
+
 const actionSchema = z.object({
   type: z.string().min(1),
   amount: z.number().finite().nonnegative().optional(),
@@ -37,6 +46,27 @@ const actionSchema = z.object({
     sourceConfirmations: z.number().int().nonnegative().optional(),
     destinationConfirmations: z.number().int().nonnegative().optional(),
   }).optional(),
+  compliance: z.object({
+    originatorJurisdiction: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+    beneficiaryJurisdiction: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+    counterpartyType: z.enum(["VASP", "Self-hosted Wallet", "Organization", "Individual", "Unknown"]).or(z.string().min(1)).optional(),
+    originatorAttestation: complianceAttestationSchema.optional(),
+    beneficiaryAttestation: complianceAttestationSchema.optional(),
+    travelRule: z.object({
+      status: z.enum(["Complete", "Incomplete", "Not Required", "Not Provided"]).or(z.string().min(1)),
+      reference: z.string().min(1).max(128).optional(),
+      dataHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    }).strict().optional(),
+    screening: z.object({
+      status: z.enum(["Clear", "Match", "Review", "Unavailable", "Not Provided"]).or(z.string().min(1)),
+      provider: z.string().min(1).max(96).optional(),
+      reference: z.string().min(1).max(128).optional(),
+      screenedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
+    }).strict().optional(),
+    riskRating: z.enum(["Low", "Medium", "High", "Critical", "Unknown"]).or(z.string().min(1)).optional(),
+    originatorVaspId: z.string().min(1).max(128).optional(),
+    beneficiaryVaspId: z.string().min(1).max(128).optional(),
+  }).strict().optional(),
   preflight: z.object({
     paymentAmountMotes: z.string().regex(/^[1-9]\d*$/).optional(),
     gasPriceTolerance: z.number().int().positive().optional(),
@@ -63,7 +93,7 @@ export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
     { name: "magen3-execution-firewall", version: "0.2.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence, Oracle Validation, and Bridge Controls findings for route metadata, chain boundaries, address format, fees, freshness, and confirmations. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop and request human review. Inspect deterministic module findings, including Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

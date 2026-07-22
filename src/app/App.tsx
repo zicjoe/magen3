@@ -227,6 +227,22 @@ interface OracleValidationStatus {
   error?: string;
 }
 
+
+interface ComplianceControlsStatus {
+  status?: "available" | "stale" | "unavailable" | string;
+  sourceType?: string;
+  sourceName?: string;
+  generatedAt?: string;
+  fetchedAt?: string;
+  indicatorCount?: number;
+  activeIndicatorCount?: number;
+  jurisdictionCount?: number;
+  activeJurisdictionCount?: number;
+  ageMs?: number | null;
+  maxAgeMs?: number | null;
+  error?: string;
+}
+
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -281,6 +297,37 @@ interface DecisionResult {
     sourceCount?: number;
     confidence?: number | null;
     quoteTimestamp?: string;
+  };
+  complianceControlsContext?: {
+    status?: string;
+    sourceType?: string;
+    sourceName?: string;
+    generatedAt?: string;
+    fetchedAt?: string;
+    indicatorCount?: number;
+    activeIndicatorCount?: number;
+    jurisdictionCount?: number;
+    activeJurisdictionCount?: number;
+    error?: string;
+    mode?: string;
+    unavailableAction?: string;
+    requiredActions?: string[];
+    requireOriginatorAttestation?: boolean;
+    requireBeneficiaryAttestation?: boolean;
+    requireTravelRule?: boolean;
+    travelRuleThreshold?: number;
+    requireSanctionsScreening?: boolean;
+    originatorJurisdiction?: string;
+    beneficiaryJurisdiction?: string;
+    counterpartyType?: string;
+    originatorAttestationStatus?: string;
+    beneficiaryAttestationStatus?: string;
+    travelRuleStatus?: string;
+    screeningStatus?: string;
+    riskRating?: string;
+    checkedEntities?: Array<Record<string, unknown>>;
+    matchedIndicators?: Array<Record<string, unknown>>;
+    matchedJurisdictions?: Array<Record<string, unknown>>;
   };
   bridgeControlsContext?: {
     status?: string;
@@ -1475,6 +1522,7 @@ function DashboardPage({
   apiOnline,
   threatIntelligenceStatus,
   oracleValidationStatus,
+  complianceControlsStatus,
   auditLogs,
   policies,
   agents,
@@ -1487,6 +1535,7 @@ function DashboardPage({
   apiOnline: boolean;
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
+  complianceControlsStatus: ComplianceControlsStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1542,6 +1591,12 @@ function DashboardPage({
     : oracleValidationStatus.status === "stale"
       ? "Stale"
       : "Unavailable";
+  const complianceFeedOperational = complianceControlsStatus.status === "available";
+  const complianceFeedLabel = complianceFeedOperational
+    ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
+    : complianceControlsStatus.status === "stale"
+      ? "Stale"
+      : "Unavailable";
 
   const operationalItems = [
     { label: "Connected wallet", value: "Active", done: walletConnected },
@@ -1551,6 +1606,7 @@ function DashboardPage({
     { label: "Casper proofs", value: String(dashboardStats.casperAuditRecords), done: dashboardStats.casperAuditRecords > 0 },
     { label: "Threat feed", value: threatFeedLabel, done: threatFeedOperational },
     { label: "Oracle feed", value: oracleFeedLabel, done: oracleFeedOperational },
+    { label: "Compliance feed", value: complianceFeedLabel, done: complianceFeedOperational },
   ];
 
   return (
@@ -1586,7 +1642,7 @@ function DashboardPage({
             </Btn>
           </div>
         </div>
-        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-7 gap-2">
+        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-2">
           {operationalItems.map((item) => (
             <div key={item.label} className={`rounded-lg border px-3 py-2 text-xs ${
               item.done
@@ -2039,37 +2095,56 @@ function AgentRegistrationWizard({
         structuredRules: {},
       };
 
+      const sourceRules: Record<string, unknown> = policyValues.structuredRules || {};
+
       const policy = await onCreatePolicy({
         ...policyValues,
         agentId: agent.id,
         status: "Active",
         capabilityScope: capabilities,
         structuredRules: {
-          ...(policyValues.structuredRules || {}),
-          threatIntelligenceMode: typeof policyValues.structuredRules?.threatIntelligenceMode === "string" ? policyValues.structuredRules.threatIntelligenceMode : "Review",
-          threatIntelligenceMinConfidence: typeof policyValues.structuredRules?.threatIntelligenceMinConfidence === "number" ? policyValues.structuredRules.threatIntelligenceMinConfidence : 70,
-          threatIntelligenceUnavailableAction: typeof policyValues.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policyValues.structuredRules.threatIntelligenceUnavailableAction : "Warn",
-          oracleValidationMode: typeof policyValues.structuredRules?.oracleValidationMode === "string" ? policyValues.structuredRules.oracleValidationMode : "Review",
-          oracleValidationMaxAgeSeconds: typeof policyValues.structuredRules?.oracleValidationMaxAgeSeconds === "number" ? policyValues.structuredRules.oracleValidationMaxAgeSeconds : 120,
-          oracleValidationMaxDeviationBps: typeof policyValues.structuredRules?.oracleValidationMaxDeviationBps === "number" ? policyValues.structuredRules.oracleValidationMaxDeviationBps : 300,
-          oracleValidationMaxSourceSpreadBps: typeof policyValues.structuredRules?.oracleValidationMaxSourceSpreadBps === "number" ? policyValues.structuredRules.oracleValidationMaxSourceSpreadBps : 500,
-          oracleValidationMinConfidence: typeof policyValues.structuredRules?.oracleValidationMinConfidence === "number" ? policyValues.structuredRules.oracleValidationMinConfidence : 70,
-          oracleValidationMinSources: typeof policyValues.structuredRules?.oracleValidationMinSources === "number" ? policyValues.structuredRules.oracleValidationMinSources : 1,
-          oracleValidationUnavailableAction: typeof policyValues.structuredRules?.oracleValidationUnavailableAction === "string" ? policyValues.structuredRules.oracleValidationUnavailableAction : "Warn",
-          bridgeControlMode: typeof policyValues.structuredRules?.bridgeControlMode === "string" ? policyValues.structuredRules.bridgeControlMode : "Review",
-          bridgeControlUnavailableAction: typeof policyValues.structuredRules?.bridgeControlUnavailableAction === "string" ? policyValues.structuredRules.bridgeControlUnavailableAction : "Review",
-          bridgeAllowedProviders: Array.isArray(policyValues.structuredRules?.bridgeAllowedProviders) ? policyValues.structuredRules.bridgeAllowedProviders : [],
-          bridgeAllowedSourceChains: Array.isArray(policyValues.structuredRules?.bridgeAllowedSourceChains) ? policyValues.structuredRules.bridgeAllowedSourceChains : ["casper-test"],
-          bridgeAllowedDestinationChains: Array.isArray(policyValues.structuredRules?.bridgeAllowedDestinationChains) ? policyValues.structuredRules.bridgeAllowedDestinationChains : [],
-          bridgeBlockedDestinationChains: Array.isArray(policyValues.structuredRules?.bridgeBlockedDestinationChains) ? policyValues.structuredRules.bridgeBlockedDestinationChains : [],
-          bridgeAllowedAssets: Array.isArray(policyValues.structuredRules?.bridgeAllowedAssets) ? policyValues.structuredRules.bridgeAllowedAssets : ["CSPR"],
-          bridgeMaxAmount: typeof policyValues.structuredRules?.bridgeMaxAmount === "number" ? policyValues.structuredRules.bridgeMaxAmount : Number(policyValues.maxTransaction) || 50,
-          bridgeMaxFeeBps: typeof policyValues.structuredRules?.bridgeMaxFeeBps === "number" ? policyValues.structuredRules.bridgeMaxFeeBps : 100,
-          bridgeMaxQuoteAgeSeconds: typeof policyValues.structuredRules?.bridgeMaxQuoteAgeSeconds === "number" ? policyValues.structuredRules.bridgeMaxQuoteAgeSeconds : 300,
-          bridgeRequireQuoteExpiry: typeof policyValues.structuredRules?.bridgeRequireQuoteExpiry === "boolean" ? policyValues.structuredRules.bridgeRequireQuoteExpiry : true,
-          bridgeMinSourceConfirmations: typeof policyValues.structuredRules?.bridgeMinSourceConfirmations === "number" ? policyValues.structuredRules.bridgeMinSourceConfirmations : 2,
-          bridgeMinDestinationConfirmations: typeof policyValues.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policyValues.structuredRules.bridgeMinDestinationConfirmations : 12,
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations"],
+          ...sourceRules,
+          threatIntelligenceMode: typeof sourceRules.threatIntelligenceMode === "string" ? sourceRules.threatIntelligenceMode : "Review",
+          threatIntelligenceMinConfidence: typeof sourceRules.threatIntelligenceMinConfidence === "number" ? sourceRules.threatIntelligenceMinConfidence : 70,
+          threatIntelligenceUnavailableAction: typeof sourceRules.threatIntelligenceUnavailableAction === "string" ? sourceRules.threatIntelligenceUnavailableAction : "Warn",
+          oracleValidationMode: typeof sourceRules.oracleValidationMode === "string" ? sourceRules.oracleValidationMode : "Review",
+          oracleValidationMaxAgeSeconds: typeof sourceRules.oracleValidationMaxAgeSeconds === "number" ? sourceRules.oracleValidationMaxAgeSeconds : 120,
+          oracleValidationMaxDeviationBps: typeof sourceRules.oracleValidationMaxDeviationBps === "number" ? sourceRules.oracleValidationMaxDeviationBps : 300,
+          oracleValidationMaxSourceSpreadBps: typeof sourceRules.oracleValidationMaxSourceSpreadBps === "number" ? sourceRules.oracleValidationMaxSourceSpreadBps : 500,
+          oracleValidationMinConfidence: typeof sourceRules.oracleValidationMinConfidence === "number" ? sourceRules.oracleValidationMinConfidence : 70,
+          oracleValidationMinSources: typeof sourceRules.oracleValidationMinSources === "number" ? sourceRules.oracleValidationMinSources : 1,
+          oracleValidationUnavailableAction: typeof sourceRules.oracleValidationUnavailableAction === "string" ? sourceRules.oracleValidationUnavailableAction : "Warn",
+          bridgeControlMode: typeof sourceRules.bridgeControlMode === "string" ? sourceRules.bridgeControlMode : "Review",
+          bridgeControlUnavailableAction: typeof sourceRules.bridgeControlUnavailableAction === "string" ? sourceRules.bridgeControlUnavailableAction : "Review",
+          bridgeAllowedProviders: Array.isArray(sourceRules.bridgeAllowedProviders) ? sourceRules.bridgeAllowedProviders : [],
+          bridgeAllowedSourceChains: Array.isArray(sourceRules.bridgeAllowedSourceChains) ? sourceRules.bridgeAllowedSourceChains : ["casper-test"],
+          bridgeAllowedDestinationChains: Array.isArray(sourceRules.bridgeAllowedDestinationChains) ? sourceRules.bridgeAllowedDestinationChains : [],
+          bridgeBlockedDestinationChains: Array.isArray(sourceRules.bridgeBlockedDestinationChains) ? sourceRules.bridgeBlockedDestinationChains : [],
+          bridgeAllowedAssets: Array.isArray(sourceRules.bridgeAllowedAssets) ? sourceRules.bridgeAllowedAssets : ["CSPR"],
+          bridgeMaxAmount: typeof sourceRules.bridgeMaxAmount === "number" ? sourceRules.bridgeMaxAmount : Number(policyValues.maxTransaction) || 50,
+          bridgeMaxFeeBps: typeof sourceRules.bridgeMaxFeeBps === "number" ? sourceRules.bridgeMaxFeeBps : 100,
+          bridgeMaxQuoteAgeSeconds: typeof sourceRules.bridgeMaxQuoteAgeSeconds === "number" ? sourceRules.bridgeMaxQuoteAgeSeconds : 300,
+          bridgeRequireQuoteExpiry: typeof sourceRules.bridgeRequireQuoteExpiry === "boolean" ? sourceRules.bridgeRequireQuoteExpiry : true,
+          bridgeMinSourceConfirmations: typeof sourceRules.bridgeMinSourceConfirmations === "number" ? sourceRules.bridgeMinSourceConfirmations : 2,
+          bridgeMinDestinationConfirmations: typeof sourceRules.bridgeMinDestinationConfirmations === "number" ? sourceRules.bridgeMinDestinationConfirmations : 12,
+          complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
+          complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
+          complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
+          complianceRequiredActions: Array.isArray(sourceRules.complianceRequiredActions) ? sourceRules.complianceRequiredActions : ["Transfer", "DAO Treasury Payment", "Bridge"],
+          complianceRequireOriginatorAttestation: typeof sourceRules.complianceRequireOriginatorAttestation === "boolean" ? sourceRules.complianceRequireOriginatorAttestation : true,
+          complianceRequireBeneficiaryAttestation: typeof sourceRules.complianceRequireBeneficiaryAttestation === "boolean" ? sourceRules.complianceRequireBeneficiaryAttestation : true,
+          complianceRequireTravelRule: typeof sourceRules.complianceRequireTravelRule === "boolean" ? sourceRules.complianceRequireTravelRule : true,
+          complianceTravelRuleThreshold: typeof sourceRules.complianceTravelRuleThreshold === "number" ? sourceRules.complianceTravelRuleThreshold : 1,
+          complianceRequireSanctionsScreening: typeof sourceRules.complianceRequireSanctionsScreening === "boolean" ? sourceRules.complianceRequireSanctionsScreening : true,
+          complianceAllowedJurisdictions: Array.isArray(sourceRules.complianceAllowedJurisdictions) ? sourceRules.complianceAllowedJurisdictions : [],
+          complianceBlockedJurisdictions: Array.isArray(sourceRules.complianceBlockedJurisdictions) ? sourceRules.complianceBlockedJurisdictions : [],
+          complianceReviewJurisdictions: Array.isArray(sourceRules.complianceReviewJurisdictions) ? sourceRules.complianceReviewJurisdictions : [],
+          complianceAllowedCounterpartyTypes: Array.isArray(sourceRules.complianceAllowedCounterpartyTypes) ? sourceRules.complianceAllowedCounterpartyTypes : ["VASP", "Organization", "Self-hosted Wallet"],
+          complianceAcceptedProviders: Array.isArray(sourceRules.complianceAcceptedProviders) ? sourceRules.complianceAcceptedProviders : [],
+          complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
+          complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
+          complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -2279,7 +2354,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, and Bridge Controls Foundation rules are added in Review mode. External feeds and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and compliance controls are not represented as Live.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls Foundation rules are added in Review mode. External feeds, current non-sensitive compliance evidence, and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and legal compliance guarantees are not represented as Live.
                   </div>
                 </>
               )}
@@ -3126,6 +3201,47 @@ ${snippet}
 // Policies Page
 // ──────────────────────────────────────────────────────────
 
+
+function CompliancePolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#34D399]/20 bg-[#34D399]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Compliance Controls Foundation</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Evaluate non-sensitive attestation statuses, opaque Travel Rule references, jurisdiction and counterparty policy, screening evidence, and exact configured matches. Do not submit names, identity documents, or other personal data.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.complianceControlsEnabled ?? "")} onChange={(value) => onChange({ complianceControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.complianceControlMode ?? "")} onChange={(value) => onChange({ complianceControlMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Evidence Unavailable" value={String(values.complianceUnavailableAction ?? "")} onChange={(value) => onChange({ complianceUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require Originator Attestation" value={String(values.complianceRequireOriginatorAttestation ?? "")} onChange={(value) => onChange({ complianceRequireOriginatorAttestation: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Beneficiary Attestation" value={String(values.complianceRequireBeneficiaryAttestation ?? "")} onChange={(value) => onChange({ complianceRequireBeneficiaryAttestation: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Travel Rule Evidence" value={String(values.complianceRequireTravelRule ?? "")} onChange={(value) => onChange({ complianceRequireTravelRule: value })} options={["Yes", "No"]} />
+        <InputField label="Travel Rule Threshold" value={String(values.complianceTravelRuleThreshold ?? "")} onChange={(value) => onChange({ complianceTravelRuleThreshold: value })} type="number" />
+        <SelectField label="Require Screening Evidence" value={String(values.complianceRequireSanctionsScreening ?? "")} onChange={(value) => onChange({ complianceRequireSanctionsScreening: value })} options={["Yes", "No"]} />
+        <SelectField label="Maximum Risk Rating" value={String(values.complianceMaximumRiskRating ?? "")} onChange={(value) => onChange({ complianceMaximumRiskRating: value })} options={["Low", "Medium", "High", "Critical"]} />
+        <InputField label="Max Attestation Age (sec)" value={String(values.complianceMaxAttestationAgeSeconds ?? "")} onChange={(value) => onChange({ complianceMaxAttestationAgeSeconds: value })} type="number" />
+        <InputField label="Max Screening Age (sec)" value={String(values.complianceMaxScreeningAgeSeconds ?? "")} onChange={(value) => onChange({ complianceMaxScreeningAgeSeconds: value })} type="number" />
+        <TextareaField label="Required Actions" value={String(values.complianceRequiredActions ?? "")} onChange={(value) => onChange({ complianceRequiredActions: value })} />
+        <TextareaField label="Allowed Jurisdictions" value={String(values.complianceAllowedJurisdictions ?? "")} onChange={(value) => onChange({ complianceAllowedJurisdictions: value })} />
+        <TextareaField label="Review Jurisdictions" value={String(values.complianceReviewJurisdictions ?? "")} onChange={(value) => onChange({ complianceReviewJurisdictions: value })} />
+        <TextareaField label="Blocked Jurisdictions" value={String(values.complianceBlockedJurisdictions ?? "")} onChange={(value) => onChange({ complianceBlockedJurisdictions: value })} />
+        <TextareaField label="Allowed Counterparty Types" value={String(values.complianceAllowedCounterpartyTypes ?? "")} onChange={(value) => onChange({ complianceAllowedCounterpartyTypes: value })} />
+        <TextareaField label="Accepted Evidence Providers" value={String(values.complianceAcceptedProviders ?? "")} onChange={(value) => onChange({ complianceAcceptedProviders: value })} />
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">This configuration provides deterministic execution controls and audit evidence. It does not determine legal obligations or guarantee compliance.</p>
+    </div>
+  );
+}
+
 function PoliciesPage({
   agents,
   policies,
@@ -3171,6 +3287,23 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    complianceControlsEnabled: "Yes",
+    complianceControlMode: "Review",
+    complianceUnavailableAction: "Review",
+    complianceRequiredActions: "Transfer\nDAO Treasury Payment\nBridge",
+    complianceRequireOriginatorAttestation: "Yes",
+    complianceRequireBeneficiaryAttestation: "Yes",
+    complianceRequireTravelRule: "Yes",
+    complianceTravelRuleThreshold: "1",
+    complianceRequireSanctionsScreening: "Yes",
+    complianceAllowedJurisdictions: "",
+    complianceBlockedJurisdictions: "",
+    complianceReviewJurisdictions: "",
+    complianceAllowedCounterpartyTypes: "VASP\nOrganization\nSelf-hosted Wallet",
+    complianceAcceptedProviders: "",
+    complianceMaxAttestationAgeSeconds: "86400",
+    complianceMaxScreeningAgeSeconds: "3600",
+    complianceMaximumRiskRating: "Medium",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -3212,6 +3345,23 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    complianceControlsEnabled: "Yes",
+    complianceControlMode: "Review",
+    complianceUnavailableAction: "Review",
+    complianceRequiredActions: "Transfer\nDAO Treasury Payment\nBridge",
+    complianceRequireOriginatorAttestation: "Yes",
+    complianceRequireBeneficiaryAttestation: "Yes",
+    complianceRequireTravelRule: "Yes",
+    complianceTravelRuleThreshold: "1",
+    complianceRequireSanctionsScreening: "Yes",
+    complianceAllowedJurisdictions: "",
+    complianceBlockedJurisdictions: "",
+    complianceReviewJurisdictions: "",
+    complianceAllowedCounterpartyTypes: "VASP\nOrganization\nSelf-hosted Wallet",
+    complianceAcceptedProviders: "",
+    complianceMaxAttestationAgeSeconds: "86400",
+    complianceMaxScreeningAgeSeconds: "3600",
+    complianceMaximumRiskRating: "Medium",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -3258,6 +3408,23 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: form.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(form.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(form.bridgeMinDestinationConfirmations) || 0),
+        complianceControlsEnabled: form.complianceControlsEnabled !== "No",
+        complianceControlMode: form.complianceControlMode,
+        complianceUnavailableAction: form.complianceUnavailableAction,
+        complianceRequiredActions: form.complianceRequiredActions.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceRequireOriginatorAttestation: form.complianceRequireOriginatorAttestation !== "No",
+        complianceRequireBeneficiaryAttestation: form.complianceRequireBeneficiaryAttestation !== "No",
+        complianceRequireTravelRule: form.complianceRequireTravelRule !== "No",
+        complianceTravelRuleThreshold: Math.max(0, Number(form.complianceTravelRuleThreshold) || 0),
+        complianceRequireSanctionsScreening: form.complianceRequireSanctionsScreening !== "No",
+        complianceAllowedJurisdictions: form.complianceAllowedJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceBlockedJurisdictions: form.complianceBlockedJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceReviewJurisdictions: form.complianceReviewJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceAllowedCounterpartyTypes: form.complianceAllowedCounterpartyTypes.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceAcceptedProviders: form.complianceAcceptedProviders.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceMaxAttestationAgeSeconds: Math.max(60, Number(form.complianceMaxAttestationAgeSeconds) || 86400),
+        complianceMaxScreeningAgeSeconds: Math.max(60, Number(form.complianceMaxScreeningAgeSeconds) || 3600),
+        complianceMaximumRiskRating: form.complianceMaximumRiskRating,
       },
     });
     setForm({
@@ -3292,6 +3459,23 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: "Yes",
       bridgeMinSourceConfirmations: "2",
       bridgeMinDestinationConfirmations: "12",
+      complianceControlsEnabled: "Yes",
+      complianceControlMode: "Review",
+      complianceUnavailableAction: "Review",
+      complianceRequiredActions: "Transfer\nDAO Treasury Payment\nBridge",
+      complianceRequireOriginatorAttestation: "Yes",
+      complianceRequireBeneficiaryAttestation: "Yes",
+      complianceRequireTravelRule: "Yes",
+      complianceTravelRuleThreshold: "1",
+      complianceRequireSanctionsScreening: "Yes",
+      complianceAllowedJurisdictions: "",
+      complianceBlockedJurisdictions: "",
+      complianceReviewJurisdictions: "",
+      complianceAllowedCounterpartyTypes: "VASP\nOrganization\nSelf-hosted Wallet",
+      complianceAcceptedProviders: "",
+      complianceMaxAttestationAgeSeconds: "86400",
+      complianceMaxScreeningAgeSeconds: "3600",
+      complianceMaximumRiskRating: "Medium",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -3330,6 +3514,23 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: policy.structuredRules?.bridgeRequireQuoteExpiry === false ? "No" : "Yes",
       bridgeMinSourceConfirmations: String(typeof policy.structuredRules?.bridgeMinSourceConfirmations === "number" ? policy.structuredRules.bridgeMinSourceConfirmations : 2),
       bridgeMinDestinationConfirmations: String(typeof policy.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policy.structuredRules.bridgeMinDestinationConfirmations : 12),
+      complianceControlsEnabled: policy.structuredRules?.complianceControlsEnabled === false ? "No" : "Yes",
+      complianceControlMode: typeof policy.structuredRules?.complianceControlMode === "string" ? policy.structuredRules.complianceControlMode : "Observe",
+      complianceUnavailableAction: typeof policy.structuredRules?.complianceUnavailableAction === "string" ? policy.structuredRules.complianceUnavailableAction : "Warn",
+      complianceRequiredActions: Array.isArray(policy.structuredRules?.complianceRequiredActions) ? (policy.structuredRules.complianceRequiredActions as string[]).join("\n") : "",
+      complianceRequireOriginatorAttestation: policy.structuredRules?.complianceRequireOriginatorAttestation === false ? "No" : "Yes",
+      complianceRequireBeneficiaryAttestation: policy.structuredRules?.complianceRequireBeneficiaryAttestation === false ? "No" : "Yes",
+      complianceRequireTravelRule: policy.structuredRules?.complianceRequireTravelRule === false ? "No" : "Yes",
+      complianceTravelRuleThreshold: String(typeof policy.structuredRules?.complianceTravelRuleThreshold === "number" ? policy.structuredRules.complianceTravelRuleThreshold : 1),
+      complianceRequireSanctionsScreening: policy.structuredRules?.complianceRequireSanctionsScreening === false ? "No" : "Yes",
+      complianceAllowedJurisdictions: Array.isArray(policy.structuredRules?.complianceAllowedJurisdictions) ? (policy.structuredRules.complianceAllowedJurisdictions as string[]).join("\n") : "",
+      complianceBlockedJurisdictions: Array.isArray(policy.structuredRules?.complianceBlockedJurisdictions) ? (policy.structuredRules.complianceBlockedJurisdictions as string[]).join("\n") : "",
+      complianceReviewJurisdictions: Array.isArray(policy.structuredRules?.complianceReviewJurisdictions) ? (policy.structuredRules.complianceReviewJurisdictions as string[]).join("\n") : "",
+      complianceAllowedCounterpartyTypes: Array.isArray(policy.structuredRules?.complianceAllowedCounterpartyTypes) ? (policy.structuredRules.complianceAllowedCounterpartyTypes as string[]).join("\n") : "VASP\nOrganization\nSelf-hosted Wallet",
+      complianceAcceptedProviders: Array.isArray(policy.structuredRules?.complianceAcceptedProviders) ? (policy.structuredRules.complianceAcceptedProviders as string[]).join("\n") : "",
+      complianceMaxAttestationAgeSeconds: String(typeof policy.structuredRules?.complianceMaxAttestationAgeSeconds === "number" ? policy.structuredRules.complianceMaxAttestationAgeSeconds : 86400),
+      complianceMaxScreeningAgeSeconds: String(typeof policy.structuredRules?.complianceMaxScreeningAgeSeconds === "number" ? policy.structuredRules.complianceMaxScreeningAgeSeconds : 3600),
+      complianceMaximumRiskRating: typeof policy.structuredRules?.complianceMaximumRiskRating === "string" ? policy.structuredRules.complianceMaximumRiskRating : "Medium",
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -3377,6 +3578,23 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: editForm.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(editForm.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(editForm.bridgeMinDestinationConfirmations) || 0),
+        complianceControlsEnabled: editForm.complianceControlsEnabled !== "No",
+        complianceControlMode: editForm.complianceControlMode,
+        complianceUnavailableAction: editForm.complianceUnavailableAction,
+        complianceRequiredActions: editForm.complianceRequiredActions.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceRequireOriginatorAttestation: editForm.complianceRequireOriginatorAttestation !== "No",
+        complianceRequireBeneficiaryAttestation: editForm.complianceRequireBeneficiaryAttestation !== "No",
+        complianceRequireTravelRule: editForm.complianceRequireTravelRule !== "No",
+        complianceTravelRuleThreshold: Math.max(0, Number(editForm.complianceTravelRuleThreshold) || 0),
+        complianceRequireSanctionsScreening: editForm.complianceRequireSanctionsScreening !== "No",
+        complianceAllowedJurisdictions: editForm.complianceAllowedJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceBlockedJurisdictions: editForm.complianceBlockedJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceReviewJurisdictions: editForm.complianceReviewJurisdictions.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        complianceAllowedCounterpartyTypes: editForm.complianceAllowedCounterpartyTypes.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceAcceptedProviders: editForm.complianceAcceptedProviders.split("\n").map((item) => item.trim()).filter(Boolean),
+        complianceMaxAttestationAgeSeconds: Math.max(60, Number(editForm.complianceMaxAttestationAgeSeconds) || 86400),
+        complianceMaxScreeningAgeSeconds: Math.max(60, Number(editForm.complianceMaxScreeningAgeSeconds) || 3600),
+        complianceMaximumRiskRating: editForm.complianceMaximumRiskRating,
       },
     });
     setEditingPolicy(null);
@@ -3530,6 +3748,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+            <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
               label="Risk Mode"
               value={form.riskMode}
@@ -3796,6 +4015,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+                <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
                   label="Risk Mode"
                   value={editForm.riskMode}
@@ -5036,7 +5256,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle Validation provides multi-source price integrity checks, and Bridge Controls evaluates provider-supplied cross-chain routes. Compliance Controls remain Planned.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle Validation provides multi-source price integrity checks, and Bridge Controls evaluates provider-supplied cross-chain routes. Compliance Controls provides policy-driven non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, and exact-match feed checks.</DocsCallout></div>
               </section>
 
               <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -5459,6 +5679,7 @@ const PLAYGROUND_DEMO_CONTRACT = `contract-${"4".repeat(64)}`;
 const PLAYGROUND_DEMO_UNAPPROVED_CONTRACT = `contract-package-${"5".repeat(64)}`;
 const PLAYGROUND_THREAT_INTEL_TARGET = `01${"6".repeat(64)}`;
 const PLAYGROUND_DEMO_EVM_RECIPIENT = `0x${"7".repeat(40)}`;
+const PLAYGROUND_COMPLIANCE_MATCH_TARGET = `01${"8".repeat(64)}`;
 
 function firstConfiguredContract(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
@@ -5478,6 +5699,20 @@ function playgroundPreflight(overrides: Record<string, unknown> = {}) {
     gasPriceTolerance: 1,
     ttl: "30m",
     timestamp: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+
+function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
+  const now = Date.now();
+  return {
+    originatorJurisdiction: "NG", beneficiaryJurisdiction: "US", counterpartyType: "VASP",
+    originatorAttestation: { status: "Verified", provider: "Verified Provider", reference: "ORIGINATOR-001", issuedAt: new Date(now - 60_000).toISOString(), expiresAt: new Date(now + 86_400_000).toISOString() },
+    beneficiaryAttestation: { status: "Verified", provider: "Verified Provider", reference: "BENEFICIARY-001", issuedAt: new Date(now - 60_000).toISOString(), expiresAt: new Date(now + 86_400_000).toISOString() },
+    travelRule: { status: "Complete", reference: "TRAVEL-RULE-001", dataHash: "c".repeat(64) },
+    screening: { status: "Clear", provider: "Verified Provider", reference: "SCREEN-001", screenedAt: new Date(now - 30_000).toISOString() },
+    riskRating: "Low", originatorVaspId: "VASP-NG-001", beneficiaryVaspId: "VASP-US-002",
     ...overrides,
   };
 }
@@ -5856,6 +6091,19 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       },
     };
   },
+  "Compliance evidence complete": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Evaluate complete non-sensitive compliance evidence before a controlled transfer", reason: "Use opaque verification references and status evidence without sending names, documents, or personal identity data.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: playgroundComplianceEvidence() } };
+  },
+  "Incomplete Travel Rule evidence": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm incomplete Travel Rule evidence is reviewed or blocked by policy", reason: "The example intentionally omits the opaque evidence reference and hash.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: playgroundComplianceEvidence({ travelRule: { status: "Incomplete", reference: "", dataHash: "" } }) } };
+  },
+  "Rejected beneficiary attestation": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy); const evidence = playgroundComplianceEvidence();
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm a rejected required attestation stops execution", reason: "Rejected verification is a deterministic hard block before wallet signing.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: { ...evidence, beneficiaryAttestation: { ...(evidence.beneficiaryAttestation as Record<string, unknown>), status: "Rejected" } } } };
+  },
+  "Configured compliance feed match": (agent, walletAddress) => ({ source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Screen a synthetic wallet against the included Compliance Controls feed", reason: "Configure backend/data/compliance-controls.example.json and trust the exact test target only when isolating the compliance decision.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_COMPLIANCE_MATCH_TARGET, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: playgroundComplianceEvidence() } }),
   "Expired preflight": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -6052,7 +6300,7 @@ function IntentPlaygroundPage({
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
             <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, and Bridge Controls are Foundation Available. Bridge Controls validates provider-supplied routes, chain boundaries, destination formats, fees, quote freshness, assets, amounts, and confirmation requirements; it does not certify provider solvency or cross-chain delivery.</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls are Foundation Available. Compliance Controls accepts non-sensitive status evidence and opaque references only; it does not accept raw identity data or determine legal obligations.</div>
           </div>
 
           <div>
@@ -6148,6 +6396,23 @@ function IntentPlaygroundPage({
                     </div>
                   </div>
                 )}
+                {result.result.complianceControlsContext && (
+                  <div className="mt-3 rounded-xl border border-[#34D399]/20 bg-[#34D399]/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">Compliance Controls context</div>
+                      <span className="text-xs font-semibold text-[#34D399]">{result.result.complianceControlsContext.status || "unavailable"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Jurisdictions <span className="block text-[#F8FAFC]">{result.result.complianceControlsContext.originatorJurisdiction || "—"} → {result.result.complianceControlsContext.beneficiaryJurisdiction || "—"}</span></div>
+                      <div>Counterparty <span className="block text-[#F8FAFC]">{result.result.complianceControlsContext.counterpartyType || "Unknown"}</span></div>
+                      <div>Attestations <span className="block text-[#F8FAFC]">{result.result.complianceControlsContext.originatorAttestationStatus || "Not Provided"} / {result.result.complianceControlsContext.beneficiaryAttestationStatus || "Not Provided"}</span></div>
+                      <div>Travel Rule <span className="block text-[#F8FAFC]">{result.result.complianceControlsContext.travelRuleStatus || "Not Provided"}</span></div>
+                      <div>Screening <span className="block text-[#F8FAFC]">{result.result.complianceControlsContext.screeningStatus || "Not Provided"}</span></div>
+                      <div>Configured matches <span className="block text-[#F8FAFC]">{(result.result.complianceControlsContext.matchedIndicators?.length || 0) + (result.result.complianceControlsContext.matchedJurisdictions?.length || 0)}</span></div>
+                    </div>
+                    <div className="mt-2 text-[11px] leading-relaxed text-[#64748B]">Magen3 accepts non-sensitive statuses and opaque references only. A configured-feed no-match is not a legal-compliance guarantee.</div>
+                  </div>
+                )}
               </div>
               <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} /></div></div>
               <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} />
@@ -6170,12 +6435,14 @@ function SettingsPage({
   auditLogs,
   threatIntelligenceStatus,
   oracleValidationStatus,
+  complianceControlsStatus,
 }: {
   agents: Agent[];
   policies: Policy[];
   auditLogs: AuditLog[];
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
+  complianceControlsStatus: ComplianceControlsStatus;
 }) {
   const [devMode, setDevMode] = useState(false);
   const [copiedSetting, setCopiedSetting] = useState("");
@@ -6190,6 +6457,7 @@ function SettingsPage({
     ["Gateway Verify URL", `${api.baseUrl}/api/agent-gateway/me?agentId=YOUR_AGENT_ID`],
     ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
+    ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
 
@@ -6255,6 +6523,22 @@ function SettingsPage({
           ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
         </div>
         {oracleValidationStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{oracleValidationStatus.error}</div>}
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className={SECTION_TITLE}>Compliance Controls Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend screening-feed status. Magen3 accepts opaque references and status evidence, not names, identity documents, or other raw personal data.</p></div>
+          <StatusBadge status={complianceControlsStatus.status === "available" ? "Foundation Available" : "Inactive"} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Feed state", complianceControlsStatus.status || "unavailable"],
+            ["Source", complianceControlsStatus.sourceName || "No feed configured"],
+            ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
+            ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
+          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
+        </div>
+        {complianceControlsStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{complianceControlsStatus.error}</div>}
       </div>
 
       <div className={`${CARD} p-5`}>
@@ -6373,6 +6657,7 @@ export default function App() {
   const [apiOnline, setApiOnline] = useState(false);
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
+  const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
@@ -6423,6 +6708,22 @@ export default function App() {
     };
     void refreshOracleStatus();
     intervalId = setInterval(() => void refreshOracleStatus(), 60_000);
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const refreshComplianceStatus = async () => {
+      try {
+        const payload = await api.complianceControlsStatus();
+        if (!cancelled) setComplianceControlsStatus(payload.complianceControls as ComplianceControlsStatus);
+      } catch {
+        if (!cancelled) setComplianceControlsStatus((previous) => ({ ...previous, status: "unavailable", error: "Compliance Controls status endpoint is unavailable." }));
+      }
+    };
+    void refreshComplianceStatus();
+    intervalId = setInterval(() => void refreshComplianceStatus(), 60_000);
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, []);
 
@@ -6695,6 +6996,7 @@ export default function App() {
         apiOnline={apiOnline}
         threatIntelligenceStatus={threatIntelligenceStatus}
         oracleValidationStatus={oracleValidationStatus}
+        complianceControlsStatus={complianceControlsStatus}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -6754,7 +7056,7 @@ export default function App() {
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} />
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} />
     ),
   };
 

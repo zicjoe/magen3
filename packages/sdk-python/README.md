@@ -89,3 +89,7 @@ The normal decision dictionary may include `oracleValidationContext` and structu
 Python integrations may include an `action["bridge"]` dictionary with source and destination chains, provider, route ID, destination address, fee, output bounds, quote timestamps, and confirmation requirements. The normal response may include `bridgeControlsContext` and structured Bridge Controls findings.
 
 Bridge Controls is Foundation Available. A passing result means the submitted route metadata satisfied the configured policy; it does not guarantee provider solvency, destination finality, or cross-chain delivery.
+
+## Compliance Controls evidence
+
+Python integrations may include an `action["compliance"]` dictionary containing only non-sensitive status, provider, opaque reference, timestamp, jurisdiction, hash, risk-rating, and VASP-ID fields. The normal response may include `complianceControlsContext` and structured findings. Do not send raw personal identity data. Compliance Controls is Foundation Available and does not make a legal determination.

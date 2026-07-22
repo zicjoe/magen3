@@ -94,6 +94,23 @@ function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
   });
 }
 
+
+function containsForbiddenCompliancePii(value, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 5) return false;
+  const forbidden = new Set([
+    "name", "fullname", "full_name", "firstname", "first_name", "lastname", "last_name",
+    "dateofbirth", "date_of_birth", "dob", "passport", "passportnumber", "passport_number",
+    "nationalid", "national_id", "ssn", "taxid", "tax_id", "email", "phone", "phonenumber",
+    "phone_number", "residentialaddress", "residential_address", "document", "documentimage",
+    "document_image", "selfie", "biometric", "biometrics"
+  ]);
+  return Object.entries(value).some(([key, child]) => {
+    const normalized = String(key).toLowerCase().replace(/[^a-z_]/g, "");
+    if (forbidden.has(normalized)) return true;
+    return containsForbiddenCompliancePii(child, depth + 1);
+  });
+}
+
 function normalizeRuntimeArgs(value) {
   if (value === undefined || value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) {
@@ -148,9 +165,22 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.bridge && typeof body.bridge === "object"
         ? body.bridge
         : {};
+  const compliance = action.compliance && typeof action.compliance === "object"
+    ? action.compliance
+    : action.complianceControls && typeof action.complianceControls === "object"
+      ? action.complianceControls
+      : body.compliance && typeof body.compliance === "object"
+        ? body.compliance
+        : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
+    err.status = 400;
+    throw err;
+  }
+
+  if (containsForbiddenCompliancePii(compliance)) {
+    const err = new Error("Raw personal identity data is not accepted by Compliance Controls. Submit only non-sensitive statuses, jurisdiction codes, provider labels, opaque references, and hashes.");
     err.status = 400;
     throw err;
   }
@@ -214,6 +244,29 @@ export function normalizeAgentGatewayIntent(body = {}) {
     bridgeQuoteExpiresAt: cleanString(bridge.quoteExpiresAt || bridge.quote_expires_at || bridge.expiresAt || bridge.expires_at || action.bridgeQuoteExpiresAt || action.bridge_quote_expires_at || "", ""),
     bridgeSourceConfirmations: optionalNumber(bridge.sourceConfirmations ?? bridge.source_confirmations ?? action.bridgeSourceConfirmations ?? action.bridge_source_confirmations, "bridgeSourceConfirmations", { integer: true, min: 0 }),
     bridgeDestinationConfirmations: optionalNumber(bridge.destinationConfirmations ?? bridge.destination_confirmations ?? action.bridgeDestinationConfirmations ?? action.bridge_destination_confirmations, "bridgeDestinationConfirmations", { integer: true, min: 0 }),
+    complianceOriginatorJurisdiction: cleanString(compliance.originatorJurisdiction || compliance.originator_jurisdiction || "", ""),
+    complianceBeneficiaryJurisdiction: cleanString(compliance.beneficiaryJurisdiction || compliance.beneficiary_jurisdiction || "", ""),
+    complianceCounterpartyType: cleanString(compliance.counterpartyType || compliance.counterparty_type || "", ""),
+    complianceOriginatorAttestationStatus: cleanString(compliance.originatorAttestation?.status || compliance.originator_attestation?.status || compliance.originatorAttestationStatus || compliance.originator_attestation_status || "", ""),
+    complianceOriginatorAttestationProvider: cleanString(compliance.originatorAttestation?.provider || compliance.originator_attestation?.provider || compliance.originatorAttestationProvider || compliance.originator_attestation_provider || "", ""),
+    complianceOriginatorAttestationReference: cleanString(compliance.originatorAttestation?.reference || compliance.originator_attestation?.reference || compliance.originatorAttestationReference || compliance.originator_attestation_reference || "", ""),
+    complianceOriginatorAttestationIssuedAt: cleanString(compliance.originatorAttestation?.issuedAt || compliance.originator_attestation?.issued_at || compliance.originatorAttestationIssuedAt || compliance.originator_attestation_issued_at || "", ""),
+    complianceOriginatorAttestationExpiresAt: cleanString(compliance.originatorAttestation?.expiresAt || compliance.originator_attestation?.expires_at || compliance.originatorAttestationExpiresAt || compliance.originator_attestation_expires_at || "", ""),
+    complianceBeneficiaryAttestationStatus: cleanString(compliance.beneficiaryAttestation?.status || compliance.beneficiary_attestation?.status || compliance.beneficiaryAttestationStatus || compliance.beneficiary_attestation_status || "", ""),
+    complianceBeneficiaryAttestationProvider: cleanString(compliance.beneficiaryAttestation?.provider || compliance.beneficiary_attestation?.provider || compliance.beneficiaryAttestationProvider || compliance.beneficiary_attestation_provider || "", ""),
+    complianceBeneficiaryAttestationReference: cleanString(compliance.beneficiaryAttestation?.reference || compliance.beneficiary_attestation?.reference || compliance.beneficiaryAttestationReference || compliance.beneficiary_attestation_reference || "", ""),
+    complianceBeneficiaryAttestationIssuedAt: cleanString(compliance.beneficiaryAttestation?.issuedAt || compliance.beneficiary_attestation?.issued_at || compliance.beneficiaryAttestationIssuedAt || compliance.beneficiary_attestation_issued_at || "", ""),
+    complianceBeneficiaryAttestationExpiresAt: cleanString(compliance.beneficiaryAttestation?.expiresAt || compliance.beneficiary_attestation?.expires_at || compliance.beneficiaryAttestationExpiresAt || compliance.beneficiary_attestation_expires_at || "", ""),
+    complianceTravelRuleStatus: cleanString(compliance.travelRule?.status || compliance.travel_rule?.status || compliance.travelRuleStatus || compliance.travel_rule_status || "", ""),
+    complianceTravelRuleReference: cleanString(compliance.travelRule?.reference || compliance.travel_rule?.reference || compliance.travelRuleReference || compliance.travel_rule_reference || "", ""),
+    complianceTravelRuleDataHash: cleanString(compliance.travelRule?.dataHash || compliance.travel_rule?.data_hash || compliance.travelRuleDataHash || compliance.travel_rule_data_hash || "", ""),
+    complianceScreeningStatus: cleanString(compliance.screening?.status || compliance.screeningStatus || compliance.screening_status || "", ""),
+    complianceScreeningProvider: cleanString(compliance.screening?.provider || compliance.screeningProvider || compliance.screening_provider || "", ""),
+    complianceScreeningReference: cleanString(compliance.screening?.reference || compliance.screeningReference || compliance.screening_reference || "", ""),
+    complianceScreenedAt: cleanString(compliance.screening?.screenedAt || compliance.screening?.screened_at || compliance.screenedAt || compliance.screened_at || "", ""),
+    complianceRiskRating: cleanString(compliance.riskRating || compliance.risk_rating || "", ""),
+    complianceOriginatorVaspId: cleanString(compliance.originatorVaspId || compliance.originator_vasp_id || "", ""),
+    complianceBeneficiaryVaspId: cleanString(compliance.beneficiaryVaspId || compliance.beneficiary_vasp_id || "", ""),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

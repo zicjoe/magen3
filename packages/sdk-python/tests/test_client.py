@@ -47,5 +47,31 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["bridge"]["provider"], "Test Bridge")
 
 
+    def test_compliance_evidence_passes_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed"}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.check_intent({
+            "executionWalletAddress": "01abc",
+            "action": {
+                "type": "Transfer",
+                "amount": 5,
+                "target": "01def",
+                "compliance": {
+                    "originatorJurisdiction": "NG",
+                    "beneficiaryJurisdiction": "US",
+                    "counterpartyType": "VASP",
+                    "originatorAttestation": {"status": "Verified", "provider": "Verified Provider", "reference": "ORIGINATOR-001"},
+                    "travelRule": {"status": "Complete", "reference": "TRAVEL-RULE-001", "dataHash": "a" * 64},
+                    "screening": {"status": "Clear", "provider": "Verified Provider", "reference": "SCREEN-001"}
+                }
+            }
+        })
+        self.assertEqual(captured["payload"]["action"]["compliance"]["travelRule"]["status"], "Complete")
+        self.assertEqual(captured["payload"]["action"]["compliance"]["originatorAttestation"]["reference"], "ORIGINATOR-001")
+
+
 if __name__ == "__main__":
     unittest.main()
