@@ -97,6 +97,32 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["lifecycle"]["intentId"], "intent:python-0001")
         self.assertEqual(captured["payload"]["action"]["lifecycle"]["sequence"], 3)
 
+
+    def test_get_approval(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured.update(method=method, url=url, headers=headers, data=data)
+            return {
+                "ok": True,
+                "approval": {
+                    "id": "APR-1",
+                    "auditLogId": "AUDIT-1",
+                    "reviewStatus": "Approved",
+                    "bindingHash": "a" * 64,
+                    "requiredApprovals": 1,
+                    "approvalsReceived": 1,
+                    "remainingApprovals": 0,
+                    "expiresAt": "2026-07-23T12:00:00.000Z",
+                    "mayProceedToSigning": True,
+                },
+            }
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.get_approval("AUDIT-1")
+        self.assertEqual(captured["method"], "GET")
+        self.assertTrue(captured["url"].endswith("/api/agent-gateway/approvals/AUDIT-1?agentId=MAG-1"))
+        self.assertIsNone(captured["data"])
+        self.assertTrue(result["approval"]["mayProceedToSigning"])
+
     def test_x402_authorization_and_settlement_reporting(self):
         captured = []
         def transport(method, url, headers, data, timeout):

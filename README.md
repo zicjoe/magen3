@@ -100,7 +100,7 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Protection area | Live controls | Foundation controls | Planned controls |
 | --- | --- | --- | --- |
 | Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
-| Policy & Approval Controls | Deterministic policy enforcement; review thresholds | — | Human approval and quorum; emergency circuit breaker |
+| Policy & Approval Controls | Deterministic policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | — | Privileged-action classification; token approvals and permits |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
@@ -202,6 +202,24 @@ Magen3 deterministically checks:
 - Maximum retry attempts.
 
 New starter policies enable strict Lifecycle & Replay controls. Legacy policies remain non-breaking: duplicate-fingerprint enforcement is not silently activated unless the policy explicitly enables it. Magen3 evaluates unsigned intent metadata only and never accepts private keys, mnemonics, wallet approvals, or transaction signatures.
+
+### Human Approval & Quorum foundation
+
+Human Approval & Quorum sits inside **Policy & Approval Controls** and turns `Review Required` into an exact-intent approval workflow instead of treating review as a passive label. When enabled, Magen3 creates an approval request bound to a SHA-256 hash of the agent, action, amount, target, execution wallet, policy, and original intent.
+
+Policies can configure:
+
+- Single-approver or quorum mode.
+- One to ten required approvals.
+- Explicit eligible approver wallets.
+- Optional owner-wallet fallback.
+- Approval expiry from five minutes to seven days.
+- Separation of requester and approver.
+- Mandatory rejection comments.
+
+The workflow states are `Pending`, `Approved`, `Rejected`, `Expired`, and `Configuration Required`. One authorized rejection ends the request. Duplicate responses, unauthorized approvers, execution-wallet self-approval under separation of duties, and execution after expiry are rejected. Changing a protected intent parameter changes the binding hash and requires a new decision.
+
+Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. An approved request permits progression only to the existing human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The current Foundation workflow identifies reviewers by the connected wallet address but does not yet require a separate cryptographic approval signature, so it is not marked Live. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md).
 
 ### Threat Intelligence foundation
 
@@ -485,9 +503,9 @@ The in-app Intent Playground:
 
 - Selects an active registered agent
 - Uses the existing API-key authentication contract
-- Provides editable wallet, contract, and execution-preflight examples, including expired metadata, invalid payment budgets, and inconsistent swap bounds
+- Provides editable wallet, contract, execution-preflight, lifecycle/replay, x402, bridge, oracle, compliance, and human-approval examples
 - Validates JSON before submission
-- Displays the real response, decision, risk, findings, explanation, pipeline, and audit ID
+- Displays the real response, decision, risk, findings, explanation, pipeline, audit ID, and any exact-bound approval request
 - Keeps the entered raw key in page state rather than adding it to request JSON or persistent storage
 
 ## Security Coverage
@@ -828,8 +846,8 @@ The repository retains the existing Dockerfile and `railway.json`.
 2. Set `DATABASE_URL` and production environment variables.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
-5. Run `pnpm db:migrate` against the production database before relying on the new fields.
-6. Confirm `/api/health`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
+5. Run `pnpm db:migrate` against the production database before relying on the Human Approval & Quorum fields.
+6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
 
@@ -854,13 +872,14 @@ The existing `vercel.json` remains valid.
 4. Review recommended protection and starter policy.
 5. Copy one-time credentials.
 6. Submit an Allowed intent in Intent Playground.
-7. Submit a Review Required intent.
-8. Submit a Blocked intent.
-9. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
-10. Refresh and configure the synthetic Oracle Validation feed, then submit within-bounds, deviation, and stale-quote examples.
-11. Configure the synthetic Compliance Controls feed and submit complete-evidence, incomplete-Travel-Rule, and exact-match examples.
-12. Open the audit detail and show findings, explanation, pipeline, and proof state.
-13. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
+7. Submit a Review Required intent, open Policies → Human Approval Queue, and resolve the exact-bound request.
+8. Poll the approval as the external agent, then show that execution confirmation remains blocked until quorum is complete and unexpired.
+9. Submit a Blocked intent.
+10. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
+11. Refresh and configure the synthetic Oracle Validation feed, then submit within-bounds, deviation, and stale-quote examples.
+12. Configure the synthetic Compliance Controls feed and submit complete-evidence, incomplete-Travel-Rule, and exact-match examples.
+13. Open the audit detail and show findings, explanation, pipeline, and proof state.
+14. Show the Casper decision proof and, for an executed Allowed action, the separate execution hash.
 
 ## Security considerations
 
@@ -871,7 +890,7 @@ The existing `vercel.json` remains valid.
 - Validate action parameters again at the execution boundary.
 - Keep PostgreSQL backups before production migrations.
 - Restrict CORS and Railway environment access.
-- Foundation, Preview, and Planned labels describe implementation maturity; only actual findings and the final decision authorize or stop execution.
+- Foundation, Preview, and Planned labels describe implementation maturity; only actual findings, the final decision, and—when configured—a completed unexpired exact-bound approval authorize progression to signing.
 - Review the provenance, freshness, confidence, and legal basis of any configured threat feed. An exact no-match is not proof that a target is safe.
 - A high Security Coverage score does not imply invulnerability.
 - Never submit raw personal identity data to Magen3. Keep PII with the external verification provider and send only non-sensitive statuses, opaque references, timestamps, jurisdiction codes, and hashes.
@@ -885,6 +904,9 @@ The existing `vercel.json` remains valid.
 | Gateway unavailable | Confirm backend health and `VITE_API_URL`. |
 | Invalid agent API key | Use the latest key or rotate it from Connected Agents. |
 | No active policy | Complete onboarding or create an active policy for the agent. |
+| Approval stays Configuration Required | Add eligible approver wallets or enable owner-wallet fallback on the active policy. |
+| Agent cannot proceed after Review Required | Poll the approval ID or audit ID; quorum must be Approved and unexpired before execution confirmation is accepted. |
+| Approval response rejected | Confirm the connected wallet is an eligible approver, has not already responded, and is not the execution wallet when separation of duties is enabled. |
 | Threat feed unavailable | Configure one feed source, verify JSON structure, and check `/api/threat-intelligence/status`. |
 | Threat feed stale | Publish a current `generatedAt` value or adjust `THREAT_INTELLIGENCE_MAX_AGE_MS` only after reviewing the operational risk. |
 | Compliance feed unavailable | Configure one feed source when exact matching is required, verify JSON structure, and check `/api/compliance-controls/status`. Policy unavailable behavior still applies when no feed is configured. |
@@ -913,6 +935,7 @@ scripts/casper/              Contract and proof tooling
 - [`docs/AGENT_GATEWAY_API.md`](docs/AGENT_GATEWAY_API.md)
 - [`docs/GATEWAY_INTEGRATION.md`](docs/GATEWAY_INTEGRATION.md)
 - [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
+- [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md)
 - [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 - [`docs/CASPER_DEPLOYMENT_PLAYBOOK.md`](docs/CASPER_DEPLOYMENT_PLAYBOOK.md)
 

@@ -150,7 +150,7 @@ function errorPayload(error: unknown) {
   return { ok: false, error: error instanceof Error ? error.message : "Unknown Magen3 MCP error" };
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "reportX402Settlement">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
@@ -165,6 +165,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
+        approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized wallet-scoped reviewers respond through the Magen3 application. Approval does not sign or broadcast the transaction.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
@@ -173,6 +174,19 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
       try {
         const response = await client.checkIntent(intent);
         return text({ ...response, mcpGuidance: response.result.decision === "Allowed" ? "Policy allows continuation, but a human-controlled wallet must still approve signing." : response.result.decision === "Review Required" ? "Stop and request human review." : "Stop. Do not execute or bypass Magen3." });
+      } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getApproval(input: { approvalOrAuditId: string }): Promise<ToolTextResult> {
+      try {
+        const response = await client.getApproval(input.approvalOrAuditId);
+        return text({
+          ...response,
+          mcpGuidance: response.approval.mayProceedToSigning
+            ? "The exact bound Review Required intent has completed its approval workflow and may continue to human-controlled wallet signing before expiry."
+            : response.approval.reviewStatus === "Pending"
+              ? "Approval is still pending. Do not sign or execute the intent."
+              : `Approval is ${String(response.approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`,
+        });
       } catch (error) { return text(errorPayload(error), true); }
     },
     async reportX402Settlement(update: Parameters<Magen3Client["reportX402Settlement"]>[0]): Promise<ToolTextResult> {

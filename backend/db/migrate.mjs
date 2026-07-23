@@ -59,6 +59,21 @@ export async function runMigrations() {
       reason TEXT NOT NULL,
       checks_passed JSONB NOT NULL DEFAULT '[]'::jsonb,
       checks_failed JSONB NOT NULL DEFAULT '[]'::jsonb,
+      audit_log_id TEXT NOT NULL DEFAULT '',
+      wallet_address TEXT NOT NULL DEFAULT '',
+      requester_wallet_address TEXT NOT NULL DEFAULT '',
+      policy_id TEXT NOT NULL DEFAULT '',
+      policy_name TEXT NOT NULL DEFAULT '',
+      review_status TEXT NOT NULL DEFAULT 'Pending',
+      binding_hash TEXT NOT NULL DEFAULT '',
+      required_approvals INTEGER NOT NULL DEFAULT 1,
+      approver_wallets JSONB NOT NULL DEFAULT '[]'::jsonb,
+      responses JSONB NOT NULL DEFAULT '[]'::jsonb,
+      expires_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      rejection_reason TEXT NOT NULL DEFAULT '',
+      review_context JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -127,6 +142,13 @@ export async function runMigrations() {
       capability_context JSONB NOT NULL DEFAULT '[]'::jsonb,
       proof_submitted_at TIMESTAMPTZ,
       proof_confirmed_at TIMESTAMPTZ,
+      approval_request_id TEXT NOT NULL DEFAULT '',
+      approval_status TEXT NOT NULL DEFAULT 'not_required',
+      approval_binding_hash TEXT NOT NULL DEFAULT '',
+      approval_required_count INTEGER NOT NULL DEFAULT 0,
+      approval_received_count INTEGER NOT NULL DEFAULT 0,
+      approval_expires_at TIMESTAMPTZ,
+      approval_resolved_at TIMESTAMPTZ,
       risk_score INTEGER NOT NULL
     );
   `);
@@ -206,6 +228,28 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS capability_context JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS proof_submitted_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS proof_confirmed_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_request_id TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'not_required';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_binding_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_required_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_received_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_expires_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_resolved_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS audit_log_id TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS requester_wallet_address TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS policy_id TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS policy_name TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'Pending';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS binding_hash TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS required_approvals INTEGER NOT NULL DEFAULT 1;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS approver_wallets JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS responses JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS rejection_reason TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS review_context JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE action_reviews ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS agent_owner_wallet_address TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE agent_gateway_requests ADD COLUMN IF NOT EXISTS execution_wallet_address TEXT NOT NULL DEFAULT '';`);
@@ -245,6 +289,9 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_tx_hash ON audit_logs(execution_tx_hash);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_decision_proof_status ON audit_logs(decision_proof_status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_agent_id ON action_reviews(agent_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_wallet_address ON action_reviews(wallet_address);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_audit_log_id ON action_reviews(audit_log_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_status ON action_reviews(review_status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_agent_id ON agent_gateway_requests(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_wallet_address ON agent_gateway_requests(wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_execution_wallet_address ON agent_gateway_requests(execution_wallet_address);`);

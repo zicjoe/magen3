@@ -9,6 +9,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
+import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
@@ -59,7 +60,7 @@ export function createMemoryStore() {
   let agents = [];
   let policies = [];
   let auditLogs = [];
-  const actionReviews = [];
+  let actionReviews = [];
   let gatewayRequests = [];
 
   function publicAgent(agent, extra = {}) {
@@ -90,6 +91,41 @@ export function createMemoryStore() {
   function scopedAuditLogs(walletAddress) {
     const wallet = normalizeWalletAddress(walletAddress);
     return wallet ? auditLogs.filter((log) => log.walletAddress === wallet || log.agentOwnerWalletAddress === wallet) : [];
+  }
+
+  function syncAuditApproval(review) {
+    if (!review?.auditLogId) return;
+    const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
+    auditLogs = auditLogs.map((log) => log.id === review.auditLogId ? {
+      ...log,
+      approvalRequestId: review.id,
+      approvalStatus: review.reviewStatus,
+      approvalBindingHash: review.bindingHash,
+      approvalRequiredCount: Number(review.requiredApprovals || 1),
+      approvalReceivedCount: approvalsReceived,
+      approvalExpiresAt: review.expiresAt || "",
+      approvalResolvedAt: review.resolvedAt || "",
+      executionStatus: review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : log.executionStatus,
+      executionNote: review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : log.executionNote,
+      pipelineStages: updatePipelineStage(log.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending"),
+    } : log);
+  }
+
+  function refreshApproval(review) {
+    const refreshed = expireApproval(review);
+    if (refreshed !== review) {
+      actionReviews = actionReviews.map((item) => item.id === review.id ? refreshed : item);
+      syncAuditApproval(refreshed);
+    }
+    return refreshed;
+  }
+
+  function scopedApprovals(walletAddress) {
+    const wallet = normalizeWalletAddress(walletAddress).toLowerCase();
+    return actionReviews
+      .map(refreshApproval)
+      .filter((review) => review.walletAddress?.toLowerCase() === wallet || (review.approverWallets || []).some((approver) => approver.toLowerCase() === wallet))
+      .map((review) => approvalPublicSummary(review));
   }
 
   function requireGatewayAgent(agentId, apiKey) {
@@ -132,6 +168,7 @@ export function createMemoryStore() {
         agents: scopedAgents(walletAddress),
         policies: scopedPolicies(walletAddress),
         auditLogs: scopedAuditLogs(walletAddress),
+        approvals: scopedApprovals(walletAddress),
         shieldModules,
         dashboardStats: dashboardStats(walletAddress),
       };
@@ -713,6 +750,49 @@ export function createMemoryStore() {
         proofConfirmedAt: "",
         riskScore: Number(result.riskScore || 50),
       };
+      const approvalRequest = createApprovalRequest({ auditLog, policy, ownerWalletAddress: walletAddress });
+      if (result.decision === "Review Required") {
+        const approvalFinding = approvalRequest ? {
+          module: "Policy & Approval Controls",
+          status: approvalRequest.reviewStatus === "Pending" ? "warning" : "unavailable",
+          severity: approvalRequest.reviewStatus === "Pending" ? "medium" : "high",
+          rule: "Human approval quorum",
+          message: approvalRequest.reviewStatus === "Pending" ? `Execution is paused until ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} are recorded.` : "The active policy enables human review but has no eligible approver wallet.",
+          evidence: { approvalRequestId: approvalRequest.id, bindingHash: approvalRequest.bindingHash, requiredApprovals: approvalRequest.requiredApprovals, expiresAt: approvalRequest.expiresAt },
+          remediation: approvalRequest.reviewStatus === "Pending" ? "Open Policy & Approval Controls, review the exact bound intent, and approve or reject it before expiry." : "Configure at least one authorized approver wallet or enable owner-wallet fallback.",
+        } : {
+          module: "Policy & Approval Controls",
+          status: "unavailable",
+          severity: "medium",
+          rule: "Human approval workflow",
+          message: "The decision requires human review, but the active policy does not enable an approval workflow.",
+          evidence: { policyId: policy?.id || "", policyName: policy?.name || "" },
+          remediation: "Enable Human Approval & Quorum in the active policy to turn Review Required into a controlled approval workflow.",
+        };
+        auditLog.moduleFindings = [...(auditLog.moduleFindings || []), approvalFinding];
+        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding];
+        auditLog.pipelineStages = updatePipelineStage(auditLog.pipelineStages, "human-approval", approvalRequest ? "pending" : "skipped", approvalRequest ? auditTimestamp : "", approvalRequest ? "Human approval pending" : "Human approval workflow not configured");
+        result.pipelineStages = auditLog.pipelineStages;
+      }
+      if (approvalRequest) {
+        actionReviews = [approvalRequest, ...actionReviews];
+        auditLog.approvalRequestId = approvalRequest.id;
+        auditLog.approvalStatus = approvalRequest.reviewStatus;
+        auditLog.approvalBindingHash = approvalRequest.bindingHash;
+        auditLog.approvalRequiredCount = approvalRequest.requiredApprovals;
+        auditLog.approvalReceivedCount = 0;
+        auditLog.approvalExpiresAt = approvalRequest.expiresAt;
+        auditLog.approvalResolvedAt = "";
+        result.approval = approvalPublicSummary(approvalRequest);
+      } else {
+        auditLog.approvalRequestId = "";
+        auditLog.approvalStatus = result.decision === "Review Required" ? "not_configured" : "not_required";
+        auditLog.approvalBindingHash = "";
+        auditLog.approvalRequiredCount = 0;
+        auditLog.approvalReceivedCount = 0;
+        auditLog.approvalExpiresAt = "";
+        auditLog.approvalResolvedAt = "";
+      }
       Object.assign(auditLog, initialDecisionProofState(auditLog));
       const gatewayRequest = {
         ...intent,
@@ -744,7 +824,56 @@ export function createMemoryStore() {
         auditLog: recordedAuditLog,
         casperPayload,
         executionApproved: result.decision === "Allowed",
-        nextAction: gatewayNextAction(result.decision),
+        approval: approvalRequest ? approvalPublicSummary(approvalRequest) : null,
+        nextAction: approvalRequest ? `Review Required. ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} must be recorded before signing.` : gatewayNextAction(result.decision),
+      };
+    },
+
+    async listApprovals(walletAddress) {
+      return { approvals: scopedApprovals(requireWalletAddress(walletAddress)) };
+    },
+
+    async respondApproval(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.approverWalletAddress);
+      const index = actionReviews.findIndex((review) => review.id === id);
+      if (index < 0) {
+        const err = new Error("Approval request not found");
+        err.status = 404;
+        throw err;
+      }
+      const updated = respondToApproval(actionReviews[index], { ...body, walletAddress });
+      actionReviews = actionReviews.map((review) => review.id === id ? updated : review);
+      syncAuditApproval(updated);
+      return { approval: approvalPublicSummary(updated), auditLog: auditLogs.find((log) => log.id === updated.auditLogId) || null };
+    },
+
+    async getAgentApproval(id, body = {}, context = {}) {
+      const agentId = String(body.agentId || body.agent_id || "").trim();
+      if (!agentId) {
+        const err = new Error("agentId is required");
+        err.status = 400;
+        throw err;
+      }
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const review = actionReviews.find((item) => (item.id === id || item.auditLogId === id) && item.agentId === agentRecord.id);
+      if (!review) {
+        const err = new Error("Approval request not found for this connected agent");
+        err.status = 404;
+        throw err;
+      }
+      const refreshed = refreshApproval(review);
+      return { ok: true, approval: approvalPublicSummary(refreshed) };
+    },
+
+    async approvalStatus(walletAddress) {
+      const approvals = scopedApprovals(walletAddress);
+      return {
+        status: "foundation_available",
+        pending: approvals.filter((item) => ["Pending", "Configuration Required"].includes(item.reviewStatus)).length,
+        approved: approvals.filter((item) => item.reviewStatus === "Approved").length,
+        rejected: approvals.filter((item) => item.reviewStatus === "Rejected").length,
+        expired: approvals.filter((item) => item.reviewStatus === "Expired").length,
+        securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step.",
       };
     },
 
@@ -786,8 +915,10 @@ export function createMemoryStore() {
         err.status = 404;
         throw err;
       }
-      if (auditLog.decision !== "Allowed") {
-        const err = new Error("Execution hash can only be attached to an Allowed Magen3 decision.");
+      const review = auditLog.approvalRequestId ? actionReviews.find((item) => item.id === auditLog.approvalRequestId) : null;
+      const approvedAfterReview = auditLog.decision === "Review Required" && approvalExecutionAuthorized(review);
+      if (auditLog.decision !== "Allowed" && !approvedAfterReview) {
+        const err = new Error("Execution hash can only be attached to an Allowed decision or a Review Required decision with a current completed approval quorum.");
         err.status = 400;
         throw err;
       }

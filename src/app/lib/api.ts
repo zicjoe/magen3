@@ -22,7 +22,7 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; approvalWorkflow?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
@@ -47,6 +47,11 @@ export const api = {
 
   x402PaymentControlsStatus() {
     return request<{ ok: boolean; x402PaymentControls: Record<string, unknown> }>("/api/x402-payment-controls/status");
+  },
+
+  approvalWorkflowStatus(walletAddress?: string) {
+    const query = walletAddress ? `?walletAddress=${encodeURIComponent(walletAddress)}` : "";
+    return request<{ ok: boolean; approvalWorkflow: Record<string, unknown> }>(`/api/approval-workflow/status${query}`);
   },
 
   publicConfig() {
@@ -81,6 +86,23 @@ export const api = {
       method: "POST",
       headers: { "x-magen3-agent-key": apiKey },
       body: JSON.stringify(settlement),
+    });
+  },
+
+  getAgentApproval(id: string, agentId: string, apiKey: string) {
+    return request<any>(`/api/agent-gateway/approvals/${encodeURIComponent(id)}?agentId=${encodeURIComponent(agentId)}`, {
+      headers: { "x-magen3-agent-key": apiKey },
+    });
+  },
+
+  listApprovals(walletAddress: string) {
+    return request<any>(`/api/approvals?walletAddress=${encodeURIComponent(walletAddress)}`);
+  },
+
+  respondApproval(id: string, body: Record<string, unknown>) {
+    return request<any>(`/api/approvals/${encodeURIComponent(id)}/respond`, {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   },
 

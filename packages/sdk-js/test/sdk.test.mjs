@@ -378,3 +378,39 @@ test("preserves Execution Integrity lifecycle metadata in intent payloads", asyn
   assert.equal(captured.action.lifecycle.sequence, 9);
   assert.equal(captured.action.lifecycle.attempt, 0);
 });
+
+test("polls an exact-bound human approval by approval or audit ID", async () => {
+  let capturedUrl = "";
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url, init) => {
+      capturedUrl = String(url);
+      assert.equal(init.method, "GET");
+      return new Response(JSON.stringify({
+        ok: true,
+        approval: {
+          id: "APR-1",
+          auditLogId: "AUDIT-1",
+          agentId: "MAG-1",
+          actionType: "Transfer",
+          amount: 30,
+          target: "01def",
+          reviewStatus: "Approved",
+          bindingHash: "a".repeat(64),
+          requiredApprovals: 1,
+          approvalsReceived: 1,
+          remainingApprovals: 0,
+          expiresAt: "2026-07-23T12:00:00.000Z",
+          mayProceedToSigning: true,
+        },
+      }), { status: 200 });
+    },
+  });
+
+  const response = await client.getApproval("AUDIT-1");
+  assert.match(capturedUrl, /\/api\/agent-gateway\/approvals\/AUDIT-1\?agentId=MAG-1$/);
+  assert.equal(response.approval.reviewStatus, "Approved");
+  assert.equal(response.approval.mayProceedToSigning, true);
+});

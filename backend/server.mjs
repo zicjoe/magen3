@@ -186,6 +186,7 @@ const server = createServer(async (req, res) => {
         oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
         complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
         executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
+        approvalWorkflow: { status: "foundation-available", exactIntentBinding: true, quorum: true, expiry: true, rejection: true },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
       });
@@ -241,6 +242,27 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (route === "GET /api/approval-workflow/status") {
+      const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
+      if (!walletAddress) {
+        return send(res, 200, {
+          ok: true,
+          approvalWorkflow: {
+            status: "foundation-available",
+            protectionArea: "Policy & Approval Controls",
+            exactIntentBinding: true,
+            quorum: true,
+            expiry: true,
+            rejection: true,
+            agentPolling: true,
+            cryptographicApproverSignatures: false,
+            securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step."
+          }
+        });
+      }
+      return send(res, 200, { ok: true, approvalWorkflow: await store.approvalStatus(walletAddress) });
+    }
+
     if (route === "GET /api/x402-payment-controls/status") {
       return send(res, 200, {
         ok: true,
@@ -279,8 +301,8 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
+          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
+          foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -290,7 +312,7 @@ const server = createServer(async (req, res) => {
           verifyEndpoint: "/api/agent-gateway/me",
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
-          executionRule: "External agents may request wallet signing only after Magen3 returns Allowed."
+          executionRule: "External agents may request wallet signing only after Magen3 returns Allowed, or after an exact-bound Review Required approval reaches Approved before expiry."
         }
       });
     }
@@ -481,6 +503,35 @@ const server = createServer(async (req, res) => {
           requestFields: "action.lifecycle: intentId, idempotencyKey, sequence, createdAt, expiresAt, retryOf, replacementOf, attempt, intentFingerprint",
           decisionRule: "New policies can require lifecycle metadata and enforce exact-once authorization. Legacy policies remain non-breaking until operators explicitly enable strict duplicate-fingerprint enforcement."
         },
+        humanApproval: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/approval-workflow/status",
+          agentPollingEndpoint: "GET /api/agent-gateway/approvals/:approvalOrAuditId?agentId=YOUR_AGENT_ID",
+          reviewerQueueEndpoint: "GET /api/approvals?walletAddress=CASPER_PUBLIC_KEY",
+          reviewerResponseEndpoint: "POST /api/approvals/:approvalId/respond",
+          purpose: "Turn configured Review Required decisions into exact-intent single or quorum approval workflows before wallet signing.",
+          deterministicChecks: [
+            "SHA-256 binding over agent, action, amount, target, execution wallet, policy, and original intent",
+            "Distinct eligible approver wallets",
+            "Single or quorum requirement",
+            "Approval expiry",
+            "Duplicate response prevention",
+            "Optional separation of requester and approver",
+            "Required rejection comments",
+            "Execution confirmation rejection before completed unexpired approval"
+          ],
+          policyFields: {
+            enabled: "structuredRules.approvalWorkflowEnabled",
+            mode: "structuredRules.approvalWorkflowMode: Single | Quorum",
+            requiredCount: "structuredRules.approvalRequiredCount: 1-10",
+            approvers: "structuredRules.approvalApproverWallets",
+            expiry: "structuredRules.approvalExpiryMinutes",
+            ownerFallback: "structuredRules.approvalAllowOwnerFallback",
+            separationOfDuties: "structuredRules.approvalSeparationOfDuties",
+            rejectionComment: "structuredRules.approvalRequireRejectComment"
+          },
+          securityBoundary: "The current reviewer response is associated with the connected wallet address but is not separately cryptographically signed. It permits only progression to the existing human-controlled wallet signing boundary and is not represented as Live."
+        },
         oracleValidation: {
           status: "Foundation Available",
           statusEndpoint: "GET /api/oracle-validation/status",
@@ -631,6 +682,7 @@ const server = createServer(async (req, res) => {
           bridgeControlsContext: "Sanitized route, provider, chain, asset, fee, quote-expiry, destination-format, and finality evidence",
           complianceControlsContext: "Sanitized feed state, jurisdictions, attestation statuses, Travel Rule evidence status, screening status, risk rating, and exact-match summaries",
           executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
+          approval: "For Review Required decisions, the exact bound intent can expose a wallet-scoped approval request, quorum, expiry, responses, and whether signing may proceed",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
@@ -653,6 +705,13 @@ const server = createServer(async (req, res) => {
       const apiKey = readAgentGatewayKey(req);
       const body = await readJson(req);
       return send(res, 201, await store.submitAgentGatewayIntent(body, { apiKey }));
+    }
+
+    const gatewayApprovalMatch = url.pathname.match(/^\/api\/agent-gateway\/approvals\/([^/]+)$/);
+    if (req.method === "GET" && gatewayApprovalMatch) {
+      const apiKey = readAgentGatewayKey(req);
+      const agentId = String(url.searchParams.get("agentId") || "").trim();
+      return send(res, 200, await store.getAgentApproval(gatewayApprovalMatch[1], { agentId }, { apiKey }));
     }
 
     if (route === "POST /api/agent-gateway/x402/settlements") {
@@ -687,6 +746,17 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && revokeAgentMatch) {
       const body = await readJson(req);
       return send(res, 200, { agent: await store.revokeAgent(revokeAgentMatch[1], body) });
+    }
+
+    if (route === "GET /api/approvals") {
+      const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
+      return send(res, 200, await store.listApprovals(walletAddress));
+    }
+
+    const approvalResponseMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/respond$/);
+    if (req.method === "POST" && approvalResponseMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.respondApproval(approvalResponseMatch[1], body));
     }
 
     if (route === "POST /api/policies") {

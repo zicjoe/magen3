@@ -379,6 +379,43 @@ export interface Magen3X402SettlementUpdate {
   note?: string;
 }
 
+
+export interface Magen3ApprovalResponseRecord {
+  walletAddress: string;
+  response: "Approved" | "Rejected" | string;
+  comment?: string;
+  timestamp: string;
+}
+
+export interface Magen3ApprovalRequest {
+  id: string;
+  auditLogId: string;
+  agentId: string;
+  actionType: string;
+  amount: number;
+  target: string;
+  targetType?: string;
+  decision: "Review Required" | string;
+  risk?: Magen3Risk | string;
+  riskScore?: number;
+  reason?: string;
+  policyId?: string;
+  policyName?: string;
+  reviewStatus: "Pending" | "Approved" | "Rejected" | "Expired" | "Configuration Required" | string;
+  bindingHash: string;
+  requiredApprovals: number;
+  approvalsReceived: number;
+  remainingApprovals: number;
+  approverWallets?: string[];
+  responses?: Magen3ApprovalResponseRecord[];
+  expiresAt: string;
+  resolvedAt?: string;
+  rejectionReason?: string;
+  mayProceedToSigning: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -414,6 +451,8 @@ export interface Magen3IntentResponse {
   auditLog: Record<string, unknown>;
   casperPayload?: Record<string, unknown>;
   nextAction: string;
+  /** Exact-intent approval request for Review Required decisions when the active policy enables the workflow. */
+  approval?: Magen3ApprovalRequest | null;
 }
 
 export interface Magen3ClientOptions {
@@ -479,6 +518,13 @@ export class Magen3Client {
         walletAddress: intent.walletAddress ?? intent.executionWalletAddress,
       }),
     });
+  }
+
+
+  async getApproval(approvalOrAuditId: string): Promise<{ ok: boolean; approval: Magen3ApprovalRequest }> {
+    const id = approvalOrAuditId?.trim();
+    if (!id) throw new TypeError("approvalOrAuditId is required");
+    return this.request<{ ok: boolean; approval: Magen3ApprovalRequest }>(`/api/agent-gateway/approvals/${encodeURIComponent(id)}?agentId=${encodeURIComponent(this.agentId)}`, { method: "GET" });
   }
 
   async reportX402Settlement(update: Magen3X402SettlementUpdate): Promise<Record<string, unknown>> {

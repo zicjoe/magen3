@@ -59,6 +59,18 @@ Threat Intelligence findings and the sanitized `threatIntelligenceContext` are r
 
 The SDK never signs or broadcasts blockchain transactions.
 
+## Human approval polling
+
+A `Review Required` decision is not execution authorization. Poll the exact-bound request by approval ID or audit ID:
+
+```python
+approval = client.get_approval(decision["approval"]["id"])["approval"]
+if not approval.get("mayProceedToSigning"):
+    return
+```
+
+The SDK cannot approve a request, access a reviewer wallet, sign, or broadcast. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require execution to remain stopped.
+
 ## Oracle Validation
 
 Trading and DeFi intents can submit exact quote metadata without any wallet secret:

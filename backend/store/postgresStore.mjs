@@ -13,6 +13,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
+import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -117,6 +118,13 @@ function normalizeAuditLog(row) {
     capabilityContext: normalizeExecutionCapabilities(row.capabilityContext || []),
     proofSubmittedAt: row.proofSubmittedAt ? toDate(row.proofSubmittedAt).toISOString() : "",
     proofConfirmedAt: row.proofConfirmedAt ? toDate(row.proofConfirmedAt).toISOString() : "",
+    approvalRequestId: row.approvalRequestId || "",
+    approvalStatus: row.approvalStatus || "not_required",
+    approvalBindingHash: row.approvalBindingHash || "",
+    approvalRequiredCount: Number(row.approvalRequiredCount || 0),
+    approvalReceivedCount: Number(row.approvalReceivedCount || 0),
+    approvalExpiresAt: row.approvalExpiresAt ? toDate(row.approvalExpiresAt).toISOString() : "",
+    approvalResolvedAt: row.approvalResolvedAt ? toDate(row.approvalResolvedAt).toISOString() : "",
     riskScore: Number(row.riskScore),
   };
 }
@@ -135,6 +143,21 @@ function normalizeReview(row) {
     reason: row.reason,
     checksPassed: Array.isArray(row.checksPassed) ? row.checksPassed : [],
     checksFailed: Array.isArray(row.checksFailed) ? row.checksFailed : [],
+    auditLogId: row.auditLogId || "",
+    walletAddress: row.walletAddress || "",
+    requesterWalletAddress: row.requesterWalletAddress || "",
+    policyId: row.policyId || "",
+    policyName: row.policyName || "",
+    reviewStatus: row.reviewStatus || "Pending",
+    bindingHash: row.bindingHash || "",
+    requiredApprovals: Number(row.requiredApprovals || 1),
+    approverWallets: Array.isArray(row.approverWallets) ? row.approverWallets : [],
+    responses: Array.isArray(row.responses) ? row.responses : [],
+    expiresAt: row.expiresAt ? toDate(row.expiresAt).toISOString() : "",
+    resolvedAt: row.resolvedAt ? toDate(row.resolvedAt).toISOString() : "",
+    rejectionReason: row.rejectionReason || "",
+    reviewContext: row.reviewContext && typeof row.reviewContext === "object" ? row.reviewContext : {},
+    updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : toDate(row.createdAt).toISOString(),
     createdAt: toDate(row.createdAt).toISOString(),
   };
 }
@@ -164,6 +187,60 @@ async function listAuditLogs(walletAddress) {
     .where(eq(auditLogsTable.walletAddress, normalizedWallet))
     .orderBy(desc(auditLogsTable.timestamp)))
     .map(normalizeAuditLog);
+}
+
+async function persistAuditApproval(review) {
+  if (!review?.auditLogId) return null;
+  const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, review.auditLogId));
+  const current = rows[0];
+  if (!current) return null;
+  const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
+  const executionStatus = review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : current.executionStatus;
+  const executionNote = review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : current.executionNote;
+  const [updated] = await db.update(auditLogsTable).set({
+    approvalRequestId: review.id,
+    approvalStatus: review.reviewStatus,
+    approvalBindingHash: review.bindingHash,
+    approvalRequiredCount: Number(review.requiredApprovals || 1),
+    approvalReceivedCount: approvalsReceived,
+    approvalExpiresAt: review.expiresAt ? new Date(review.expiresAt) : null,
+    approvalResolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
+    executionStatus,
+    executionNote,
+    pipelineStages: updatePipelineStage(current.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending"),
+  }).where(eq(auditLogsTable.id, review.auditLogId)).returning();
+  return updated ? normalizeAuditLog(updated) : null;
+}
+
+async function persistReview(review) {
+  const [updated] = await db.update(actionReviewsTable).set({
+    reviewStatus: review.reviewStatus,
+    responses: review.responses || [],
+    resolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
+    rejectionReason: review.rejectionReason || "",
+    updatedAt: review.updatedAt ? new Date(review.updatedAt) : new Date(),
+  }).where(eq(actionReviewsTable.id, review.id)).returning();
+  const normalized = normalizeReview(updated);
+  await persistAuditApproval(normalized);
+  return normalized;
+}
+
+async function refreshReview(review) {
+  const refreshed = expireApproval(review);
+  if (refreshed.reviewStatus !== review.reviewStatus) return persistReview(refreshed);
+  return review;
+}
+
+async function listApprovals(walletAddress) {
+  const wallet = normalizeWalletAddress(walletAddress).toLowerCase();
+  if (!wallet) return [];
+  const rows = await db.select().from(actionReviewsTable).orderBy(desc(actionReviewsTable.createdAt));
+  const approvals = [];
+  for (const row of rows) {
+    const normalized = await refreshReview(normalizeReview(row));
+    if (normalized.walletAddress.toLowerCase() === wallet || (normalized.approverWallets || []).some((approver) => String(approver).toLowerCase() === wallet)) approvals.push(approvalPublicSummary(normalized));
+  }
+  return approvals;
 }
 
 function initialExecutionStatus(decision) {
@@ -211,12 +288,13 @@ export async function createPostgresStore() {
 
     async bootstrap(walletAddress) {
       const normalizedWallet = normalizeWalletAddress(walletAddress);
-      const [agents, policies, auditLogs] = await Promise.all([
+      const [agents, policies, auditLogs, approvals] = await Promise.all([
         listAgents(normalizedWallet),
         listPolicies(normalizedWallet),
         listAuditLogs(normalizedWallet),
+        listApprovals(normalizedWallet),
       ]);
-      return { agents, policies, auditLogs, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs) };
+      return { agents, policies, auditLogs, approvals, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs) };
     },
 
     async connectWallet() {
@@ -872,6 +950,39 @@ export async function createPostgresStore() {
         proofConfirmedAt: null,
         riskScore: Number(result.riskScore || 50),
       };
+      const approvalRequest = createApprovalRequest({ auditLog: { ...auditValues, timestamp: auditValues.timestamp.toISOString() }, policy, ownerWalletAddress: walletAddress });
+      if (result.decision === "Review Required") {
+        const approvalFinding = approvalRequest ? {
+          module: "Policy & Approval Controls",
+          status: approvalRequest.reviewStatus === "Pending" ? "warning" : "unavailable",
+          severity: approvalRequest.reviewStatus === "Pending" ? "medium" : "high",
+          rule: "Human approval quorum",
+          message: approvalRequest.reviewStatus === "Pending" ? `Execution is paused until ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} are recorded.` : "The active policy enables human review but has no eligible approver wallet.",
+          evidence: { approvalRequestId: approvalRequest.id, bindingHash: approvalRequest.bindingHash, requiredApprovals: approvalRequest.requiredApprovals, expiresAt: approvalRequest.expiresAt },
+          remediation: approvalRequest.reviewStatus === "Pending" ? "Open Policy & Approval Controls, review the exact bound intent, and approve or reject it before expiry." : "Configure at least one authorized approver wallet or enable owner-wallet fallback.",
+        } : {
+          module: "Policy & Approval Controls",
+          status: "unavailable",
+          severity: "medium",
+          rule: "Human approval workflow",
+          message: "The decision requires human review, but the active policy does not enable an approval workflow.",
+          evidence: { policyId: policy?.id || "", policyName: policy?.name || "" },
+          remediation: "Enable Human Approval & Quorum in the active policy to turn Review Required into a controlled approval workflow.",
+        };
+        auditValues.moduleFindings = [...(auditValues.moduleFindings || []), approvalFinding];
+        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding];
+        auditValues.pipelineStages = updatePipelineStage(auditValues.pipelineStages, "human-approval", approvalRequest ? "pending" : "skipped", approvalRequest ? auditTimestamp.toISOString() : "", approvalRequest ? "Human approval pending" : "Human approval workflow not configured");
+        result.pipelineStages = auditValues.pipelineStages;
+      }
+      auditValues.approvalRequestId = approvalRequest?.id || "";
+      auditValues.approvalStatus = approvalRequest?.reviewStatus || (result.decision === "Review Required" ? "not_configured" : "not_required");
+      auditValues.approvalBindingHash = approvalRequest?.bindingHash || "";
+      auditValues.approvalRequiredCount = Number(approvalRequest?.requiredApprovals || 0);
+      auditValues.approvalReceivedCount = 0;
+      auditValues.approvalExpiresAt = approvalRequest?.expiresAt ? new Date(approvalRequest.expiresAt) : null;
+      auditValues.approvalResolvedAt = null;
+      if (approvalRequest) result.approval = approvalPublicSummary(approvalRequest);
+
       const initialProof = initialDecisionProofState({
         ...auditValues,
         timestamp: auditValues.timestamp.toISOString(),
@@ -885,6 +996,38 @@ export async function createPostgresStore() {
         decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
       }).returning();
 
+      if (approvalRequest) {
+        await db.insert(actionReviewsTable).values({
+          id: approvalRequest.id,
+          agentId: approvalRequest.agentId,
+          actionType: approvalRequest.actionType,
+          amount: approvalRequest.amount,
+          target: approvalRequest.target,
+          targetType: approvalRequest.targetType,
+          decision: approvalRequest.decision,
+          risk: approvalRequest.risk,
+          riskScore: approvalRequest.riskScore,
+          reason: approvalRequest.reason,
+          checksPassed: approvalRequest.checksPassed,
+          checksFailed: approvalRequest.checksFailed,
+          auditLogId: approvalRequest.auditLogId,
+          walletAddress: approvalRequest.walletAddress,
+          requesterWalletAddress: approvalRequest.requesterWalletAddress,
+          policyId: approvalRequest.policyId,
+          policyName: approvalRequest.policyName,
+          reviewStatus: approvalRequest.reviewStatus,
+          bindingHash: approvalRequest.bindingHash,
+          requiredApprovals: approvalRequest.requiredApprovals,
+          approverWallets: approvalRequest.approverWallets,
+          responses: approvalRequest.responses,
+          expiresAt: new Date(approvalRequest.expiresAt),
+          resolvedAt: null,
+          rejectionReason: approvalRequest.rejectionReason,
+          reviewContext: approvalRequest.reviewContext,
+          updatedAt: new Date(approvalRequest.updatedAt),
+          createdAt: new Date(approvalRequest.createdAt),
+        });
+      }
       const auditLog = normalizeAuditLog(auditRow);
       const [gatewayRow] = await db.insert(agentGatewayRequestsTable).values({
         id: intent.id,
@@ -1016,7 +1159,73 @@ export async function createPostgresStore() {
         auditLog: recordedAuditLog,
         casperPayload: buildAuditDecisionPayload(recordedAuditLog),
         executionApproved: result.decision === "Allowed",
-        nextAction: gatewayNextAction(result.decision),
+        approval: approvalRequest ? approvalPublicSummary(approvalRequest) : null,
+        nextAction: approvalRequest ? `Review Required. ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} must be recorded before signing.` : gatewayNextAction(result.decision),
+      };
+    },
+
+    async listApprovals(walletAddress) {
+      return { approvals: await listApprovals(requireWalletAddress(walletAddress)) };
+    },
+
+    async respondApproval(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.approverWalletAddress);
+      const rows = await db.select().from(actionReviewsTable).where(eq(actionReviewsTable.id, id));
+      if (!rows[0]) {
+        const err = new Error("Approval request not found");
+        err.status = 404;
+        throw err;
+      }
+      const updated = respondToApproval(normalizeReview(rows[0]), { ...body, walletAddress });
+      const approval = await persistReview(updated);
+      const auditRows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, approval.auditLogId));
+      return { approval: approvalPublicSummary(approval), auditLog: auditRows[0] ? normalizeAuditLog(auditRows[0]) : null };
+    },
+
+    async getAgentApproval(id, body = {}, context = {}) {
+      const agentId = String(body.agentId || body.agent_id || "").trim();
+      if (!agentId) {
+        const err = new Error("agentId is required");
+        err.status = 400;
+        throw err;
+      }
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      const agentRecord = agentRows[0];
+      if (!agentRecord) {
+        const err = new Error("Connected agent not found for this Agent ID.");
+        err.status = 404;
+        throw err;
+      }
+      if (agentRecord.status === "Revoked") {
+        const err = new Error("Agent Gateway request rejected because this connected agent has been revoked.");
+        err.status = 403;
+        throw err;
+      }
+      if (!secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
+        const err = new Error("Agent Gateway API key is missing or does not match this connected agent.");
+        err.status = 401;
+        throw err;
+      }
+      const rows = await db.select().from(actionReviewsTable).orderBy(desc(actionReviewsTable.createdAt));
+      const row = rows.find((item) => (item.id === id || item.auditLogId === id) && item.agentId === agentRecord.id);
+      if (!row) {
+        const err = new Error("Approval request not found for this connected agent");
+        err.status = 404;
+        throw err;
+      }
+      const approval = await refreshReview(normalizeReview(row));
+      return { ok: true, approval: approvalPublicSummary(approval) };
+    },
+
+    async approvalStatus(walletAddress) {
+      const approvals = await listApprovals(walletAddress);
+      return {
+        status: "foundation_available",
+        pending: approvals.filter((item) => ["Pending", "Configuration Required"].includes(item.reviewStatus)).length,
+        approved: approvals.filter((item) => item.reviewStatus === "Approved").length,
+        rejected: approvals.filter((item) => item.reviewStatus === "Rejected").length,
+        expired: approvals.filter((item) => item.reviewStatus === "Expired").length,
+        securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step.",
       };
     },
 
@@ -1068,8 +1277,14 @@ export async function createPostgresStore() {
         err.status = 404;
         throw err;
       }
-      if (current.decision !== "Allowed") {
-        const err = new Error("Execution hash can only be attached to an Allowed Magen3 decision.");
+      let approvedAfterReview = false;
+      if (current.decision === "Review Required" && current.approvalRequestId) {
+        const reviewRows = await db.select().from(actionReviewsTable).where(eq(actionReviewsTable.id, current.approvalRequestId));
+        const review = reviewRows[0] ? await refreshReview(normalizeReview(reviewRows[0])) : null;
+        approvedAfterReview = approvalExecutionAuthorized(review);
+      }
+      if (current.decision !== "Allowed" && !approvedAfterReview) {
+        const err = new Error("Execution hash can only be attached to an Allowed decision or a Review Required decision with a current completed approval quorum.");
         err.status = 400;
         throw err;
       }

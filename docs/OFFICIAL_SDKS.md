@@ -62,6 +62,39 @@ response = client.check_intent(intent)
 
 Use `require_allowed(intent)` for fail-closed execution control.
 
+## Human Approval & Quorum polling
+
+`Review Required` is not execution authorization. When the response contains an approval request, stop automatic execution and poll the exact-bound workflow by approval ID or audit ID.
+
+TypeScript:
+
+```ts
+const decision = await client.checkIntent(intent);
+
+if (decision.result.decision === "Review Required" && decision.approval) {
+  const { approval } = await client.getApproval(decision.approval.id);
+  if (!approval.mayProceedToSigning) {
+    // Pending, Configuration Required, Rejected, or Expired: do not sign.
+    return;
+  }
+}
+```
+
+Python:
+
+```python
+decision = client.check_intent(intent)
+approval_request = decision.get("approval")
+
+if decision["result"]["decision"] == "Review Required" and approval_request:
+    approval = client.get_approval(approval_request["id"])["approval"]
+    if not approval.get("mayProceedToSigning"):
+        # Do not sign or broadcast.
+        return
+```
+
+Approval is bound to the exact agent, action, amount, target, execution wallet, policy, and original intent. Changing those parameters requires a new Gateway decision. The current Foundation workflow records wallet-address-scoped reviewer responses but does not claim a separate cryptographic approval signature.
+
 ## Threat Intelligence response types
 
 The TypeScript result exposes `threatIntelligenceContext` with sanitized feed status, source type/name, freshness timestamps, indicator count, policy mode, confidence threshold, checked identities, and matched indicator summaries. Provider credentials are not part of the SDK response. Python callers receive the same JSON object as a dictionary.

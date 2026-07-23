@@ -40,6 +40,26 @@ Use magen3_verify_agent first. Then call magen3_require_allowed before any block
 Then test an amount above the policy limit. Codex must stop when the tool returns an error for Blocked and must request human review for Review Required.
 
 
+## Human approval workflow
+
+When `magen3_check_intent` returns `Review Required`, the agent must stop. If the response includes an approval request, call `magen3_get_approval` with either the approval ID or audit ID.
+
+```text
+Review Required
+→ Do not sign or broadcast
+→ Human resolves the exact-bound request in Policies → Human Approval Queue
+→ Call magen3_get_approval
+→ Continue only when mayProceedToSigning is true
+```
+
+`Pending`, `Configuration Required`, `Rejected`, and `Expired` all mean that execution must remain stopped. Parameter changes require a new intent decision and approval. The MCP server cannot approve a request, access the reviewer wallet, or sign the blockchain transaction.
+
+Suggested Codex test:
+
+```text
+Submit a harmless intent above the configured review threshold. Show the approval ID and binding hash. Do not sign or broadcast. Poll it with magen3_get_approval only after I resolve it in Magen3.
+```
+
 ## Contract-validation test
 
 Ask Codex to submit a harmless contract-call intent without signing or broadcasting it. The action should include the exact contract or package identifier, `entryPoint`, and optional `chainName`. Then repeat with a malformed identifier or missing entry point. Magen3 must return an explained `Blocked` or `Review Required` result and persist the Contract Validation findings in the audit record.

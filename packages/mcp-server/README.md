@@ -2,12 +2,13 @@
 
 Official local MCP server for Magen3, a modular Web3 execution firewall.
 
-It exposes five tools over `stdio`:
+It exposes six tools over `stdio`:
 
 - `magen3_verify_agent`
 - `magen3_get_intent_schema`
 - `magen3_check_intent`
 - `magen3_require_allowed`
+- `magen3_get_approval`
 - `magen3_report_x402_settlement`
 
 `magen3_require_allowed` is the recommended fail-closed gate. It returns an MCP error for Blocked, Review Required, authentication errors, schema errors, timeouts, and network failures.
@@ -33,6 +34,10 @@ node packages/mcp-server/dist/server.js
 
 See `docs/MCP_SERVER.md` for Codex setup and testing.
 
+
+## Human Approval & Quorum
+
+When an intent returns `Review Required`, stop execution and call `magen3_get_approval` with the approval ID or audit ID after a human resolves the request in Magen3. Continue only when `mayProceedToSigning` is true. The MCP server cannot approve a request or impersonate a reviewer.
 
 ## Contract intents
 

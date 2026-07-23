@@ -77,3 +77,40 @@ test("reportX402Settlement delegates a bound settlement update", async () => {
   assert.equal(captured.auditLogId, "AUDIT-X402-1");
   assert.equal(captured.resourceDelivered, true);
 });
+
+test("getApproval polls the exact-bound review workflow and gives fail-closed guidance", async () => {
+  let captured;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async (id) => {
+      captured = id;
+      return {
+        ok: true,
+        approval: {
+          id: "APR-1",
+          auditLogId: "AUDIT-1",
+          agentId: "MAG-1",
+          actionType: "Transfer",
+          amount: 30,
+          target: "01def",
+          decision: "Review Required",
+          reviewStatus: "Pending",
+          bindingHash: "a".repeat(64),
+          requiredApprovals: 2,
+          approvalsReceived: 1,
+          remainingApprovals: 1,
+          expiresAt: "2026-07-23T12:00:00.000Z",
+          mayProceedToSigning: false,
+        },
+      };
+    },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getApproval({ approvalOrAuditId: "AUDIT-1" });
+  assert.equal(captured, "AUDIT-1");
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /still pending/i);
+  assert.match(result.content[0].text, /Do not sign/i);
+});

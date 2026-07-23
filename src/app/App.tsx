@@ -192,7 +192,53 @@ interface AuditLog {
   capabilityContext?: ExecutionCapability[];
   proofSubmittedAt?: string;
   proofConfirmedAt?: string;
+  approvalRequestId?: string;
+  approvalStatus?: string;
+  approvalBindingHash?: string;
+  approvalRequiredCount?: number;
+  approvalReceivedCount?: number;
+  approvalExpiresAt?: string;
+  approvalResolvedAt?: string;
   riskScore: number;
+}
+
+interface ApprovalResponseRecord {
+  walletAddress: string;
+  response: "Approved" | "Rejected";
+  comment?: string;
+  timestamp: string;
+}
+
+interface ApprovalRequest {
+  id: string;
+  auditLogId: string;
+  agentId: string;
+  actionType: string;
+  amount: number;
+  target: string;
+  targetType: string;
+  decision: Decision;
+  risk: Risk;
+  riskScore: number;
+  reason: string;
+  walletAddress: string;
+  requesterWalletAddress: string;
+  policyId: string;
+  policyName: string;
+  reviewStatus: "Pending" | "Approved" | "Rejected" | "Expired" | "Configuration Required" | string;
+  bindingHash: string;
+  requiredApprovals: number;
+  approvalsReceived: number;
+  remainingApprovals: number;
+  approverWallets: string[];
+  responses: ApprovalResponseRecord[];
+  expiresAt: string;
+  resolvedAt?: string;
+  rejectionReason?: string;
+  reviewContext?: Record<string, unknown>;
+  mayProceedToSigning?: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface DashboardStats {
@@ -456,6 +502,7 @@ interface AgentGatewayResponse {
   auditLog: AuditLog;
   casperPayload: CasperPreparedPayload;
   executionApproved: boolean;
+  approval?: ApprovalRequest | null;
   nextAction: string;
 }
 
@@ -550,6 +597,9 @@ function executionProofStatus(status = "", txHash = "") {
   if (isRealCasperDeployHash(txHash)) return { label: "Executed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
   if (status === "approved_pending_signature") return { label: "Waiting for signature", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
   if (status === "blocked_not_submitted") return { label: "Blocked before execution", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
+  if (status === "review_approved_pending_signature") return { label: "Approval complete · waiting for signature", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (status === "review_rejected_not_submitted") return { label: "Approval rejected", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
+  if (status === "review_expired_not_submitted") return { label: "Approval expired", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
   if (status === "review_required_not_submitted") return { label: "Review required", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
   if (status === "not_required") return { label: "Not required", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
   return { label: "Not submitted", className: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20" };
@@ -576,6 +626,15 @@ function executionProofExplanation(log: AuditLog) {
   }
   if (log.executionStatus === "blocked_not_submitted" || log.decision === "Blocked") {
     return "No execution hash exists because Magen3 blocked this action before wallet signing.";
+  }
+  if (log.executionStatus === "review_approved_pending_signature" || (log.decision === "Review Required" && log.approvalStatus === "Approved")) {
+    return "The exact-bound approval workflow completed before expiry. The execution hash appears only after the human-controlled wallet signs and submits the unchanged transaction.";
+  }
+  if (log.executionStatus === "review_rejected_not_submitted" || log.approvalStatus === "Rejected") {
+    return "No execution hash exists because an authorized approver rejected the exact-bound request.";
+  }
+  if (log.executionStatus === "review_expired_not_submitted" || log.approvalStatus === "Expired") {
+    return "No execution hash exists because the exact-bound approval expired before wallet signing.";
   }
   if (log.executionStatus === "review_required_not_submitted" || log.decision === "Review Required") {
     return "No execution hash exists yet because Magen3 required human review before wallet signing.";
@@ -1651,6 +1710,7 @@ function DashboardPage({
   auditLogs,
   policies,
   agents,
+  approvals,
   onNavigate,
 }: {
   walletConnected: boolean;
@@ -1665,6 +1725,7 @@ function DashboardPage({
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
+  approvals: ApprovalRequest[];
   onNavigate: (p: Page) => void;
 }) {
   if (!walletConnected) {
@@ -1719,6 +1780,7 @@ function DashboardPage({
       : "Unavailable";
   const x402FoundationAvailable = x402PaymentControlsStatus.status === "foundation-available";
   const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
+  const pendingApprovals = approvals.filter((approval) => approval.reviewStatus === "Pending" || approval.reviewStatus === "Configuration Required");
   const complianceFeedOperational = complianceControlsStatus.status === "available";
   const complianceFeedLabel = complianceFeedOperational
     ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
@@ -1736,6 +1798,7 @@ function DashboardPage({
     { label: "Oracle feed", value: oracleFeedLabel, done: oracleFeedOperational },
     { label: "Compliance feed", value: complianceFeedLabel, done: complianceFeedOperational },
     { label: "x402 controls", value: x402PaymentsToday.length ? `${x402PaymentsToday.length} today` : "Ready", done: x402FoundationAvailable },
+    { label: "Approval queue", value: String(pendingApprovals.length), done: pendingApprovals.length === 0 },
   ];
 
   return (
@@ -1795,6 +1858,12 @@ function DashboardPage({
             ? `${threatIntelligenceStatus.sourceName || "Configured feed"} is fresh and exposes ${activeThreatIndicators} active exact-match indicator${activeThreatIndicators === 1 ? "" : "s"}.`
             : `${threatIntelligenceStatus.status === "stale" ? "The configured feed is stale" : "No fresh feed is available"}. Each policy decides whether that condition warns, requires review, or blocks; it never counts as a pass.`}
         </div>
+        {pendingApprovals.length > 0 && (
+          <button type="button" onClick={() => onNavigate("policies")} className="mt-3 flex w-full items-start justify-between gap-4 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-left text-xs text-[#FCD34D] transition-colors hover:border-[#F59E0B]/45">
+            <span><span className="font-semibold">Human approval required:</span> {pendingApprovals.length} exact-bound request{pendingApprovals.length === 1 ? " is" : "s are"} waiting in Policy & Approval Controls.</span>
+            <ArrowRight size={15} className="mt-0.5 shrink-0" />
+          </button>
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
@@ -2305,6 +2374,14 @@ function AgentRegistrationWizard({
           x402RequireClientFingerprint: typeof sourceRules.x402RequireClientFingerprint === "boolean" ? sourceRules.x402RequireClientFingerprint : false,
           x402PreventAmbiguousRetry: typeof sourceRules.x402PreventAmbiguousRetry === "boolean" ? sourceRules.x402PreventAmbiguousRetry : true,
           x402MaxSettlementAttempts: typeof sourceRules.x402MaxSettlementAttempts === "number" ? sourceRules.x402MaxSettlementAttempts : 1,
+          approvalWorkflowEnabled: typeof sourceRules.approvalWorkflowEnabled === "boolean" ? sourceRules.approvalWorkflowEnabled : true,
+          approvalWorkflowMode: typeof sourceRules.approvalWorkflowMode === "string" ? sourceRules.approvalWorkflowMode : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)) ? "Quorum" : "Single",
+          approvalRequiredCount: typeof sourceRules.approvalRequiredCount === "number" ? sourceRules.approvalRequiredCount : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)) ? 2 : 1,
+          approvalExpiryMinutes: typeof sourceRules.approvalExpiryMinutes === "number" ? sourceRules.approvalExpiryMinutes : 60,
+          approvalAllowOwnerFallback: typeof sourceRules.approvalAllowOwnerFallback === "boolean" ? sourceRules.approvalAllowOwnerFallback : true,
+          approvalSeparationOfDuties: typeof sourceRules.approvalSeparationOfDuties === "boolean" ? sourceRules.approvalSeparationOfDuties : false,
+          approvalRequireRejectComment: typeof sourceRules.approvalRequireRejectComment === "boolean" ? sourceRules.approvalRequireRejectComment : true,
+          approvalApproverWallets: Array.isArray(sourceRules.approvalApproverWallets) ? sourceRules.approvalApproverWallets : [],
           complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
           complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
           complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
@@ -2322,7 +2399,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -3380,6 +3457,40 @@ ${snippet}
 // ──────────────────────────────────────────────────────────
 
 
+
+function ApprovalPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Human Approval & Quorum</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Turn Review Required into a controlled queue bound to the exact intent, approved wallets, quorum, and expiry. Parameter changes require a new Magen3 decision.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Approval Workflow" value={String(values.approvalWorkflowEnabled ?? "")} onChange={(value) => onChange({ approvalWorkflowEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Workflow Mode" value={String(values.approvalWorkflowMode ?? "")} onChange={(value) => onChange({ approvalWorkflowMode: value })} options={["Single", "Quorum"]} />
+        <InputField label="Required Approvals" value={String(values.approvalRequiredCount ?? "")} onChange={(value) => onChange({ approvalRequiredCount: value })} type="number" />
+        <InputField label="Approval Expiry (minutes)" value={String(values.approvalExpiryMinutes ?? "")} onChange={(value) => onChange({ approvalExpiryMinutes: value })} type="number" />
+        <SelectField label="Owner Wallet Fallback" value={String(values.approvalAllowOwnerFallback ?? "")} onChange={(value) => onChange({ approvalAllowOwnerFallback: value })} options={["Yes", "No"]} />
+        <SelectField label="Separation of Duties" value={String(values.approvalSeparationOfDuties ?? "")} onChange={(value) => onChange({ approvalSeparationOfDuties: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Rejection Comment" value={String(values.approvalRequireRejectComment ?? "")} onChange={(value) => onChange({ approvalRequireRejectComment: value })} options={["Yes", "No"]} />
+        <div className="md:col-span-2">
+          <TextareaField label="Authorized Approver Wallets (one per line)" value={String(values.approvalApproverWallets ?? "")} onChange={(value) => onChange({ approvalApproverWallets: value })} />
+        </div>
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Current approval responses are scoped to connected Casper wallet addresses. Cryptographic approver signatures are intentionally listed as future hardening rather than claimed as implemented.</p>
+    </div>
+  );
+}
+
 function ExecutionIntegrityPolicyFields({
   values,
   onChange,
@@ -3514,12 +3625,16 @@ function PoliciesPage({
   onCreatePolicy,
   onUpdatePolicy,
   walletAddress,
+  approvals,
+  onRespondApproval,
 }: {
   agents: Agent[];
   policies: Policy[];
   onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
   onUpdatePolicy: (id: string, policy: Partial<Policy>) => Promise<void> | void;
   walletAddress: string;
+  approvals: ApprovalRequest[];
+  onRespondApproval: (id: string, response: "Approve" | "Reject", comment?: string) => Promise<ApprovalRequest>;
 }) {
   const [form, setForm] = useState({
     name: "",
@@ -3527,6 +3642,14 @@ function PoliciesPage({
     maxTransaction: "",
     dailyLimit: "",
     approvalThreshold: "",
+    approvalWorkflowEnabled: "Yes",
+    approvalWorkflowMode: "Single",
+    approvalRequiredCount: "1",
+    approvalExpiryMinutes: "60",
+    approvalAllowOwnerFallback: "Yes",
+    approvalSeparationOfDuties: "No",
+    approvalRequireRejectComment: "Yes",
+    approvalApproverWallets: "",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -3617,6 +3740,9 @@ function PoliciesPage({
   });
   const [editingPolicy, setEditingPolicy] = useState<Policy | null>(null);
   const [copiedPolicyHash, setCopiedPolicyHash] = useState("");
+  const [approvalComments, setApprovalComments] = useState<Record<string, string>>({});
+  const [approvalBusy, setApprovalBusy] = useState("");
+  const [approvalError, setApprovalError] = useState("");
   const copyPolicyHash = useCallback(async (policyHash: string) => {
     const copiedOk = await writeClipboard(policyHash);
     setCopiedPolicyHash(copiedOk ? policyHash : "copy failed");
@@ -3627,6 +3753,14 @@ function PoliciesPage({
     maxTransaction: "",
     dailyLimit: "",
     approvalThreshold: "",
+    approvalWorkflowEnabled: "Yes",
+    approvalWorkflowMode: "Single",
+    approvalRequiredCount: "1",
+    approvalExpiryMinutes: "60",
+    approvalAllowOwnerFallback: "Yes",
+    approvalSeparationOfDuties: "No",
+    approvalRequireRejectComment: "Yes",
+    approvalApproverWallets: "",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -3735,6 +3869,14 @@ function PoliciesPage({
       structuredRules: {
         blockedContracts: form.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: form.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvalWorkflowEnabled: form.approvalWorkflowEnabled !== "No",
+        approvalWorkflowMode: form.approvalWorkflowMode,
+        approvalRequiredCount: Math.max(1, Math.min(10, Number(form.approvalRequiredCount) || 1)),
+        approvalExpiryMinutes: Math.max(5, Math.min(10080, Number(form.approvalExpiryMinutes) || 60)),
+        approvalAllowOwnerFallback: form.approvalAllowOwnerFallback !== "No",
+        approvalSeparationOfDuties: form.approvalSeparationOfDuties === "Yes",
+        approvalRequireRejectComment: form.approvalRequireRejectComment !== "No",
+        approvalApproverWallets: form.approvalApproverWallets.split("\n").map((item) => item.trim()).filter(Boolean),
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -3825,6 +3967,14 @@ function PoliciesPage({
       maxTransaction: "",
       dailyLimit: "",
       approvalThreshold: "",
+      approvalWorkflowEnabled: "Yes",
+      approvalWorkflowMode: "Single",
+      approvalRequiredCount: "1",
+      approvalExpiryMinutes: "60",
+      approvalAllowOwnerFallback: "Yes",
+      approvalSeparationOfDuties: "No",
+      approvalRequireRejectComment: "Yes",
+      approvalApproverWallets: "",
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
@@ -3922,6 +4072,14 @@ function PoliciesPage({
       maxTransaction: String(policy.maxTransaction),
       dailyLimit: String(policy.dailyLimit),
       approvalThreshold: String(policy.approvalThreshold),
+      approvalWorkflowEnabled: policy.structuredRules?.approvalWorkflowEnabled === true ? "Yes" : "No",
+      approvalWorkflowMode: typeof policy.structuredRules?.approvalWorkflowMode === "string" ? policy.structuredRules.approvalWorkflowMode : "Single",
+      approvalRequiredCount: String(typeof policy.structuredRules?.approvalRequiredCount === "number" ? policy.structuredRules.approvalRequiredCount : 1),
+      approvalExpiryMinutes: String(typeof policy.structuredRules?.approvalExpiryMinutes === "number" ? policy.structuredRules.approvalExpiryMinutes : 60),
+      approvalAllowOwnerFallback: policy.structuredRules?.approvalAllowOwnerFallback === false ? "No" : "Yes",
+      approvalSeparationOfDuties: policy.structuredRules?.approvalSeparationOfDuties === true ? "Yes" : "No",
+      approvalRequireRejectComment: policy.structuredRules?.approvalRequireRejectComment === false ? "No" : "Yes",
+      approvalApproverWallets: Array.isArray(policy.structuredRules?.approvalApproverWallets) ? (policy.structuredRules.approvalApproverWallets as string[]).join("\n") : "",
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
@@ -4031,6 +4189,14 @@ function PoliciesPage({
         ...(editingPolicy.structuredRules || {}),
         blockedContracts: editForm.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: editForm.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvalWorkflowEnabled: editForm.approvalWorkflowEnabled !== "No",
+        approvalWorkflowMode: editForm.approvalWorkflowMode,
+        approvalRequiredCount: Math.max(1, Math.min(10, Number(editForm.approvalRequiredCount) || 1)),
+        approvalExpiryMinutes: Math.max(5, Math.min(10080, Number(editForm.approvalExpiryMinutes) || 60)),
+        approvalAllowOwnerFallback: editForm.approvalAllowOwnerFallback !== "No",
+        approvalSeparationOfDuties: editForm.approvalSeparationOfDuties === "Yes",
+        approvalRequireRejectComment: editForm.approvalRequireRejectComment !== "No",
+        approvalApproverWallets: editForm.approvalApproverWallets.split("\n").map((item) => item.trim()).filter(Boolean),
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -4118,6 +4284,21 @@ function PoliciesPage({
     setEditingPolicy(null);
   }, [editForm, editingPolicy, onUpdatePolicy]);
 
+  const submitApprovalResponse = useCallback(async (approval: ApprovalRequest, response: "Approve" | "Reject") => {
+    setApprovalBusy(approval.id);
+    setApprovalError("");
+    try {
+      await onRespondApproval(approval.id, response, approvalComments[approval.id] || "");
+      setApprovalComments((current) => ({ ...current, [approval.id]: "" }));
+    } catch (error) {
+      setApprovalError(error instanceof Error ? error.message : "Unable to update the approval request.");
+    } finally {
+      setApprovalBusy("");
+    }
+  }, [approvalComments, onRespondApproval]);
+
+  const pendingApprovals = approvals.filter((approval) => ["Pending", "Configuration Required"].includes(approval.reviewStatus));
+
   return (
     <div className="space-y-6">
       <div>
@@ -4125,8 +4306,82 @@ function PoliciesPage({
           Policies
         </h1>
         <p className="text-[#94A3B8] text-sm mt-1">
-          Create and manage firewall rules for your agents.
+          Create deterministic rules and resolve Review Required requests through exact-intent approval workflows.
         </p>
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Clock size={17} className="text-[#A78BFA]" />
+              <h2 className={SECTION_TITLE}>Human Approval Queue</h2>
+              <StatusBadge status="Foundation Available" />
+            </div>
+            <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked from execution until the configured wallet quorum approves the exact binding hash. Rejection, expiry, or parameter changes prevent signing.</p>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span>
+            <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{approvals.filter((item) => item.reviewStatus === "Approved").length} approved</span>
+          </div>
+        </div>
+        {approvalError && <div className="mt-4 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{approvalError}</div>}
+        <div className="mt-4 space-y-3">
+          {approvals.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#334155] bg-[#0B1220] p-5 text-center">
+              <div className="text-sm font-medium text-[#F8FAFC]">No approval requests yet</div>
+              <p className="mt-1 text-xs text-[#94A3B8]">Enable Human Approval & Quorum on a policy, then submit an intent that returns Review Required.</p>
+            </div>
+          ) : approvals.slice(0, 12).map((approval) => {
+            const eligible = approval.approverWallets.some((item) => item.toLowerCase() === walletAddress.toLowerCase());
+            const alreadyResponded = approval.responses.some((item) => item.walletAddress.toLowerCase() === walletAddress.toLowerCase());
+            const actionable = approval.reviewStatus === "Pending" && eligible && !alreadyResponded;
+            const statusTone = approval.reviewStatus === "Approved" ? "text-[#22C55E]" : approval.reviewStatus === "Rejected" || approval.reviewStatus === "Expired" ? "text-[#EF4444]" : "text-[#F59E0B]";
+            return (
+              <div key={approval.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-sm font-semibold ${statusTone}`}>{approval.reviewStatus}</span>
+                      <span className="text-xs text-[#64748B]">{approval.approvalsReceived}/{approval.requiredApprovals} approvals</span>
+                      <span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{approval.actionType}</span>
+                    </div>
+                    <div className="mt-2 text-sm text-[#F8FAFC]">{approval.amount} · {approval.target || "No target"}</div>
+                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{approval.reason}</p>
+                    <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
+                      <div><span className="text-[#64748B]">Policy</span><div className="mt-0.5 text-[#F8FAFC]">{approval.policyName || "Unknown policy"}</div></div>
+                      <div><span className="text-[#64748B]">Expires</span><div className="mt-0.5 text-[#F8FAFC]">{approval.expiresAt ? new Date(approval.expiresAt).toLocaleString() : "Not set"}</div></div>
+                      <div><span className="text-[#64748B]">Binding</span><div className="mt-0.5 truncate font-mono text-[#22D3EE]" title={approval.bindingHash}>{approval.bindingHash || "Unavailable"}</div></div>
+                    </div>
+                  </div>
+                  <div className="w-full shrink-0 lg:w-72">
+                    {actionable ? (
+                      <>
+                        <textarea className={`${INPUT_CLS} min-h-20 resize-none text-xs`} value={approvalComments[approval.id] || ""} onChange={(event) => setApprovalComments((current) => ({ ...current, [approval.id]: event.target.value }))} placeholder="Optional approval note; required for rejection" />
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <Btn variant="primary" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Approve")}><CheckCircle size={14} /> Approve</Btn>
+                          <Btn variant="danger" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Reject")}><XCircle size={14} /> Reject</Btn>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3 text-xs text-[#94A3B8]">
+                        {alreadyResponded ? "This wallet already responded." : eligible ? `This request is ${approval.reviewStatus.toLowerCase()}.` : "The connected wallet is not an authorized approver."}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {approval.responses.length > 0 && (
+                  <div className="mt-3 border-t border-[#1E293B] pt-3">
+                    <div className="text-[10px] uppercase tracking-wider text-[#64748B]">Responses</div>
+                    <div className="mt-2 space-y-1">
+                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span><span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span></div>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
@@ -4266,6 +4521,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+            <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -4535,6 +4791,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+                <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -4973,6 +5230,29 @@ function AuditLogPage({
                   <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Suggested resolution</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.suggestedResolution || (selected.decision === "Allowed" ? "Proceed to wallet signing only after confirming the displayed execution parameters." : "Review the active policy and change only authorized request parameters before retrying.")}</p></div>
                 </div>
               </div>
+
+              {(selected.approvalRequestId || selected.approvalStatus) && selected.approvalStatus !== "not_required" && (
+                <div className="rounded-xl border border-[#A78BFA]/25 bg-[#A78BFA]/5 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wider text-[#A78BFA]">Human Approval Workflow</div>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">The approval is bound to this exact intent hash. Parameter changes require a new Magen3 decision and approval.</p>
+                    </div>
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${selected.approvalStatus === "Approved" ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : selected.approvalStatus === "Rejected" || selected.approvalStatus === "Expired" ? "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>{selected.approvalStatus || "Pending"}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Approval request</span><div className="mt-1 break-all font-mono text-[#F8FAFC]">{selected.approvalRequestId || "Not configured"}</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Quorum</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalReceivedCount || 0}/{selected.approvalRequiredCount || 0} approvals</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Expires</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalExpiresAt ? new Date(selected.approvalExpiresAt).toLocaleString() : "Not available"}</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Resolved</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalResolvedAt ? new Date(selected.approvalResolvedAt).toLocaleString() : "Not yet"}</div></div>
+                  </div>
+                  <div className="mt-3">
+                    <span className="text-xs uppercase tracking-wider text-[#64748B]">Exact-intent binding hash</span>
+                    <div className="mt-1 break-all rounded-lg border border-[#1E293B] bg-[#020617] p-2 font-mono text-xs text-[#A78BFA]">{selected.approvalBindingHash || "Unavailable"}</div>
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Current approver identity is wallet-address scoped in the connected application session. Cryptographic approver signatures remain a future hardening step and are not claimed as implemented.</p>
+                </div>
+              )}
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Execution Capabilities</div>
@@ -7063,6 +7343,27 @@ function IntentPlaygroundPage({
                   <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Triggered rule</div><div className="mt-1 text-sm text-[#F8FAFC]">{result.result.triggeredRule || "No blocking rule"}</div></div>
                   <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Audit record</div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{result.auditLog.id}</div></div>
                 </div>
+                {result.approval && (
+                  <div className="mt-3 rounded-xl border border-[#A78BFA]/25 bg-[#A78BFA]/5 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#F8FAFC]">Human Approval & Quorum</div>
+                        <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">This Review Required decision created an approval request bound to the exact audit intent.</p>
+                      </div>
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${result.approval.reviewStatus === "Approved" ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : result.approval.reviewStatus === "Rejected" || result.approval.reviewStatus === "Expired" ? "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>{result.approval.reviewStatus}</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Approval ID <span className="block break-all font-mono text-[#F8FAFC]">{result.approval.id}</span></div>
+                      <div>Quorum <span className="block text-[#F8FAFC]">{result.approval.approvalsReceived}/{result.approval.requiredApprovals}</span></div>
+                      <div>Expires <span className="block text-[#F8FAFC]">{new Date(result.approval.expiresAt).toLocaleString()}</span></div>
+                      <div className="sm:col-span-3">Exact-intent binding <span className="block break-all font-mono text-[#A78BFA]">{result.approval.bindingHash}</span></div>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="text-xs leading-relaxed text-[#94A3B8]">Authorized reviewers respond from Policies → Human Approval Queue. The agent can poll this request by approval ID or audit ID but cannot approve itself.</div>
+                      <Btn variant="secondary" size="sm" onClick={() => onNavigate("policies")}>Open approval queue</Btn>
+                    </div>
+                  </div>
+                )}
                 {result.result.threatIntelligenceContext && (
                   <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7441,6 +7742,7 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -7528,6 +7830,7 @@ export default function App() {
       setAgents([]);
       setPolicies([]);
       setAuditLogs([]);
+      setApprovals([]);
       return () => {
         cancelled = true;
       };
@@ -7545,6 +7848,7 @@ export default function App() {
         }
         if (Array.isArray(payload.policies)) setPolicies(payload.policies as Policy[]);
         if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
+        if (Array.isArray(payload.approvals)) setApprovals(payload.approvals as ApprovalRequest[]);
         setApiOnline(true);
       } catch {
         if (!cancelled) setApiOnline(false);
@@ -7717,6 +8021,21 @@ export default function App() {
     }
   }, [walletAddress]);
 
+  const onRespondApproval = useCallback(async (id: string, response: "Approve" | "Reject", comment = "") => {
+    if (!walletAddress) throw new Error("Connect Casper Wallet before responding to an approval request.");
+    const payload = await api.respondApproval(id, { walletAddress, response, comment });
+    if (payload.approval) {
+      const updated = payload.approval as ApprovalRequest;
+      setApprovals((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+    }
+    if (payload.auditLog) {
+      const updatedAudit = payload.auditLog as AuditLog;
+      setAuditLogs((previous) => previous.map((item) => item.id === updatedAudit.id ? updatedAudit : item));
+    }
+    setApiOnline(true);
+    return payload.approval as ApprovalRequest;
+  }, [walletAddress]);
+
   const onPrepareCasperPayload = useCallback(async (id: string) => {
     const response = await api.prepareCasperPayload(id);
     setApiOnline(true);
@@ -7749,6 +8068,12 @@ export default function App() {
       setAuditLogs((prev) => {
         const exists = prev.some((log) => log.id === response.auditLog.id);
         return exists ? prev.map((log) => log.id === response.auditLog.id ? response.auditLog : log) : [response.auditLog, ...prev];
+      });
+    }
+    if (response.approval) {
+      setApprovals((previous) => {
+        const exists = previous.some((item) => item.id === response.approval?.id);
+        return exists ? previous.map((item) => item.id === response.approval?.id ? response.approval as ApprovalRequest : item) : [response.approval as ApprovalRequest, ...previous];
       });
     }
     setApiOnline(true);
@@ -7794,6 +8119,7 @@ export default function App() {
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
+        approvals={approvals}
         onNavigate={navigate}
       />
     ),
@@ -7827,6 +8153,8 @@ export default function App() {
         onCreatePolicy={onCreatePolicy}
         onUpdatePolicy={onUpdatePolicy}
         walletAddress={walletAddress}
+        approvals={approvals}
+        onRespondApproval={onRespondApproval}
       />
     ),
     "intent-playground": (

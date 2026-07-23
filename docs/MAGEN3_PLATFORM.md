@@ -19,7 +19,7 @@ External Agent
 → Audit Log
 → Casper Decision Proof
 → Return Decision
-→ Wallet signing only if Allowed
+→ Wallet signing only if Allowed, or if an exact-bound Review Required request is approved before expiry
 ```
 
 ## Platform architecture
@@ -30,6 +30,7 @@ External Agent
 | Agent Shield | Coordinates the complete pre-execution protection flow. |
 | Agent Registry | Stores wallet-scoped agent identity, status, capabilities, and credential metadata. |
 | Policy Engine | Enforces supported structured rules attached to each agent. |
+| Approval Workflow | Converts configured Review Required outcomes into exact-bound single or quorum review requests. |
 | Protection Modules | Produce pass, warning, fail, unavailable, or skipped findings. |
 | Risk Assessment | Deterministically combines findings into a final decision. |
 | Audit Engine | Stores the original intent, pipeline, findings, explanations, decisions, and proof state. |
@@ -80,7 +81,7 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Protection area | Live | Foundation Available | Planned |
 | --- | --- | --- | --- |
 | Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
-| Policy & Approval Controls | Policy enforcement; review thresholds | — | Approval quorum; emergency circuit breaker |
+| Policy & Approval Controls | Policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | — | Privileged actions; token approvals and permits |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
@@ -95,6 +96,14 @@ The Security Pipeline retains evaluator-level evidence. Findings still identify 
 Execution Integrity combines deterministic transaction-construction preflight with Live lifecycle and replay protection. New policies can require a unique intent ID, idempotency key, creation time, expiry, and optional monotonic sequence. Magen3 computes a canonical SHA-256 fingerprint over protected intent parameters and checks prior audit records for duplicate IDs, mutated idempotency keys, duplicate fingerprints, reused transaction hashes, unsafe retries, and already confirmed execution.
 
 Legacy policies remain non-breaking. Duplicate-fingerprint enforcement is activated only when the policy explicitly enables it. Full stateful simulation and RPC-provider agreement remain Foundation or Planned controls and are never represented as implicit passes. See `EXECUTION_INTEGRITY.md`.
+
+### Human Approval & Quorum foundation
+
+Human Approval & Quorum is a Foundation Available control inside Policy & Approval Controls. When enabled and the deterministic result is `Review Required`, Magen3 creates an approval request bound to the audit record, agent, action, amount, target, execution wallet, active policy, and original intent.
+
+The workflow supports single or quorum approval, explicit approver wallets, optional owner fallback, expiry, separation of duties, mandatory rejection comments, duplicate-response prevention, and one-rejection resolution. Agents poll the workflow with their existing API key but cannot approve themselves through the agent endpoint. Reviewers use the wallet-scoped queue under Policies.
+
+An Approved request does not sign or broadcast. It permits the exact unchanged intent to progress to the existing human-controlled wallet-signing boundary before expiry. The current reviewer response is associated with the connected wallet address but is not separately cryptographically signed, so the control remains Foundation Available. See `HUMAN_APPROVAL_WORKFLOW.md`.
 
 ### Wallet Validation decision model
 
@@ -169,6 +178,7 @@ Enforced policy fields:
 - Maximum transaction amount
 - Daily spending limit
 - Human-review threshold
+- Human Approval & Quorum: workflow enablement, mode, approvers, required count, expiry, separation of duties, and rejection-comment requirement
 - Trusted contract or destination list
 - Blocked contracts through `structuredRules.blockedContracts`
 - Optional allowed contract entry points through `structuredRules.allowedEntryPoints`
@@ -228,12 +238,13 @@ Intent received
 → Relevant protection checks completed
 → Risk assessment completed
 → Decision returned
+→ Human approval requested when configured and Review Required
 → Audit stored
 → Casper decision proof queued / confirmed / failed
 → Execution recorded when available
 ```
 
-Only relevant modules are represented as evaluated. There are no fake animation delays.
+Only relevant modules are represented as evaluated. There are no fake animation delays. A Review Required request remains blocked until the exact-bound approval workflow reaches Approved before expiry.
 
 ## Decision guidance
 

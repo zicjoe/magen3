@@ -38,7 +38,7 @@ export const PROTECTION_MODULES = [
     controls: [
       { id: "policy-enforcement", name: "Deterministic policy enforcement", status: "Live" },
       { id: "review-thresholds", name: "Review thresholds", status: "Live" },
-      { id: "approval-quorum", name: "Human approval and quorum", status: "Planned" },
+      { id: "approval-quorum", name: "Human approval and quorum", status: "Foundation Available" },
       { id: "emergency-controls", name: "Emergency circuit breaker", status: "Planned" },
     ],
   },

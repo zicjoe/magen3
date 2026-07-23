@@ -432,7 +432,67 @@ The top-level response preserves the existing contract and adds structured expla
 | `Blocked` | Stop. Do not submit the blockchain transaction. |
 | `Review Required` | Pause automatic execution and request an authorized human decision. |
 
-Only `Allowed` sets `executionApproved` to `true`.
+The initial intent response sets `executionApproved` to `true` only for `Allowed`. A `Review Required` intent remains blocked until its exact-bound approval request reaches `Approved` before expiry; agents must poll the approval workflow rather than treating review as authorization.
+
+## Human Approval & Quorum
+
+When the active policy enables Human Approval & Quorum and the deterministic decision is `Review Required`, the response includes an `approval` object:
+
+```json
+{
+  "decision": "Review Required",
+  "executionApproved": false,
+  "approval": {
+    "id": "APR-...",
+    "auditLogId": "AUD-...",
+    "reviewStatus": "Pending",
+    "bindingHash": "64-character-sha256",
+    "requiredApprovals": 2,
+    "approvalsReceived": 0,
+    "remainingApprovals": 2,
+    "expiresAt": "2026-07-23T11:00:00.000Z",
+    "mayProceedToSigning": false
+  }
+}
+```
+
+The binding hash covers the audit ID, agent, action, amount, target, target type, execution wallet, policy, and original intent. Any protected parameter change requires a new Gateway decision and approval request.
+
+### Poll approval as the external agent
+
+```http
+GET /api/agent-gateway/approvals/APR-...?agentId=MAG-AGENT-...
+x-magen3-agent-key: YOUR_AGENT_API_KEY
+```
+
+The path also accepts the associated audit ID. Continue to pause while `reviewStatus` is `Pending` or `Configuration Required`. Stop permanently for `Rejected` or `Expired`. Progress to the separate wallet-signing boundary only when `reviewStatus` is `Approved` and `mayProceedToSigning` is `true`.
+
+### Reviewer queue
+
+The wallet-scoped application reads:
+
+```http
+GET /api/approvals?walletAddress=CASPER_OWNER_OR_APPROVER_PUBLIC_KEY
+```
+
+An eligible reviewer responds through:
+
+```http
+POST /api/approvals/APR-.../respond
+Content-Type: application/json
+
+{
+  "walletAddress": "CASPER_APPROVER_PUBLIC_KEY",
+  "response": "Approve",
+  "comment": "Reviewed exact recipient and amount"
+}
+```
+
+`response` accepts `Approve` or `Reject`. Rejection comments can be mandatory. Duplicate responses, unauthorized wallets, expired requests, and requester self-approval under separation-of-duties policy are rejected. One authorized rejection resolves the request as `Rejected`.
+
+### Current maturity boundary
+
+Human Approval & Quorum is **Foundation Available**. The current workflow identifies an approver by the connected wallet address and records the exact-bound response, but it does not yet require a separate cryptographic message signature from that approver. It therefore must not be described as a cryptographically signed approval system.
 
 ## Owner Wallet and Execution Wallet
 
@@ -451,13 +511,16 @@ The owner wallet registers the agent, manages credentials, and controls its poli
 | `auditLog.triggeredRule` | Policy rule most directly responsible for the outcome. |
 | `auditLog.suggestedResolution` | Safe remediation based on policy evidence. |
 | `auditLog.txHash` | Casper Decision Proof deploy/transaction hash when recorded. |
-| `auditLog.executionTxHash` | Real execution deploy/transaction hash attached after an Allowed action is signed and submitted. |
+| `auditLog.approvalRequestId` | Exact-bound approval request created for a Review Required decision when the policy enables the workflow. |
+| `auditLog.approvalStatus` | Current approval state: Pending, Approved, Rejected, Expired, or Configuration Required. |
+| `auditLog.approvalBindingHash` | SHA-256 binding over the protected intent and policy context. |
+| `auditLog.executionTxHash` | Real execution deploy/transaction hash attached after an Allowed action, or an unexpired Approved review, is signed and submitted. |
 
-Blocked and review-required actions can receive decision proofs, but they must not receive execution hashes.
+Blocked actions can receive decision proofs but must not receive execution hashes. Review Required actions also remain ineligible until their exact-bound approval reaches Approved before expiry.
 
 ## Attach an Execution Hash
 
-After an Allowed action is signed and submitted by the execution wallet, attach its real deploy or transaction hash to the matching audit record using the existing execution-confirmation route exposed by the application integration flow. Magen3 rejects execution hashes for Blocked or Review Required decisions.
+After an Allowed action—or a Review Required action with a completed, unexpired exact-bound approval—is signed and submitted by the execution wallet, attach its real deploy or transaction hash to the matching audit record using the existing execution-confirmation route. Magen3 rejects execution hashes for Blocked, Pending, Rejected, Expired, or Configuration Required decisions.
 
 ## Failure States
 
@@ -468,7 +531,8 @@ After an Allowed action is signed and submitted by the execution wallet, attach 
 | Revoked agent | Gateway access is rejected. |
 | No active policy | Magen3 fails closed. |
 | Hard policy, wallet-validation, contract-validation, execution-preflight, or enforced threat-intelligence violation | `Blocked`. |
-| Review threshold or review condition | `Review Required`. |
+| Review threshold or review condition | `Review Required`; an enabled approval workflow creates an exact-bound request. |
+| Approval quorum incomplete or expired | Execution confirmation is rejected. |
 | Threat feed stale or unavailable | Warn, Review Required, or Blocked according to the active policy; never silently passed. |
 | Unavailable roadmap module | Reported honestly as `unavailable`; it is not silently counted as protection. |
 

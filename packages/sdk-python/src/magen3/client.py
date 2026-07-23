@@ -72,6 +72,13 @@ class Magen3Client:
         payload.setdefault("walletAddress", wallet)
         return self._request("POST", "/api/agent-gateway/intents", payload)
 
+
+    def get_approval(self, approval_or_audit_id: str) -> Dict[str, Any]:
+        identifier = str(approval_or_audit_id or "").strip()
+        if not identifier:
+            raise ValueError("approval_or_audit_id is required")
+        return self._request("GET", f"/api/agent-gateway/approvals/{quote(identifier)}?agentId={quote(self.agent_id)}")
+
     def report_x402_settlement(self, update: Dict[str, Any]) -> Dict[str, Any]:
         audit_log_id = str(update.get("auditLogId", "")).strip()
         fingerprint = str(update.get("requestFingerprint", "")).strip()

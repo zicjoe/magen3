@@ -59,6 +59,17 @@ Use `requireAllowed()` when the caller must stop automatically for `Blocked` and
 
 The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, `suggestedResolution`, and sanitized `threatIntelligenceContext`, so integrations can render deterministic preflight and exact-match intelligence guidance without parsing free-form text. Threat Intelligence remains Foundation Available and requires an operator-configured fresh feed.
 
+## Human approval polling
+
+A `Review Required` result is not permission to sign. When `decision.approval` is present, stop execution and poll the exact-bound request:
+
+```ts
+const { approval } = await magen3.getApproval(decision.approval.id);
+if (!approval.mayProceedToSigning) return;
+```
+
+The path accepts the approval ID or related audit ID. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require the agent to remain stopped. Human Approval & Quorum is Foundation Available; the SDK can read the workflow but cannot approve, access a reviewer wallet, sign, or broadcast.
+
 ## Oracle Validation
 
 Trading and DeFi intents may include an exact asset pair and execution quote:
