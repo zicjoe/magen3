@@ -73,29 +73,28 @@ The wizard preserves the existing per-agent API-key model. Raw keys are shown on
 
 Existing policies can be selected as templates. Their values are cloned into a new policy for the new agent; the original policy is not rebound.
 
-## Protection modules
+## Protection areas and control-level status
 
-Protection modules live under Agent Shield.
+Agent Shield groups related security controls into eight broad protection areas. The UI shows a compact area summary first and reveals control-level status on demand. This avoids a long, repetitive module catalog without hiding what is actually implemented.
 
-| Module | Status | Current checks |
-| --- | --- | --- |
-| Identity and Authentication | Live | Agent ID exists, agent is active, API-key digest matches. |
-| Policy Enforcement | Live | Active policy, blocked actions, max transaction, daily limit, review threshold, risk mode. |
-| Wallet Validation | Live | Execution-wallet public-key format, destination format/classification, self-transfer prevention, approved destinations, spend limits, and review thresholds. |
-| Contract Validation | Live | Contract/package identity, target classification, entry points, version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
-| Execution Simulation | Foundation Available | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable. |
-| Threat Intelligence | Foundation Available | Deterministic exact matching against a freshness-checked operator feed; no provider is bundled or represented as comprehensive. |
-| Oracle Validation | Foundation Available | Freshness-checked asset-pair availability, source quorum, confidence, cross-source spread, quote freshness, and execution-price deviation. |
-| Bridge Controls | Foundation Available | Provider-supplied bridge route metadata, chain allow/block rules, destination formats, fees, quote freshness, output bounds, assets, amounts, and confirmation requirements. |
-| x402 Payment Controls | Foundation Available | Exact-scheme paid-resource binding, merchant/recipient/network/asset/facilitator policy, atomic amount limits, timeout, replay prevention, and settlement reconciliation. |
-| Compliance Controls | Foundation Available | Non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, freshness, and exact configured-feed checks. |
-| Risk Assessment | Live | Deterministic finding aggregation and explainable risk score. |
+| Protection area | Live | Foundation Available | Planned |
+| --- | --- | --- | --- |
+| Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
+| Policy & Approval Controls | Policy enforcement; review thresholds | — | Approval quorum; emergency circuit breaker |
+| Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | — | Privileged actions; token approvals and permits |
+| Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
+| Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
+| Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
+| Threat & Compliance | — | Threat screening; compliance evidence | Managed provider adapters |
 
-An unavailable module never silently returns pass.
+The Security Pipeline retains evaluator-level evidence. Findings still identify Wallet Validation, Contract Validation, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and other exact evaluators. An unavailable control never silently returns pass.
 
-Bridge Controls remains Foundation Available because the platform validates declared route metadata but does not certify a provider or verify cross-chain message delivery.
+### Execution Integrity decision model
 
-x402 Payment Controls remains Foundation Available because Magen3 authorizes declared requirements and reconciles reported settlement, but it does not sign payments, operate a facilitator, certify merchants, or guarantee paid content. See `X402_PAYMENT_CONTROLS.md`.
+Execution Integrity combines deterministic transaction-construction preflight with Live lifecycle and replay protection. New policies can require a unique intent ID, idempotency key, creation time, expiry, and optional monotonic sequence. Magen3 computes a canonical SHA-256 fingerprint over protected intent parameters and checks prior audit records for duplicate IDs, mutated idempotency keys, duplicate fingerprints, reused transaction hashes, unsafe retries, and already confirmed execution.
+
+Legacy policies remain non-breaking. Duplicate-fingerprint enforcement is activated only when the policy explicitly enables it. Full stateful simulation and RPC-provider agreement remain Foundation or Planned controls and are never represented as implicit passes. See `EXECUTION_INTEGRITY.md`.
 
 ### Wallet Validation decision model
 

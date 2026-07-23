@@ -2,6 +2,7 @@ import { normalizeExecutionCapabilities } from "./securityModel.mjs";
 import { evaluateWalletValidation } from "./walletValidation.mjs";
 import { evaluateContractValidation } from "./contractValidation.mjs";
 import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
+import { evaluateExecutionIntegrity } from "./executionIntegrity.mjs";
 import { evaluateThreatIntelligence } from "./threatIntelligence.mjs";
 import { evaluateOracleValidation } from "./oracleValidation.mjs";
 import { evaluateBridgeControls } from "./bridgeControls.mjs";
@@ -93,6 +94,7 @@ function withStructuredResult({
   bridgeControlsContext = null,
   complianceControlsContext = null,
   x402PaymentControlsContext = null,
+  executionIntegrityContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -116,6 +118,7 @@ function withStructuredResult({
     bridgeControlsContext,
     complianceControlsContext,
     x402PaymentControlsContext,
+    executionIntegrityContext,
   };
 }
 
@@ -270,6 +273,12 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...executionSimulation.findings);
   score += executionSimulation.scoreDelta;
 
+  const executionIntegrityResult = evaluateExecutionIntegrity({ request, policy, auditLogs });
+  checksPassed.push(...executionIntegrityResult.checksPassed);
+  checksFailed.push(...executionIntegrityResult.checksFailed);
+  moduleFindings.push(...executionIntegrityResult.findings);
+  score += executionIntegrityResult.scoreDelta;
+
   const threatIntelligenceResult = evaluateThreatIntelligence({ request, policy, snapshot: threatIntelligence });
   checksPassed.push(...threatIntelligenceResult.checksPassed);
   checksFailed.push(...threatIntelligenceResult.checksFailed);
@@ -300,8 +309,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -310,13 +319,13 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-preflight, threat-intelligence, oracle-validation, bridge-control, compliance-control, or x402-payment rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, execution-integrity, threat-intelligence, oracle-validation, bridge-control, compliance-control, or x402-payment rules and must not execute."
         : "This action is not automatically allowed and requires authorized human review before execution.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, destination, transaction metadata, threat-intelligence finding, oracle quote, bridge route, compliance evidence, x402 payment requirement, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, destination, lifecycle metadata, transaction state, threat-intelligence finding, oracle quote, bridge route, compliance evidence, x402 payment requirement, or request parameters, or update the policy only if authorized."
         : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
 
   return withStructuredResult({
@@ -336,5 +345,6 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     bridgeControlsContext: bridgeControlsResult.context,
     complianceControlsContext: complianceControlsResult.context,
     x402PaymentControlsContext: x402PaymentControlsResult.context,
+    executionIntegrityContext: executionIntegrityResult.context,
   });
 }

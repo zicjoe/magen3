@@ -1,15 +1,12 @@
 export const protectionModules = [
-  { id: "identity-authentication", name: "Identity and Authentication", group: "Agent Shield", status: "Live" },
-  { id: "policy-enforcement", name: "Policy Enforcement", group: "Agent Shield", status: "Live" },
-  { id: "wallet-validation", name: "Wallet Validation", group: "Agent Shield", status: "Live" },
-  { id: "contract-validation", name: "Contract Validation", group: "Agent Shield", status: "Live" },
-  { id: "execution-simulation", name: "Execution Simulation", group: "Agent Shield", status: "Foundation Available" },
-  { id: "threat-intelligence", name: "Threat Intelligence", group: "Agent Shield", status: "Foundation Available" },
-  { id: "oracle-validation", name: "Oracle Validation", group: "Agent Shield", status: "Foundation Available" },
-  { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Foundation Available" },
-  { id: "compliance-controls", name: "Compliance Controls", group: "Agent Shield", status: "Foundation Available" },
-  { id: "x402-payment-controls", name: "x402 Payment Controls", group: "Agent Shield", status: "Foundation Available" },
-  { id: "risk-assessment", name: "Risk Assessment", group: "Agent Shield", status: "Live" },
+  { id: "agent-trust-access", name: "Agent Trust & Access", group: "Agent Shield", status: "Live" },
+  { id: "policy-approval-controls", name: "Policy & Approval Controls", group: "Agent Shield", status: "Live" },
+  { id: "wallet-asset-safety", name: "Wallet & Asset Safety", group: "Agent Shield", status: "Live" },
+  { id: "contract-permission-safety", name: "Contract & Permission Safety", group: "Agent Shield", status: "Live" },
+  { id: "execution-integrity", name: "Execution Integrity", group: "Agent Shield", status: "Live" },
+  { id: "market-oracle-integrity", name: "Market & Oracle Integrity", group: "Agent Shield", status: "Live" },
+  { id: "cross-chain-payment-controls", name: "Cross-chain & Payment Controls", group: "Agent Shield", status: "Foundation Available" },
+  { id: "threat-compliance", name: "Threat & Compliance", group: "Agent Shield", status: "Foundation Available" },
 ];
 
 // Preserve the existing bootstrap response field for backward compatibility.

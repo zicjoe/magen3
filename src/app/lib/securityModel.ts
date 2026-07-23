@@ -80,193 +80,144 @@ export const CAPABILITY_PACKS: Array<{
   },
 ];
 
-export const PROTECTION_MODULE_CATALOG: Array<{
+export interface ProtectionControl {
+  id: string;
+  name: string;
+  description: string;
+  status: ModuleAvailability;
+  configurable: boolean;
+}
+
+export interface ProtectionArea {
   id: string;
   name: string;
   description: string;
   status: ModuleAvailability;
   capabilities: ExecutionCapability[];
+  controls: ProtectionControl[];
   currentChecks: string[];
   futureChecks: string[];
   configurable: boolean;
-}> = [
-  {
-    id: "identity-authentication",
-    name: "Identity and Authentication",
-    description: "Authenticates each external agent before an intent reaches policy evaluation.",
-    status: "Live",
-    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: ["Agent ID exists", "Agent is active", "API key hash matches"],
-    futureChecks: ["Credential scopes", "Key expiry policies"],
-    configurable: true,
-  },
-  {
-    id: "policy-enforcement",
-    name: "Policy Enforcement",
-    description: "Loads the active agent policy and evaluates deterministic execution rules.",
-    status: "Live",
-    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: ["Blocked actions", "Maximum transaction", "Daily limit", "Human review threshold"],
-    futureChecks: ["Time-window controls", "Role-scoped approvals"],
-    configurable: true,
-  },
-  {
-    id: "wallet-validation",
-    name: "Wallet Validation",
-    description: "Validates the execution wallet, wallet destinations, spend controls, and review thresholds before signing.",
-    status: "Live",
-    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: [
-      "Casper execution-wallet public-key format",
-      "Wallet destination format and classification",
-      "Exact self-transfer prevention",
-      "Approved wallet destinations",
-      "Maximum transaction and daily wallet spending limits",
-      "High-value human-review threshold",
-      "Independent owner and execution wallet context",
+}
+
+const ALL_CAPABILITIES = EXECUTION_CAPABILITY_CATALOG.map((item) => item.id);
+
+function areaSummaryStatus(controls: ProtectionControl[]): ModuleAvailability {
+  if (controls.some((control) => control.status === "Live")) return "Live";
+  if (controls.some((control) => control.status === "Foundation Available")) return "Foundation Available";
+  if (controls.some((control) => control.status === "Preview")) return "Preview";
+  return "Planned";
+}
+
+function protectionArea(area: Omit<ProtectionArea, "status" | "currentChecks" | "futureChecks" | "configurable">): ProtectionArea {
+  return {
+    ...area,
+    status: areaSummaryStatus(area.controls),
+    currentChecks: area.controls.filter((control) => control.status !== "Planned").map((control) => control.name),
+    futureChecks: area.controls.filter((control) => control.status === "Planned").map((control) => control.name),
+    configurable: area.controls.some((control) => control.configurable),
+  };
+}
+
+export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
+  protectionArea({
+    id: "agent-trust-access",
+    name: "Agent Trust & Access",
+    description: "Confirms the approved agent, credentials, tools, and delegated authority behind every intent.",
+    capabilities: ALL_CAPABILITIES,
+    controls: [
+      { id: "agent-authentication", name: "Agent authentication", description: "Agent ID, API-key hash, active status, and ownership checks.", status: "Live", configurable: true },
+      { id: "credential-lifecycle", name: "Credential rotation and revocation", description: "One-time key issuance, rotation, preview, and revocation controls.", status: "Live", configurable: true },
+      { id: "instruction-provenance", name: "Instruction provenance", description: "Bind high-risk execution to an originating user goal and trusted source context.", status: "Planned", configurable: true },
+      { id: "tool-mcp-integrity", name: "Tool and MCP integrity", description: "Approved server, tool manifest, schema hash, version, and permission-scope checks.", status: "Planned", configurable: true },
+      { id: "delegation-session-keys", name: "Delegation and session permissions", description: "Validate temporary, scoped, revocable wallet authority before use.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["Address reputation", "On-chain wallet behavior signals", "Public-key to account-hash equivalence checks"],
-    configurable: true,
-  },
-  {
-    id: "contract-validation",
-    name: "Contract Validation",
-    description: "Validates Casper contract identity, call metadata, network binding, and policy approval before signing.",
-    status: "Live",
+  }),
+  protectionArea({
+    id: "policy-approval-controls",
+    name: "Policy & Approval Controls",
+    description: "Applies deterministic policy rules and routes exceptional actions into controlled human authorization.",
+    capabilities: ALL_CAPABILITIES,
+    controls: [
+      { id: "policy-enforcement", name: "Deterministic policy enforcement", description: "Blocked actions, transaction limits, daily limits, target controls, and risk modes.", status: "Live", configurable: true },
+      { id: "review-thresholds", name: "Review thresholds", description: "Escalates high-value or policy-sensitive requests to Review Required.", status: "Live", configurable: true },
+      { id: "approval-quorum", name: "Human approval and quorum", description: "Bind one or more approvers to the exact reviewed intent before execution.", status: "Planned", configurable: true },
+      { id: "emergency-controls", name: "Emergency circuit breaker", description: "Pause an agent, capability, action family, payment flow, or all execution.", status: "Planned", configurable: true },
+    ],
+  }),
+  protectionArea({
+    id: "wallet-asset-safety",
+    name: "Wallet & Asset Safety",
+    description: "Protects execution wallets, destinations, spending boundaries, and the assets an agent is allowed to move.",
+    capabilities: ALL_CAPABILITIES,
+    controls: [
+      { id: "wallet-identity", name: "Wallet identity and destination validation", description: "Casper public-key/account-hash structure, target classification, and self-transfer protection.", status: "Live", configurable: true },
+      { id: "wallet-spend-controls", name: "Wallet spending controls", description: "Per-transaction, wallet-specific daily, destination, and review-threshold limits.", status: "Live", configurable: true },
+      { id: "asset-identity", name: "Asset identity and network consistency", description: "Tracks submitted asset identity and prevents unsupported network assumptions.", status: "Foundation Available", configurable: true },
+      { id: "token-risk", name: "Token behavior and economic risk", description: "Mint, pause, blacklist, fee-on-transfer, liquidity, concentration, and backing signals.", status: "Planned", configurable: true },
+    ],
+  }),
+  protectionArea({
+    id: "contract-permission-safety",
+    name: "Contract & Permission Safety",
+    description: "Validates the contract being called and the authority an agent exercises or grants through it.",
     capabilities: ["Trading", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
-    currentChecks: [
-      "Contract target classification",
-      "Contract Hash and Package Hash structure",
-      "Contract/package type consistency",
-      "Entry-point structure",
-      "Package-version semantics",
-      "Casper chain-name consistency when supplied",
-      "Approved and blocked contract policy controls",
-      "Optional entry-point allowlist",
+    controls: [
+      { id: "contract-identity", name: "Contract identity and allowlists", description: "Contract Hash, Package Hash, chain, target type, approved and blocked contract controls.", status: "Live", configurable: true },
+      { id: "entry-point-controls", name: "Entry-point and package-version controls", description: "Entry-point structure, optional allowlists, and package-version semantics.", status: "Live", configurable: true },
+      { id: "privileged-actions", name: "Privileged contract actions", description: "Classify upgrade, ownership, admin, mint, pause, role, and treasury-sensitive calls.", status: "Planned", configurable: true },
+      { id: "token-permissions", name: "Token approvals and permits", description: "Unlimited allowance, spender, permit deadline, nonce, scope, and post-use reset checks.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["On-chain entry-point discovery", "Upgrade, admin-key, and contract-verification analysis"],
-    configurable: true,
-  },
-  {
-    id: "execution-simulation",
-    name: "Execution Simulation",
-    description: "Runs deterministic transaction-construction preflight before a wallet is asked to sign.",
-    status: "Foundation Available",
-    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions"],
-    currentChecks: [
-      "Positive amount checks for value-bearing actions",
-      "Payment budget and gas-price tolerance structure",
-      "Transaction TTL, timestamp, freshness, and hash structure",
-      "Swap slippage and quote-bound consistency",
-      "Contract runtime-argument structure",
-      "Explicit unavailable state for full speculative execution",
+  }),
+  protectionArea({
+    id: "execution-integrity",
+    name: "Execution Integrity",
+    description: "Protects transaction construction, lifecycle, replay state, retries, settlement, and chain-data assumptions.",
+    capabilities: ALL_CAPABILITIES,
+    controls: [
+      { id: "transaction-preflight", name: "Transaction construction preflight", description: "Payment budget, gas tolerance, TTL, timestamp, transaction hash, runtime arguments, and output bounds.", status: "Live", configurable: false },
+      { id: "lifecycle-replay", name: "Lifecycle and replay protection", description: "Intent IDs, idempotency keys, fingerprints, expiry, sequence, duplicate detection, and retry safety.", status: "Live", configurable: true },
+      { id: "settlement-reconciliation", name: "Execution and settlement reconciliation", description: "Tracks approved, pending, uncertain, confirmed, failed, and delivered states where adapters report them.", status: "Foundation Available", configurable: true },
+      { id: "stateful-simulation", name: "Stateful execution simulation", description: "Speculative state changes, reverts, CLTypes, and verified cost estimation.", status: "Foundation Available", configurable: false },
+      { id: "rpc-integrity", name: "RPC and chain integrity", description: "Network identity, synchronization, provider disagreement, failover, and state consistency.", status: "Planned", configurable: true },
+      { id: "gas-sponsorship", name: "Gas sponsorship and fee safety", description: "Sponsor, Paymaster, fee deviation, budget, expiry, and gas-griefing controls.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["State-diff simulation", "Contract revert and CLType analysis", "Verified gas-cost estimation"],
-    configurable: false,
-  },
-  {
-    id: "threat-intelligence",
-    name: "Threat Intelligence",
-    description: "Screens normalized Casper wallet and contract identities against a configured, freshness-checked intelligence feed.",
-    status: "Foundation Available",
-    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: [
-      "Execution-wallet and target identity normalization",
-      "Exact wallet, account-hash, Contract Hash, and Package Hash matching",
-      "Feed availability, freshness, and cache state",
-      "Indicator severity and confidence threshold",
-      "Observe, Review, and Enforce policy modes",
-      "Warn, Review, or Block behavior when the feed is unavailable",
-    ],
-    futureChecks: ["Managed reputation-provider adapters", "Cross-source corroboration", "Behavioral and exploit-pattern intelligence"],
-    configurable: true,
-  },
-  {
-    id: "oracle-validation",
-    name: "Oracle Validation",
-    description: "Compares price-sensitive intents with a configured freshness-checked multi-source oracle feed before signing.",
-    status: "Foundation Available",
+  }),
+  protectionArea({
+    id: "market-oracle-integrity",
+    name: "Market & Oracle Integrity",
+    description: "Checks whether price-sensitive execution uses sufficiently fresh, consistent, and policy-compatible market data.",
     capabilities: ["Trading", "dApp Interactions"],
-    currentChecks: [
-      "Asset-pair and execution-price metadata",
-      "Feed freshness and requested-pair availability",
-      "Independent source quorum and confidence",
-      "Cross-source price spread",
-      "Execution quote freshness",
-      "Maximum deviation from the median reference price",
-      "Observe, Review, and Enforce policy modes",
-      "Warn, Review, or Block behavior when the feed is unavailable",
+    controls: [
+      { id: "quote-bounds", name: "Slippage and output bounds", description: "Slippage structure, expected output, minimum received, and quote-bound consistency.", status: "Live", configurable: true },
+      { id: "oracle-integrity", name: "Oracle price integrity", description: "Feed freshness, pair availability, source quorum, confidence, spread, and execution-price deviation.", status: "Foundation Available", configurable: true },
+      { id: "mev-quality", name: "MEV and execution quality", description: "Price impact, route quality, sandwich risk, protected submission, and reserve-movement signals.", status: "Planned", configurable: true },
+      { id: "asset-market-risk", name: "Asset market-risk signals", description: "Liquidity depth, concentration, volatility, and wrapped-asset backing evidence.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["Managed on-chain oracle adapters", "Cryptographic price attestations", "Protocol-specific oracle routing"],
-    configurable: true,
-  },
-  {
-    id: "bridge-controls",
-    name: "Bridge Controls",
-    description: "Evaluates provider-supplied bridge routes, destinations, quote bounds, fees, and finality requirements before signing.",
-    status: "Foundation Available",
-    capabilities: ["Trading", "Wallet Management", "dApp Interactions"],
-    currentChecks: [
-      "Required bridge route metadata",
-      "Approved providers, source chains, destination chains, and assets",
-      "Explicitly blocked destination chains",
-      "Maximum bridge amount and fee",
-      "Expected-output and minimum-received consistency",
-      "Quote freshness and expiry",
-      "Casper and EVM destination-address structure",
-      "Source and destination confirmation requirements",
-      "Observe, Review, and Enforce policy modes",
+  }),
+  protectionArea({
+    id: "cross-chain-payment-controls",
+    name: "Cross-chain & Payment Controls",
+    description: "Protects bridge routes and autonomous machine payments without creating separate products or navigation clutter.",
+    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"],
+    controls: [
+      { id: "bridge-routes", name: "Bridge route controls", description: "Provider, source/destination chain, asset, fee, quote, destination, and confirmation checks.", status: "Foundation Available", configurable: true },
+      { id: "x402-authorization", name: "x402 exact-payment authorization", description: "Resource, merchant, recipient, network, asset, amount, expiry, binding, replay, and budget controls.", status: "Foundation Available", configurable: true },
+      { id: "x402-settlement", name: "x402 settlement reconciliation", description: "Authenticated submitted, pending, confirmed, failed, uncertain, and delivery-state reporting.", status: "Foundation Available", configurable: true },
+      { id: "native-payment-adapters", name: "Additional native payment adapters", description: "Chain-specific machine-payment schemes and facilitator integrations beyond the current foundation.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["Managed bridge-adapter registry", "Provider solvency and liquidity signals", "Cross-chain message-delivery verification"],
-    configurable: true,
-  },
-  {
-    id: "x402-payment-controls",
-    name: "x402 Payment Controls",
-    description: "Binds an HTTP 402 payment to the exact resource, merchant, recipient, asset, network, amount, and settlement state before an agent signs.",
-    status: "Foundation Available",
-    capabilities: ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"],
-    currentChecks: [
-      "x402 v2 and exact-scheme policy controls",
-      "Canonical resource URL and merchant-domain binding",
-      "CAIP-2 network and recipient-address structure",
-      "Approved merchants, recipients, assets, networks, and facilitators",
-      "Per-payment, daily, monthly, review, and hourly limits",
-      "PAYMENT-REQUIRED, request-body, nonce, expiry, and fingerprint binding",
-      "Replay and ambiguous-settlement retry prevention",
-      "Authenticated settlement reconciliation and resource-delivery state",
+  }),
+  protectionArea({
+    id: "threat-compliance",
+    name: "Threat & Compliance",
+    description: "Combines external risk indicators with operator-defined compliance evidence and restrictions while keeping them distinguishable.",
+    capabilities: ALL_CAPABILITIES,
+    controls: [
+      { id: "threat-screening", name: "Threat-intelligence screening", description: "Freshness-checked exact wallet, account-hash, Contract Hash, and Package Hash indicators.", status: "Foundation Available", configurable: true },
+      { id: "compliance-evidence", name: "Compliance evidence controls", description: "Non-sensitive attestations, Travel Rule status, jurisdictions, counterparties, screening, and risk ratings.", status: "Foundation Available", configurable: true },
+      { id: "managed-risk-providers", name: "Managed provider adapters", description: "Corroborated reputation, sanctions, exploit, and jurisdiction-specific rule sources.", status: "Planned", configurable: true },
     ],
-    futureChecks: ["upto-scheme usage metering", "Managed merchant and facilitator reputation", "Casper-native x402 settlement adapters"],
-    configurable: true,
-  },
-  {
-    id: "compliance-controls",
-    name: "Compliance Controls",
-    description: "Evaluates non-sensitive compliance attestations, Travel Rule evidence, jurisdictions, counterparties, and configured screening data before signing.",
-    status: "Foundation Available",
-    capabilities: ["Treasury Operations", "Enterprise Automation"],
-    currentChecks: [
-      "Policy-scoped originator and beneficiary attestation status",
-      "Travel Rule evidence references and hashes without raw personal data",
-      "Jurisdiction allow, review, and block controls",
-      "Counterparty type and compliance risk-rating limits",
-      "Current screening-result evidence from accepted providers",
-      "Exact configured wallet, account-hash, contract, package, VASP, and jurisdiction matches",
-      "Warn, Review, or Block behavior when screening evidence is unavailable",
-    ],
-    futureChecks: ["Managed sanctions-provider adapters", "Travel Rule network adapters", "Jurisdiction-specific legal rule packs"],
-    configurable: true,
-  },
-  {
-    id: "risk-assessment",
-    name: "Risk Assessment",
-    description: "Combines deterministic findings into Allowed, Blocked, or Review Required.",
-    status: "Live",
-    capabilities: EXECUTION_CAPABILITY_CATALOG.map((item) => item.id),
-    currentChecks: ["Finding severity", "Hard-block rules", "Human-review conditions", "Explainable risk score"],
-    futureChecks: ["Additional verified module signals"],
-    configurable: false,
-  },
+  }),
 ];
 
 const LEGACY_TYPE_MAP: Record<string, ExecutionCapability[]> = {
@@ -371,6 +322,21 @@ export function calculateSecurityCoverage(
   const executionPreflightRelevant = capabilities.some((item) => ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions"].includes(item));
   const executionPreflightObserved = logs.some((log) =>
     hasSubstantiveExecutionPreflightPass(log.moduleFindings || []));
+  const lifecycleMode = typeof policy?.structuredRules?.lifecycleControlMode === "string"
+    ? policy.structuredRules.lifecycleControlMode
+    : "";
+  const lifecycleConfigured = policy?.structuredRules?.lifecycleControlsEnabled === true &&
+    ["Observe", "Review", "Enforce"].includes(lifecycleMode) &&
+    policy?.structuredRules?.lifecycleRequireIntentId === true &&
+    policy?.structuredRules?.lifecycleRequireIdempotencyKey === true &&
+    policy?.structuredRules?.lifecycleRequireCreatedAt === true &&
+    policy?.structuredRules?.lifecycleRequireExpiry === true &&
+    policy?.structuredRules?.lifecyclePreventDuplicateFingerprint === true;
+  const lifecycleOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Execution Integrity" &&
+      finding.rule === "Intent ID replay prevention" &&
+      finding.status === "pass"));
   const threatIntelligenceMode = typeof policy?.structuredRules?.threatIntelligenceMode === "string"
     ? policy.structuredRules.threatIntelligenceMode
     : "";
@@ -453,6 +419,7 @@ export function calculateSecurityCoverage(
     { id: "credential", label: "API credential active", weight: 10, passed: agent.status === "Active" && Boolean(agent.apiKeyPreview), detail: agent.apiKeyPreview ? `Credential ${agent.apiKeyPreview} is active.` : "No active credential preview is available.", recommendation: "Rotate or issue an API credential.", page: "connected-agents" },
     { id: "gateway-activity", label: "Recent live protection activity", weight: 3, passed: recentGateway && requiredProtectionObserved, detail: recentGateway && requiredProtectionObserved ? `${contractRelevant ? "Contract Validation" : "Wallet Validation"} was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? `A recent intent exists, but no ${contractRelevant ? "Contract Validation" : "Wallet Validation"} finding is visible yet.` : "No gateway request has been received.", recommendation: `Send a valid ${contractRelevant ? "contract" : "wallet"} intent through the Intent Playground to verify live protection.`, page: "intent-playground" },
     { id: "execution-preflight", label: "Execution preflight observed", weight: 5, passed: !executionPreflightRelevant || executionPreflightObserved, detail: !executionPreflightRelevant ? "Not required by the selected capabilities." : executionPreflightObserved ? "Deterministic transaction-construction preflight has been observed. Full stateful simulation remains unavailable." : "No successful Execution Simulation preflight finding is visible yet.", recommendation: "Send an intent with preflight payment, gas, TTL, timestamp, and action-specific bounds through the Intent Playground.", page: "intent-playground" },
+    { id: "lifecycle-replay", label: "Lifecycle and replay controls", weight: 6, passed: lifecycleConfigured && lifecycleOperational, detail: lifecycleConfigured ? lifecycleOperational ? `${lifecycleMode} mode is configured and a fresh unique intent ID has passed replay checks.` : `${lifecycleMode} mode is configured, but no successful lifecycle-bound request is visible yet.` : "Intent IDs, idempotency keys, creation time, expiry, and duplicate fingerprint prevention are not fully enabled.", recommendation: lifecycleConfigured ? "Submit the Fresh lifecycle-bound transfer example through the Intent Playground." : "Enable Lifecycle & Replay controls and require unique IDs, idempotency keys, creation time, expiry, and duplicate detection.", page: lifecycleConfigured ? "intent-playground" : "policies" },
     { id: "threat-intelligence", label: "Threat intelligence operational", weight: 5, passed: threatIntelligenceConfigured && threatIntelligenceOperational, detail: threatIntelligenceConfigured ? threatIntelligenceOperational ? `${threatIntelligenceMode} mode is configured and a fresh feed check has been observed.` : `${threatIntelligenceMode} mode is configured, but no fresh feed pass is visible yet.` : "Threat Intelligence policy mode is not configured for this policy.", recommendation: threatIntelligenceConfigured ? "Configure a fresh threat feed and submit a wallet or contract intent to verify screening." : "Choose Observe, Review, or Enforce behavior in the policy Threat Intelligence controls.", page: threatIntelligenceConfigured ? "intent-playground" : "policies" },
     { id: "oracle-validation", label: "Oracle validation operational", weight: 5, passed: !oracleRelevant || (oracleConfigured && oracleOperational), detail: !oracleRelevant ? "Not required by the selected capabilities." : oracleConfigured ? oracleOperational ? `${oracleMode} mode is configured and a fresh oracle feed check has been observed.` : `${oracleMode} mode is configured, but no fresh oracle validation pass is visible yet.` : "Oracle Validation policy mode is not configured for this policy.", recommendation: oracleConfigured ? "Configure a fresh oracle feed and submit a priced Swap example through the Intent Playground." : "Configure Oracle Validation limits in the active policy.", page: oracleConfigured ? "intent-playground" : "policies" },
     { id: "bridge-controls", label: "Bridge controls configured", weight: 5, passed: !bridgeRelevant || (bridgeConfigured && bridgeOperational), detail: !bridgeRelevant ? "Not required by the selected capabilities." : bridgeConfigured ? bridgeOperational ? `${bridgeMode} mode is configured and a complete bridge route has been evaluated.` : `${bridgeMode} mode is configured, but no complete Bridge Controls pass is visible yet.` : "Bridge provider, chain, and asset allowlists are not fully configured.", recommendation: bridgeConfigured ? "Submit a complete Bridge example through the Intent Playground to verify route controls." : "Configure approved bridge providers, chains, assets, fees, quote age, and finality requirements in the policy.", page: bridgeConfigured ? "intent-playground" : "policies" },
@@ -489,6 +456,12 @@ export function deriveIntegrationHealth(
   const simulationFailed = simulationFindings.some((finding) => finding.status === "fail");
   const simulationPassed = hasSubstantiveExecutionPreflightPass(simulationFindings);
   const simulationHealth = simulationFindings.length === 0 ? "unknown" : simulationFailed ? "attention" : simulationPassed ? "observed" : "unknown";
+  const lifecycleFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Execution Integrity") || [];
+  const lifecycleFailed = lifecycleFindings.some((finding) => finding.status === "fail");
+  const lifecycleUnavailable = lifecycleFindings.some((finding) => finding.status === "unavailable");
+  const lifecycleWarned = lifecycleFindings.some((finding) => finding.status === "warning");
+  const lifecyclePassed = lifecycleFindings.some((finding) => finding.rule === "Intent ID replay prevention" && finding.status === "pass");
+  const lifecycleHealth = lifecycleFindings.length === 0 ? "unknown" : lifecycleFailed || lifecycleWarned ? "attention" : lifecycleUnavailable ? "unavailable" : lifecyclePassed ? "healthy" : "observed";
   const threatFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Threat Intelligence") || [];
   const threatFailed = threatFindings.some((finding) => finding.status === "fail");
   const threatUnavailable = threatFindings.some((finding) => finding.status === "unavailable");
@@ -528,6 +501,7 @@ export function deriveIntegrationHealth(
     { label: "Wallet Validation", status: walletHealth, detail: walletFindings.length === 0 ? "No Wallet Validation finding is available yet." : walletFailed ? "The latest request failed one or more wallet checks." : walletWarned ? "The latest request needs attention before execution." : "The latest request passed the evaluated wallet checks." },
     { label: "Contract Validation", status: contractHealth, detail: contractFindings.length === 0 ? "No Contract Validation finding is available for the latest request." : contractFailed ? "The latest request failed one or more contract checks." : contractWarned ? "The latest contract request needs attention before execution." : "The latest request passed the evaluated contract checks." },
     { label: "Execution preflight", status: simulationHealth, detail: simulationFindings.length === 0 ? "No Execution Simulation finding is available for the latest request." : simulationFailed ? "The latest request failed deterministic transaction-construction preflight." : simulationPassed ? "Deterministic preflight was evaluated. Full stateful speculative execution remains unavailable." : "Full stateful simulation is unavailable and no preflight pass was recorded." },
+    { label: "Lifecycle & replay", status: lifecycleHealth, detail: lifecycleFindings.length === 0 ? "No Execution Integrity lifecycle finding is available for the latest request." : lifecycleFailed ? "The latest request failed an intent ID, idempotency, expiry, sequence, duplicate, retry, or transaction-hash rule." : lifecycleWarned ? "The latest request has lifecycle metadata that requires attention." : lifecycleUnavailable ? "Required lifecycle metadata was unavailable and did not count as a pass." : lifecyclePassed ? "The latest intent used a fresh unique ID and passed the configured replay checks." : "Lifecycle controls were evaluated without a complete operational pass." },
     { label: "Threat Intelligence", status: threatHealth, detail: threatFindings.length === 0 ? "No Threat Intelligence finding is available for the latest request." : threatFailed ? "The latest request was blocked by an enforced threat indicator or fail-closed feed rule." : threatWarned ? "The latest request matched an observed or review-level threat signal." : threatUnavailable ? "The configured threat feed was unavailable or stale and did not count as a pass." : threatFeedPassed ? "A fresh configured feed screened the latest normalized identities." : "Threat Intelligence did not produce an operational feed result." },
     { label: "Oracle Validation", status: oracleHealth, detail: oracleFindings.length === 0 ? "No Oracle Validation finding is available for the latest request." : oracleFailed ? "The latest request failed an enforced oracle integrity rule." : oracleWarned ? "The latest price-sensitive request requires attention." : oracleUnavailable ? "The configured oracle feed was unavailable or stale and did not count as a pass." : oracleFeedPassed ? "A fresh configured oracle feed evaluated the latest priced intent." : "Oracle Validation did not produce an operational feed result." },
     { label: "Bridge Controls", status: bridgeHealth, detail: bridgeFindings.length === 0 ? "No Bridge Controls finding is available for the latest request." : bridgeFailed ? "The latest bridge route failed an enforced provider, chain, fee, quote, address, or finality rule." : bridgeWarned ? "The latest bridge route requires attention before signing." : bridgeUnavailable ? "Required bridge route metadata or policy configuration was unavailable and did not count as a pass." : bridgePassed ? "A complete provider-supplied bridge route was evaluated." : "Bridge Controls did not produce a complete route result." },

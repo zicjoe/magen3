@@ -121,6 +121,20 @@ Contract policy controls use:
 
 ## Add Execution Preflight Metadata
 
+Execution Integrity also supports Live Lifecycle & Replay controls. New adapters should attach `action.lifecycle` before calling the Gateway:
+
+```json
+{
+  "intentId": "intent:agent-operation-0001",
+  "idempotencyKey": "idempotency:agent-operation-0001",
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "expiresAt": "2026-07-23T10:10:00.000Z",
+  "attempt": 0
+}
+```
+
+Generate a new intent ID and idempotency key for every new business action. For a retry, first reconcile the earlier audit, then reference it with `retryOf` and increment `attempt`. Do not retry a pending, uncertain, or confirmed execution. Magen3 computes and audits the canonical intent fingerprint.
+
 Execution Simulation is Foundation Available. When the execution adapter has prepared construction metadata, include `action.preflight`:
 
 ```json

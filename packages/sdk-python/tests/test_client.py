@@ -72,6 +72,31 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["compliance"]["travelRule"]["status"], "Complete")
         self.assertEqual(captured["payload"]["action"]["compliance"]["originatorAttestation"]["reference"], "ORIGINATOR-001")
 
+    def test_execution_integrity_lifecycle_passes_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed"}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.check_intent({
+            "executionWalletAddress": "01abc",
+            "action": {
+                "type": "Transfer",
+                "amount": 5,
+                "target": "01def",
+                "lifecycle": {
+                    "intentId": "intent:python-0001",
+                    "idempotencyKey": "idempotency:python-0001",
+                    "sequence": 3,
+                    "createdAt": "2026-07-23T10:00:00.000Z",
+                    "expiresAt": "2026-07-23T10:10:00.000Z",
+                    "attempt": 0
+                }
+            }
+        })
+        self.assertEqual(captured["payload"]["action"]["lifecycle"]["intentId"], "intent:python-0001")
+        self.assertEqual(captured["payload"]["action"]["lifecycle"]["sequence"], 3)
+
     def test_x402_authorization_and_settlement_reporting(self):
         captured = []
         def transport(method, url, headers, data, timeout):

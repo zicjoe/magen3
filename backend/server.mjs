@@ -185,6 +185,7 @@ const server = createServer(async (req, res) => {
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
         oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
         complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
+        executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
       });
@@ -209,6 +210,35 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/compliance-controls/status") {
       const snapshot = await getComplianceControlsSnapshot();
       return send(res, 200, { ok: true, complianceControls: summarizeComplianceControlsSnapshot(snapshot) });
+    }
+
+    if (route === "GET /api/execution-integrity/status") {
+      return send(res, 200, {
+        ok: true,
+        executionIntegrity: {
+          status: "live",
+          protectionArea: "Execution Integrity",
+          controls: {
+            transactionPreflight: "live",
+            lifecycleAndReplay: "live",
+            settlementReconciliation: "foundation-available",
+            statefulSimulation: "foundation-available",
+            rpcIntegrity: "planned",
+            gasSponsorship: "planned"
+          },
+          lifecycle: {
+            canonicalFingerprinting: true,
+            intentIds: true,
+            idempotencyKeys: true,
+            expiry: true,
+            monotonicSequence: true,
+            duplicateDetection: true,
+            transactionHashReplay: true,
+            retryAndReplacementReferences: true
+          },
+          securityBoundary: "Magen3 evaluates unsigned intent metadata before wallet signing and never receives private keys, mnemonics, wallet approvals, or transaction signatures."
+        }
+      });
     }
 
     if (route === "GET /api/x402-payment-controls/status") {
@@ -432,6 +462,25 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "A configured feed produces deterministic exact-match findings. Feed absence or staleness is reported as unavailable and never counted as a pass. No third-party reputation provider is bundled or falsely claimed."
         },
+        executionIntegrity: {
+          status: "Live with Foundation controls",
+          statusEndpoint: "GET /api/execution-integrity/status",
+          purpose: "Protect the complete unsigned transaction lifecycle from stale authorization, duplicate submission, replay, parameter mutation, and unsafe retries before wallet signing.",
+          deterministicChecks: [
+            "Canonical SHA-256 fingerprint of protected intent parameters",
+            "Unique per-agent intent ID",
+            "Idempotency key reuse and parameter mutation",
+            "Creation time, expiry, maximum age, and maximum lifetime",
+            "Optional monotonic agent sequence",
+            "Duplicate fingerprint detection inside a policy replay window",
+            "Transaction-hash replay",
+            "Retry and replacement references bound to prior Magen3 audits",
+            "Retry prevention while prior execution is pending, uncertain, or confirmed",
+            "Maximum retry attempts"
+          ],
+          requestFields: "action.lifecycle: intentId, idempotencyKey, sequence, createdAt, expiresAt, retryOf, replacementOf, attempt, intentFingerprint",
+          decisionRule: "New policies can require lifecycle metadata and enforce exact-once authorization. Legacy policies remain non-breaking until operators explicitly enable strict duplicate-fingerprint enforcement."
+        },
         oracleValidation: {
           status: "Foundation Available",
           statusEndpoint: "GET /api/oracle-validation/status",
@@ -581,6 +630,7 @@ const server = createServer(async (req, res) => {
           oracleValidationContext: "Sanitized oracle-feed state, policy limits, pair, reference price, deviation, source quorum, and confidence",
           bridgeControlsContext: "Sanitized route, provider, chain, asset, fee, quote-expiry, destination-format, and finality evidence",
           complianceControlsContext: "Sanitized feed state, jurisdictions, attestation statuses, Travel Rule evidence status, screening status, risk rating, and exact-match summaries",
+          executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",

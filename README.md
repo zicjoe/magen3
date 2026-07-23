@@ -93,21 +93,22 @@ Convenience packs preselect capabilities but do not lock them:
 
 Legacy agents continue working. When no capability metadata exists, Magen3 maps the existing agent type conservatively; otherwise it falls back to `Custom`.
 
-### Protection modules
+### Protection areas and control-level status
 
-| Module | Status | Current implementation |
-| --- | --- | --- |
-| Identity and Authentication | **Live** | Agent existence, active status, and API-key verification. |
-| Policy Enforcement | **Live** | Active-policy lookup and supported deterministic policy fields. |
-| Wallet Validation | **Live** | Casper execution-wallet format, wallet destination format/classification, exact self-transfer prevention, approved destinations, transaction and daily limits, and review thresholds. |
-| Contract Validation | **Live** | Contract/package identity, target classification, entry points, package-version semantics, network binding, approved contracts, blocked contracts, and optional entry-point allowlists. |
-| Execution Simulation | **Foundation Available** | Deterministic transaction-construction preflight is enforced; full stateful speculative execution remains unavailable and is reported explicitly. |
-| Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
-| Oracle Validation | **Foundation Available** | Freshness-checked multi-source price comparison, source quorum, confidence, spread, quote freshness, and execution-price deviation controls. No production provider is bundled. |
-| Bridge Controls | **Foundation Available** | Deterministic provider, chain, asset, destination-format, fee, quote-freshness, output-bound, and confirmation controls for provider-supplied bridge routes. |
-| x402 Payment Controls | **Foundation Available** | Exact-scheme resource, merchant, recipient, network, asset, facilitator, atomic amount, timeout, request-binding, replay, budget, and settlement-reconciliation controls. |
-| Compliance Controls | **Foundation Available** | Policy-driven non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, freshness, and exact configured-feed checks. No compliance provider or legal determination is bundled. |
-| Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
+Magen3 groups related controls into eight protection areas. This keeps the interface focused while preserving control-level transparency. A protection area can contain a mix of Live, Foundation Available, and Planned controls.
+
+| Protection area | Live controls | Foundation controls | Planned controls |
+| --- | --- | --- | --- |
+| Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
+| Policy & Approval Controls | Deterministic policy enforcement; review thresholds | — | Human approval and quorum; emergency circuit breaker |
+| Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | — | Privileged-action classification; token approvals and permits |
+| Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
+| Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
+| Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
+| Threat & Compliance | — | Threat-intelligence screening; non-sensitive compliance evidence | Managed risk-provider adapters |
+
+The Security Pipeline still reports the exact evaluator that produced each finding, such as Wallet Validation, Contract Validation, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, or Compliance Controls. The grouped UI does not hide technical evidence.
 
 ### Live Wallet Validation
 
@@ -169,6 +170,38 @@ When supplied, Magen3 validates:
 Malformed supplied preflight data can return `Blocked`. A structurally valid but unusually long TTL or future-dated timestamp can return `Review Required`. Existing integrations that omit preflight metadata remain backward compatible; missing metadata produces explained warnings rather than a fake pass.
 
 Full Casper speculative execution remains unavailable in the current pre-signing Gateway. Casper exposes speculative execution through a separately enabled node service and expects a constructed deploy or transaction. Magen3 does not accept private keys, wallet approvals, transaction-level signatures, or raw signed transactions through the intent endpoint. Public contract arguments remain allowed inside `runtimeArgs`.
+
+### Live Execution Integrity lifecycle and replay protection
+
+Lifecycle & Replay is a Live control inside the broader Execution Integrity protection area. It closes the gap between a decision being allowed and an equivalent transaction being executed more than once.
+
+Adapters may send the following metadata inside `action.lifecycle`:
+
+```json
+{
+  "intentId": "intent:transfer-20260723-0001",
+  "idempotencyKey": "idempotency:transfer-20260723-0001",
+  "sequence": 42,
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "expiresAt": "2026-07-23T10:10:00.000Z",
+  "attempt": 0
+}
+```
+
+Magen3 deterministically checks:
+
+- Unique per-agent intent IDs.
+- Idempotency-key reuse and parameter mutation.
+- Creation time, maximum age, future clock skew, expiry, and maximum lifetime.
+- Optional monotonic agent sequence numbers.
+- A canonical SHA-256 fingerprint over protected execution parameters.
+- Duplicate fingerprints inside the configured replay window.
+- Reused transaction hashes.
+- Explicit `retryOf` and `replacementOf` references to prior Magen3 audit records.
+- Retry prevention while an earlier execution is pending, uncertain, or already confirmed.
+- Maximum retry attempts.
+
+New starter policies enable strict Lifecycle & Replay controls. Legacy policies remain non-breaking: duplicate-fingerprint enforcement is not silently activated unless the policy explicitly enables it. Magen3 evaluates unsigned intent metadata only and never accepts private keys, mnemonics, wallet approvals, or transaction signatures.
 
 ### Threat Intelligence foundation
 
@@ -302,7 +335,7 @@ The Connected Agents flow uses a six-step wizard:
 5. Review
 6. Integration Credentials and Quick Start
 
-At least one capability is required. The wizard recommends protection modules and an enforceable starter policy. Existing policies can be used as templates without rebinding the original record.
+At least one capability is required. The wizard recommends relevant protection areas, control packs, and an enforceable starter policy. Existing policies can be used as templates without rebinding the original record.
 
 Raw API keys are shown only after registration or rotation. Magen3 stores the key digest and preview, not the recoverable raw secret.
 

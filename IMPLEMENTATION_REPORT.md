@@ -1,337 +1,281 @@
-# Magen3 x402 Payment Controls Foundation — Implementation Report
+# Magen3 Execution Integrity and Protection-Area Consolidation
 
 ## Release summary
 
-x402 Payment Controls has been added to **Agent Shield** as a **Foundation Available** protection module. It is integrated across the existing Magen3 Gateway, Policy Engine, Risk Assessment, Security Pipeline, Audit Logs, Security Coverage, Integration Health, Intent Playground, SDKs, MCP server, Developer documentation, Dashboard, Settings, and agent onboarding recommendations.
+This release reorganizes Agent Shield from a long flat list of security modules into eight coherent protection areas. Individual technical evaluators remain visible in Gateway findings and Audit Logs, but the product UI now presents related controls together so the platform remains understandable as it grows.
 
-The module is not labeled Live because Magen3 does not sign payment authorizations, operate a facilitator, certify merchants, independently verify facilitator settlement, or guarantee that a paid resource is safe or delivered. It authorizes declared payment requirements before signing and reconciles authenticated settlement reports afterward.
+It also adds **Lifecycle & Replay Protection** as a Live control inside **Execution Integrity**. The control deterministically binds an unsigned intent to a canonical fingerprint and evaluates intent identity, idempotency, time bounds, duplicate state, sequence, transaction-hash reuse, and safe retry or replacement behavior before wallet signing.
 
-The release preserves the existing Gateway endpoint, per-agent API authentication, Agent IDs, API-key hashes, policy records, audit records, Casper decision-proof contract and relayer, wallet boundary, YieldBot and Codex flows, SDK authentication, MCP authentication, Railway configuration, and Vercel configuration.
+## Eight protection areas
 
-## Product placement
+1. **Agent Trust & Access**
+2. **Policy & Approval Controls**
+3. **Wallet & Asset Safety**
+4. **Contract & Permission Safety**
+5. **Execution Integrity**
+6. **Market & Oracle Integrity**
+7. **Cross-chain & Payment Controls**
+8. **Threat & Compliance**
 
-x402 Payment Controls is not a separate top-level product or sidebar item. It appears in:
+The Protection Modules interface now shows status at the **control level** rather than implying that every control inside a broad area has the same implementation status.
 
-- Agent Shield → Protection Modules
-- Agent registration → Recommended Protection
-- Agent Details → Protection and Integration Health
-- Policies → x402 Payment Controls
-- Security Pipeline
-- Audit Logs
-- Dashboard and Settings operational status
-- Intent Playground
-- Developer Portal, SDK, MCP, README, and Docs
+## Lifecycle & Replay Protection
 
-## Deterministic authorization checks
+### Supported request metadata
 
-The Gateway evaluates an `x402 Payment` intent before a wallet creates `PAYMENT-SIGNATURE` or submits payment to a facilitator.
+New integrations may add the following optional object inside the existing `action` object:
 
-Checks include:
-
-1. x402 Payment Controls must be explicitly enabled by the active policy.
-2. Allowed protocol versions; the foundation defaults to version 2.
-3. Allowed schemes; the foundation defaults to `exact`.
-4. Allowed HTTP methods.
-5. Absolute and canonical paid-resource URL.
-6. HTTPS requirement outside local development.
-7. Rejection of embedded URL credentials and secret-like query parameters.
-8. `x402 Merchant` target classification.
-9. Exact binding between `action.target` and the canonical resource URL.
-10. Merchant-domain binding to the resource hostname.
-11. Approved and blocked merchants.
-12. CAIP-2 network structure and network allowlist.
-13. Asset allowlist and asset-decimal configuration.
-14. EVM and Solana recipient-address structure.
-15. Recipient allowlist.
-16. Facilitator identity and allowlist.
-17. Positive atomic payment amount.
-18. Atomic/display amount consistency.
-19. Maximum amount per payment.
-20. Daily and monthly x402 spending limits.
-21. Maximum payments per hour.
-22. High-value review threshold.
-23. Explicit expiry or version-2 timeout derived from a supplied PAYMENT-REQUIRED receipt time.
-24. Maximum authorization lifetime.
-25. Unique request identifier.
-26. SHA-256 binding to the decoded PAYMENT-REQUIRED object.
-27. Request-body binding for unsafe HTTP methods.
-28. Deterministic canonical request fingerprint.
-29. Optional client-fingerprint verification.
-30. Maximum settlement attempts.
-31. Ambiguous-settlement retry prevention.
-32. Replay detection against prior Magen3 audit records.
-
-The Gateway never invents a PAYMENT-REQUIRED receipt timestamp and never treats missing required metadata as a pass.
-
-## Signing-material boundary
-
-The Gateway rejects payment and wallet signing material before audit persistence, including:
-
-- Private or secret keys
-- Mnemonics
-- `PAYMENT-SIGNATURE`
-- Signed payment payloads
-- Wallet approvals
-- Raw signed deploys or transactions
-
-Magen3 receives payment requirements and non-secret settlement evidence only.
-
-## Request fingerprint
-
-Magen3 computes a deterministic SHA-256 fingerprint from the authorized payment context:
-
-- Protocol version
-- Payment scheme
-- HTTP method
-- Canonical resource URL
-- Merchant domain
-- Recipient
-- Asset
-- CAIP-2 network
-- Atomic amount
-- Expiry or timeout context
-- Request-body hash
-- PAYMENT-REQUIRED hash
-- Request ID
-
-The fingerprint binds authorization, replay prevention, audit evidence, and settlement reporting to the same payment request.
-
-## Settlement reconciliation
-
-New authenticated route:
-
-```http
-POST /api/agent-gateway/x402/settlements
+```json
+{
+  "lifecycle": {
+    "intentId": "intent:transfer:000001",
+    "idempotencyKey": "idempotency:transfer:000001",
+    "sequence": 1,
+    "createdAt": "2026-07-23T10:00:00.000Z",
+    "expiresAt": "2026-07-23T10:10:00.000Z",
+    "retryOf": "",
+    "replacementOf": "",
+    "attempt": 0,
+    "intentFingerprint": "optional-client-sha256"
+  }
+}
 ```
 
-The route requires the existing connected-agent identity and API key. It only accepts settlement updates for an Allowed x402 audit record belonging to that agent.
+Magen3 computes its own canonical SHA-256 fingerprint from the protected execution parameters. A client fingerprint, when provided, must match Magen3's result exactly.
 
-Supported states:
+### Deterministic checks
 
-- `submitted`
-- `pending`
-- `confirmed`
-- `failed`
-- `uncertain`
+- Unique per-agent intent ID
+- Idempotency-key reuse
+- Parameter mutation under an existing idempotency key
+- Canonical execution-intent fingerprint
+- Optional client-fingerprint binding
+- ISO-8601 creation time and expiration
+- Maximum intent age
+- Maximum future clock skew
+- Maximum authorization lifetime
+- Optional monotonically increasing sequence
+- Duplicate intent fingerprint inside the configured replay window
+- Reused transaction hash
+- Explicit `retryOf` and `replacementOf` audit references
+- Retry prevention while an earlier execution is pending or uncertain
+- Retry or replacement prevention after confirmed execution
+- Maximum retry attempts
+- Mandatory prior-audit reference for non-zero attempts
 
-Controls include:
+### Findings and audit evidence
 
-- Request fingerprint must match the original authorization.
-- Attempt count must remain within policy.
-- Attempts cannot move backward.
-- Retrying a failed payment requires a higher attempt number.
-- A confirmed settlement cannot regress.
-- A recorded transaction hash cannot be changed.
-- Resource delivery can only be true for a confirmed settlement.
-- Recorded resource delivery cannot be reverted.
+Execution Integrity emits structured `pass`, `warning`, `fail`, `unavailable`, and `skipped` findings. The Gateway response and Audit Log include:
 
-Settlement and resource-delivery states update the existing Audit Log and Security Pipeline. No payment signature or private key is stored.
+- Canonical fingerprint
+- Intent ID
+- Idempotency key
+- Sequence
+- Creation and expiration timestamps
+- Retry or replacement reference
+- Attempt number
+- Prior ID, key, and fingerprint match counts
+- Replay-window and retry-limit context
+- Triggered rule and remediation
 
-## Public capability status
+## Backward compatibility
 
-New endpoint:
+Preserved without changes:
 
-```http
-GET /api/x402-payment-controls/status
-```
+- Existing Agent IDs
+- Existing API keys and hashes
+- Existing policies
+- Existing audit records
+- Existing Gateway endpoint
+- Existing authentication headers
+- Existing request envelope
+- Existing Casper contract hash and decision-proof flow
+- Wallet connection and signing boundary
+- YieldBot integration
+- Codex integration
+- JavaScript and Python SDK authentication
+- MCP authentication
+- Railway and Vercel configuration
 
-It returns sanitized capability information only, including Foundation Available status, supported version, supported scheme, and settlement-reporting availability.
-
-## Policy controls
-
-The existing `structuredRules` object now supports:
-
-- `x402ControlsEnabled`
-- `x402ControlMode`: `Observe`, `Review`, or `Enforce`
-- `x402UnavailableAction`: `Warn`, `Review`, or `Block`
-- `x402AllowedVersions`
-- `x402AllowedSchemes`
-- `x402AllowedMethods`
-- `x402AllowedNetworks`
-- `x402AllowedAssets`
-- `x402AssetDecimals`
-- `x402AllowedFacilitators`
-- `x402AllowedMerchants`
-- `x402BlockedMerchants`
-- `x402AllowedRecipients`
-- `x402MaxPayment`
-- `x402DailyLimit`
-- `x402MonthlyLimit`
-- `x402ReviewThreshold`
-- `x402MaxPaymentsPerHour`
-- `x402MaxAuthorizationLifetimeSeconds`
-- `x402RequireHttps`
-- `x402RequirePaymentRequiredHash`
-- `x402RequireBodyHashForUnsafeMethods`
-- `x402RequireRequestId`
-- `x402RequireClientFingerprint`
-- `x402PreventAmbiguousRetry`
-- `x402MaxSettlementAttempts`
-
-Existing policies remain unchanged. An x402 payment is intentionally blocked until x402 Payment Controls is explicitly enabled and configured for the agent.
-
-## Decision behavior
-
-### Allowed
-
-A complete exact-scheme payment satisfies merchant, resource, recipient, network, asset, facilitator, amount, expiry, request-binding, replay, frequency, and budget controls.
-
-### Review Required
-
-Examples include:
-
-- A merchant or recipient is not approved under Review mode.
-- Payment exceeds the configured review threshold.
-- Required information is unavailable and policy selects Review.
-- A non-hard policy violation occurs under Review mode.
-
-### Blocked
-
-Examples include:
-
-- x402 controls are disabled.
-- Resource or merchant substitution.
-- Secret-bearing resource URL.
-- Malformed CAIP-2 network or recipient.
-- Unsupported version or scheme under Enforce mode.
-- Expired or excessive authorization lifetime.
-- Atomic/display amount substitution.
-- Payment, daily, monthly, or frequency limit breach.
-- Fingerprint mismatch.
-- Replayed request fingerprint.
-- Retry while settlement is submitted, pending, confirmed, or uncertain.
-- Settlement attempt exceeds policy.
-
-## Intent Playground
-
-Added examples:
-
-- Approved x402 API payment
-- New x402 merchant
-- x402 payment above limit
-- Expired x402 requirement
-- Ambiguous x402 settlement retry
-
-The result view shows merchant, resource, recipient, network, asset, atomic/display amount, facilitator, expiry, request fingerprint, findings, decision, remediation, pipeline stages, audit identifier, and settlement state.
-
-For an Allowed example, the Playground can report a test settlement through the authenticated settlement endpoint without exposing a payment signature.
-
-## Audit improvements
-
-x402 audit records show:
-
-- Payment wallet separately from the Casper owner wallet
-- Merchant and paid resource
-- Protocol version and scheme
-- HTTP method
-- Recipient
-- Asset and amount
-- CAIP-2 network
-- Facilitator
-- Request and body binding hashes
-- Request fingerprint
-- Authorization expiry
-- Decision findings and remediation
-- Settlement state and attempt
-- Settlement transaction hash
-- Facilitator reference
-- Resource-delivery state
-- Casper decision-proof status
-
-The UI no longer presents an x402 settlement transaction as a Casper execution transaction.
-
-## SDK and MCP changes
-
-### TypeScript SDK
-
-- x402 intent metadata types
-- Timeout and PAYMENT-REQUIRED receipt-time support
-- Authenticated `reportX402Settlement()` method
-
-### Python SDK
-
-- x402 intent pass-through
-- Authenticated settlement-reporting method
-
-### MCP server
-
-- x402 intent schema
-- `magen3_report_x402_settlement` tool
-- Explicit signing-material boundary
-- Updated protocol expectations
+Legacy policies do **not** silently enable duplicate-fingerprint blocking. Existing integrations that do not send `action.lifecycle` remain accepted under legacy policy defaults. New starter policies enable the control with secure, configurable defaults and use `Warn` for missing optional metadata unless the operator selects Review or Block.
 
 ## Database and environment
 
-- **No database migration**
-- **No new mandatory environment variable**
-- No Casper contract change
-- No Railway configuration change
-- No Vercel configuration change
+- **Database migration:** None
+- **New mandatory environment variables:** None
+- Lifecycle metadata and fingerprints are stored inside the existing structured audit JSON fields.
+- No Casper contract change is required.
 
-## Compatibility
+## Product and UI changes
 
-Preserved:
+- Consolidated the Protection Modules page into eight protection areas.
+- Added control-level Live, Foundation Available, and Planned badges.
+- Kept technical evaluator names visible in pipeline findings and audits.
+- Added Lifecycle & Replay policy configuration to create and edit flows.
+- Added lifecycle status to Security Coverage and Integration Health.
+- Added Execution Integrity context to Intent Playground results.
+- Added Playground examples for:
+  - Fresh lifecycle-bound transfer
+  - Duplicate lifecycle intent submitted twice
+  - Expired lifecycle intent
+- Added `/api/execution-integrity/status` to operational status surfaces.
+- Updated in-app Docs, README, Gateway API documentation, integration guidance, TypeScript SDK, Python SDK tests, and MCP schema guidance.
 
-- Existing Agent IDs
-- Existing API-key hashes and headers
-- Existing Gateway endpoint
-- Existing policy and audit records
-- Existing Casper contract hash and decision-proof relayer
-- Existing wallet connection and signing boundary
-- YieldBot integration
-- Codex integration
-- Existing SDK and MCP authentication
-- Railway and Vercel deployment configuration
+## Control-level status matrix
+
+### Agent Trust & Access
+
+**Live**
+- Agent authentication
+- Credential rotation and revocation
+
+**Planned**
+- Instruction provenance
+- Tool and MCP integrity
+- Delegation and session permissions
+
+### Policy & Approval Controls
+
+**Live**
+- Deterministic policy enforcement
+- Review thresholds
+
+**Planned**
+- Human approval and quorum
+- Emergency circuit breaker
+
+### Wallet & Asset Safety
+
+**Live**
+- Wallet identity and destination validation
+- Wallet spending controls
+
+**Foundation Available**
+- Asset identity and network consistency
+
+**Planned**
+- Token behavior and economic risk
+
+### Contract & Permission Safety
+
+**Live**
+- Contract identity and allowlists
+- Entry-point and package-version controls
+
+**Planned**
+- Privileged contract actions
+- Token approvals and permits
+
+### Execution Integrity
+
+**Live**
+- Transaction construction preflight
+- Lifecycle and replay protection
+
+**Foundation Available**
+- Execution and settlement reconciliation
+- Stateful execution simulation
+
+**Planned**
+- RPC and chain integrity
+- Gas sponsorship and fee safety
+
+### Market & Oracle Integrity
+
+**Live**
+- Slippage and output bounds
+
+**Foundation Available**
+- Oracle price integrity
+
+**Planned**
+- MEV and execution quality
+- Asset market-risk signals
+
+### Cross-chain & Payment Controls
+
+**Foundation Available**
+- Bridge route controls
+- x402 exact-payment authorization
+- x402 settlement reconciliation
+
+**Planned**
+- Additional native payment adapters
+
+### Threat & Compliance
+
+**Foundation Available**
+- Threat-intelligence screening
+- Compliance evidence controls
+
+**Planned**
+- Managed provider adapters
 
 ## Major files changed
 
-- `backend/lib/x402PaymentControls.mjs`
-- `backend/lib/x402PaymentControls.test.mjs`
-- `backend/lib/x402PaymentControls.gateway.integration.test.mjs`
+### Backend
+
+- `backend/lib/executionIntegrity.mjs`
+- `backend/lib/executionIntegrity.test.mjs`
+- `backend/lib/executionIntegrity.gateway.integration.test.mjs`
 - `backend/lib/agentGateway.mjs`
+- `backend/lib/agentGateway.test.mjs`
 - `backend/lib/policyEngine.mjs`
 - `backend/lib/securityModel.mjs`
-- `backend/lib/walletValidation.mjs`
+- `backend/lib/securityModel.test.mjs`
+- `backend/lib/frontendSecurityModel.test.mjs`
 - `backend/store/memoryStore.mjs`
 - `backend/store/postgresStore.mjs`
-- `backend/server.mjs`
 - `backend/data/seed.mjs`
+- `backend/server.mjs`
+
+### Frontend
+
 - `src/app/App.tsx`
-- `src/app/lib/api.ts`
 - `src/app/lib/securityModel.ts`
+- `src/app/lib/api.ts`
+
+### Developer integrations
+
 - `packages/sdk-js/src/index.ts`
 - `packages/sdk-js/test/sdk.test.mjs`
-- `packages/sdk-python/src/magen3/client.py`
 - `packages/sdk-python/tests/test_client.py`
 - `packages/mcp-server/src/core.ts`
 - `packages/mcp-server/src/server.ts`
 - `packages/mcp-server/test/core.test.mjs`
-- `packages/mcp-server/test/protocol.test.mjs`
-- `examples/sdk-js/check-x402-payment.mjs`
-- `examples/sdk-python/check_x402_payment.py`
-- `docs/X402_PAYMENT_CONTROLS.md`
-- Gateway, platform, SDK, MCP, README, and package documentation
+
+### Documentation
+
+- `README.md`
+- `docs/EXECUTION_INTEGRITY.md`
+- `docs/AGENT_GATEWAY_API.md`
+- `docs/GATEWAY_INTEGRATION.md`
+- `docs/MAGEN3_PLATFORM.md`
+- `docs/README.md`
 
 ## Verification completed
 
-- **151/151 backend and security tests passed**
-- **21/21 focused x402 tests passed**
-- **9/9 TypeScript SDK tests passed**
-- **5/5 Python SDK tests passed**
+- **161/161 backend and security-model tests passed**
+- **9 focused Execution Integrity tests passed**, including direct and authenticated Gateway integration tests
+- **10/10 TypeScript SDK tests passed**
+- **6/6 Python SDK tests passed**
 - **5/5 MCP core tests passed**
-- Authenticated Gateway authorization and settlement persistence verified
-- Allowed, Review Required, and Blocked outcomes verified
-- Replay after confirmed settlement verified as Blocked
-- Signing-material rejection before audit persistence verified
-- Monotonic settlement-state enforcement verified
-- Backend and script syntax checks passed
-- **57 TypeScript/TSX implementation files** passed syntax transpilation
-- Focused semantic frontend typecheck passed
-- Fresh ZIP extraction, exclusion, and backend verification passed with a temporary TypeScript test dependency
+- TypeScript SDK typecheck and build passed with the available compiler
+- Focused frontend semantic typecheck passed using temporary dependency declarations
+- Frontend Security Coverage and Integration Health tests passed
+- **57 TypeScript/TSX source files** passed syntax transpilation
+- All backend and script `.mjs` files passed Node syntax checks
+- Memory-store backend startup passed
+- `/api/health` passed
+- `/api/execution-integrity/status` passed and returned sanitized control status
+- Audit persistence of the canonical lifecycle fingerprint passed
+- Fresh-intent Allowed, replay Blocked, parameter-mutation Blocked, and expired-intent Blocked behavior passed
 
-The package registry returned HTTP 503 during the final dependency installation. Therefore the full dependency-backed root typecheck, Vite production build, full MCP protocol startup test, and aggregate `pnpm verify` could not be rerun in this sandbox. Run the local verification commands below before pushing.
+## Verification limitation
 
-## Local verification
+A fresh root dependency installation and complete dependency-backed Vite/MCP production build could not be rerun in the sandbox because the configured package registry returned HTTP 503 while Corepack attempted to retrieve `pnpm@10.14.0`.
+
+Run these checks locally before pushing:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -342,66 +286,69 @@ pnpm mcp:test
 pnpm build
 ```
 
-## Current protection-module status
+## Local run
 
-### Live
+```powershell
+pnpm install --frozen-lockfile
+pnpm dev:backend
+```
 
-- Identity and Authentication
-- Policy Enforcement
-- Wallet Validation
-- Contract Validation
-- Risk Assessment
+In another terminal:
 
-### Foundation Available
+```powershell
+pnpm dev:frontend
+```
 
-- Execution Simulation
-- Threat Intelligence
-- Oracle Validation
-- Bridge Controls
-- Compliance Controls
-- x402 Payment Controls
+The backend still requires `DATABASE_URL` by default. Temporary memory mode is available only when explicitly enabled:
 
-### Preview
+```env
+ALLOW_MEMORY_STORE=true
+```
 
-- None
+Do not use memory mode for production.
 
-### Planned
+## Deployment
 
-- None
+No Railway or Vercel configuration changes are required.
+
+1. Preserve the existing `.git`, `.env`, and private relayer-key files.
+2. Replace the old project files with this release.
+3. Run the local checks above.
+4. Commit and push to the connected branch.
+5. Verify Railway starts with PostgreSQL.
+6. Verify Vercel reaches the Railway API.
+7. Submit the new Playground lifecycle examples.
+8. Confirm the Execution Integrity findings and canonical fingerprint appear in Audit Logs.
 
 ## Suggested commit
 
 ```text
-feat(x402): add payment authorization and settlement controls
+feat(execution-integrity): consolidate protection areas and add lifecycle replay guard
 ```
 
 Suggested body:
 
 ```text
-Add exact-scheme v2 resource, merchant, recipient, CAIP-2 network, asset,
-facilitator, atomic amount, timeout, request-binding, replay, budget, and
-settlement-reconciliation checks before payment signing.
+Group Agent Shield controls into eight coherent protection areas with control-level statuses.
 
-Integrate x402 Payment Controls with Agent Shield, policies, Security
-Pipeline, Audit Logs, Security Coverage, Integration Health, Intent
-Playground, SDKs, MCP, and documentation while preserving the existing
-Gateway, Casper proof, Railway, and Vercel contracts.
+Add deterministic intent IDs, idempotency keys, canonical fingerprints, expiry, sequence, duplicate detection, transaction-hash replay checks, and safe retry or replacement handling before wallet signing.
+
+Integrate Execution Integrity with policies, Security Pipeline, Audit Logs, Security Coverage, Integration Health, Intent Playground, SDKs, MCP, operational status, README, and Docs while preserving existing Gateway, database, Casper proof, Railway, and Vercel contracts.
 ```
 
 ## Manual QA checklist
 
-1. Replace the project files while preserving `.git`, local `.env` files, and private relayer keys.
-2. Install dependencies and run the local verification commands.
-3. Connect Casper Wallet and open a test agent's Policy.
-4. Enable x402 Payment Controls and configure exact scheme, Base Sepolia, USDC decimals, merchant, recipient, facilitator, and payment limits.
-5. Run `Approved x402 API payment` in the Intent Playground and confirm Allowed.
-6. Confirm x402 findings and pipeline stages appear in the response and Audit Logs.
-7. Use `Report test settlement` and confirm settlement and resource-delivery stages update.
-8. Resubmit the same fingerprint and confirm replay is Blocked.
-9. Run `New x402 merchant` and confirm policy-appropriate Review Required or Blocked.
-10. Run `x402 payment above limit` and confirm the amount rule is explained.
-11. Run `Expired x402 requirement` and confirm Blocked.
-12. Run `Ambiguous x402 settlement retry` and confirm automatic retry prevention.
-13. Confirm `/api/x402-payment-controls/status` responds after Railway deployment.
-14. Confirm x402 audit records keep settlement transaction evidence separate from the Casper decision proof.
-15. Test desktop and mobile policy, Playground, Agent Shield, and Audit views.
+- Open Agent Shield and confirm exactly eight protection-area cards are shown.
+- Confirm every card shows status per control rather than one misleading blanket status.
+- Create a new policy and inspect Lifecycle & Replay settings.
+- Edit an existing legacy policy and confirm strict duplicate blocking is not silently enabled.
+- Open Intent Playground and submit **Fresh lifecycle-bound transfer**.
+- Confirm the decision is Allowed when all other active policy controls pass.
+- Confirm the Execution Integrity context shows a canonical SHA-256 fingerprint.
+- Submit **Duplicate lifecycle intent — run twice** twice without reloading it.
+- Confirm the second submission is Blocked and cites replay or duplicate evidence.
+- Submit **Expired lifecycle intent** and confirm it is Blocked.
+- Open Audit Logs and confirm lifecycle metadata, findings, remediation, pipeline stage, and fingerprint are visible.
+- Confirm ordinary legacy YieldBot or SDK requests without lifecycle metadata still follow their existing policy behavior.
+- Verify Casper proof submission remains unchanged.
+- Verify desktop and mobile Protection Modules layouts remain usable.

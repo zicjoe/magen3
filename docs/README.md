@@ -4,10 +4,11 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 
 ## Product and architecture
 
-- `MAGEN3_PLATFORM.md` — product model, execution capabilities, protection modules, Security Pipeline, Risk Assessment, Security Coverage, Intent Playground, audit records, proofs, compatibility, deployment, and troubleshooting.
+- `MAGEN3_PLATFORM.md` — product model, execution capabilities, protection areas and control-level status, Security Pipeline, Risk Assessment, Security Coverage, Intent Playground, audit records, proofs, compatibility, deployment, and troubleshooting.
 - `AGENT_GATEWAY_API.md` — current gateway authentication and request/response contract.
 - `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
+- `EXECUTION_INTEGRITY.md` — lifecycle metadata, canonical intent fingerprints, replay prevention, idempotency, expiry, sequence, retry/replacement rules, policy controls, and compatibility.
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
 - `ORACLE_VALIDATION.md` — price-intent fields, multi-source feed schema, policy limits, freshness, operational status, and security boundary.
 - `BRIDGE_CONTROLS.md` — route metadata, provider and chain policy, fees, quote freshness, destination formats, and confirmation boundaries.

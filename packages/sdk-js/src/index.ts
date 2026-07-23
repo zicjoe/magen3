@@ -1,6 +1,27 @@
 export type Magen3Decision = "Allowed" | "Blocked" | "Review Required";
 export type Magen3Risk = "Low" | "Medium" | "High" | "Critical";
 
+export interface Magen3Lifecycle {
+  /** Unique 8-128 character identifier for one business intent. */
+  intentId?: string;
+  /** Stable retry key that must never be reused after protected parameters change. */
+  idempotencyKey?: string;
+  /** Optional monotonically increasing sequence for this agent. */
+  sequence?: number;
+  /** ISO-8601 creation time. */
+  createdAt?: string;
+  /** ISO-8601 authorization expiry. */
+  expiresAt?: string;
+  /** Prior Magen3 audit ID when this request is an explicit retry. */
+  retryOf?: string;
+  /** Prior Magen3 audit ID when this request deliberately replaces a pending transaction. */
+  replacementOf?: string;
+  /** Zero for the first attempt; increment only with retryOf or replacementOf. */
+  attempt?: number;
+  /** Optional SHA-256 canonical fingerprint computed by the adapter. Magen3 always computes its own. */
+  intentFingerprint?: string;
+}
+
 export interface Magen3ExecutionPreflight {
   /** Positive integer string in motes for the proposed payment budget. */
   paymentAmountMotes?: string;
@@ -141,6 +162,8 @@ export interface Magen3Action {
   compliance?: Magen3ComplianceEvidence;
   /** x402 payment requirements evaluated before PAYMENT-SIGNATURE creation. Never include signatures or signed payment payloads. */
   x402?: Magen3X402Payment;
+  /** Exact-once lifecycle metadata evaluated before wallet signing. */
+  lifecycle?: Magen3Lifecycle;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
 }
@@ -322,6 +345,29 @@ export interface Magen3X402PaymentControlsContext {
   previousFingerprintCount?: number;
 }
 
+export interface Magen3ExecutionIntegrityContext {
+  status?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  enabled?: boolean;
+  intentId?: string;
+  idempotencyKey?: string;
+  sequence?: number | null;
+  createdAt?: string;
+  expiresAt?: string;
+  retryOf?: string;
+  replacementOf?: string;
+  attempt?: number;
+  fingerprint?: string;
+  clientFingerprint?: string;
+  previousIntentIdCount?: number;
+  previousIdempotencyCount?: number;
+  previousFingerprintCount?: number;
+  highestSequence?: number;
+  replayWindowSeconds?: number;
+  maxRetryAttempts?: number;
+}
+
 export interface Magen3X402SettlementUpdate {
   auditLogId: string;
   status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
@@ -354,6 +400,8 @@ export interface Magen3DecisionResult {
   bridgeControlsContext?: Magen3BridgeControlsContext;
   /** Sanitized compliance policy, evidence status, and configured exact-match context. */
   complianceControlsContext?: Magen3ComplianceControlsContext;
+  /** Exact-once intent lifecycle, canonical fingerprint, replay, idempotency, expiry, sequence, and retry evidence. */
+  executionIntegrityContext?: Magen3ExecutionIntegrityContext;
   /** Canonical x402 request binding, policy limits, replay state, and settlement context. */
   x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
 }

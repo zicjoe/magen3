@@ -187,6 +187,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.x402 && typeof body.x402 === "object"
         ? body.x402
         : {};
+  const lifecycle = action.lifecycle && typeof action.lifecycle === "object"
+    ? action.lifecycle
+    : action.executionLifecycle && typeof action.executionLifecycle === "object"
+      ? action.executionLifecycle
+      : body.lifecycle && typeof body.lifecycle === "object"
+        ? body.lifecycle
+        : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -302,6 +309,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
     x402SettlementStatus: cleanString(x402.settlementStatus || x402.settlement_status || x402.settlement?.status || "not_submitted", "not_submitted"),
     x402SettlementAttempt: optionalNumber(x402.settlementAttempt ?? x402.settlement_attempt ?? x402.settlement?.attempt, "x402SettlementAttempt", { integer: true, min: 0 }),
     x402SettlementTxHash: cleanString(x402.settlementTxHash || x402.settlement_tx_hash || x402.settlement?.transactionHash || x402.settlement?.transaction_hash || "", ""),
+    lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
+    lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
+    lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),
+    lifecycleCreatedAt: cleanString(lifecycle.createdAt || lifecycle.created_at || body.createdAt || body.created_at || "", ""),
+    lifecycleExpiresAt: cleanString(lifecycle.expiresAt || lifecycle.expires_at || body.expiresAt || body.expires_at || "", ""),
+    lifecycleRetryOf: cleanString(lifecycle.retryOf || lifecycle.retry_of || "", ""),
+    lifecycleReplacementOf: cleanString(lifecycle.replacementOf || lifecycle.replacement_of || "", ""),
+    lifecycleAttempt: optionalNumber(lifecycle.attempt, "lifecycleAttempt", { integer: true, min: 0 }),
+    lifecycleIntentFingerprint: cleanString(lifecycle.intentFingerprint || lifecycle.intent_fingerprint || lifecycle.fingerprint || "", ""),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

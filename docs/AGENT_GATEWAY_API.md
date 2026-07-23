@@ -74,7 +74,14 @@ Content-Type: application/json
     "amount": 5,
     "asset": "CSPR",
     "target": "01bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "targetType": "Wallet Address"
+    "targetType": "Wallet Address",
+    "lifecycle": {
+      "intentId": "intent:transfer-20260723-0001",
+      "idempotencyKey": "idempotency:transfer-20260723-0001",
+      "createdAt": "2026-07-23T10:00:00.000Z",
+      "expiresAt": "2026-07-23T10:10:00.000Z",
+      "attempt": 0
+    }
   }
 }
 ```
@@ -115,6 +122,27 @@ Contract Validation applies to `Contract Interaction`, `Swap`, `Deposit to Vault
 - The `Trusted Contract` label does not grant approval. The exact identifier must appear in the policy's Trusted Targets.
 - `structuredRules.blockedContracts` always blocks exact matches.
 - `structuredRules.allowedEntryPoints` optionally restricts callable methods.
+
+### Lifecycle and replay metadata
+
+New integrations should include `action.lifecycle` so Magen3 can bind the decision to one exact business intent and prevent duplicate execution:
+
+```json
+{
+  "intentId": "intent:transfer-20260723-0001",
+  "idempotencyKey": "idempotency:transfer-20260723-0001",
+  "sequence": 42,
+  "createdAt": "2026-07-23T10:00:00.000Z",
+  "expiresAt": "2026-07-23T10:10:00.000Z",
+  "attempt": 0
+}
+```
+
+Lifecycle & Replay is Live inside the Execution Integrity protection area. Magen3 computes a canonical SHA-256 fingerprint over the protected parameters and checks prior audit records for reused intent IDs, reused or mutated idempotency keys, duplicate fingerprints, reused transaction hashes, expired authorization, sequence rollback, unsafe retries, and already confirmed execution.
+
+`retryOf` and `replacementOf` must reference a prior Magen3 audit ID owned by the same agent. Do not set both. A non-zero `attempt` requires one of those references. `intentFingerprint` is optional; when supplied, it must exactly match Magen3's independently computed fingerprint.
+
+Existing integrations remain accepted. Legacy policies do not silently activate strict duplicate-fingerprint enforcement; new starter policies enable the lifecycle controls with secure defaults.
 
 ### Execution preflight metadata
 
@@ -330,7 +358,7 @@ The top-level response preserves the existing contract and adds structured expla
     "suggestedResolution": "Request wallet signing and record the execution hash after submission.",
     "recommendedAction": "Request wallet signature before execution",
     "capabilityContext": ["Trading", "Wallet Management", "dApp Interactions"],
-    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "Risk Assessment"],
+    "modulesEvaluated": ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Execution Simulation", "Execution Integrity", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "Risk Assessment"],
     "moduleFindings": [
       {
         "module": "Wallet Validation",

@@ -93,3 +93,27 @@ test("rejects non-object runtime arguments at the gateway boundary", () => {
     preflight: { runtimeArgs: ["amount"] },
   })), /runtimeArgs must be an object/);
 });
+
+test("normalizes lifecycle and replay metadata inside the existing action envelope", () => {
+  const normalized = normalizeAgentGatewayIntent(intent({
+    lifecycle: {
+      intentId: "intent:gateway-0001",
+      idempotencyKey: "idempotency:gateway-0001",
+      sequence: 7,
+      createdAt: "2026-07-23T10:00:00.000Z",
+      expiresAt: "2026-07-23T10:10:00.000Z",
+      retryOf: "AUD-previous",
+      attempt: 1,
+      intentFingerprint: "a".repeat(64),
+    },
+  }));
+
+  assert.equal(normalized.lifecycleIntentId, "intent:gateway-0001");
+  assert.equal(normalized.lifecycleIdempotencyKey, "idempotency:gateway-0001");
+  assert.equal(normalized.lifecycleSequence, 7);
+  assert.equal(normalized.lifecycleCreatedAt, "2026-07-23T10:00:00.000Z");
+  assert.equal(normalized.lifecycleExpiresAt, "2026-07-23T10:10:00.000Z");
+  assert.equal(normalized.lifecycleRetryOf, "AUD-previous");
+  assert.equal(normalized.lifecycleAttempt, 1);
+  assert.equal(normalized.lifecycleIntentFingerprint, "a".repeat(64));
+});

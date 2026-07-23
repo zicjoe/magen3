@@ -336,3 +336,45 @@ test("preserves x402 authorization metadata and reports settlement without signe
   assert.equal(calls[1].payload.resourceDelivered, true);
   assert.equal("paymentSignature" in calls[1].payload, false);
 });
+
+test("preserves Execution Integrity lifecycle metadata in intent payloads", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 5, reason: "lifecycle passed", recommendedAction: "continue" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      target: "01def",
+      lifecycle: {
+        intentId: "intent:sdk-0001",
+        idempotencyKey: "idempotency:sdk-0001",
+        sequence: 9,
+        createdAt: "2026-07-23T10:00:00.000Z",
+        expiresAt: "2026-07-23T10:10:00.000Z",
+        attempt: 0,
+      },
+    },
+  });
+
+  assert.equal(captured.action.lifecycle.intentId, "intent:sdk-0001");
+  assert.equal(captured.action.lifecycle.idempotencyKey, "idempotency:sdk-0001");
+  assert.equal(captured.action.lifecycle.sequence, 9);
+  assert.equal(captured.action.lifecycle.attempt, 0);
+});

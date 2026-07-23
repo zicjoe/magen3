@@ -372,6 +372,28 @@ interface DecisionResult {
     monthlySpend?: number;
     previousFingerprintCount?: number;
   };
+  executionIntegrityContext?: {
+    status?: string;
+    mode?: string;
+    unavailableAction?: string;
+    enabled?: boolean;
+    intentId?: string;
+    idempotencyKey?: string;
+    sequence?: number | null;
+    createdAt?: string;
+    expiresAt?: string;
+    retryOf?: string;
+    replacementOf?: string;
+    attempt?: number;
+    fingerprint?: string;
+    clientFingerprint?: string;
+    previousIntentIdCount?: number;
+    previousIdempotencyCount?: number;
+    previousFingerprintCount?: number;
+    highestSequence?: number;
+    replayWindowSeconds?: number;
+    maxRetryAttempts?: number;
+  };
   bridgeControlsContext?: {
     status?: string;
     mode?: string;
@@ -1917,8 +1939,9 @@ function AgentShieldPage({
   const coverages = activeAgents.map((agent) => calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), auditLogs.filter((log) => log.agentId === agent.id)));
   const averageCoverage = coverages.length ? Math.round(coverages.reduce((sum, item) => sum + item.score, 0) / coverages.length) : 0;
   const latestLog = auditLogs[0];
-  const statusCounts = PROTECTION_MODULE_CATALOG.reduce<Record<string, number>>((acc, module) => {
-    acc[module.status] = (acc[module.status] || 0) + 1;
+  const protectionControls = PROTECTION_MODULE_CATALOG.flatMap((area) => area.controls);
+  const statusCounts = protectionControls.reduce<Record<string, number>>((acc, control) => {
+    acc[control.status] = (acc[control.status] || 0) + 1;
     return acc;
   }, {});
 
@@ -1985,7 +2008,7 @@ function AgentShieldPage({
               <div key={status} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">
                 <StatusBadge status={status} />
                 <div className="mt-2 text-2xl font-bold text-[#F8FAFC]">{statusCounts[status] || 0}</div>
-                <div className="mt-1 text-xs text-[#94A3B8]">protection modules</div>
+                <div className="mt-1 text-xs text-[#94A3B8]">security controls</div>
               </div>
             ))}
           </div>
@@ -1997,38 +2020,42 @@ function AgentShieldPage({
 
       <section className="space-y-4">
         <div>
-          <h2 className={SECTION_TITLE}>Agent Shield Protection Modules</h2>
-          <p className="mt-1 text-sm text-[#94A3B8]">Modules are selected and recommended according to each agent’s execution capabilities.</p>
+          <h2 className={SECTION_TITLE}>Agent Shield Protection Areas</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">Eight coherent areas keep the product clear. Each area reveals only the controls relevant to an agent’s execution capabilities.</p>
         </div>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {PROTECTION_MODULE_CATALOG.map((module) => (
-            <div key={module.id} className={`${CARD} flex flex-col p-5`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]"><Shield size={20} /></div>
-                <StatusBadge status={module.status} />
-              </div>
-              <h3 className="mt-4 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{module.name}</h3>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-[#94A3B8]">{module.description}</p>
-              <div className="mt-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Used by</div>
-                <CapabilityChips capabilities={module.capabilities} compact />
-              </div>
-              <div className="mt-4 border-t border-[#1E293B] pt-4">
-                <div className="text-xs font-semibold text-[#F8FAFC]">Current checks</div>
-                <div className="mt-2 space-y-1">
-                  {(module.currentChecks.length ? module.currentChecks : ["No current backend checks"]).map((check) => (
-                    <div key={check} className="flex items-start gap-2 text-xs text-[#94A3B8]"><span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#22D3EE]" />{check}</div>
+        <div className="grid gap-5 md:grid-cols-2">
+          {PROTECTION_MODULE_CATALOG.map((area) => {
+            const live = area.controls.filter((control) => control.status === "Live").length;
+            const foundation = area.controls.filter((control) => control.status === "Foundation Available").length;
+            const planned = area.controls.filter((control) => control.status === "Planned").length;
+            return (
+              <div key={area.id} className={`${CARD} flex flex-col p-5`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]"><Shield size={20} /></div>
+                  <div className="text-right text-[11px] text-[#94A3B8]">{live} Live · {foundation} Foundation · {planned} Planned</div>
+                </div>
+                <h3 className="mt-4 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{area.name}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{area.description}</p>
+                <div className="mt-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Relevant capabilities</div>
+                  <CapabilityChips capabilities={area.capabilities} compact />
+                </div>
+                <div className="mt-4 space-y-2 border-t border-[#1E293B] pt-4">
+                  {area.controls.map((control) => (
+                    <div key={control.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold text-[#F8FAFC]">{control.name}</div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-[#94A3B8]">{control.description}</div>
+                        </div>
+                        <StatusBadge status={control.status} />
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-              {module.futureChecks.length > 0 && (
-                <div className="mt-3 rounded-lg bg-[#0B1220] p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Future checks</div>
-                  <div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{module.futureChecks.join(" · ")}</div>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>
@@ -2213,6 +2240,22 @@ function AgentRegistrationWizard({
         capabilityScope: capabilities,
         structuredRules: {
           ...sourceRules,
+          lifecycleControlsEnabled: typeof sourceRules.lifecycleControlsEnabled === "boolean" ? sourceRules.lifecycleControlsEnabled : true,
+          lifecycleControlMode: typeof sourceRules.lifecycleControlMode === "string" ? sourceRules.lifecycleControlMode : "Enforce",
+          lifecycleUnavailableAction: typeof sourceRules.lifecycleUnavailableAction === "string" ? sourceRules.lifecycleUnavailableAction : "Warn",
+          lifecycleRequireIntentId: typeof sourceRules.lifecycleRequireIntentId === "boolean" ? sourceRules.lifecycleRequireIntentId : true,
+          lifecycleRequireIdempotencyKey: typeof sourceRules.lifecycleRequireIdempotencyKey === "boolean" ? sourceRules.lifecycleRequireIdempotencyKey : true,
+          lifecycleRequireCreatedAt: typeof sourceRules.lifecycleRequireCreatedAt === "boolean" ? sourceRules.lifecycleRequireCreatedAt : true,
+          lifecycleRequireExpiry: typeof sourceRules.lifecycleRequireExpiry === "boolean" ? sourceRules.lifecycleRequireExpiry : true,
+          lifecycleRequireSequence: typeof sourceRules.lifecycleRequireSequence === "boolean" ? sourceRules.lifecycleRequireSequence : false,
+          lifecyclePreventDuplicateFingerprint: typeof sourceRules.lifecyclePreventDuplicateFingerprint === "boolean" ? sourceRules.lifecyclePreventDuplicateFingerprint : true,
+          lifecyclePreventRetryAfterUncertain: typeof sourceRules.lifecyclePreventRetryAfterUncertain === "boolean" ? sourceRules.lifecyclePreventRetryAfterUncertain : true,
+          lifecyclePreventParameterMutation: typeof sourceRules.lifecyclePreventParameterMutation === "boolean" ? sourceRules.lifecyclePreventParameterMutation : true,
+          lifecycleMaxIntentAgeSeconds: typeof sourceRules.lifecycleMaxIntentAgeSeconds === "number" ? sourceRules.lifecycleMaxIntentAgeSeconds : 600,
+          lifecycleMaxFutureSkewSeconds: typeof sourceRules.lifecycleMaxFutureSkewSeconds === "number" ? sourceRules.lifecycleMaxFutureSkewSeconds : 120,
+          lifecycleMaxLifetimeSeconds: typeof sourceRules.lifecycleMaxLifetimeSeconds === "number" ? sourceRules.lifecycleMaxLifetimeSeconds : 900,
+          lifecycleReplayWindowSeconds: typeof sourceRules.lifecycleReplayWindowSeconds === "number" ? sourceRules.lifecycleReplayWindowSeconds : 86400,
+          lifecycleMaxRetryAttempts: typeof sourceRules.lifecycleMaxRetryAttempts === "number" ? sourceRules.lifecycleMaxRetryAttempts : 3,
           threatIntelligenceMode: typeof sourceRules.threatIntelligenceMode === "string" ? sourceRules.threatIntelligenceMode : "Review",
           threatIntelligenceMinConfidence: typeof sourceRules.threatIntelligenceMinConfidence === "number" ? sourceRules.threatIntelligenceMinConfidence : 70,
           threatIntelligenceUnavailableAction: typeof sourceRules.threatIntelligenceUnavailableAction === "string" ? sourceRules.threatIntelligenceUnavailableAction : "Warn",
@@ -3337,6 +3380,45 @@ ${snippet}
 // ──────────────────────────────────────────────────────────
 
 
+function ExecutionIntegrityPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · Lifecycle & Replay</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind each request to a unique intent ID, idempotency key, short validity window, deterministic fingerprint, and safe retry state before wallet signing.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.lifecycleControlsEnabled ?? "")} onChange={(value) => onChange({ lifecycleControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.lifecycleControlMode ?? "")} onChange={(value) => onChange({ lifecycleControlMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Metadata Unavailable" value={String(values.lifecycleUnavailableAction ?? "")} onChange={(value) => onChange({ lifecycleUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require Intent ID" value={String(values.lifecycleRequireIntentId ?? "")} onChange={(value) => onChange({ lifecycleRequireIntentId: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Idempotency Key" value={String(values.lifecycleRequireIdempotencyKey ?? "")} onChange={(value) => onChange({ lifecycleRequireIdempotencyKey: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Created At" value={String(values.lifecycleRequireCreatedAt ?? "")} onChange={(value) => onChange({ lifecycleRequireCreatedAt: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Expiry" value={String(values.lifecycleRequireExpiry ?? "")} onChange={(value) => onChange({ lifecycleRequireExpiry: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Sequence" value={String(values.lifecycleRequireSequence ?? "")} onChange={(value) => onChange({ lifecycleRequireSequence: value })} options={["Yes", "No"]} />
+        <SelectField label="Prevent Duplicate Fingerprint" value={String(values.lifecyclePreventDuplicateFingerprint ?? "")} onChange={(value) => onChange({ lifecyclePreventDuplicateFingerprint: value })} options={["Yes", "No"]} />
+        <SelectField label="Prevent Retry After Uncertain" value={String(values.lifecyclePreventRetryAfterUncertain ?? "")} onChange={(value) => onChange({ lifecyclePreventRetryAfterUncertain: value })} options={["Yes", "No"]} />
+        <SelectField label="Prevent Parameter Mutation" value={String(values.lifecyclePreventParameterMutation ?? "")} onChange={(value) => onChange({ lifecyclePreventParameterMutation: value })} options={["Yes", "No"]} />
+        <InputField label="Max Intent Age (sec)" value={String(values.lifecycleMaxIntentAgeSeconds ?? "")} onChange={(value) => onChange({ lifecycleMaxIntentAgeSeconds: value })} type="number" />
+        <InputField label="Future Clock Skew (sec)" value={String(values.lifecycleMaxFutureSkewSeconds ?? "")} onChange={(value) => onChange({ lifecycleMaxFutureSkewSeconds: value })} type="number" />
+        <InputField label="Max Lifetime (sec)" value={String(values.lifecycleMaxLifetimeSeconds ?? "")} onChange={(value) => onChange({ lifecycleMaxLifetimeSeconds: value })} type="number" />
+        <InputField label="Replay Window (sec)" value={String(values.lifecycleReplayWindowSeconds ?? "")} onChange={(value) => onChange({ lifecycleReplayWindowSeconds: value })} type="number" />
+        <InputField label="Maximum Retry Attempts" value={String(values.lifecycleMaxRetryAttempts ?? "")} onChange={(value) => onChange({ lifecycleMaxRetryAttempts: value })} type="number" />
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Legacy policies remain non-breaking. New policies enable strict lifecycle metadata by default; the server computes the canonical fingerprint and never accepts signing secrets.</p>
+    </div>
+  );
+}
+
 function X402PolicyFields({
   values,
   onChange,
@@ -3448,6 +3530,22 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    lifecycleControlsEnabled: "Yes",
+    lifecycleControlMode: "Enforce",
+    lifecycleUnavailableAction: "Warn",
+    lifecycleRequireIntentId: "Yes",
+    lifecycleRequireIdempotencyKey: "Yes",
+    lifecycleRequireCreatedAt: "Yes",
+    lifecycleRequireExpiry: "Yes",
+    lifecycleRequireSequence: "No",
+    lifecyclePreventDuplicateFingerprint: "Yes",
+    lifecyclePreventRetryAfterUncertain: "Yes",
+    lifecyclePreventParameterMutation: "Yes",
+    lifecycleMaxIntentAgeSeconds: "600",
+    lifecycleMaxFutureSkewSeconds: "120",
+    lifecycleMaxLifetimeSeconds: "900",
+    lifecycleReplayWindowSeconds: "86400",
+    lifecycleMaxRetryAttempts: "3",
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
@@ -3532,6 +3630,22 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    lifecycleControlsEnabled: "Yes",
+    lifecycleControlMode: "Enforce",
+    lifecycleUnavailableAction: "Warn",
+    lifecycleRequireIntentId: "Yes",
+    lifecycleRequireIdempotencyKey: "Yes",
+    lifecycleRequireCreatedAt: "Yes",
+    lifecycleRequireExpiry: "Yes",
+    lifecycleRequireSequence: "No",
+    lifecyclePreventDuplicateFingerprint: "Yes",
+    lifecyclePreventRetryAfterUncertain: "Yes",
+    lifecyclePreventParameterMutation: "Yes",
+    lifecycleMaxIntentAgeSeconds: "600",
+    lifecycleMaxFutureSkewSeconds: "120",
+    lifecycleMaxLifetimeSeconds: "900",
+    lifecycleReplayWindowSeconds: "86400",
+    lifecycleMaxRetryAttempts: "3",
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
@@ -3621,6 +3735,22 @@ function PoliciesPage({
       structuredRules: {
         blockedContracts: form.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: form.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
+        lifecycleControlMode: form.lifecycleControlMode,
+        lifecycleUnavailableAction: form.lifecycleUnavailableAction,
+        lifecycleRequireIntentId: form.lifecycleRequireIntentId !== "No",
+        lifecycleRequireIdempotencyKey: form.lifecycleRequireIdempotencyKey !== "No",
+        lifecycleRequireCreatedAt: form.lifecycleRequireCreatedAt !== "No",
+        lifecycleRequireExpiry: form.lifecycleRequireExpiry !== "No",
+        lifecycleRequireSequence: form.lifecycleRequireSequence === "Yes",
+        lifecyclePreventDuplicateFingerprint: form.lifecyclePreventDuplicateFingerprint !== "No",
+        lifecyclePreventRetryAfterUncertain: form.lifecyclePreventRetryAfterUncertain !== "No",
+        lifecyclePreventParameterMutation: form.lifecyclePreventParameterMutation !== "No",
+        lifecycleMaxIntentAgeSeconds: Math.max(30, Number(form.lifecycleMaxIntentAgeSeconds) || 600),
+        lifecycleMaxFutureSkewSeconds: Math.max(0, Number(form.lifecycleMaxFutureSkewSeconds) || 120),
+        lifecycleMaxLifetimeSeconds: Math.max(30, Number(form.lifecycleMaxLifetimeSeconds) || 900),
+        lifecycleReplayWindowSeconds: Math.max(60, Number(form.lifecycleReplayWindowSeconds) || 86400),
+        lifecycleMaxRetryAttempts: Math.max(0, Number(form.lifecycleMaxRetryAttempts) || 3),
         threatIntelligenceMode: form.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(form.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: form.threatIntelligenceUnavailableAction,
@@ -3698,6 +3828,22 @@ function PoliciesPage({
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
+      lifecycleControlsEnabled: "Yes",
+      lifecycleControlMode: "Enforce",
+      lifecycleUnavailableAction: "Warn",
+      lifecycleRequireIntentId: "Yes",
+      lifecycleRequireIdempotencyKey: "Yes",
+      lifecycleRequireCreatedAt: "Yes",
+      lifecycleRequireExpiry: "Yes",
+      lifecycleRequireSequence: "No",
+      lifecyclePreventDuplicateFingerprint: "Yes",
+      lifecyclePreventRetryAfterUncertain: "Yes",
+      lifecyclePreventParameterMutation: "Yes",
+      lifecycleMaxIntentAgeSeconds: "600",
+      lifecycleMaxFutureSkewSeconds: "120",
+      lifecycleMaxLifetimeSeconds: "900",
+      lifecycleReplayWindowSeconds: "86400",
+      lifecycleMaxRetryAttempts: "3",
       threatIntelligenceMode: "Review",
       threatIntelligenceMinConfidence: "70",
       threatIntelligenceUnavailableAction: "Warn",
@@ -3779,6 +3925,22 @@ function PoliciesPage({
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
+      lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
+      lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
+      lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
+      lifecycleRequireIntentId: policy.structuredRules?.lifecycleRequireIntentId === true ? "Yes" : "No",
+      lifecycleRequireIdempotencyKey: policy.structuredRules?.lifecycleRequireIdempotencyKey === true ? "Yes" : "No",
+      lifecycleRequireCreatedAt: policy.structuredRules?.lifecycleRequireCreatedAt === true ? "Yes" : "No",
+      lifecycleRequireExpiry: policy.structuredRules?.lifecycleRequireExpiry === true ? "Yes" : "No",
+      lifecycleRequireSequence: policy.structuredRules?.lifecycleRequireSequence === true ? "Yes" : "No",
+      lifecyclePreventDuplicateFingerprint: policy.structuredRules?.lifecyclePreventDuplicateFingerprint === true ? "Yes" : "No",
+      lifecyclePreventRetryAfterUncertain: policy.structuredRules?.lifecyclePreventRetryAfterUncertain === false ? "No" : "Yes",
+      lifecyclePreventParameterMutation: policy.structuredRules?.lifecyclePreventParameterMutation === false ? "No" : "Yes",
+      lifecycleMaxIntentAgeSeconds: String(typeof policy.structuredRules?.lifecycleMaxIntentAgeSeconds === "number" ? policy.structuredRules.lifecycleMaxIntentAgeSeconds : 900),
+      lifecycleMaxFutureSkewSeconds: String(typeof policy.structuredRules?.lifecycleMaxFutureSkewSeconds === "number" ? policy.structuredRules.lifecycleMaxFutureSkewSeconds : 300),
+      lifecycleMaxLifetimeSeconds: String(typeof policy.structuredRules?.lifecycleMaxLifetimeSeconds === "number" ? policy.structuredRules.lifecycleMaxLifetimeSeconds : 3600),
+      lifecycleReplayWindowSeconds: String(typeof policy.structuredRules?.lifecycleReplayWindowSeconds === "number" ? policy.structuredRules.lifecycleReplayWindowSeconds : 86400),
+      lifecycleMaxRetryAttempts: String(typeof policy.structuredRules?.lifecycleMaxRetryAttempts === "number" ? policy.structuredRules.lifecycleMaxRetryAttempts : 3),
       threatIntelligenceMode: typeof policy.structuredRules?.threatIntelligenceMode === "string" ? policy.structuredRules.threatIntelligenceMode : "Observe",
       threatIntelligenceMinConfidence: String(typeof policy.structuredRules?.threatIntelligenceMinConfidence === "number" ? policy.structuredRules.threatIntelligenceMinConfidence : 70),
       threatIntelligenceUnavailableAction: typeof policy.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policy.structuredRules.threatIntelligenceUnavailableAction : "Warn",
@@ -3869,6 +4031,22 @@ function PoliciesPage({
         ...(editingPolicy.structuredRules || {}),
         blockedContracts: editForm.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: editForm.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
+        lifecycleControlMode: editForm.lifecycleControlMode,
+        lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
+        lifecycleRequireIntentId: editForm.lifecycleRequireIntentId !== "No",
+        lifecycleRequireIdempotencyKey: editForm.lifecycleRequireIdempotencyKey !== "No",
+        lifecycleRequireCreatedAt: editForm.lifecycleRequireCreatedAt !== "No",
+        lifecycleRequireExpiry: editForm.lifecycleRequireExpiry !== "No",
+        lifecycleRequireSequence: editForm.lifecycleRequireSequence === "Yes",
+        lifecyclePreventDuplicateFingerprint: editForm.lifecyclePreventDuplicateFingerprint !== "No",
+        lifecyclePreventRetryAfterUncertain: editForm.lifecyclePreventRetryAfterUncertain !== "No",
+        lifecyclePreventParameterMutation: editForm.lifecyclePreventParameterMutation !== "No",
+        lifecycleMaxIntentAgeSeconds: Math.max(30, Number(editForm.lifecycleMaxIntentAgeSeconds) || 600),
+        lifecycleMaxFutureSkewSeconds: Math.max(0, Number(editForm.lifecycleMaxFutureSkewSeconds) || 120),
+        lifecycleMaxLifetimeSeconds: Math.max(30, Number(editForm.lifecycleMaxLifetimeSeconds) || 900),
+        lifecycleReplayWindowSeconds: Math.max(60, Number(editForm.lifecycleReplayWindowSeconds) || 86400),
+        lifecycleMaxRetryAttempts: Math.max(0, Number(editForm.lifecycleMaxRetryAttempts) || 3),
         threatIntelligenceMode: editForm.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(editForm.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: editForm.threatIntelligenceUnavailableAction,
@@ -4088,6 +4266,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+            <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
@@ -4356,6 +4535,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+                <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
@@ -5629,7 +5809,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Live:</span> Identity and Authentication, Policy Enforcement, Wallet Validation, Contract Validation, and Risk Assessment. <span className="font-semibold text-[#F8FAFC]">Foundation Available:</span> Execution Simulation provides deterministic transaction-construction preflight while full stateful simulation remains unavailable. Threat Intelligence provides freshness-checked exact matching when an operator feed is configured. Oracle Validation provides multi-source price integrity checks, and Bridge Controls evaluates provider-supplied cross-chain routes. Compliance Controls provides policy-driven non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, and exact-match feed checks.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Eight protection areas:</span> Agent Trust & Access, Policy & Approval Controls, Wallet & Asset Safety, Contract & Permission Safety, Execution Integrity, Market & Oracle Integrity, Cross-chain & Payment Controls, and Threat & Compliance. Status is shown per control. Transaction preflight and Lifecycle & Replay are Live inside Execution Integrity; stateful simulation and settlement reconciliation remain Foundation Available.</DocsCallout></div>
               </section>
 
               <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -6109,6 +6289,18 @@ function playgroundPreflight(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function playgroundLifecycle(overrides: Record<string, unknown> = {}) {
+  const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return {
+    intentId: `intent:${nonce}`,
+    idempotencyKey: `idempotency:${nonce}`,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    attempt: 0,
+    ...overrides,
+  };
+}
+
 
 function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
   const now = Date.now();
@@ -6124,6 +6316,67 @@ function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
 }
 
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
+  "Fresh lifecycle-bound transfer": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Authorize one uniquely identified transfer exactly once",
+      reason: "Exercise intent ID, idempotency, freshness, expiry, fingerprint, and retry controls before wallet signing.",
+      action: {
+        type: "Transfer",
+        amount: 5,
+        asset: "CSPR",
+        target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT,
+        targetType: "Wallet Address",
+        lifecycle: playgroundLifecycle(),
+        preflight: playgroundPreflight(),
+      },
+    };
+  },
+  "Duplicate lifecycle intent — run twice": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    const createdAt = new Date().toISOString();
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Confirm the same business intent cannot be authorized twice",
+      reason: "Submit this exact JSON once, then submit it again without reloading the example. The second request must be blocked as a replay.",
+      action: {
+        type: "Transfer",
+        amount: 5,
+        asset: "CSPR",
+        target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT,
+        targetType: "Wallet Address",
+        lifecycle: { intentId: "intent:playground-duplicate-001", idempotencyKey: "idempotency:playground-duplicate-001", createdAt, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), attempt: 0 },
+        preflight: playgroundPreflight(),
+      },
+    };
+  },
+  "Expired lifecycle intent": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Confirm an expired authorization cannot reach wallet signing",
+      reason: "The lifecycle validity window intentionally ended before submission.",
+      action: {
+        type: "Transfer",
+        amount: 5,
+        asset: "CSPR",
+        target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT,
+        targetType: "Wallet Address",
+        lifecycle: playgroundLifecycle({ intentId: `intent:expired-${Date.now()}`, idempotencyKey: `idempotency:expired-${Date.now()}`, createdAt: new Date(Date.now() - 20 * 60_000).toISOString(), expiresAt: new Date(Date.now() - 10 * 60_000).toISOString() }),
+        preflight: playgroundPreflight(),
+      },
+    };
+  },
   Swap: (agent, walletAddress, policy) => {
     const approvedContract = firstConfiguredContract(policy);
     const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
@@ -6764,7 +7017,7 @@ function IntentPlaygroundPage({
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
             <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls are Foundation Available. Compliance Controls accepts non-sensitive status evidence and opaque references only; it does not accept raw identity data or determine legal obligations.</div>
+            <div className="mt-1">Agent Shield is organized into eight protection areas with control-level status. Wallet and Contract checks, transaction preflight, and Lifecycle & Replay are Live. Stateful simulation, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and selected settlement checks are Foundation Available. Unavailable controls never count as a pass.</div>
           </div>
 
           <div>
@@ -6839,6 +7092,23 @@ function IntentPlaygroundPage({
                       <div>Source spread <span className="block text-[#F8FAFC]">{result.result.oracleValidationContext.sourceSpreadBps ?? "—"} bps</span></div>
                     </div>
                     {result.result.oracleValidationContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.oracleValidationContext.error}</div>}
+                  </div>
+                )}
+                {result.result.executionIntegrityContext && (
+                  <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · Lifecycle & Replay</div>
+                      <span className="text-xs font-semibold text-[#38BDF8]">{result.result.executionIntegrityContext.status || "observed"}</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Intent ID <span className="block break-all text-[#F8FAFC]">{result.result.executionIntegrityContext.intentId || "Not supplied"}</span></div>
+                      <div>Idempotency key <span className="block break-all text-[#F8FAFC]">{result.result.executionIntegrityContext.idempotencyKey || "Not supplied"}</span></div>
+                      <div>Attempt <span className="block text-[#F8FAFC]">{result.result.executionIntegrityContext.attempt ?? 0}</span></div>
+                      <div>Created <span className="block text-[#F8FAFC]">{result.result.executionIntegrityContext.createdAt || "Not supplied"}</span></div>
+                      <div>Expires <span className="block text-[#F8FAFC]">{result.result.executionIntegrityContext.expiresAt || "Not supplied"}</span></div>
+                      <div>Previous fingerprint matches <span className="block text-[#F8FAFC]">{result.result.executionIntegrityContext.previousFingerprintCount ?? 0}</span></div>
+                      <div className="sm:col-span-3">Canonical fingerprint <span className="block break-all font-mono text-[#F8FAFC]">{result.result.executionIntegrityContext.fingerprint || "Not computed"}</span></div>
+                    </div>
                   </div>
                 )}
                 {result.result.x402PaymentControlsContext && (
@@ -6948,6 +7218,7 @@ function SettingsPage({
     ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
+    ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],
     ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],

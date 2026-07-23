@@ -12,6 +12,7 @@ export interface Magen3McpConfig {
 export type ToolTextResult = CallToolResult;
 
 export const INTENT_SCHEMA_DESCRIPTION = {
+  executionIntegrity: "For exact-once authorization, include action.lifecycle with a unique intent ID, idempotency key, creation time, expiry, optional sequence, retry/replacement reference, and optional client fingerprint. Magen3 always computes its own canonical fingerprint.",
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
   oracleValidation: "For priced swaps and DeFi intents, include action.outputAsset plus action.oracle. Magen3 compares the proposed execution price with a configured freshness-checked multi-source oracle feed and returns structured Oracle Validation findings.",
   bridgeControls: "For Bridge actions, include action.bridge. Magen3 validates provider-supplied route metadata, configured providers and chains, destination format, fees, quote freshness, output bounds, and confirmation requirements.",
@@ -89,6 +90,17 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       originatorVaspId: "Optional opaque VASP identifier",
       beneficiaryVaspId: "Optional opaque VASP identifier",
     },
+    lifecycle: {
+      intentId: "Unique 8-128 character identifier for one business intent",
+      idempotencyKey: "Stable retry key that must not be reused after protected parameters change",
+      sequence: "Optional monotonically increasing agent sequence",
+      createdAt: "ISO-8601 creation time",
+      expiresAt: "ISO-8601 authorization expiry",
+      retryOf: "Prior Magen3 audit ID for an explicit retry",
+      replacementOf: "Prior Magen3 audit ID for a deliberate replacement",
+      attempt: "Zero for the first attempt; increment only with retryOf or replacementOf",
+      intentFingerprint: "Optional SHA-256 canonical fingerprint; Magen3 independently computes and verifies its own",
+    },
     preflight: {
       paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
       gasPriceTolerance: "Optional positive integer gas-price tolerance",
@@ -152,6 +164,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
+        executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
