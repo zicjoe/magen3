@@ -185,6 +185,7 @@ const server = createServer(async (req, res) => {
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
         oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
         complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
+        x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
       });
     }
@@ -210,6 +211,26 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { ok: true, complianceControls: summarizeComplianceControlsSnapshot(snapshot) });
     }
 
+    if (route === "GET /api/x402-payment-controls/status") {
+      return send(res, 200, {
+        ok: true,
+        x402PaymentControls: {
+          status: "foundation-available",
+          protocolVersion: 2,
+          supportedVersions: [2],
+          supportedSchemes: ["exact"],
+          supportedRecipientFamilies: ["EVM", "Solana"],
+          requestBinding: true,
+          atomicAmountValidation: true,
+          timeoutBinding: true,
+          replayProtection: true,
+          settlementReporting: true,
+          settlementEndpoint: "/api/agent-gateway/x402/settlements",
+          note: "Magen3 authorizes x402 payments and reconciles reported settlement state. It does not hold signing keys or operate a facilitator."
+        }
+      });
+    }
+
 
     if (route === "GET /api/public-config") {
       const casper = getCasperStatus();
@@ -229,7 +250,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment"],
-          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls"],
+          foundationProtectionModules: ["Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -270,7 +291,7 @@ const server = createServer(async (req, res) => {
           goal: "Transfer funds to an approved wallet safely",
           reason: "User strategy asks for a policy-checked transfer",
           action: {
-            type: "Transfer | Swap | Deposit to Vault | Contract Interaction | Bridge",
+            type: "Transfer | Swap | Deposit to Vault | Contract Interaction | Bridge | x402 Payment",
             amount: 5,
             asset: "CSPR",
             target: "Casper wallet identifier, Contract Hash, or Package Hash",
@@ -504,6 +525,50 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "Configured exact matches and rejected attestations can block; missing required evidence can warn, require review, or block according to policy. This module provides technical controls and evidence handling, not legal advice or a guarantee of regulatory compliance."
         },
+        x402PaymentControls: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/x402-payment-controls/status",
+          settlementEndpoint: "POST /api/agent-gateway/x402/settlements",
+          purpose: "Authorize x402 payment requirements before PAYMENT-SIGNATURE creation and reconcile settlement afterward without receiving wallet secrets or signed payment payloads.",
+          supportedFoundation: ["x402 v2", "exact scheme", "EVM recipient structure", "Solana recipient structure"],
+          deterministicChecks: [
+            "Protocol version, scheme, and HTTP method",
+            "Canonical resource URL and merchant-host binding",
+            "CAIP-2 payment network and recipient structure",
+            "Approved merchants, recipients, assets, facilitators, and networks",
+            "Atomic/display amount consistency using configured asset decimals",
+            "Per-payment, daily, monthly, review, and hourly frequency limits",
+            "Explicit expiry or maxTimeoutSeconds plus stable requirements-received time",
+            "PAYMENT-REQUIRED hash and request-body hash binding",
+            "Canonical request fingerprint and replay prevention",
+            "Ambiguous settlement retry prevention",
+            "Authenticated post-payment settlement and resource-delivery reporting"
+          ],
+          policyFields: {
+            enabled: "structuredRules.x402ControlsEnabled",
+            mode: "structuredRules.x402ControlMode: Observe | Review | Enforce",
+            unavailableAction: "structuredRules.x402UnavailableAction: Warn | Review | Block",
+            versions: "structuredRules.x402AllowedVersions",
+            schemes: "structuredRules.x402AllowedSchemes",
+            methods: "structuredRules.x402AllowedMethods",
+            networks: "structuredRules.x402AllowedNetworks",
+            assets: "structuredRules.x402AllowedAssets",
+            assetDecimals: "structuredRules.x402AssetDecimals",
+            facilitators: "structuredRules.x402AllowedFacilitators",
+            merchants: "structuredRules.x402AllowedMerchants",
+            blockedMerchants: "structuredRules.x402BlockedMerchants",
+            recipients: "structuredRules.x402AllowedRecipients",
+            maximumPayment: "structuredRules.x402MaxPayment",
+            dailyLimit: "structuredRules.x402DailyLimit",
+            monthlyLimit: "structuredRules.x402MonthlyLimit",
+            paymentFrequency: "structuredRules.x402MaxPaymentsPerHour",
+            reviewThreshold: "structuredRules.x402ReviewThreshold",
+            authorizationLifetime: "structuredRules.x402MaxAuthorizationLifetimeSeconds",
+            settlementAttempts: "structuredRules.x402MaxSettlementAttempts"
+          },
+          securityBoundary: "The Gateway rejects PAYMENT-SIGNATURE values, signed payment payloads, wallet approvals, private keys, and mnemonics. The x402 adapter signs only after an Allowed decision.",
+          decisionRule: "Exact-scheme payment requirements can pass, require review, or block deterministically. upto and batch-settlement remain outside the supported foundation unless explicitly authorized and tested."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -516,6 +581,7 @@ const server = createServer(async (req, res) => {
           oracleValidationContext: "Sanitized oracle-feed state, policy limits, pair, reference price, deviation, source quorum, and confidence",
           bridgeControlsContext: "Sanitized route, provider, chain, asset, fee, quote-expiry, destination-format, and finality evidence",
           complianceControlsContext: "Sanitized feed state, jurisdictions, attestation statuses, Travel Rule evidence status, screening status, risk rating, and exact-match summaries",
+          x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",
@@ -537,6 +603,14 @@ const server = createServer(async (req, res) => {
       const apiKey = readAgentGatewayKey(req);
       const body = await readJson(req);
       return send(res, 201, await store.submitAgentGatewayIntent(body, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/x402/settlements") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.updateX402Settlement(auditLogId, body, { apiKey }));
     }
 
     if (route === "GET /api/bootstrap") {

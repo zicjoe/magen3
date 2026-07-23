@@ -93,3 +93,39 @@ Bridge Controls is Foundation Available. A passing result means the submitted ro
 ## Compliance Controls evidence
 
 Python integrations may include an `action["compliance"]` dictionary containing only non-sensitive status, provider, opaque reference, timestamp, jurisdiction, hash, risk-rating, and VASP-ID fields. The normal response may include `complianceControlsContext` and structured findings. Do not send raw personal identity data. Compliance Controls is Foundation Available and does not make a legal determination.
+
+## x402 Payment Controls
+
+Submit decoded x402 requirements before creating the payment signature:
+
+```python
+received_at = "2026-07-23T12:00:00.000Z"
+decision = client.check_intent({
+    "executionWalletAddress": "0x2222222222222222222222222222222222222222",
+    "action": {
+        "type": "x402 Payment",
+        "amount": 1,
+        "asset": "USDC",
+        "target": "https://api.example.com/data",
+        "targetType": "x402 Merchant",
+        "x402": {
+            "version": 2,
+            "scheme": "exact",
+            "resourceUrl": "https://api.example.com/data",
+            "method": "GET",
+            "merchantDomain": "api.example.com",
+            "payTo": "0x1111111111111111111111111111111111111111",
+            "asset": "USDC",
+            "network": "eip155:84532",
+            "facilitator": "https://x402.org/facilitator",
+            "amountAtomic": "1000000",
+            "maxTimeoutSeconds": 300,
+            "requirementsReceivedAt": received_at,
+            "requestId": "python-payment-001",
+            "paymentRequiredHash": "b" * 64,
+        },
+    },
+})
+```
+
+After real settlement, call `client.report_x402_settlement(...)` with the audit ID, Magen3 request fingerprint, settlement status, attempt number, transaction hash when confirmed, and resource-delivery state. Never include `PAYMENT-SIGNATURE` or a signed payment payload in the intent.

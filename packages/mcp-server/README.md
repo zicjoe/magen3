@@ -2,12 +2,13 @@
 
 Official local MCP server for Magen3, a modular Web3 execution firewall.
 
-It exposes four tools over `stdio`:
+It exposes five tools over `stdio`:
 
 - `magen3_verify_agent`
 - `magen3_get_intent_schema`
 - `magen3_check_intent`
 - `magen3_require_allowed`
+- `magen3_report_x402_settlement`
 
 `magen3_require_allowed` is the recommended fail-closed gate. It returns an MCP error for Blocked, Review Required, authentication errors, schema errors, timeouts, and network failures.
 
@@ -70,3 +71,9 @@ Bridge Controls is Foundation Available. It validates declared route metadata an
 ## Compliance Controls
 
 The MCP schema accepts non-sensitive compliance evidence under `action.compliance` and rejects raw names, identity documents, addresses, contact information, documents, selfies, and biometrics. Inspect the final decision, structured Compliance Controls findings, and sanitized `complianceControlsContext`. A clear result or feed no-match does not guarantee legal compliance.
+
+## x402 Payment Controls
+
+Use `action.type: "x402 Payment"`, `targetType: "x402 Merchant"`, and an `action.x402` object containing the selected v2 exact-scheme requirements. Supply either an explicit expiration or `maxTimeoutSeconds` plus the stable `requirementsReceivedAt` time. For unsafe HTTP methods, bind the exact request body with `requestBodyHash`.
+
+After an Allowed decision and real facilitator activity, call `magen3_report_x402_settlement`. Confirmed status requires a transaction hash, delivery can be recorded only after confirmation, and settlement state cannot regress. Never send `PAYMENT-SIGNATURE`, signed payment payloads, wallet approvals, or private keys through MCP.

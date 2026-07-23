@@ -86,6 +86,37 @@ export interface Magen3ComplianceEvidence {
   beneficiaryVaspId?: string;
 }
 
+export interface Magen3X402Payment {
+  version: 2 | number;
+  scheme: "exact" | string;
+  resourceUrl: string;
+  method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | string;
+  merchantDomain: string;
+  payTo: string;
+  asset: string;
+  /** CAIP-2 network identifier such as eip155:84532. */
+  network: string;
+  facilitator: string;
+  /** Atomic payment amount as a positive integer string. */
+  amountAtomic: string;
+  /** Optional explicit ISO-8601 or Unix expiration derived by the adapter. */
+  validUntil?: string | number;
+  /** x402 v2 payment-requirement timeout in seconds. */
+  maxTimeoutSeconds?: number;
+  /** ISO-8601 time when PAYMENT-REQUIRED was received; required when maxTimeoutSeconds supplies the expiry window. */
+  requirementsReceivedAt?: string;
+  requestId: string;
+  /** SHA-256 hash of the decoded PAYMENT-REQUIRED object. */
+  paymentRequiredHash: string;
+  /** Required for unsafe HTTP methods when policy enables request-body binding. */
+  requestBodyHash?: string;
+  /** Optional client fingerprint; Magen3 always computes its own canonical fingerprint. */
+  requestFingerprint?: string;
+  settlementStatus?: "not_submitted" | "submitted" | "pending" | "confirmed" | "failed" | "uncertain" | string;
+  settlementAttempt?: number;
+  settlementTxHash?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -108,6 +139,8 @@ export interface Magen3Action {
   bridge?: Magen3BridgeRoute;
   /** Non-sensitive compliance status evidence and opaque references evaluated before signing. */
   compliance?: Magen3ComplianceEvidence;
+  /** x402 payment requirements evaluated before PAYMENT-SIGNATURE creation. Never include signatures or signed payment payloads. */
+  x402?: Magen3X402Payment;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
 }
@@ -255,6 +288,51 @@ export interface Magen3ComplianceControlsContext {
   matchedJurisdictions?: Array<Record<string, unknown>>;
 }
 
+export interface Magen3X402PaymentControlsContext {
+  status?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  unavailableAction?: "Warn" | "Review" | "Block" | string;
+  version?: number | string;
+  scheme?: string;
+  method?: string;
+  resourceUrl?: string;
+  merchantDomain?: string;
+  payTo?: string;
+  network?: string;
+  asset?: string;
+  facilitator?: string;
+  amountAtomic?: string;
+  amount?: number | null;
+  submittedAmount?: number | null;
+  assetDecimals?: number | null;
+  maxTimeoutSeconds?: number;
+  requirementsReceivedAt?: string;
+  validUntil?: string;
+  requestId?: string;
+  requestBodyHash?: string;
+  paymentRequiredHash?: string;
+  requestFingerprint?: string;
+  clientFingerprint?: string;
+  recipientFamily?: string;
+  settlementStatus?: string;
+  settlementAttempt?: number;
+  hourlyCount?: number;
+  dailySpend?: number;
+  monthlySpend?: number;
+  previousFingerprintCount?: number;
+}
+
+export interface Magen3X402SettlementUpdate {
+  auditLogId: string;
+  status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
+  requestFingerprint: string;
+  transactionHash?: string;
+  attempt?: number;
+  facilitatorReference?: string;
+  resourceDelivered?: boolean;
+  note?: string;
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -276,6 +354,8 @@ export interface Magen3DecisionResult {
   bridgeControlsContext?: Magen3BridgeControlsContext;
   /** Sanitized compliance policy, evidence status, and configured exact-match context. */
   complianceControlsContext?: Magen3ComplianceControlsContext;
+  /** Canonical x402 request binding, policy limits, replay state, and settlement context. */
+  x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
 }
 
 export interface Magen3IntentResponse {
@@ -350,6 +430,15 @@ export class Magen3Client {
         agentId: this.agentId,
         walletAddress: intent.walletAddress ?? intent.executionWalletAddress,
       }),
+    });
+  }
+
+  async reportX402Settlement(update: Magen3X402SettlementUpdate): Promise<Record<string, unknown>> {
+    if (!update?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    if (!update?.requestFingerprint?.trim()) throw new TypeError("requestFingerprint is required");
+    return this.request<Record<string, unknown>>("/api/agent-gateway/x402/settlements", {
+      method: "POST",
+      body: JSON.stringify({ ...update, agentId: this.agentId }),
     });
   }
 

@@ -23,6 +23,7 @@ test("MCP server starts and exposes the expected tools", async () => {
     assert.deepEqual(names, [
       "magen3_check_intent",
       "magen3_get_intent_schema",
+      "magen3_report_x402_settlement",
       "magen3_require_allowed",
       "magen3_verify_agent",
     ]);

@@ -8,6 +8,7 @@ export const protectionModules = [
   { id: "oracle-validation", name: "Oracle Validation", group: "Agent Shield", status: "Foundation Available" },
   { id: "bridge-controls", name: "Bridge Controls", group: "Agent Shield", status: "Foundation Available" },
   { id: "compliance-controls", name: "Compliance Controls", group: "Agent Shield", status: "Foundation Available" },
+  { id: "x402-payment-controls", name: "x402 Payment Controls", group: "Agent Shield", status: "Foundation Available" },
   { id: "risk-assessment", name: "Risk Assessment", group: "Agent Shield", status: "Live" },
 ];
 

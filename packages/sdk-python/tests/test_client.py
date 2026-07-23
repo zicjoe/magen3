@@ -72,6 +72,52 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["compliance"]["travelRule"]["status"], "Complete")
         self.assertEqual(captured["payload"]["action"]["compliance"]["originatorAttestation"]["reference"], "ORIGINATOR-001")
 
+    def test_x402_authorization_and_settlement_reporting(self):
+        captured = []
+        def transport(method, url, headers, data, timeout):
+            payload = json.loads(data.decode())
+            captured.append({"method": method, "url": url, "payload": payload})
+            if url.endswith("/api/agent-gateway/x402/settlements"):
+                return {"ok": True, "settlement": {"status": "confirmed"}}
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed"}, "auditLog": {"id": "AUDIT-X402-1"}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.check_intent({
+            "executionWalletAddress": "0x0000000000000000000000000000000000000002",
+            "action": {
+                "type": "x402 Payment",
+                "amount": 1,
+                "asset": "USDC",
+                "target": "https://api.example.com/data",
+                "x402": {
+                    "version": 2,
+                    "scheme": "exact",
+                    "resourceUrl": "https://api.example.com/data",
+                    "method": "GET",
+                    "merchantDomain": "api.example.com",
+                    "payTo": "0x1111111111111111111111111111111111111111",
+                    "asset": "USDC",
+                    "network": "eip155:84532",
+                    "facilitator": "https://x402.org/facilitator",
+                    "amountAtomic": "1000000",
+                    "validUntil": "2026-07-23T12:00:00.000Z",
+                    "requestId": "request-001",
+                    "paymentRequiredHash": "b" * 64
+                }
+            }
+        })
+        client.report_x402_settlement({
+            "auditLogId": "AUDIT-X402-1",
+            "status": "confirmed",
+            "requestFingerprint": "a" * 64,
+            "transactionHash": "0x" + "c" * 64,
+            "attempt": 1,
+            "resourceDelivered": True
+        })
+        self.assertEqual(captured[0]["payload"]["action"]["x402"]["scheme"], "exact")
+        self.assertEqual(captured[1]["url"], "https://api.example/api/agent-gateway/x402/settlements")
+        self.assertEqual(captured[1]["payload"]["agentId"], "MAG-1")
+        self.assertNotIn("paymentSignature", captured[1]["payload"])
+
 
 if __name__ == "__main__":
     unittest.main()

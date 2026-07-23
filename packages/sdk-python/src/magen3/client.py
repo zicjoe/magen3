@@ -72,6 +72,17 @@ class Magen3Client:
         payload.setdefault("walletAddress", wallet)
         return self._request("POST", "/api/agent-gateway/intents", payload)
 
+    def report_x402_settlement(self, update: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(update.get("auditLogId", "")).strip()
+        fingerprint = str(update.get("requestFingerprint", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        if not fingerprint:
+            raise ValueError("requestFingerprint is required")
+        payload = dict(update)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/x402/settlements", payload)
+
     def require_allowed(self, intent: Dict[str, Any]) -> Dict[str, Any]:
         response = self.check_intent(intent)
         result = response.get("result", {})

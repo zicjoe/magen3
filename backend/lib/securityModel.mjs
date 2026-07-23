@@ -72,6 +72,12 @@ export const PROTECTION_MODULES = [
     capabilities: ["Treasury Operations", "Enterprise Automation"],
   },
   {
+    id: "x402-payment-controls",
+    name: "x402 Payment Controls",
+    status: "Foundation Available",
+    capabilities: ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"],
+  },
+  {
     id: "risk-assessment",
     name: "Risk Assessment",
     status: "Live",

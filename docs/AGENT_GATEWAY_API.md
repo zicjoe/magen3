@@ -210,6 +210,64 @@ The active policy controls approved providers, source and destination chains, bl
 
 Magen3 validates submitted route metadata only. It does not certify bridge provider solvency, liquidity, contract safety, destination finality, or cross-chain delivery.
 
+### x402 Payment Controls evaluation
+
+x402 Payment Controls is **Foundation Available**. An x402 payment uses an EVM or Solana payment wallet independently from the connected Casper owner wallet:
+
+```json
+{
+  "executionWalletAddress": "0x2222222222222222222222222222222222222222",
+  "action": {
+    "type": "x402 Payment",
+    "amount": 1,
+    "asset": "USDC",
+    "target": "https://api.example.com/data",
+    "targetType": "x402 Merchant",
+    "x402": {
+      "version": 2,
+      "scheme": "exact",
+      "resourceUrl": "https://api.example.com/data",
+      "method": "GET",
+      "merchantDomain": "api.example.com",
+      "payTo": "0x1111111111111111111111111111111111111111",
+      "asset": "USDC",
+      "network": "eip155:84532",
+      "facilitator": "https://x402.org/facilitator",
+      "amountAtomic": "1000000",
+      "maxTimeoutSeconds": 300,
+      "requirementsReceivedAt": "2026-07-23T12:00:00.000Z",
+      "requestId": "payment-001",
+      "paymentRequiredHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "settlementStatus": "not_submitted",
+      "settlementAttempt": 0
+    }
+  }
+}
+```
+
+`action.target` must equal the canonical `resourceUrl`, and `targetType` must be `x402 Merchant`. The display amount must equal the value derived from `amountAtomic` and the policy's `x402AssetDecimals`. For unsafe HTTP methods, include `requestBodyHash`.
+
+After a real payment attempt, reconcile the Allowed audit record:
+
+```http
+POST /api/agent-gateway/x402/settlements
+x-magen3-agent-key: YOUR_AGENT_API_KEY
+```
+
+```json
+{
+  "agentId": "MAG-AGENT-...",
+  "auditLogId": "AUD-...",
+  "status": "confirmed",
+  "requestFingerprint": "64-character-fingerprint-returned-by-Magen3",
+  "transactionHash": "0x64-character-transaction-hash",
+  "attempt": 1,
+  "resourceDelivered": true
+}
+```
+
+Never send `PAYMENT-SIGNATURE`, private keys, mnemonics, signed payment payloads, wallet approvals, or secret-bearing URLs. See [`X402_PAYMENT_CONTROLS.md`](X402_PAYMENT_CONTROLS.md).
+
 ### Compliance Controls evaluation
 
 Compliance Controls is **Foundation Available**. Actions covered by the active policy may include non-sensitive evidence under `action.compliance`:

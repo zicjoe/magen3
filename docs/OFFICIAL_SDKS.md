@@ -75,6 +75,12 @@ The TypeScript SDK accepts `action.outputAsset` and `action.oracle` with `baseAs
 
 The SDK does not load oracle providers or accept provider credentials; those remain backend operator configuration.
 
+## x402 Payment Controls request and settlement types
+
+The TypeScript SDK exposes `Magen3X402Payment`, `Magen3X402PaymentControlsContext`, and `Magen3X402SettlementUpdate`. Python callers use the same JSON fields as dictionaries. Submit decoded v2 exact-scheme requirements before creating `PAYMENT-SIGNATURE`; use `amountAtomic`, configured asset decimals, `maxTimeoutSeconds` plus `requirementsReceivedAt` or an explicit expiry, request-binding hashes, and a unique request ID.
+
+After real facilitator activity, call `reportX402Settlement()` or `report_x402_settlement()`. Magen3 validates the audit ID, connected-agent credential, request fingerprint, attempt limit, transaction-hash continuity, confirmation, and resource-delivery state. Never send signing material through either SDK. See `X402_PAYMENT_CONTROLS.md`.
+
 ## Compliance Controls request and response types
 
 The TypeScript SDK accepts `action.compliance` with non-sensitive jurisdiction codes, counterparty type, attestation statuses, provider labels, opaque references, timestamps, Travel Rule workflow status/reference/hash, screening status, risk rating, and opaque VASP IDs. The response can include sanitized `complianceControlsContext` and structured Compliance Controls findings. Python callers receive the same JSON structures as dictionaries.

@@ -105,6 +105,7 @@ Legacy agents continue working. When no capability metadata exists, Magen3 maps 
 | Threat Intelligence | **Foundation Available** | Freshness-checked, deterministic exact matching against an operator-configured JSON feed with Observe, Review, Enforce, and fail-availability policy controls. No external provider is bundled. |
 | Oracle Validation | **Foundation Available** | Freshness-checked multi-source price comparison, source quorum, confidence, spread, quote freshness, and execution-price deviation controls. No production provider is bundled. |
 | Bridge Controls | **Foundation Available** | Deterministic provider, chain, asset, destination-format, fee, quote-freshness, output-bound, and confirmation controls for provider-supplied bridge routes. |
+| x402 Payment Controls | **Foundation Available** | Exact-scheme resource, merchant, recipient, network, asset, facilitator, atomic amount, timeout, request-binding, replay, budget, and settlement-reconciliation controls. |
 | Compliance Controls | **Foundation Available** | Policy-driven non-sensitive attestation, Travel Rule evidence, jurisdiction, counterparty, screening, freshness, and exact configured-feed checks. No compliance provider or legal determination is bundled. |
 | Risk Assessment | **Live** | Explainable aggregation of deterministic findings. |
 
@@ -241,6 +242,26 @@ Current deterministic checks include:
 An unknown destination-chain address family is reported as unavailable rather than silently passing. A structurally valid destination does not prove account ownership, bridge safety, destination-chain liveness, or successful delivery.
 
 See [`docs/BRIDGE_CONTROLS.md`](docs/BRIDGE_CONTROLS.md) for the request schema, policy controls, decision behavior, and security boundary.
+
+### x402 Payment Controls foundation
+
+x402 Payment Controls evaluates paid HTTP-resource requirements before an autonomous agent creates `PAYMENT-SIGNATURE`. It is **Foundation Available**, not Live, because Magen3 does not sign payments, operate a facilitator, certify merchants, or independently prove resource delivery.
+
+Current deterministic checks include:
+
+- Explicit policy enablement and exact-scheme support.
+- Canonical resource URL, HTTPS, merchant hostname, intent target, and secret-free URL checks.
+- CAIP-2 network, EVM or Solana recipient structure, asset, facilitator, merchant, and recipient allowlists.
+- Atomic token amount conversion using configured asset decimals and exact consistency with `action.amount`.
+- Per-payment, daily, monthly, hourly, and human-review limits.
+- Expiration from an explicit `validUntil` or x402 v2 `maxTimeoutSeconds` plus a stable `requirementsReceivedAt` timestamp.
+- `PAYMENT-REQUIRED`, unsafe-method request body, unique request ID, and canonical request-fingerprint binding.
+- Audit-backed replay detection and ambiguous-settlement retry prevention.
+- Authenticated settlement reconciliation with monotonic attempt, transaction-hash, confirmation, and resource-delivery state.
+
+Magen3 rejects private keys, mnemonics, wallet approvals, `PAYMENT-SIGNATURE`, signed payment payloads, and secret-bearing resource URLs before audit persistence. A passing decision does not make the paid response trustworthy; agents must still treat paid content as untrusted input.
+
+See [`docs/X402_PAYMENT_CONTROLS.md`](docs/X402_PAYMENT_CONTROLS.md) for the request schema, policy fields, SDK flow, settlement endpoint, replay model, UI placement, and security boundary.
 
 ### Compliance Controls foundation
 

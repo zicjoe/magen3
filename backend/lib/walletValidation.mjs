@@ -1,3 +1,5 @@
+import { classifyX402Recipient } from "./x402PaymentControls.mjs";
+
 const ED25519_PUBLIC_KEY = /^01[0-9a-f]{64}$/i;
 const SECP256K1_PUBLIC_KEY = /^02[0-9a-f]{66}$/i;
 const ACCOUNT_HASH = /^account-hash-[0-9a-f]{64}$/i;
@@ -104,7 +106,13 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
 
   const executionWalletAddress = clean(request.executionWalletAddress || request.walletAddress);
   const ownerWalletAddress = clean(request.agentOwnerWalletAddress || request.ownerWalletAddress);
-  const executionWallet = classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
+  const x402Payment = request.actionType === "x402 Payment";
+  const executionWallet = x402Payment
+    ? classifyX402Recipient(executionWalletAddress, request.x402Network)
+    : classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
+  const executionWalletLabel = x402Payment
+    ? executionWallet.family === "evm" ? "EVM payment address" : executionWallet.family === "solana" ? "Solana payment address" : "network payment address"
+    : executionWallet.label;
   const walletDestination = isWalletDestinationIntent(request);
   const target = clean(request.target);
   const destination = classifyCasperWalletIdentifier(target, { allowAccountHash: true });
@@ -119,7 +127,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   const relaxedMode = policy.riskMode === "Aggressive";
 
   if (!executionWalletAddress) {
-    const message = "Execution wallet public key is missing.";
+    const message = x402Payment ? "x402 payment wallet address is missing." : "Execution wallet public key is missing.";
     checksFailed.push(message);
     scoreDelta += 45;
     hardBlock = true;
@@ -128,11 +136,15 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       severity: "critical",
       rule: "Execution wallet required",
       message,
-      evidence: { executionWalletAddress: "", requiredFormat: "Casper Ed25519 or Secp256k1 public key" },
-      remediation: "Provide the public key of the wallet that would sign the real transaction. Never provide a private key.",
+      evidence: { executionWalletAddress: "", requiredFormat: x402Payment ? "Public payment-wallet address matching the selected CAIP-2 network" : "Casper Ed25519 or Secp256k1 public key" },
+      remediation: x402Payment
+        ? "Provide the public address of the wallet that will create PAYMENT-SIGNATURE. Never provide its private key or signed payment payload."
+        : "Provide the public key of the wallet that would sign the real transaction. Never provide a private key.",
     }));
   } else if (!executionWallet.valid) {
-    const message = "Execution wallet is not a valid Casper signing public key.";
+    const message = x402Payment
+      ? "Execution wallet does not match the selected x402 payment network."
+      : "Execution wallet is not a valid Casper signing public key.";
     checksFailed.push(message);
     scoreDelta += 45;
     hardBlock = true;
@@ -144,18 +156,23 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       evidence: {
         executionWalletAddress,
         detectedFormat: executionWallet.kind,
-        expected: "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
+        expected: x402Payment
+          ? "An EVM address for eip155 networks or a Solana base58 address for solana networks"
+          : "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
+        network: x402Payment ? request.x402Network || "" : "casper",
       },
-      remediation: "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
+      remediation: x402Payment
+        ? "Use the public address of the wallet registered for the selected x402 network."
+        : "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
     }));
   } else {
-    const message = `Execution wallet uses a valid ${executionWallet.label} format.`;
+    const message = `Execution wallet uses a valid ${executionWalletLabel} format.`;
     checksPassed.push(message);
     findings.push(finding({
       status: "pass",
       rule: "Valid execution wallet format",
       message,
-      evidence: { executionWalletAddress, format: executionWallet.kind },
+      evidence: { executionWalletAddress, format: executionWallet.kind, network: x402Payment ? request.x402Network || "" : "casper" },
     }));
   }
 
@@ -307,78 +324,98 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
     }
   }
 
-  if (maxTransaction > 0 && amount > maxTransaction) {
-    const message = `Amount exceeds max transaction limit (${amount} > ${maxTransaction} CSPR)`;
-    checksFailed.push(message);
-    scoreDelta += 30;
-    hardBlock = true;
+  if (x402Payment) {
     findings.push(finding({
-      status: "fail",
-      severity: "high",
+      status: "skipped",
       rule: "Maximum transaction amount",
-      message,
-      evidence: { received: amount, maximum: maxTransaction, asset: request.asset || "CSPR" },
-      remediation: `Reduce the amount to ${maxTransaction} CSPR or less, or update the policy if authorized.`,
+      message: "The generic Casper transaction limit is not applied to x402 payments; x402 per-payment and asset-specific limits are evaluated by x402 Payment Controls.",
+      evidence: { asset: request.asset || request.x402Asset || "", amount },
     }));
-  } else {
-    const message = `Amount within max transaction limit (${amount} ≤ ${maxTransaction} CSPR)`;
-    checksPassed.push(message);
     findings.push(finding({
-      status: "pass",
-      rule: "Maximum transaction amount",
-      message,
-      evidence: { received: amount, maximum: maxTransaction, asset: request.asset || "CSPR" },
-    }));
-  }
-
-  if (dailyLimit > 0 && projectedDailySpend > dailyLimit) {
-    const message = `Daily wallet spending limit would be exceeded (${projectedDailySpend} > ${dailyLimit} CSPR)`;
-    checksFailed.push(message);
-    scoreDelta += 25;
-    hardBlock = true;
-    findings.push(finding({
-      status: "fail",
-      severity: "high",
+      status: "skipped",
       rule: "Daily wallet spending limit",
-      message,
-      evidence: { usedToday: Number(dailyUsed || 0), requested: amount, projected: projectedDailySpend, maximum: dailyLimit },
-      remediation: "Reduce the amount or wait until the daily window resets. Only an authorized policy owner should raise the limit.",
+      message: "The generic Casper daily limit is not applied to x402 payments; x402 authorization-window limits are evaluated separately.",
+      evidence: { asset: request.asset || request.x402Asset || "", amount },
+    }));
+    findings.push(finding({
+      status: "skipped",
+      rule: "Wallet human-review threshold",
+      message: "The generic Casper review threshold is not applied to x402 payments; the x402 review threshold controls payment authorization.",
+      evidence: { asset: request.asset || request.x402Asset || "", amount },
     }));
   } else {
-    const message = `Daily wallet spending remains within policy (${projectedDailySpend} ≤ ${dailyLimit} CSPR)`;
-    checksPassed.push(message);
-    findings.push(finding({
-      status: "pass",
-      rule: "Daily wallet spending limit",
-      message,
-      evidence: { usedToday: Number(dailyUsed || 0), requested: amount, projected: projectedDailySpend, maximum: dailyLimit },
-    }));
-  }
+    if (maxTransaction > 0 && amount > maxTransaction) {
+      const message = `Amount exceeds max transaction limit (${amount} > ${maxTransaction} CSPR)`;
+      checksFailed.push(message);
+      scoreDelta += 30;
+      hardBlock = true;
+      findings.push(finding({
+        status: "fail",
+        severity: "high",
+        rule: "Maximum transaction amount",
+        message,
+        evidence: { received: amount, maximum: maxTransaction, asset: request.asset || "CSPR" },
+        remediation: `Reduce the amount to ${maxTransaction} CSPR or less, or update the policy if authorized.`,
+      }));
+    } else {
+      const message = `Amount within max transaction limit (${amount} ≤ ${maxTransaction} CSPR)`;
+      checksPassed.push(message);
+      findings.push(finding({
+        status: "pass",
+        rule: "Maximum transaction amount",
+        message,
+        evidence: { received: amount, maximum: maxTransaction, asset: request.asset || "CSPR" },
+      }));
+    }
 
-  if (approvalThreshold > 0 && amount > approvalThreshold) {
-    const message = `Amount exceeds the wallet review threshold (${amount} > ${approvalThreshold} CSPR)`;
-    checksFailed.push(message);
-    scoreDelta += relaxedMode ? 10 : 18;
-    needsReview = true;
-    findings.push(finding({
-      status: "warning",
-      severity: "medium",
-      rule: "Wallet human-review threshold",
-      message,
-      evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
-      remediation: `Reduce the amount to ${approvalThreshold} CSPR or less, or obtain authorized human review.`,
-    }));
-  } else {
-    const message = `Amount is below the wallet review threshold (${amount} ≤ ${approvalThreshold} CSPR)`;
-    checksPassed.push(message);
-    findings.push(finding({
-      status: "pass",
-      rule: "Wallet human-review threshold",
-      message,
-      evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
-    }));
-  }
+    if (dailyLimit > 0 && projectedDailySpend > dailyLimit) {
+      const message = `Daily wallet spending limit would be exceeded (${projectedDailySpend} > ${dailyLimit} CSPR)`;
+      checksFailed.push(message);
+      scoreDelta += 25;
+      hardBlock = true;
+      findings.push(finding({
+        status: "fail",
+        severity: "high",
+        rule: "Daily wallet spending limit",
+        message,
+        evidence: { usedToday: Number(dailyUsed || 0), requested: amount, projected: projectedDailySpend, maximum: dailyLimit },
+        remediation: "Reduce the amount or wait until the daily window resets. Only an authorized policy owner should raise the limit.",
+      }));
+    } else {
+      const message = `Daily wallet spending remains within policy (${projectedDailySpend} ≤ ${dailyLimit} CSPR)`;
+      checksPassed.push(message);
+      findings.push(finding({
+        status: "pass",
+        rule: "Daily wallet spending limit",
+        message,
+        evidence: { usedToday: Number(dailyUsed || 0), requested: amount, projected: projectedDailySpend, maximum: dailyLimit },
+      }));
+    }
 
+    if (approvalThreshold > 0 && amount > approvalThreshold) {
+      const message = `Amount exceeds the wallet review threshold (${amount} > ${approvalThreshold} CSPR)`;
+      checksFailed.push(message);
+      scoreDelta += relaxedMode ? 10 : 18;
+      needsReview = true;
+      findings.push(finding({
+        status: "warning",
+        severity: "medium",
+        rule: "Wallet human-review threshold",
+        message,
+        evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
+        remediation: `Reduce the amount to ${approvalThreshold} CSPR or less, or obtain authorized human review.`,
+      }));
+    } else {
+      const message = `Amount is below the wallet review threshold (${amount} ≤ ${approvalThreshold} CSPR)`;
+      checksPassed.push(message);
+      findings.push(finding({
+        status: "pass",
+        rule: "Wallet human-review threshold",
+        message,
+        evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
+      }));
+    }
+  }
   return {
     findings,
     checksPassed,

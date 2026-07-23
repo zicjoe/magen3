@@ -22,7 +22,7 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
@@ -39,6 +39,10 @@ export const api = {
 
   complianceControlsStatus() {
     return request<{ ok: boolean; complianceControls: Record<string, unknown> }>("/api/compliance-controls/status");
+  },
+
+  x402PaymentControlsStatus() {
+    return request<{ ok: boolean; x402PaymentControls: Record<string, unknown> }>("/api/x402-payment-controls/status");
   },
 
   publicConfig() {
@@ -65,6 +69,14 @@ export const api = {
       method: "POST",
       headers: apiKey ? { "x-magen3-agent-key": apiKey } : undefined,
       body: JSON.stringify(intent),
+    });
+  },
+
+  updateX402Settlement(settlement: Record<string, unknown>, apiKey: string) {
+    return request<any>("/api/agent-gateway/x402/settlements", {
+      method: "POST",
+      headers: { "x-magen3-agent-key": apiKey },
+      body: JSON.stringify(settlement),
     });
   },
 

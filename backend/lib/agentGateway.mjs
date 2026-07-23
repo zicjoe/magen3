@@ -27,6 +27,10 @@ const ACTION_ALIASES = {
   bridging: "Bridge",
   "cross-chain transfer": "Bridge",
   "cross chain transfer": "Bridge",
+  x402: "x402 Payment",
+  "x402 payment": "x402 Payment",
+  "http payment": "x402 Payment",
+  "api payment": "x402 Payment",
 };
 
 const TARGET_TYPE_ALIASES = {
@@ -47,6 +51,9 @@ const TARGET_TYPE_ALIASES = {
   "oracle feed": "Oracle Feed",
   bridge: "Bridge Contract",
   "bridge contract": "Bridge Contract",
+  merchant: "x402 Merchant",
+  "x402 merchant": "x402 Merchant",
+  "paid resource": "x402 Merchant",
 };
 
 function cleanString(value, fallback = "") {
@@ -80,6 +87,7 @@ function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
   const alwaysForbidden = new Set([
     "privatekey", "private_key", "secretkey", "secret_key", "mnemonic",
     "signeddeploy", "signedtransaction", "rawsigneddeploy", "rawsignedtransaction",
+    "paymentsignature", "payment_signature", "paymentpayload", "payment_payload", "signedpayment", "signed_payment",
   ]);
   const signedPayloadFields = new Set([
     "seed", "approval", "approvals", "signature", "signatures",
@@ -171,6 +179,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
       ? action.complianceControls
       : body.compliance && typeof body.compliance === "object"
         ? body.compliance
+        : {};
+  const x402 = action.x402 && typeof action.x402 === "object"
+    ? action.x402
+    : action.x402Payment && typeof action.x402Payment === "object"
+      ? action.x402Payment
+      : body.x402 && typeof body.x402 === "object"
+        ? body.x402
         : {};
 
   if (containsForbiddenSigningMaterial(body)) {
@@ -267,6 +282,26 @@ export function normalizeAgentGatewayIntent(body = {}) {
     complianceRiskRating: cleanString(compliance.riskRating || compliance.risk_rating || "", ""),
     complianceOriginatorVaspId: cleanString(compliance.originatorVaspId || compliance.originator_vasp_id || "", ""),
     complianceBeneficiaryVaspId: cleanString(compliance.beneficiaryVaspId || compliance.beneficiary_vasp_id || "", ""),
+    x402Version: cleanString(x402.version ?? x402.x402Version ?? x402.x402_version ?? "", ""),
+    x402Scheme: cleanString(x402.scheme || "", ""),
+    x402ResourceUrl: cleanString(x402.resourceUrl || x402.resource_url || x402.resource?.url || x402.resource || action.resourceUrl || action.resource_url || "", ""),
+    x402HttpMethod: cleanString(x402.method || x402.httpMethod || x402.http_method || action.httpMethod || action.http_method || "GET", "GET"),
+    x402MerchantDomain: cleanString(x402.merchantDomain || x402.merchant_domain || x402.merchant || "", ""),
+    x402PayTo: cleanString(x402.payTo || x402.pay_to || x402.recipient || x402.paymentRequirements?.payTo || x402.payment_requirements?.pay_to || "", ""),
+    x402Asset: cleanString(x402.asset || x402.token || x402.paymentRequirements?.asset || x402.payment_requirements?.asset || action.asset || body.asset || "", ""),
+    x402Network: cleanString(x402.network || x402.networkId || x402.network_id || x402.paymentRequirements?.network || x402.payment_requirements?.network || "", ""),
+    x402Facilitator: cleanString(x402.facilitator || x402.facilitatorUrl || x402.facilitator_url || "", ""),
+    x402AmountAtomic: cleanString(x402.amountAtomic || x402.amount_atomic || x402.amountInAtomicUnits || x402.amount_in_atomic_units || x402.paymentRequirements?.amount || x402.payment_requirements?.amount || "", ""),
+    x402ValidUntil: cleanString(x402.validUntil || x402.valid_until || x402.expiresAt || x402.expires_at || "", ""),
+    x402MaxTimeoutSeconds: optionalNumber(x402.maxTimeoutSeconds ?? x402.max_timeout_seconds ?? x402.paymentRequirements?.maxTimeoutSeconds ?? x402.payment_requirements?.max_timeout_seconds, "x402MaxTimeoutSeconds", { integer: true, min: 1 }),
+    x402RequirementsReceivedAt: cleanString(x402.requirementsReceivedAt || x402.requirements_received_at || x402.paymentRequiredReceivedAt || x402.payment_required_received_at || "", ""),
+    x402RequestId: cleanString(x402.requestId || x402.request_id || x402.nonce || x402.paymentId || x402.payment_id || "", ""),
+    x402RequestBodyHash: cleanString(x402.requestBodyHash || x402.request_body_hash || "", ""),
+    x402PaymentRequiredHash: cleanString(x402.paymentRequiredHash || x402.payment_required_hash || "", ""),
+    x402RequestFingerprint: cleanString(x402.requestFingerprint || x402.request_fingerprint || "", ""),
+    x402SettlementStatus: cleanString(x402.settlementStatus || x402.settlement_status || x402.settlement?.status || "not_submitted", "not_submitted"),
+    x402SettlementAttempt: optionalNumber(x402.settlementAttempt ?? x402.settlement_attempt ?? x402.settlement?.attempt, "x402SettlementAttempt", { integer: true, min: 0 }),
+    x402SettlementTxHash: cleanString(x402.settlementTxHash || x402.settlement_tx_hash || x402.settlement?.transactionHash || x402.settlement?.transaction_hash || "", ""),
     goal: cleanString(body.goal || body.prompt || ""),
     reason: cleanString(body.reason || action.reason || ""),
     receivedAt: new Date().toISOString(),

@@ -259,3 +259,80 @@ test("preserves non-sensitive Compliance Controls evidence in intent payloads", 
   assert.equal(captured.action.compliance.screening.status, "Clear");
   assert.equal(captured.action.compliance.originatorAttestation.reference, "ORIGINATOR-001");
 });
+
+test("preserves x402 authorization metadata and reports settlement without signed payment material", async () => {
+  const calls = [];
+  const fingerprint = "a".repeat(64);
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url, init) => {
+      calls.push({ url, payload: JSON.parse(init.body) });
+      if (String(url).endsWith("/api/agent-gateway/x402/settlements")) {
+        return new Response(JSON.stringify({ ok: true, settlement: { status: "confirmed" } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: {
+          decision: "Allowed",
+          risk: "Low",
+          riskScore: 8,
+          reason: "x402 payment authorized",
+          recommendedAction: "create PAYMENT-SIGNATURE outside Magen3",
+          x402PaymentControlsContext: { requestFingerprint: fingerprint },
+        },
+        gatewayRequest: {},
+        auditLog: { id: "AUDIT-X402-1" },
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "0x0000000000000000000000000000000000000002",
+    action: {
+      type: "x402 Payment",
+      amount: 1,
+      asset: "USDC",
+      target: "https://api.example.com/data",
+      targetType: "x402 Merchant",
+      x402: {
+        version: 2,
+        scheme: "exact",
+        resourceUrl: "https://api.example.com/data",
+        method: "GET",
+        merchantDomain: "api.example.com",
+        payTo: "0x1111111111111111111111111111111111111111",
+        asset: "USDC",
+        network: "eip155:84532",
+        facilitator: "https://x402.org/facilitator",
+        amountAtomic: "1000000",
+        validUntil: "2026-07-23T12:00:00.000Z",
+        requestId: "request-001",
+        paymentRequiredHash: "b".repeat(64),
+        settlementStatus: "not_submitted",
+        settlementAttempt: 0,
+      },
+    },
+  });
+
+  await client.reportX402Settlement({
+    auditLogId: "AUDIT-X402-1",
+    status: "confirmed",
+    requestFingerprint: fingerprint,
+    transactionHash: `0x${"c".repeat(64)}`,
+    attempt: 1,
+    resourceDelivered: true,
+  });
+
+  assert.equal(calls[0].payload.action.x402.scheme, "exact");
+  assert.equal(calls[0].payload.action.x402.network, "eip155:84532");
+  assert.equal(calls[0].payload.action.x402.amountAtomic, "1000000");
+  assert.equal(calls[1].url, "https://api.example/api/agent-gateway/x402/settlements");
+  assert.equal(calls[1].payload.agentId, "MAG-1");
+  assert.equal(calls[1].payload.requestFingerprint, fingerprint);
+  assert.equal(calls[1].payload.resourceDelivered, true);
+  assert.equal("paymentSignature" in calls[1].payload, false);
+});

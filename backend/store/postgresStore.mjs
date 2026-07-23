@@ -11,6 +11,7 @@ import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
+import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 
 function toDate(value) {
@@ -177,6 +178,19 @@ function updatePipelineStage(stages, id, status, timestamp = new Date().toISOStr
   const found = source.some((stage) => stage.id === id);
   const next = source.map((stage) => stage.id === id ? { ...stage, status, timestamp, ...(label ? { label } : {}) } : stage);
   return found ? next : [...next, { id, label: label || id, status, timestamp }];
+}
+
+function appendX402PipelineStages(stages, decision, timestamp = new Date().toISOString()) {
+  const source = Array.isArray(stages) ? stages : [];
+  const without = source.filter((stage) => !["x402-payment-authorized", "x402-settlement", "x402-resource-delivery"].includes(stage.id));
+  const authorizedStatus = decision === "Allowed" ? "completed" : decision === "Blocked" ? "failed" : "warning";
+  const postDecisionStatus = decision === "Allowed" ? "pending" : "skipped";
+  return [
+    ...without,
+    { id: "x402-payment-authorized", label: decision === "Allowed" ? "x402 payment authorized" : `x402 payment ${decision.toLowerCase()}`, status: authorizedStatus, timestamp },
+    { id: "x402-settlement", label: "x402 settlement", status: postDecisionStatus, timestamp: "" },
+    { id: "x402-resource-delivery", label: "Paid resource delivery", status: postDecisionStatus, timestamp: "" },
+  ];
 }
 
 function deriveDashboardStats(policies, auditLogs) {
@@ -653,6 +667,26 @@ export async function createPostgresStore() {
         complianceRiskRating: intent.complianceRiskRating,
         complianceOriginatorVaspId: intent.complianceOriginatorVaspId,
         complianceBeneficiaryVaspId: intent.complianceBeneficiaryVaspId,
+        x402Version: intent.x402Version,
+        x402Scheme: intent.x402Scheme,
+        x402ResourceUrl: intent.x402ResourceUrl,
+        x402HttpMethod: intent.x402HttpMethod,
+        x402MerchantDomain: intent.x402MerchantDomain,
+        x402PayTo: intent.x402PayTo,
+        x402Asset: intent.x402Asset,
+        x402Network: intent.x402Network,
+        x402Facilitator: intent.x402Facilitator,
+        x402AmountAtomic: intent.x402AmountAtomic,
+        x402ValidUntil: intent.x402ValidUntil,
+        x402MaxTimeoutSeconds: intent.x402MaxTimeoutSeconds,
+        x402RequirementsReceivedAt: intent.x402RequirementsReceivedAt,
+        x402RequestId: intent.x402RequestId,
+        x402RequestBodyHash: intent.x402RequestBodyHash,
+        x402PaymentRequiredHash: intent.x402PaymentRequiredHash,
+        x402RequestFingerprint: intent.x402RequestFingerprint,
+        x402SettlementStatus: intent.x402SettlementStatus,
+        x402SettlementAttempt: intent.x402SettlementAttempt,
+        x402SettlementTxHash: intent.x402SettlementTxHash,
         walletAddress: executionWalletAddress,
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
@@ -663,6 +697,7 @@ export async function createPostgresStore() {
         getComplianceControlsSnapshot(),
       ]);
       const result = evaluatePolicy({ request, agents, policies, auditLogs, threatIntelligence, oracleValidation, complianceControls });
+      const authorizedAmount = result.x402PaymentControlsContext?.amount ?? intent.amount;
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
@@ -675,7 +710,7 @@ export async function createPostgresStore() {
         agentId: intent.agentId,
         agentName: agent?.name || intent.agentId,
         action: intent.actionType,
-        amount: intent.amount,
+        amount: authorizedAmount,
         target: intent.target,
         targetType: intent.targetType,
         decision: result.decision,
@@ -699,7 +734,7 @@ export async function createPostgresStore() {
           reason: intent.reason,
           action: {
             type: intent.actionType,
-            amount: intent.amount,
+            amount: authorizedAmount,
             asset: intent.asset,
             outputAsset: intent.outputAsset,
             oracle: {
@@ -774,9 +809,39 @@ export async function createPostgresStore() {
               originatorVaspId: intent.complianceOriginatorVaspId,
               beneficiaryVaspId: intent.complianceBeneficiaryVaspId,
             },
+            x402: {
+              version: intent.x402Version,
+              scheme: intent.x402Scheme,
+              resourceUrl: intent.x402ResourceUrl,
+              method: intent.x402HttpMethod,
+              merchantDomain: intent.x402MerchantDomain,
+              payTo: intent.x402PayTo,
+              asset: intent.x402Asset,
+              network: intent.x402Network,
+              facilitator: intent.x402Facilitator,
+              amountAtomic: intent.x402AmountAtomic,
+              validUntil: intent.x402ValidUntil,
+              maxTimeoutSeconds: intent.x402MaxTimeoutSeconds,
+              requirementsReceivedAt: intent.x402RequirementsReceivedAt,
+              requestId: intent.x402RequestId,
+              requestBodyHash: intent.x402RequestBodyHash,
+              paymentRequiredHash: intent.x402PaymentRequiredHash,
+              requestFingerprint: result.x402PaymentControlsContext?.requestFingerprint || intent.x402RequestFingerprint,
+              clientRequestFingerprint: intent.x402RequestFingerprint,
+              settlementStatus: intent.x402SettlementStatus || "not_submitted",
+              settlementAttempt: intent.x402SettlementAttempt || 0,
+              settlementTxHash: intent.x402SettlementTxHash || "",
+              settlement: {
+                status: intent.x402SettlementStatus || "not_submitted",
+                transactionHash: intent.x402SettlementTxHash || "",
+                attempt: intent.x402SettlementAttempt || 0,
+                resourceDelivered: false,
+                updatedAt: "",
+              },
+            },
           },
         },
-        pipelineStages: updatePipelineStage(result.pipelineStages, "audit-stored", "completed", auditTimestamp.toISOString(), "Audit stored"),
+        pipelineStages: intent.actionType === "x402 Payment" ? appendX402PipelineStages(updatePipelineStage(result.pipelineStages, "audit-stored", "completed", auditTimestamp.toISOString(), "Audit stored"), result.decision, auditTimestamp.toISOString()) : updatePipelineStage(result.pipelineStages, "audit-stored", "completed", auditTimestamp.toISOString(), "Audit stored"),
         moduleFindings: result.moduleFindings || [],
         primaryReason: result.primaryReason || result.reason,
         triggeredRule: result.triggeredRule || "",
@@ -809,7 +874,7 @@ export async function createPostgresStore() {
         agentOwnerWalletAddress: walletAddress,
         executionWalletAddress,
         actionType: intent.actionType,
-        amount: intent.amount,
+        amount: authorizedAmount,
         asset: intent.asset,
         target: intent.target,
         targetType: intent.targetType,
@@ -885,6 +950,26 @@ export async function createPostgresStore() {
         bridgeQuoteExpiresAt: intent.bridgeQuoteExpiresAt,
         bridgeSourceConfirmations: intent.bridgeSourceConfirmations,
         bridgeDestinationConfirmations: intent.bridgeDestinationConfirmations,
+        x402Version: intent.x402Version,
+        x402Scheme: intent.x402Scheme,
+        x402ResourceUrl: intent.x402ResourceUrl,
+        x402HttpMethod: intent.x402HttpMethod,
+        x402MerchantDomain: intent.x402MerchantDomain,
+        x402PayTo: intent.x402PayTo,
+        x402Asset: intent.x402Asset,
+        x402Network: intent.x402Network,
+        x402Facilitator: intent.x402Facilitator,
+        x402AmountAtomic: intent.x402AmountAtomic,
+        x402ValidUntil: intent.x402ValidUntil,
+        x402MaxTimeoutSeconds: intent.x402MaxTimeoutSeconds,
+        x402RequirementsReceivedAt: intent.x402RequirementsReceivedAt,
+        x402RequestId: intent.x402RequestId,
+        x402RequestBodyHash: intent.x402RequestBodyHash,
+        x402PaymentRequiredHash: intent.x402PaymentRequiredHash,
+        x402RequestFingerprint: result.x402PaymentControlsContext?.requestFingerprint || intent.x402RequestFingerprint,
+        x402SettlementStatus: intent.x402SettlementStatus,
+        x402SettlementAttempt: intent.x402SettlementAttempt,
+        x402SettlementTxHash: intent.x402SettlementTxHash,
         goal: gatewayRow.goal,
         reason: gatewayRow.reason,
         decision: gatewayRow.decision,
@@ -974,6 +1059,87 @@ export async function createPostgresStore() {
       return { auditLog: normalizeAuditLog(auditRow), executionTxHash, confirmed: true };
     },
 
+
+    async updateX402Settlement(id, body, context = {}) {
+      let update = normalizeX402SettlementUpdate(body);
+      const agentId = String(body?.agentId || "").trim();
+      if (!agentId) {
+        const err = new Error("agentId is required for x402 settlement updates");
+        err.status = 400;
+        throw err;
+      }
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      const agentRecord = agentRows[0];
+      if (!agentRecord || agentRecord.status === "Revoked" || !secretMatches(context.apiKey, agentRecord.apiKeyHash)) {
+        const err = new Error("Agent Gateway credentials are invalid for this settlement update");
+        err.status = agentRecord ? 401 : 404;
+        throw err;
+      }
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current || current.agentId !== agentRecord.id) {
+        const err = new Error("x402 audit log not found for this connected agent");
+        err.status = 404;
+        throw err;
+      }
+      if (current.action !== "x402 Payment" || current.decision !== "Allowed") {
+        const err = new Error("Settlement can only be reported for an Allowed x402 Payment decision");
+        err.status = 400;
+        throw err;
+      }
+      const currentIntent = current.originalIntent && typeof current.originalIntent === "object" ? current.originalIntent : {};
+      const currentAction = currentIntent.action && typeof currentIntent.action === "object" ? currentIntent.action : {};
+      const currentX402 = currentAction.x402 && typeof currentAction.x402 === "object" ? currentAction.x402 : {};
+      const expectedFingerprint = String(currentX402.requestFingerprint || "").toLowerCase();
+      if (!expectedFingerprint || expectedFingerprint !== update.requestFingerprint.toLowerCase()) {
+        const err = new Error("Settlement requestFingerprint does not match the authorized x402 payment");
+        err.status = 400;
+        throw err;
+      }
+      const policyRows = await db.select().from(policiesTable).where(eq(policiesTable.agentId, agentRecord.id));
+      const activePolicy = policyRows.find((item) => item.status === "Active");
+      const maxAttempts = Math.max(1, Number(activePolicy?.structuredRules?.x402MaxSettlementAttempts || 1));
+      if (update.attempt > maxAttempts) {
+        const err = new Error(`Settlement attempt ${update.attempt} exceeds the policy maximum of ${maxAttempts}`);
+        err.status = 400;
+        throw err;
+      }
+      const previous = currentX402.settlement && typeof currentX402.settlement === "object" ? currentX402.settlement : {};
+      update = mergeX402SettlementTransition(previous, update);
+      const settlementStageStatus = update.status === "confirmed" ? "completed" : update.status === "failed" ? "failed" : update.status === "uncertain" ? "warning" : "pending";
+      const deliveryStageStatus = update.resourceDelivered ? "completed" : update.status === "failed" ? "failed" : "pending";
+      const nextIntent = {
+        ...currentIntent,
+        action: {
+          ...currentAction,
+          x402: {
+            ...currentX402,
+            settlementStatus: update.status,
+            settlementAttempt: update.attempt,
+            settlementTxHash: update.transactionHash,
+            settlement: update,
+          },
+        },
+      };
+      const [auditRow] = await db.update(auditLogsTable)
+        .set({
+          originalIntent: nextIntent,
+          executionStatus: `x402_${update.status}`,
+          executionTxHash: update.transactionHash || current.executionTxHash || "",
+          executionNote: update.note || `x402 settlement reported as ${update.status}.`,
+          executionUpdatedAt: new Date(update.updatedAt),
+          pipelineStages: updatePipelineStage(
+            updatePipelineStage(current.pipelineStages, "x402-settlement", settlementStageStatus, update.updatedAt, `x402 settlement: ${update.status}`),
+            "x402-resource-delivery",
+            deliveryStageStatus,
+            update.resourceDelivered ? update.updatedAt : "",
+            update.resourceDelivered ? "Paid resource delivered" : "Paid resource delivery"
+          ),
+        })
+        .where(eq(auditLogsTable.id, id))
+        .returning();
+      return { ok: true, auditLog: normalizeAuditLog(auditRow), settlement: update };
+    },
 
     async recordAuditLog(id) {
       const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));

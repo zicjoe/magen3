@@ -123,3 +123,52 @@ The response may include `bridgeControlsContext` and structured Bridge Controls 
 ## Compliance Controls evidence
 
 TypeScript integrations may provide `action.compliance` with non-sensitive status, provider, opaque reference, timestamp, jurisdiction, hash, risk-rating, and VASP-ID fields. The response may include sanitized `complianceControlsContext` and structured findings. Raw personal identity data is rejected. Compliance Controls is Foundation Available and does not make a legal determination.
+
+## x402 Payment Controls
+
+Authorize the decoded payment requirements before creating `PAYMENT-SIGNATURE`:
+
+```ts
+const requirementsReceivedAt = new Date().toISOString();
+const decision = await magen3.checkIntent({
+  executionWalletAddress: "0x2222222222222222222222222222222222222222",
+  action: {
+    type: "x402 Payment",
+    amount: 1,
+    asset: "USDC",
+    target: "https://api.example.com/data",
+    targetType: "x402 Merchant",
+    x402: {
+      version: 2,
+      scheme: "exact",
+      resourceUrl: "https://api.example.com/data",
+      method: "GET",
+      merchantDomain: "api.example.com",
+      payTo: "0x1111111111111111111111111111111111111111",
+      asset: "USDC",
+      network: "eip155:84532",
+      facilitator: "https://x402.org/facilitator",
+      amountAtomic: "1000000",
+      maxTimeoutSeconds: 300,
+      requirementsReceivedAt,
+      requestId: `payment-${Date.now()}`,
+      paymentRequiredHash: "b".repeat(64),
+    },
+  },
+});
+```
+
+Create and submit the real payment only when `decision.result.decision === "Allowed"`. Then reconcile it:
+
+```ts
+await magen3.reportX402Settlement({
+  auditLogId: String(decision.auditLog.id),
+  status: "confirmed",
+  requestFingerprint: decision.result.x402PaymentControlsContext!.requestFingerprint!,
+  transactionHash: "0x...",
+  attempt: 1,
+  resourceDelivered: true,
+});
+```
+
+The SDK never accepts or transmits `PAYMENT-SIGNATURE` through the intent API. x402 Payment Controls is Foundation Available and does not certify merchant content or facilitator availability.

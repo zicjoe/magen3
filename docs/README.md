@@ -11,6 +11,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
 - `ORACLE_VALIDATION.md` — price-intent fields, multi-source feed schema, policy limits, freshness, operational status, and security boundary.
 - `BRIDGE_CONTROLS.md` — route metadata, provider and chain policy, fees, quote freshness, destination formats, and confirmation boundaries.
+- `X402_PAYMENT_CONTROLS.md` — x402 v2 intent schema, policy limits, request binding, replay prevention, settlement reconciliation, SDK flow, and security boundary.
 - `COMPLIANCE_CONTROLS.md` — non-sensitive evidence schema, policy controls, optional exact-match feed, privacy boundary, and deployment guidance.
 
 ## Developer integrations

@@ -98,6 +98,7 @@ type ActionType =
   | "RWA Proof Update"
   | "Oracle Data Update"
   | "Bridge"
+  | "x402 Payment"
   | "Policy Activation";
 type TargetType =
   | "Trusted Contract"
@@ -106,7 +107,8 @@ type TargetType =
   | "DAO Treasury"
   | "RWA Registry"
   | "Oracle Feed"
-  | "Bridge Contract";
+  | "Bridge Contract"
+  | "x402 Merchant";
 
 interface Agent {
   id: string;
@@ -243,6 +245,18 @@ interface ComplianceControlsStatus {
   error?: string;
 }
 
+interface X402PaymentControlsStatus {
+  status?: "foundation-available" | string;
+  protocolVersion?: number;
+  supportedVersions?: number[];
+  supportedSchemes?: string[];
+  supportedRecipientFamilies?: string[];
+  requestBinding?: boolean;
+  replayProtection?: boolean;
+  settlementReporting?: boolean;
+  securityBoundary?: string;
+}
+
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -328,6 +342,35 @@ interface DecisionResult {
     checkedEntities?: Array<Record<string, unknown>>;
     matchedIndicators?: Array<Record<string, unknown>>;
     matchedJurisdictions?: Array<Record<string, unknown>>;
+  };
+  x402PaymentControlsContext?: {
+    status?: string;
+    mode?: string;
+    unavailableAction?: string;
+    version?: string | number;
+    scheme?: string;
+    method?: string;
+    resourceUrl?: string;
+    merchantDomain?: string;
+    payTo?: string;
+    network?: string;
+    asset?: string;
+    facilitator?: string;
+    amountAtomic?: string;
+    amount?: number | null;
+    validUntil?: string;
+    requestId?: string;
+    requestBodyHash?: string;
+    paymentRequiredHash?: string;
+    requestFingerprint?: string;
+    clientFingerprint?: string;
+    recipientFamily?: string;
+    settlementStatus?: string;
+    settlementAttempt?: number;
+    hourlyCount?: number;
+    dailySpend?: number;
+    monthlySpend?: number;
+    previousFingerprintCount?: number;
   };
   bridgeControlsContext?: {
     status?: string;
@@ -455,7 +498,33 @@ function decisionProofStatus(log: AuditLog) {
   return casperProofStatus(log.txHash);
 }
 
+function auditAction(log: AuditLog) {
+  const action = log.originalIntent?.action;
+  return action && typeof action === "object" && !Array.isArray(action)
+    ? action as Record<string, unknown>
+    : {};
+}
+
+function auditAsset(log: AuditLog) {
+  const asset = auditAction(log).asset;
+  return typeof asset === "string" && asset.trim() ? asset.trim().toUpperCase() : "CSPR";
+}
+
+function auditX402Settlement(log: AuditLog) {
+  const x402 = auditAction(log).x402;
+  if (!x402 || typeof x402 !== "object" || Array.isArray(x402)) return null;
+  const record = x402 as Record<string, unknown>;
+  const settlement = record.settlement;
+  return settlement && typeof settlement === "object" && !Array.isArray(settlement)
+    ? settlement as Record<string, unknown>
+    : record;
+}
+
 function executionProofStatus(status = "", txHash = "") {
+  if (status === "x402_confirmed") return { label: "Payment confirmed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (status === "x402_submitted" || status === "x402_pending") return { label: "Settlement pending", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (status === "x402_uncertain") return { label: "Settlement uncertain", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (status === "x402_failed") return { label: "Settlement failed", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
   if (isRealCasperDeployHash(txHash)) return { label: "Executed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
   if (status === "approved_pending_signature") return { label: "Waiting for signature", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
   if (status === "blocked_not_submitted") return { label: "Blocked before execution", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
@@ -465,6 +534,21 @@ function executionProofStatus(status = "", txHash = "") {
 }
 
 function executionProofExplanation(log: AuditLog) {
+  if (log.action === "x402 Payment") {
+    const settlement = auditX402Settlement(log);
+    const resourceDelivered = settlement?.resourceDelivered === true;
+    if (log.executionStatus === "x402_confirmed") {
+      return resourceDelivered
+        ? "The external x402 adapter reported confirmed settlement and successful paid-resource delivery for this authorized request fingerprint."
+        : "The external x402 adapter reported confirmed settlement. Paid-resource delivery has not yet been reported.";
+    }
+    if (log.executionStatus === "x402_uncertain") return "Settlement outcome is uncertain. Magen3 prevents an automatic duplicate payment until the existing attempt is reconciled.";
+    if (log.executionStatus === "x402_failed") return "The external adapter reported a failed settlement. Any retry must follow the active attempt limit and use the authorized request fingerprint.";
+    if (log.executionStatus === "x402_submitted" || log.executionStatus === "x402_pending") return "The payment has been submitted but is not confirmed. Do not create another payment authorization while reconciliation is pending.";
+    if (log.decision === "Blocked") return "No payment was authorized because Magen3 blocked the x402 request before PAYMENT-SIGNATURE creation.";
+    if (log.decision === "Review Required") return "No payment should be signed until an authorized reviewer resolves the x402 policy finding.";
+    return "Magen3 authorized the payment requirements. The external adapter must sign, settle, and report the real settlement state separately.";
+  }
   if (isRealCasperDeployHash(log.executionTxHash || "")) {
     return "The approved action was signed and submitted. The execution deploy hash is the real Casper transaction footprint.";
   }
@@ -530,6 +614,24 @@ function deriveDashboardStats(auditLogs: AuditLog[], policies: Policy[]): Dashbo
 function clampPercentage(value: unknown, fallback = 70) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(100, Math.max(0, Math.round(parsed))) : fallback;
+}
+
+function parseAssetDecimals(value: string) {
+  return Object.fromEntries(value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(/[=:]/, 2).map((part) => part.trim()))
+    .filter(([asset, decimals]) => Boolean(asset) && Number.isInteger(Number(decimals)) && Number(decimals) >= 0 && Number(decimals) <= 30)
+    .map(([asset, decimals]) => [asset.toUpperCase(), Number(decimals)]));
+}
+
+function stringifyAssetDecimals(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "USDC=6";
+  const lines = Object.entries(value as Record<string, unknown>)
+    .filter(([, decimals]) => Number.isInteger(Number(decimals)) && Number(decimals) >= 0 && Number(decimals) <= 30)
+    .map(([asset, decimals]) => `${asset.toUpperCase()}=${Number(decimals)}`);
+  return lines.length ? lines.join("\n") : "USDC=6";
 }
 
 // ──────────────────────────────────────────────────────────
@@ -1523,6 +1625,7 @@ function DashboardPage({
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
+  x402PaymentControlsStatus,
   auditLogs,
   policies,
   agents,
@@ -1536,6 +1639,7 @@ function DashboardPage({
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
+  x402PaymentControlsStatus: X402PaymentControlsStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
   agents: Agent[];
@@ -1591,6 +1695,8 @@ function DashboardPage({
     : oracleValidationStatus.status === "stale"
       ? "Stale"
       : "Unavailable";
+  const x402FoundationAvailable = x402PaymentControlsStatus.status === "foundation-available";
+  const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
   const complianceFeedOperational = complianceControlsStatus.status === "available";
   const complianceFeedLabel = complianceFeedOperational
     ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
@@ -1607,6 +1713,7 @@ function DashboardPage({
     { label: "Threat feed", value: threatFeedLabel, done: threatFeedOperational },
     { label: "Oracle feed", value: oracleFeedLabel, done: oracleFeedOperational },
     { label: "Compliance feed", value: complianceFeedLabel, done: complianceFeedOperational },
+    { label: "x402 controls", value: x402PaymentsToday.length ? `${x402PaymentsToday.length} today` : "Ready", done: x402FoundationAvailable },
   ];
 
   return (
@@ -1715,7 +1822,7 @@ function DashboardPage({
                     {log.agentName} · {log.action}
                   </div>
                   <div className="text-xs text-[#94A3B8]">
-                    {log.amount} CSPR · {truncate(log.target)}
+                    {log.amount} {auditAsset(log)} · {truncate(log.target)}
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
@@ -1946,6 +2053,8 @@ function AgentRegistrationWizard({
 }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const [settlementResult, setSettlementResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
   const [copied, setCopied] = useState("");
@@ -2127,6 +2236,32 @@ function AgentRegistrationWizard({
           bridgeRequireQuoteExpiry: typeof sourceRules.bridgeRequireQuoteExpiry === "boolean" ? sourceRules.bridgeRequireQuoteExpiry : true,
           bridgeMinSourceConfirmations: typeof sourceRules.bridgeMinSourceConfirmations === "number" ? sourceRules.bridgeMinSourceConfirmations : 2,
           bridgeMinDestinationConfirmations: typeof sourceRules.bridgeMinDestinationConfirmations === "number" ? sourceRules.bridgeMinDestinationConfirmations : 12,
+          x402ControlsEnabled: typeof sourceRules.x402ControlsEnabled === "boolean" ? sourceRules.x402ControlsEnabled : capabilities.some((item) => ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"].includes(item)),
+          x402ControlMode: typeof sourceRules.x402ControlMode === "string" ? sourceRules.x402ControlMode : "Review",
+          x402UnavailableAction: typeof sourceRules.x402UnavailableAction === "string" ? sourceRules.x402UnavailableAction : "Review",
+          x402AllowedVersions: Array.isArray(sourceRules.x402AllowedVersions) ? sourceRules.x402AllowedVersions : ["2"],
+          x402AllowedSchemes: Array.isArray(sourceRules.x402AllowedSchemes) ? sourceRules.x402AllowedSchemes : ["exact"],
+          x402AllowedMethods: Array.isArray(sourceRules.x402AllowedMethods) ? sourceRules.x402AllowedMethods : ["GET", "HEAD", "POST"],
+          x402AllowedNetworks: Array.isArray(sourceRules.x402AllowedNetworks) ? sourceRules.x402AllowedNetworks : ["eip155:84532"],
+          x402AllowedAssets: Array.isArray(sourceRules.x402AllowedAssets) ? sourceRules.x402AllowedAssets : ["USDC"],
+          x402AssetDecimals: sourceRules.x402AssetDecimals && typeof sourceRules.x402AssetDecimals === "object" && !Array.isArray(sourceRules.x402AssetDecimals) ? sourceRules.x402AssetDecimals : { USDC: 6 },
+          x402AllowedFacilitators: Array.isArray(sourceRules.x402AllowedFacilitators) ? sourceRules.x402AllowedFacilitators : ["https://x402.org/facilitator"],
+          x402AllowedMerchants: Array.isArray(sourceRules.x402AllowedMerchants) ? sourceRules.x402AllowedMerchants : ["api.example.com"],
+          x402BlockedMerchants: Array.isArray(sourceRules.x402BlockedMerchants) ? sourceRules.x402BlockedMerchants : [],
+          x402AllowedRecipients: Array.isArray(sourceRules.x402AllowedRecipients) ? sourceRules.x402AllowedRecipients : ["0x1111111111111111111111111111111111111111"],
+          x402MaxPayment: typeof sourceRules.x402MaxPayment === "number" ? sourceRules.x402MaxPayment : 5,
+          x402DailyLimit: typeof sourceRules.x402DailyLimit === "number" ? sourceRules.x402DailyLimit : 25,
+          x402MonthlyLimit: typeof sourceRules.x402MonthlyLimit === "number" ? sourceRules.x402MonthlyLimit : 250,
+          x402ReviewThreshold: typeof sourceRules.x402ReviewThreshold === "number" ? sourceRules.x402ReviewThreshold : 3,
+          x402MaxPaymentsPerHour: typeof sourceRules.x402MaxPaymentsPerHour === "number" ? sourceRules.x402MaxPaymentsPerHour : 20,
+          x402MaxAuthorizationLifetimeSeconds: typeof sourceRules.x402MaxAuthorizationLifetimeSeconds === "number" ? sourceRules.x402MaxAuthorizationLifetimeSeconds : 600,
+          x402RequireHttps: typeof sourceRules.x402RequireHttps === "boolean" ? sourceRules.x402RequireHttps : true,
+          x402RequirePaymentRequiredHash: typeof sourceRules.x402RequirePaymentRequiredHash === "boolean" ? sourceRules.x402RequirePaymentRequiredHash : true,
+          x402RequireBodyHashForUnsafeMethods: typeof sourceRules.x402RequireBodyHashForUnsafeMethods === "boolean" ? sourceRules.x402RequireBodyHashForUnsafeMethods : true,
+          x402RequireRequestId: typeof sourceRules.x402RequireRequestId === "boolean" ? sourceRules.x402RequireRequestId : true,
+          x402RequireClientFingerprint: typeof sourceRules.x402RequireClientFingerprint === "boolean" ? sourceRules.x402RequireClientFingerprint : false,
+          x402PreventAmbiguousRetry: typeof sourceRules.x402PreventAmbiguousRetry === "boolean" ? sourceRules.x402PreventAmbiguousRetry : true,
+          x402MaxSettlementAttempts: typeof sourceRules.x402MaxSettlementAttempts === "number" ? sourceRules.x402MaxSettlementAttempts : 1,
           complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
           complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
           complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
@@ -2144,7 +2279,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -3096,7 +3231,7 @@ ${snippet}
                                 <span className="text-xs text-[#94A3B8]">{fmtTs(log.timestamp)}</span>
                               </div>
                               <div className="mt-2 text-sm font-semibold text-[#F8FAFC]">
-                                {log.action} · {log.amount} CSPR
+                                {log.action} · {log.amount} {auditAsset(log)}
                               </div>
                               <div className="mt-1 break-all text-xs text-[#94A3B8]">Target: {log.target}</div>
                               <div className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{log.reason}</div>
@@ -3202,6 +3337,55 @@ ${snippet}
 // ──────────────────────────────────────────────────────────
 
 
+function X402PolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">x402 Payment Controls Foundation</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind an HTTP 402 payment to the exact resource, merchant, recipient, network, token, amount, expiry, and request fingerprint before PAYMENT-SIGNATURE creation. Settlement is reconciled separately after payment.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.x402ControlsEnabled ?? "")} onChange={(value) => onChange({ x402ControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.x402ControlMode ?? "")} onChange={(value) => onChange({ x402ControlMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Metadata Unavailable" value={String(values.x402UnavailableAction ?? "")} onChange={(value) => onChange({ x402UnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <TextareaField label="Allowed Protocol Versions" value={String(values.x402AllowedVersions ?? "")} onChange={(value) => onChange({ x402AllowedVersions: value })} />
+        <TextareaField label="Allowed Schemes" value={String(values.x402AllowedSchemes ?? "")} onChange={(value) => onChange({ x402AllowedSchemes: value })} />
+        <TextareaField label="Allowed HTTP Methods" value={String(values.x402AllowedMethods ?? "")} onChange={(value) => onChange({ x402AllowedMethods: value })} />
+        <TextareaField label="Approved Merchant Domains" value={String(values.x402AllowedMerchants ?? "")} onChange={(value) => onChange({ x402AllowedMerchants: value })} />
+        <TextareaField label="Blocked Merchant Domains" value={String(values.x402BlockedMerchants ?? "")} onChange={(value) => onChange({ x402BlockedMerchants: value })} />
+        <TextareaField label="Approved Recipients" value={String(values.x402AllowedRecipients ?? "")} onChange={(value) => onChange({ x402AllowedRecipients: value })} />
+        <TextareaField label="Approved CAIP-2 Networks" value={String(values.x402AllowedNetworks ?? "")} onChange={(value) => onChange({ x402AllowedNetworks: value })} />
+        <TextareaField label="Approved Payment Assets" value={String(values.x402AllowedAssets ?? "")} onChange={(value) => onChange({ x402AllowedAssets: value })} />
+        <TextareaField label="Asset Decimals (ASSET=decimals)" value={String(values.x402AssetDecimals ?? "")} onChange={(value) => onChange({ x402AssetDecimals: value })} />
+        <TextareaField label="Approved Facilitators" value={String(values.x402AllowedFacilitators ?? "")} onChange={(value) => onChange({ x402AllowedFacilitators: value })} />
+        <InputField label="Maximum Payment" value={String(values.x402MaxPayment ?? "")} onChange={(value) => onChange({ x402MaxPayment: value })} type="number" />
+        <InputField label="Daily x402 Limit" value={String(values.x402DailyLimit ?? "")} onChange={(value) => onChange({ x402DailyLimit: value })} type="number" />
+        <InputField label="Monthly x402 Limit" value={String(values.x402MonthlyLimit ?? "")} onChange={(value) => onChange({ x402MonthlyLimit: value })} type="number" />
+        <InputField label="Review Threshold" value={String(values.x402ReviewThreshold ?? "")} onChange={(value) => onChange({ x402ReviewThreshold: value })} type="number" />
+        <InputField label="Maximum Payments / Hour" value={String(values.x402MaxPaymentsPerHour ?? "")} onChange={(value) => onChange({ x402MaxPaymentsPerHour: value })} type="number" />
+        <InputField label="Max Authorization Lifetime (sec)" value={String(values.x402MaxAuthorizationLifetimeSeconds ?? "")} onChange={(value) => onChange({ x402MaxAuthorizationLifetimeSeconds: value })} type="number" />
+        <SelectField label="Require HTTPS" value={String(values.x402RequireHttps ?? "")} onChange={(value) => onChange({ x402RequireHttps: value })} options={["Yes", "No"]} />
+        <SelectField label="Require PAYMENT-REQUIRED Hash" value={String(values.x402RequirePaymentRequiredHash ?? "")} onChange={(value) => onChange({ x402RequirePaymentRequiredHash: value })} options={["Yes", "No"]} />
+        <SelectField label="Bind Unsafe Request Bodies" value={String(values.x402RequireBodyHashForUnsafeMethods ?? "")} onChange={(value) => onChange({ x402RequireBodyHashForUnsafeMethods: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Unique Request ID" value={String(values.x402RequireRequestId ?? "")} onChange={(value) => onChange({ x402RequireRequestId: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Client Fingerprint" value={String(values.x402RequireClientFingerprint ?? "")} onChange={(value) => onChange({ x402RequireClientFingerprint: value })} options={["Yes", "No"]} />
+        <SelectField label="Prevent Ambiguous Retry" value={String(values.x402PreventAmbiguousRetry ?? "")} onChange={(value) => onChange({ x402PreventAmbiguousRetry: value })} options={["Yes", "No"]} />
+        <InputField label="Maximum Settlement Attempts" value={String(values.x402MaxSettlementAttempts ?? "")} onChange={(value) => onChange({ x402MaxSettlementAttempts: value })} type="number" />
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">The exact scheme is supported first. Magen3 never receives PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals.</p>
+    </div>
+  );
+}
+
 function CompliancePolicyFields({
   values,
   onChange,
@@ -3287,6 +3471,32 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    x402ControlsEnabled: "Yes",
+    x402ControlMode: "Review",
+    x402UnavailableAction: "Review",
+    x402AllowedVersions: "2",
+    x402AllowedSchemes: "exact",
+    x402AllowedMethods: "GET\nHEAD\nPOST",
+    x402AllowedNetworks: "eip155:84532",
+    x402AllowedAssets: "USDC",
+    x402AssetDecimals: "USDC=6",
+    x402AllowedFacilitators: "https://x402.org/facilitator",
+    x402AllowedMerchants: "api.example.com",
+    x402BlockedMerchants: "",
+    x402AllowedRecipients: "0x1111111111111111111111111111111111111111",
+    x402MaxPayment: "5",
+    x402DailyLimit: "25",
+    x402MonthlyLimit: "250",
+    x402ReviewThreshold: "3",
+    x402MaxPaymentsPerHour: "20",
+    x402MaxAuthorizationLifetimeSeconds: "600",
+    x402RequireHttps: "Yes",
+    x402RequirePaymentRequiredHash: "Yes",
+    x402RequireBodyHashForUnsafeMethods: "Yes",
+    x402RequireRequestId: "Yes",
+    x402RequireClientFingerprint: "No",
+    x402PreventAmbiguousRetry: "Yes",
+    x402MaxSettlementAttempts: "1",
     complianceControlsEnabled: "Yes",
     complianceControlMode: "Review",
     complianceUnavailableAction: "Review",
@@ -3345,6 +3555,32 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    x402ControlsEnabled: "Yes",
+    x402ControlMode: "Review",
+    x402UnavailableAction: "Review",
+    x402AllowedVersions: "2",
+    x402AllowedSchemes: "exact",
+    x402AllowedMethods: "GET\nHEAD\nPOST",
+    x402AllowedNetworks: "eip155:84532",
+    x402AllowedAssets: "USDC",
+    x402AssetDecimals: "USDC=6",
+    x402AllowedFacilitators: "https://x402.org/facilitator",
+    x402AllowedMerchants: "api.example.com",
+    x402BlockedMerchants: "",
+    x402AllowedRecipients: "0x1111111111111111111111111111111111111111",
+    x402MaxPayment: "5",
+    x402DailyLimit: "25",
+    x402MonthlyLimit: "250",
+    x402ReviewThreshold: "3",
+    x402MaxPaymentsPerHour: "20",
+    x402MaxAuthorizationLifetimeSeconds: "600",
+    x402RequireHttps: "Yes",
+    x402RequirePaymentRequiredHash: "Yes",
+    x402RequireBodyHashForUnsafeMethods: "Yes",
+    x402RequireRequestId: "Yes",
+    x402RequireClientFingerprint: "No",
+    x402PreventAmbiguousRetry: "Yes",
+    x402MaxSettlementAttempts: "1",
     complianceControlsEnabled: "Yes",
     complianceControlMode: "Review",
     complianceUnavailableAction: "Review",
@@ -3408,6 +3644,32 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: form.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(form.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(form.bridgeMinDestinationConfirmations) || 0),
+        x402ControlsEnabled: form.x402ControlsEnabled !== "No",
+        x402ControlMode: form.x402ControlMode,
+        x402UnavailableAction: form.x402UnavailableAction,
+        x402AllowedVersions: form.x402AllowedVersions.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402AllowedSchemes: form.x402AllowedSchemes.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedMethods: form.x402AllowedMethods.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        x402AllowedNetworks: form.x402AllowedNetworks.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedAssets: form.x402AllowedAssets.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        x402AssetDecimals: parseAssetDecimals(form.x402AssetDecimals),
+        x402AllowedFacilitators: form.x402AllowedFacilitators.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402AllowedMerchants: form.x402AllowedMerchants.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402BlockedMerchants: form.x402BlockedMerchants.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedRecipients: form.x402AllowedRecipients.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402MaxPayment: Math.max(0, Number(form.x402MaxPayment) || 0),
+        x402DailyLimit: Math.max(0, Number(form.x402DailyLimit) || 0),
+        x402MonthlyLimit: Math.max(0, Number(form.x402MonthlyLimit) || 0),
+        x402ReviewThreshold: Math.max(0, Number(form.x402ReviewThreshold) || 0),
+        x402MaxPaymentsPerHour: Math.max(1, Number(form.x402MaxPaymentsPerHour) || 20),
+        x402MaxAuthorizationLifetimeSeconds: Math.max(30, Number(form.x402MaxAuthorizationLifetimeSeconds) || 600),
+        x402RequireHttps: form.x402RequireHttps !== "No",
+        x402RequirePaymentRequiredHash: form.x402RequirePaymentRequiredHash !== "No",
+        x402RequireBodyHashForUnsafeMethods: form.x402RequireBodyHashForUnsafeMethods !== "No",
+        x402RequireRequestId: form.x402RequireRequestId !== "No",
+        x402RequireClientFingerprint: form.x402RequireClientFingerprint === "Yes",
+        x402PreventAmbiguousRetry: form.x402PreventAmbiguousRetry !== "No",
+        x402MaxSettlementAttempts: Math.max(1, Number(form.x402MaxSettlementAttempts) || 1),
         complianceControlsEnabled: form.complianceControlsEnabled !== "No",
         complianceControlMode: form.complianceControlMode,
         complianceUnavailableAction: form.complianceUnavailableAction,
@@ -3459,6 +3721,32 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: "Yes",
       bridgeMinSourceConfirmations: "2",
       bridgeMinDestinationConfirmations: "12",
+      x402ControlsEnabled: "Yes",
+      x402ControlMode: "Review",
+      x402UnavailableAction: "Review",
+      x402AllowedVersions: "2",
+      x402AllowedSchemes: "exact",
+      x402AllowedMethods: "GET\nHEAD\nPOST",
+      x402AllowedNetworks: "eip155:84532",
+      x402AllowedAssets: "USDC",
+      x402AssetDecimals: "USDC=6",
+      x402AllowedFacilitators: "https://x402.org/facilitator",
+      x402AllowedMerchants: "api.example.com",
+      x402BlockedMerchants: "",
+      x402AllowedRecipients: "0x1111111111111111111111111111111111111111",
+      x402MaxPayment: "5",
+      x402DailyLimit: "25",
+      x402MonthlyLimit: "250",
+      x402ReviewThreshold: "3",
+      x402MaxPaymentsPerHour: "20",
+      x402MaxAuthorizationLifetimeSeconds: "600",
+      x402RequireHttps: "Yes",
+      x402RequirePaymentRequiredHash: "Yes",
+      x402RequireBodyHashForUnsafeMethods: "Yes",
+      x402RequireRequestId: "Yes",
+      x402RequireClientFingerprint: "No",
+      x402PreventAmbiguousRetry: "Yes",
+      x402MaxSettlementAttempts: "1",
       complianceControlsEnabled: "Yes",
       complianceControlMode: "Review",
       complianceUnavailableAction: "Review",
@@ -3514,6 +3802,32 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: policy.structuredRules?.bridgeRequireQuoteExpiry === false ? "No" : "Yes",
       bridgeMinSourceConfirmations: String(typeof policy.structuredRules?.bridgeMinSourceConfirmations === "number" ? policy.structuredRules.bridgeMinSourceConfirmations : 2),
       bridgeMinDestinationConfirmations: String(typeof policy.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policy.structuredRules.bridgeMinDestinationConfirmations : 12),
+      x402ControlsEnabled: policy.structuredRules?.x402ControlsEnabled === false ? "No" : "Yes",
+      x402ControlMode: typeof policy.structuredRules?.x402ControlMode === "string" ? policy.structuredRules.x402ControlMode : "Observe",
+      x402UnavailableAction: typeof policy.structuredRules?.x402UnavailableAction === "string" ? policy.structuredRules.x402UnavailableAction : "Warn",
+      x402AllowedVersions: Array.isArray(policy.structuredRules?.x402AllowedVersions) ? (policy.structuredRules.x402AllowedVersions as string[]).join("\n") : "2",
+      x402AllowedSchemes: Array.isArray(policy.structuredRules?.x402AllowedSchemes) ? (policy.structuredRules.x402AllowedSchemes as string[]).join("\n") : "exact",
+      x402AllowedMethods: Array.isArray(policy.structuredRules?.x402AllowedMethods) ? (policy.structuredRules.x402AllowedMethods as string[]).join("\n") : "GET\nHEAD\nPOST",
+      x402AllowedNetworks: Array.isArray(policy.structuredRules?.x402AllowedNetworks) ? (policy.structuredRules.x402AllowedNetworks as string[]).join("\n") : "",
+      x402AllowedAssets: Array.isArray(policy.structuredRules?.x402AllowedAssets) ? (policy.structuredRules.x402AllowedAssets as string[]).join("\n") : "USDC",
+      x402AssetDecimals: stringifyAssetDecimals(policy.structuredRules?.x402AssetDecimals),
+      x402AllowedFacilitators: Array.isArray(policy.structuredRules?.x402AllowedFacilitators) ? (policy.structuredRules.x402AllowedFacilitators as string[]).join("\n") : "",
+      x402AllowedMerchants: Array.isArray(policy.structuredRules?.x402AllowedMerchants) ? (policy.structuredRules.x402AllowedMerchants as string[]).join("\n") : "",
+      x402BlockedMerchants: Array.isArray(policy.structuredRules?.x402BlockedMerchants) ? (policy.structuredRules.x402BlockedMerchants as string[]).join("\n") : "",
+      x402AllowedRecipients: Array.isArray(policy.structuredRules?.x402AllowedRecipients) ? (policy.structuredRules.x402AllowedRecipients as string[]).join("\n") : "",
+      x402MaxPayment: String(typeof policy.structuredRules?.x402MaxPayment === "number" ? policy.structuredRules.x402MaxPayment : 0),
+      x402DailyLimit: String(typeof policy.structuredRules?.x402DailyLimit === "number" ? policy.structuredRules.x402DailyLimit : 0),
+      x402MonthlyLimit: String(typeof policy.structuredRules?.x402MonthlyLimit === "number" ? policy.structuredRules.x402MonthlyLimit : 0),
+      x402ReviewThreshold: String(typeof policy.structuredRules?.x402ReviewThreshold === "number" ? policy.structuredRules.x402ReviewThreshold : 0),
+      x402MaxPaymentsPerHour: String(typeof policy.structuredRules?.x402MaxPaymentsPerHour === "number" ? policy.structuredRules.x402MaxPaymentsPerHour : 20),
+      x402MaxAuthorizationLifetimeSeconds: String(typeof policy.structuredRules?.x402MaxAuthorizationLifetimeSeconds === "number" ? policy.structuredRules.x402MaxAuthorizationLifetimeSeconds : 600),
+      x402RequireHttps: policy.structuredRules?.x402RequireHttps === false ? "No" : "Yes",
+      x402RequirePaymentRequiredHash: policy.structuredRules?.x402RequirePaymentRequiredHash === false ? "No" : "Yes",
+      x402RequireBodyHashForUnsafeMethods: policy.structuredRules?.x402RequireBodyHashForUnsafeMethods === false ? "No" : "Yes",
+      x402RequireRequestId: policy.structuredRules?.x402RequireRequestId === false ? "No" : "Yes",
+      x402RequireClientFingerprint: policy.structuredRules?.x402RequireClientFingerprint === true ? "Yes" : "No",
+      x402PreventAmbiguousRetry: policy.structuredRules?.x402PreventAmbiguousRetry === false ? "No" : "Yes",
+      x402MaxSettlementAttempts: String(typeof policy.structuredRules?.x402MaxSettlementAttempts === "number" ? policy.structuredRules.x402MaxSettlementAttempts : 1),
       complianceControlsEnabled: policy.structuredRules?.complianceControlsEnabled === false ? "No" : "Yes",
       complianceControlMode: typeof policy.structuredRules?.complianceControlMode === "string" ? policy.structuredRules.complianceControlMode : "Observe",
       complianceUnavailableAction: typeof policy.structuredRules?.complianceUnavailableAction === "string" ? policy.structuredRules.complianceUnavailableAction : "Warn",
@@ -3578,6 +3892,32 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: editForm.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(editForm.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(editForm.bridgeMinDestinationConfirmations) || 0),
+        x402ControlsEnabled: editForm.x402ControlsEnabled !== "No",
+        x402ControlMode: editForm.x402ControlMode,
+        x402UnavailableAction: editForm.x402UnavailableAction,
+        x402AllowedVersions: editForm.x402AllowedVersions.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402AllowedSchemes: editForm.x402AllowedSchemes.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedMethods: editForm.x402AllowedMethods.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        x402AllowedNetworks: editForm.x402AllowedNetworks.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedAssets: editForm.x402AllowedAssets.split("\n").map((item) => item.trim().toUpperCase()).filter(Boolean),
+        x402AssetDecimals: parseAssetDecimals(editForm.x402AssetDecimals),
+        x402AllowedFacilitators: editForm.x402AllowedFacilitators.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402AllowedMerchants: editForm.x402AllowedMerchants.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402BlockedMerchants: editForm.x402BlockedMerchants.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        x402AllowedRecipients: editForm.x402AllowedRecipients.split("\n").map((item) => item.trim()).filter(Boolean),
+        x402MaxPayment: Math.max(0, Number(editForm.x402MaxPayment) || 0),
+        x402DailyLimit: Math.max(0, Number(editForm.x402DailyLimit) || 0),
+        x402MonthlyLimit: Math.max(0, Number(editForm.x402MonthlyLimit) || 0),
+        x402ReviewThreshold: Math.max(0, Number(editForm.x402ReviewThreshold) || 0),
+        x402MaxPaymentsPerHour: Math.max(1, Number(editForm.x402MaxPaymentsPerHour) || 20),
+        x402MaxAuthorizationLifetimeSeconds: Math.max(30, Number(editForm.x402MaxAuthorizationLifetimeSeconds) || 600),
+        x402RequireHttps: editForm.x402RequireHttps !== "No",
+        x402RequirePaymentRequiredHash: editForm.x402RequirePaymentRequiredHash !== "No",
+        x402RequireBodyHashForUnsafeMethods: editForm.x402RequireBodyHashForUnsafeMethods !== "No",
+        x402RequireRequestId: editForm.x402RequireRequestId !== "No",
+        x402RequireClientFingerprint: editForm.x402RequireClientFingerprint === "Yes",
+        x402PreventAmbiguousRetry: editForm.x402PreventAmbiguousRetry !== "No",
+        x402MaxSettlementAttempts: Math.max(1, Number(editForm.x402MaxSettlementAttempts) || 1),
         complianceControlsEnabled: editForm.complianceControlsEnabled !== "No",
         complianceControlMode: editForm.complianceControlMode,
         complianceUnavailableAction: editForm.complianceUnavailableAction,
@@ -3748,6 +4088,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+            <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
               label="Risk Mode"
@@ -4015,6 +4356,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+                <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
                   label="Risk Mode"
@@ -4285,7 +4627,7 @@ function AuditLogPage({
                     {log.action}
                   </td>
                   <td className="px-4 py-3 text-[#F8FAFC] whitespace-nowrap font-mono">
-                    {log.amount} CSPR
+                    {log.amount} {auditAsset(log)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <DecisionBadge decision={log.decision} />
@@ -4316,7 +4658,7 @@ function AuditLogPage({
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
-                    {log.executionTxHash && isRealCasperDeployHash(log.executionTxHash) ? (
+                    {log.executionTxHash && isRealCasperDeployHash(log.executionTxHash) && log.action !== "x402 Payment" ? (
                       <a
                         href={casperDeployUrl(log.executionTxHash)}
                         target="_blank"
@@ -4326,8 +4668,13 @@ function AuditLogPage({
                         <span>{truncate(normalizeCasperDeployHash(log.executionTxHash))}</span>
                         <ExternalLink size={11} />
                       </a>
+                    ) : log.action === "x402 Payment" && log.executionTxHash ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[#22C55E]">{executionProofStatus(log.executionStatus || "", log.executionTxHash).label}</span>
+                        <span className="text-[#94A3B8]">{truncate(log.executionTxHash)}</span>
+                      </div>
                     ) : (
-                      <span className="text-[#94A3B8]/40">{executionProofStatus(log.executionStatus || "", log.executionTxHash || "").label}</span>
+                      <span className="text-[#94A3B8]/70">{executionProofStatus(log.executionStatus || "", log.executionTxHash || "").label}</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -4412,7 +4759,7 @@ function AuditLogPage({
                 ["Shield Type", selected.shield],
                 ["Action Type", selected.action],
                 ["Target", selected.target],
-                ["Amount", `${selected.amount} CSPR`],
+                ["Amount", `${selected.amount} ${auditAsset(selected)}`],
                 ["Risk Score", `${selected.riskScore}/100`],
                 ["Timestamp", fmtTs(selected.timestamp)],
                 [
@@ -4476,7 +4823,7 @@ function AuditLogPage({
                     ["Intent received", "Complete", "text-[#22C55E]"],
                     ["Magen3 decision", selected.decision, selected.decision === "Blocked" ? "text-[#EF4444]" : selected.decision === "Review Required" ? "text-[#F59E0B]" : "text-[#22C55E]"],
                     ["Casper decision proof", decisionProofStatus(selected).label, isRealCasperDeployHash(selected.txHash) ? "text-[#22C55E]" : selected.decisionProofStatus === "failed" ? "text-[#EF4444]" : "text-[#F59E0B]"],
-                    ["Execution proof", executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "").label, isRealCasperDeployHash(selected.executionTxHash || "") ? "text-[#22C55E]" : "text-[#94A3B8]"],
+                    [selected.action === "x402 Payment" ? "Payment settlement" : "Execution proof", executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "").label, (isRealCasperDeployHash(selected.executionTxHash || "") || selected.executionStatus === "x402_confirmed") ? "text-[#22C55E]" : selected.executionStatus === "x402_failed" ? "text-[#EF4444]" : "text-[#94A3B8]"],
                   ].map(([label, value, color]) => (
                     <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
                       <div className="text-[#94A3B8]">{label}</div>
@@ -4591,18 +4938,24 @@ function AuditLogPage({
 
               {(() => {
                 const executionStatus = executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "");
+                const isX402Payment = selected.action === "x402 Payment";
+                const settlement = isX402Payment ? auditX402Settlement(selected) : null;
                 const realExecution = isRealCasperDeployHash(selected.executionTxHash || "");
-                const canAttachExecution = selected.decision === "Allowed";
+                const canAttachExecution = selected.decision === "Allowed" && !isX402Payment;
+                const settlementReference = typeof settlement?.facilitatorReference === "string" ? settlement.facilitatorReference : "Not reported";
+                const resourceDelivered = settlement?.resourceDelivered === true;
                 return (
                   <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
                           <Send size={16} className="text-[#22C55E]" />
-                          Execution Proof
+                          {isX402Payment ? "Payment Settlement" : "Execution Proof"}
                         </div>
                         <p className="text-xs text-[#94A3B8] mt-1">
-                          Shows whether the execution wallet actually signed and submitted the approved action.
+                          {isX402Payment
+                            ? "Shows the settlement and paid-resource delivery state reported by the authenticated external x402 adapter."
+                            : "Shows whether the execution wallet actually signed and submitted the approved action."}
                         </p>
                       </div>
                       <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${executionStatus.className}`}>
@@ -4612,32 +4965,44 @@ function AuditLogPage({
 
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
-                        <span className="text-[#94A3B8] uppercase tracking-wider">Execution Status</span>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Status" : "Execution Status"}</span>
                         <div className="text-[#F8FAFC] mt-1">{selected.executionStatus || "not_submitted"}</div>
                       </div>
                       <div>
-                        <span className="text-[#94A3B8] uppercase tracking-wider">Signed By</span>
-                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.executionSignedBy || "Waiting for wallet signature"}</div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Payment Wallet" : "Signed By"}</span>
+                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.executionSignedBy || selected.executionWalletAddress || (isX402Payment ? "Not reported" : "Waiting for wallet signature")}</div>
                       </div>
                       <div className="col-span-2">
-                        <span className="text-[#94A3B8] uppercase tracking-wider">Execution Deploy Hash</span>
-                        <div className={`font-mono mt-1 break-all ${realExecution ? "text-[#22C55E]" : "text-[#F8FAFC]"}`}>
-                          {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "None"}
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Transaction Hash" : "Execution Deploy Hash"}</span>
+                        <div className={`font-mono mt-1 break-all ${(realExecution || selected.executionStatus === "x402_confirmed") ? "text-[#22C55E]" : "text-[#F8FAFC]"}`}>
+                          {selected.executionTxHash ? (isX402Payment ? selected.executionTxHash : normalizeCasperDeployHash(selected.executionTxHash)) : "None"}
                         </div>
                       </div>
+                      {isX402Payment && (
+                        <>
+                          <div>
+                            <span className="text-[#94A3B8] uppercase tracking-wider">Facilitator Reference</span>
+                            <div className="text-[#F8FAFC] mt-1 break-all">{settlementReference}</div>
+                          </div>
+                          <div>
+                            <span className="text-[#94A3B8] uppercase tracking-wider">Resource Delivered</span>
+                            <div className={`mt-1 font-semibold ${resourceDelivered ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{resourceDelivered ? "Confirmed" : "Not confirmed"}</div>
+                          </div>
+                        </>
+                      )}
                       <div className="col-span-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Why</span>
                         <div className="text-[#F8FAFC] mt-1">{executionProofExplanation(selected)}</div>
                       </div>
                       {selected.executionNote && (
                         <div className="col-span-2">
-                          <span className="text-[#94A3B8] uppercase tracking-wider">Execution Note</span>
+                          <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Note" : "Execution Note"}</span>
                           <div className="text-[#F8FAFC] mt-1">{selected.executionNote}</div>
                         </div>
                       )}
                       <div className="col-span-2">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
-                        {realExecution ? (
+                        {realExecution && !isX402Payment ? (
                           <a
                             href={casperDeployUrl(selected.executionTxHash || "")}
                             target="_blank"
@@ -4647,6 +5012,10 @@ function AuditLogPage({
                             View execution on CSPR.live
                             <ExternalLink size={12} />
                           </a>
+                        ) : isX402Payment ? (
+                          <div className="text-[#94A3B8] mt-1">
+                            Magen3 stores the reported settlement transaction hash without guessing a network explorer. Verify it through the explorer or facilitator appropriate to the payment network.
+                          </div>
                         ) : (
                           <div className="text-[#94A3B8] mt-1">
                             {selected.decision === "Allowed"
@@ -4657,7 +5026,11 @@ function AuditLogPage({
                       </div>
                     </div>
 
-                    {canAttachExecution ? (
+                    {isX402Payment ? (
+                      <div className="rounded-lg border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
+                        Settlement state must be reported through the authenticated <span className="font-mono text-[#F8FAFC]">/api/agent-gateway/x402/settlements</span> endpoint using the authorized request fingerprint. Magen3 does not accept PAYMENT-SIGNATURE or signed payment payloads.
+                      </div>
+                    ) : canAttachExecution ? (
                       <details className="border-t border-[#1E293B] pt-3">
                         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22C55E]">
                           Advanced manual execution hash fallback
@@ -5680,6 +6053,39 @@ const PLAYGROUND_DEMO_UNAPPROVED_CONTRACT = `contract-package-${"5".repeat(64)}`
 const PLAYGROUND_THREAT_INTEL_TARGET = `01${"6".repeat(64)}`;
 const PLAYGROUND_DEMO_EVM_RECIPIENT = `0x${"7".repeat(40)}`;
 const PLAYGROUND_COMPLIANCE_MATCH_TARGET = `01${"8".repeat(64)}`;
+const PLAYGROUND_X402_RECIPIENT = `0x${"1".repeat(40)}`;
+const PLAYGROUND_X402_PAYER = `0x${"2".repeat(40)}`;
+const PLAYGROUND_X402_PAYMENT_REQUIRED_HASH = "b".repeat(64);
+
+function firstStringRule(policy: Policy | undefined, key: string, fallback: string) {
+  const value = policy?.structuredRules?.[key];
+  return Array.isArray(value) && typeof value[0] === "string" && value[0].trim() ? value[0].trim() : fallback;
+}
+
+function playgroundX402Payment(policy: Policy | undefined, overrides: Record<string, unknown> = {}) {
+  const merchantDomain = firstStringRule(policy, "x402AllowedMerchants", "api.example.com");
+  const resourceUrl = `https://${merchantDomain}/agent-data`;
+  return {
+    version: 2,
+    scheme: "exact",
+    resourceUrl,
+    method: "GET",
+    merchantDomain,
+    payTo: firstStringRule(policy, "x402AllowedRecipients", PLAYGROUND_X402_RECIPIENT),
+    asset: firstStringRule(policy, "x402AllowedAssets", "USDC"),
+    network: firstStringRule(policy, "x402AllowedNetworks", "eip155:84532"),
+    facilitator: firstStringRule(policy, "x402AllowedFacilitators", "https://x402.org/facilitator"),
+    amountAtomic: "1000000",
+    maxTimeoutSeconds: 300,
+    requirementsReceivedAt: new Date().toISOString(),
+    validUntil: new Date(Date.now() + 5 * 60_000).toISOString(),
+    requestId: `playground-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    paymentRequiredHash: PLAYGROUND_X402_PAYMENT_REQUIRED_HASH,
+    settlementStatus: "not_submitted",
+    settlementAttempt: 0,
+    ...overrides,
+  };
+}
 
 function firstConfiguredContract(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:hash-|contract-|contract-hash-|contract-package-|contract-package-hash-|package-)[0-9a-f]{64}$/i.test(target));
@@ -6104,6 +6510,36 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm a rejected required attestation stops execution", reason: "Rejected verification is a deterministic hard block before wallet signing.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: { ...evidence, beneficiaryAttestation: { ...(evidence.beneficiaryAttestation as Record<string, unknown>), status: "Rejected" } } } };
   },
   "Configured compliance feed match": (agent, walletAddress) => ({ source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Screen a synthetic wallet against the included Compliance Controls feed", reason: "Configure backend/data/compliance-controls.example.json and trust the exact test target only when isolating the compliance decision.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_COMPLIANCE_MATCH_TARGET, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: playgroundComplianceEvidence() } }),
+  "Approved x402 API payment": (agent, walletAddress, policy) => {
+    const payment = playgroundX402Payment(policy);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: PLAYGROUND_X402_PAYER,
+      goal: "Authorize an exact x402 payment for one approved API resource",
+      reason: "Bind the merchant, resource, recipient, network, token, amount, expiry, payment requirements, and unique request before any payment signature is created.",
+      action: { type: "x402 Payment", amount: 1, asset: payment.asset, target: payment.resourceUrl, targetType: "x402 Merchant", x402: payment },
+    };
+  },
+  "New x402 merchant": (agent, walletAddress, policy) => {
+    const payment = playgroundX402Payment(policy, { resourceUrl: "https://new-merchant.example/data", merchantDomain: "new-merchant.example" });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: PLAYGROUND_X402_PAYER, goal: "Confirm a new merchant cannot silently receive payment", reason: "The merchant is intentionally outside the configured allowlist.", action: { type: "x402 Payment", amount: 1, asset: payment.asset, target: payment.resourceUrl, targetType: "x402 Merchant", x402: payment } };
+  },
+  "x402 payment above limit": (agent, walletAddress, policy) => {
+    const configured = Number(policy?.structuredRules?.x402MaxPayment || 5);
+    const amount = Math.max(6, configured + 1);
+    const payment = playgroundX402Payment(policy, { amountAtomic: String(Math.round(amount * 1_000_000)) });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: PLAYGROUND_X402_PAYER, goal: "Confirm excessive x402 payments are reviewed or blocked", reason: "The requested amount intentionally exceeds the active x402 per-payment limit.", action: { type: "x402 Payment", amount, asset: payment.asset, target: payment.resourceUrl, targetType: "x402 Merchant", x402: payment } };
+  },
+  "Expired x402 requirement": (agent, walletAddress, policy) => {
+    const payment = playgroundX402Payment(policy, { validUntil: new Date(Date.now() - 60_000).toISOString() });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: PLAYGROUND_X402_PAYER, goal: "Confirm expired payment requirements are blocked", reason: "The authorization expiry is intentionally in the past.", action: { type: "x402 Payment", amount: 1, asset: payment.asset, target: payment.resourceUrl, targetType: "x402 Merchant", x402: payment } };
+  },
+  "Ambiguous x402 settlement retry": (agent, walletAddress, policy) => {
+    const payment = playgroundX402Payment(policy, { settlementStatus: "uncertain", settlementAttempt: 1 });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: PLAYGROUND_X402_PAYER, goal: "Prevent a duplicate payment after an uncertain settlement", reason: "Magen3 must reconcile the existing attempt rather than authorize another signature.", action: { type: "x402 Payment", amount: 1, asset: payment.asset, target: payment.resourceUrl, targetType: "x402 Merchant", x402: payment } };
+  },
   "Expired preflight": (agent, walletAddress) => ({
     source: "Magen3 Intent Playground",
     agentId: agent.id,
@@ -6175,6 +6611,8 @@ function IntentPlaygroundPage({
   const [example, setExample] = useState("Transfer");
   const [requestJson, setRequestJson] = useState("");
   const [result, setResult] = useState<AgentGatewayResponse | null>(null);
+  const [settling, setSettling] = useState(false);
+  const [settlementResult, setSettlementResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -6188,6 +6626,7 @@ function IntentPlaygroundPage({
     setExample(name);
     setRequestJson(JSON.stringify(payload, null, 2));
     setResult(null);
+    setSettlementResult(null);
     setError("");
   }, [selectedAgent, selectedPolicy, walletAddress]);
 
@@ -6235,6 +6674,31 @@ function IntentPlaygroundPage({
       setSubmitting(false);
     }
   }, [apiKey, onSubmitGatewayIntent, requestJson, selectedAgent]);
+
+  const reportTestSettlement = useCallback(async () => {
+    const context = result?.result.x402PaymentControlsContext;
+    if (!result || !selectedAgent || !context?.requestFingerprint || !apiKey.trim()) return;
+    setSettling(true);
+    setError("");
+    try {
+      const response = await api.updateX402Settlement({
+        auditLogId: result.auditLog.id,
+        agentId: selectedAgent.id,
+        status: "confirmed",
+        transactionHash: `0x${"d".repeat(64)}`,
+        attempt: 1,
+        requestFingerprint: context.requestFingerprint,
+        facilitatorReference: "intent-playground-test-settlement",
+        resourceDelivered: true,
+        note: "Synthetic Playground reconciliation record; replace with the real facilitator response in production.",
+      }, apiKey.trim());
+      setSettlementResult(response as Record<string, unknown>);
+    } catch (settlementError) {
+      setError(settlementError instanceof Error ? settlementError.message : "Unable to report the x402 settlement.");
+    } finally {
+      setSettling(false);
+    }
+  }, [apiKey, result, selectedAgent]);
 
   if (activeAgents.length === 0) {
     return (
@@ -6300,7 +6764,7 @@ function IntentPlaygroundPage({
 
           <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
             <div className="font-semibold text-[#22D3EE]">Live validation plus foundation security checks</div>
-            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls are Foundation Available. Compliance Controls accepts non-sensitive status evidence and opaque references only; it does not accept raw identity data or determine legal obligations.</div>
+            <div className="mt-1">Wallet and Contract Validation are Live. Execution Simulation, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls are Foundation Available. Compliance Controls accepts non-sensitive status evidence and opaque references only; it does not accept raw identity data or determine legal obligations.</div>
           </div>
 
           <div>
@@ -6377,6 +6841,30 @@ function IntentPlaygroundPage({
                     {result.result.oracleValidationContext.error && <div className="mt-2 text-xs text-[#F59E0B]">{result.result.oracleValidationContext.error}</div>}
                   </div>
                 )}
+                {result.result.x402PaymentControlsContext && (
+                  <div className="mt-3 rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">x402 Payment Controls context</div>
+                      <span className="text-xs font-semibold text-[#F59E0B]">{result.result.x402PaymentControlsContext.status || "foundation-available"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Merchant <span className="block break-all text-[#F8FAFC]">{result.result.x402PaymentControlsContext.merchantDomain || "Not supplied"}</span></div>
+                      <div>Resource <span className="block break-all text-[#F8FAFC]">{result.result.x402PaymentControlsContext.resourceUrl || "Not supplied"}</span></div>
+                      <div>Payment <span className="block text-[#F8FAFC]">{result.result.x402PaymentControlsContext.amount ?? "—"} {result.result.x402PaymentControlsContext.asset || ""}</span></div>
+                      <div>Network <span className="block text-[#F8FAFC]">{result.result.x402PaymentControlsContext.network || "Not supplied"}</span></div>
+                      <div>Scheme / version <span className="block text-[#F8FAFC]">{result.result.x402PaymentControlsContext.scheme || "—"} · v{result.result.x402PaymentControlsContext.version || "—"}</span></div>
+                      <div>Settlement <span className="block text-[#F8FAFC]">{result.result.x402PaymentControlsContext.settlementStatus || "not_submitted"}</span></div>
+                      <div className="sm:col-span-3">Request fingerprint <span className="block break-all font-mono text-[#F8FAFC]">{result.result.x402PaymentControlsContext.requestFingerprint || "Not computed"}</span></div>
+                    </div>
+                    {result.result.decision === "Allowed" && (
+                      <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-xs leading-relaxed text-[#94A3B8]">Production adapters must report the real facilitator settlement. This button records a clearly labeled synthetic Playground settlement only.</div>
+                        <Btn variant="secondary" size="sm" onClick={reportTestSettlement} disabled={settling || Boolean(settlementResult)}>{settling ? "Reporting…" : settlementResult ? "Settlement recorded" : "Report test settlement"}</Btn>
+                      </div>
+                    )}
+                    {settlementResult && <div className="mt-2 rounded-lg border border-[#22C55E]/25 bg-[#22C55E]/5 p-2 text-xs text-[#BBF7D0]">Settlement reconciliation stored. Open Audit Logs to inspect the confirmed payment and resource-delivery timeline.</div>}
+                  </div>
+                )}
                 {result.result.bridgeControlsContext && (
                   <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -6436,6 +6924,7 @@ function SettingsPage({
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
+  x402PaymentControlsStatus,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -6443,6 +6932,7 @@ function SettingsPage({
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
+  x402PaymentControlsStatus: X402PaymentControlsStatus;
 }) {
   const [devMode, setDevMode] = useState(false);
   const [copiedSetting, setCopiedSetting] = useState("");
@@ -6458,6 +6948,8 @@ function SettingsPage({
     ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
+    ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],
+    ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
 
@@ -6539,6 +7031,21 @@ function SettingsPage({
           ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
         </div>
         {complianceControlsStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{complianceControlsStatus.error}</div>}
+      </div>
+
+      <div className={`${CARD} p-5`}>
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className={SECTION_TITLE}>x402 Payment Controls Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Gateway capability status. Magen3 authorizes exact-scheme payment requirements and reconciles reported settlement without receiving signing keys or PAYMENT-SIGNATURE payloads.</p></div>
+          <StatusBadge status={x402PaymentControlsStatus.status === "foundation-available" ? "Foundation Available" : "Inactive"} />
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Protocol", `x402 v${x402PaymentControlsStatus.protocolVersion || 2}`],
+            ["Schemes", (x402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
+            ["Request binding", x402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
+            ["Settlement reporting", x402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
+          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
+        </div>
       </div>
 
       <div className={`${CARD} p-5`}>
@@ -6658,6 +7165,7 @@ export default function App() {
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
   const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
+  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "foundation-available", protocolVersion: 2, supportedSchemes: ["exact"], requestBinding: true, replayProtection: true, settlementReporting: true });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
@@ -6725,6 +7233,20 @@ export default function App() {
     void refreshComplianceStatus();
     intervalId = setInterval(() => void refreshComplianceStatus(), 60_000);
     return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshX402Status = async () => {
+      try {
+        const payload = await api.x402PaymentControlsStatus();
+        if (!cancelled) setX402PaymentControlsStatus(payload.x402PaymentControls as X402PaymentControlsStatus);
+      } catch {
+        if (!cancelled) setX402PaymentControlsStatus((previous) => ({ ...previous, status: "unavailable" }));
+      }
+    };
+    void refreshX402Status();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -6997,6 +7519,7 @@ export default function App() {
         threatIntelligenceStatus={threatIntelligenceStatus}
         oracleValidationStatus={oracleValidationStatus}
         complianceControlsStatus={complianceControlsStatus}
+        x402PaymentControlsStatus={x402PaymentControlsStatus}
         auditLogs={auditLogs}
         policies={policies}
         agents={agents}
@@ -7056,7 +7579,7 @@ export default function App() {
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} />
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} x402PaymentControlsStatus={x402PaymentControlsStatus} />
     ),
   };
 
