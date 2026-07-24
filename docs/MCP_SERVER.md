@@ -114,3 +114,11 @@ Test with the Intent Playground examples or the synthetic record in `backend/dat
 
 The MCP intent schema includes `action.tokenPermission` for explicit unsigned approval and permit metadata. Token Permission Controls findings and context are returned through the normal decision response. The MCP server never receives permit signatures, wallet signatures, private keys, or raw signed authority payloads.
 
+
+## Privileged Action Controls boundary
+
+For supported administrative contract calls, include unsigned metadata under `action.privilegedAction`. The MCP schema supports the declared classification, contract or package target, entry point or method signature, current and requested values, role, recipient, proposed implementation, classifier source/version, and network.
+
+Magen3 independently resolves supported entry-point and method aliases, compares explicit and derived classifications, applies the active blocked/review matrix, validates approved administrators and implementations, computes a protected-parameter fingerprint, and binds any Human Approval request to the exact original intent. Per-action quorum can increase the policy's normal approval count; it is never silently reduced to the number of currently available reviewers.
+
+Test with `Approved privileged mint`, `Ownership transfer requiring review`, `Unapproved proxy implementation`, `Unknown privileged method`, and `Contradictory privileged classification` in the Intent Playground. MCP clients must stop unless the final decision and `executionApproved` authorize continuation. The MCP server never accepts administrator private keys, contract-owner secrets, wallet signatures, or raw signed administrative transactions.

@@ -134,3 +134,8 @@ Never commit the API key. Run the examples only on Casper Testnet.
 
 Token permissions use the typed `Magen3TokenPermission` object at `action.tokenPermission`. The response exposes `tokenPermissionControlsContext` with normalized authority metadata, the canonical fingerprint, and replay state. Never include permit signatures or raw signed authority payloads.
 
+
+
+## Privileged Action Controls types
+
+The TypeScript SDK exposes `Magen3PrivilegedAction`, `Magen3PrivilegedActionName`, and `Magen3PrivilegedActionControlsContext`. Place unsigned administrative intent metadata at `action.privilegedAction`; Python callers use the same JSON object as a dictionary. The response reports the resolved classification, parameter fingerprint, Human Approval requirement, and action-specific quorum. Never send administrator private keys, wallet signatures, or raw signed transactions.

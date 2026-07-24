@@ -171,3 +171,8 @@ decision = client.check_intent({
 ```
 
 After real settlement, call `client.report_x402_settlement(...)` with the audit ID, Magen3 request fingerprint, settlement status, attempt number, transaction hash when confirmed, and resource-delivery state. Never include `PAYMENT-SIGNATURE` or a signed payment payload in the intent.
+
+
+## Privileged Action Controls
+
+Python callers can pass unsigned `action["privilegedAction"]` metadata with a supported classification, exact contract/method/network binding, sanitized current/requested values, and proposed administrator or implementation. The response can include `privilegedActionControlsContext`. Never send private keys, signatures, or raw signed transactions.

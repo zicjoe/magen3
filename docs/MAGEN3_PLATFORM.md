@@ -83,13 +83,13 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
 | Policy & Approval Controls | Policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety | — | Privileged actions; contract upgrades; argument policies |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; argument policies |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
 | Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
 | Threat & Compliance | — | Threat screening; compliance evidence | Managed provider adapters |
 
-The Security Pipeline retains evaluator-level evidence. Findings still identify Wallet Validation, Contract Validation, Token Permission Controls, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and other exact evaluators. An unavailable control never silently returns pass.
+The Security Pipeline retains evaluator-level evidence. Findings still identify Wallet Validation, Contract Validation, Token Permission Controls, Privileged Action Controls, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and other exact evaluators. An unavailable control never silently returns pass.
 
 ### Execution Integrity decision model
 
@@ -155,6 +155,12 @@ The control validates owner, token, spender, approved and blocked spender policy
 
 Generic contract calls remain backward compatible. Raw permit signatures, wallet signatures, and signed authority payloads are rejected by the Gateway. See `TOKEN_PERMISSION_CONTROLS.md`.
 
+### Privileged Action Controls decision model
+
+Privileged Action Controls is Live inside Contract & Permission Safety. It recognizes seventeen supported administrative action classes through explicit `action.privilegedAction` metadata or the deterministic supported entry-point/method map. It does not classify unrelated generic contract calls.
+
+The evaluator enforces classification consistency, classifier provenance, target and network binding, blocked and review matrices, approved administrators and implementations, required role/recipient/amount metadata, protected-value change, SHA-256 parameter fingerprinting, and exact Human Approval binding. Per-action quorum is resolved as the maximum of the base workflow quorum and the action-specific requirement. See `PRIVILEGED_ACTION_CONTROLS.md`.
+
 ### Execution Simulation foundation
 
 Execution Simulation evaluates deterministic preflight metadata before wallet signing. Supported checks include payment amount in motes, gas-price tolerance, TTL, timestamp freshness, optional transaction-hash structure, swap slippage structure, quote-bound consistency, and contract runtime-argument structure.
@@ -192,6 +198,7 @@ Enforced policy fields:
 - Blocked contracts through `structuredRules.blockedContracts`
 - Optional allowed contract entry points through `structuredRules.allowedEntryPoints`
 - Token Permission mode, spender lists, amount and ratio limits, permit expiry/nonce/chain binding, NFT/batch authority, and allowance-reset requirements
+- Privileged Action mode, review/block matrices, approved administrators and implementations, unknown-action handling, and per-action quorum
 - Blocked action types
 - Risk mode
 - Threat Intelligence mode, confidence, and unavailable-feed behavior

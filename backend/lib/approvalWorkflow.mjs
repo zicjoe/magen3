@@ -71,12 +71,26 @@ export function normalizeApprovalPolicy(policy = {}, ownerWalletAddress = "") {
   };
 }
 
+
+function privilegedApprovalRequirement(auditLog = {}) {
+  const privilegedAction = auditLog?.originalIntent?.action?.privilegedAction;
+  if (!privilegedAction || typeof privilegedAction !== "object" || privilegedAction.approvalRequired !== true) return null;
+  const requested = Number(privilegedAction.requiredApprovalCount || 1);
+  return {
+    classifiedAction: clean(privilegedAction.classifiedAction),
+    parameterFingerprint: clean(privilegedAction.parameterFingerprint),
+    requiredApprovals: Number.isInteger(requested) ? Math.min(10, Math.max(1, requested)) : 1,
+  };
+}
+
 export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, now = new Date() }) {
   const config = normalizeApprovalPolicy(policy, ownerWalletAddress);
   if (!config.enabled || auditLog?.decision !== "Review Required") return null;
+  const privilegedRequirement = privilegedApprovalRequirement(auditLog);
+  const requiredApprovals = Math.max(config.requiredApprovals, Number(privilegedRequirement?.requiredApprovals || 0));
   const createdAt = now instanceof Date ? now : new Date(now);
   const expiresAt = new Date(createdAt.getTime() + config.expiryMinutes * 60_000);
-  const status = config.approverWallets.length === 0 ? "Configuration Required" : "Pending";
+  const status = config.approverWallets.length < requiredApprovals ? "Configuration Required" : "Pending";
   return {
     id: makeId("APR"),
     auditLogId: clean(auditLog.id),
@@ -97,7 +111,7 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
     policyName: clean(policy?.name || auditLog.policyUsed),
     reviewStatus: status,
     bindingHash: computeApprovalBindingHash(auditLog),
-    requiredApprovals: config.requiredApprovals,
+    requiredApprovals,
     approverWallets: config.approverWallets,
     responses: [],
     expiresAt: expiresAt.toISOString(),
@@ -110,6 +124,11 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
       capabilityContext: Array.isArray(auditLog.capabilityContext) ? auditLog.capabilityContext : [],
       triggeredRule: clean(auditLog.triggeredRule),
       suggestedResolution: clean(auditLog.suggestedResolution),
+      privilegedAction: privilegedRequirement ? {
+        classifiedAction: privilegedRequirement.classifiedAction,
+        parameterFingerprint: privilegedRequirement.parameterFingerprint,
+        requiredApprovals: privilegedRequirement.requiredApprovals,
+      } : null,
     },
     createdAt: createdAt.toISOString(),
     updatedAt: createdAt.toISOString(),

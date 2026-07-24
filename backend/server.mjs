@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.3.0",
+        version: "1.4.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -188,6 +188,7 @@ const server = createServer(async (req, res) => {
         executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
         approvalWorkflow: { status: "foundation-available", exactIntentBinding: true, quorum: true, expiry: true, rejection: true },
         tokenPermissionControls: { status: "live", classification: true, spenderPolicy: true, boundedAuthority: true, permitReplayProtection: true },
+        privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
       });
@@ -283,6 +284,29 @@ const server = createServer(async (req, res) => {
           batchItemAndAggregateBinding: true,
           approvalBinding: true,
           securityBoundary: "Magen3 accepts metadata and fingerprints only. It rejects permit signatures, wallet approvals, private keys, mnemonics, and raw signed transactions."
+        }
+      });
+    }
+
+
+    if (route === "GET /api/privileged-action-controls/status") {
+      return send(res, 200, {
+        ok: true,
+        privilegedActionControls: {
+          status: "live",
+          protectionArea: "Contract & Permission Safety",
+          control: "Privileged Actions",
+          supportedClassifications: ["Ownership Transfer", "Administrator Change", "Proxy Upgrade", "Implementation Change", "Role Grant", "Role Revoke", "Mint", "Burn", "Pause", "Unpause", "Freeze", "Emergency Withdrawal", "Treasury Withdrawal", "Oracle Replacement", "Fee Recipient Change", "Bridge Validator Change", "Permission Change"],
+          explicitAdapterMetadata: true,
+          deterministicMethodMap: true,
+          contradictionDetection: true,
+          approvedAdministrators: true,
+          approvedImplementations: true,
+          blockedAndReviewActions: true,
+          actionSpecificQuorum: true,
+          protectedParameterFingerprinting: true,
+          exactApprovalBinding: true,
+          securityBoundary: "Magen3 classifies only supported methods or explicit unsigned metadata. It never accepts private keys, wallet approvals, raw signed transactions, or administrator signatures through the pre-signing Gateway."
         }
       });
     }
@@ -686,6 +710,36 @@ const server = createServer(async (req, res) => {
           },
           securityBoundary: "Generic contract calls are not classified as approvals without explicit metadata. No permit signature or signed transaction is accepted or stored."
         },
+        privilegedActionControls: {
+          status: "Live",
+          statusEndpoint: "GET /api/privileged-action-controls/status",
+          purpose: "Classify and govern supported administrative or irreversible contract calls before wallet signing.",
+          metadataPath: "action.privilegedAction",
+          supportedClassifications: ["Ownership Transfer", "Administrator Change", "Proxy Upgrade", "Implementation Change", "Role Grant", "Role Revoke", "Mint", "Burn", "Pause", "Unpause", "Freeze", "Emergency Withdrawal", "Treasury Withdrawal", "Oracle Replacement", "Fee Recipient Change", "Bridge Validator Change", "Permission Change"],
+          deterministicChecks: [
+            "Explicit classification or supported entry-point/method classification",
+            "Declared and deterministic classification contradiction detection",
+            "Target contract, package, and network binding",
+            "Blocked and review-required action policy",
+            "Approved administrator and implementation allowlists",
+            "Required recipient, role, implementation, and amount metadata",
+            "Current/requested protected-value consistency",
+            "Canonical protected-parameter fingerprint",
+            "Action-specific Human Approval quorum requirement",
+            "Exact approval binding and execution gating"
+          ],
+          policyFields: {
+            enabled: "structuredRules.privilegedActionControlsEnabled",
+            mode: "structuredRules.privilegedActionMode: Observe | Review | Enforce",
+            reviewActions: "structuredRules.privilegedActionsRequiringReview",
+            blockedActions: "structuredRules.privilegedActionsBlocked",
+            administrators: "structuredRules.approvedAdministrators",
+            implementations: "structuredRules.approvedImplementations",
+            quorum: "structuredRules.privilegedActionQuorumRules",
+            unknownAction: "structuredRules.unknownPrivilegedAction: Warn | Review | Block"
+          },
+          securityBoundary: "Generic calls are skipped unless a supported entry point or explicit privileged-action object is present. Classification is deterministic for supported methods and unknown calls follow explicit policy."
+        },
         x402PaymentControls: {
           status: "Foundation Available",
           statusEndpoint: "GET /api/x402-payment-controls/status",
@@ -744,6 +798,7 @@ const server = createServer(async (req, res) => {
           complianceControlsContext: "Sanitized feed state, jurisdictions, attestation statuses, Travel Rule evidence status, screening status, risk rating, and exact-match summaries",
           executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
           tokenPermissionControlsContext: "Classification, owner, token, spender, bounded amount, ratio, deadline, nonce, chain, fingerprint, replay state, batch, NFT operator, and policy-limit evidence",
+          privilegedActionControlsContext: "Classification source, target, protected parameters, administrator or implementation policy, fingerprint, review requirement, and action-specific quorum evidence",
           approval: "For Review Required decisions, the exact bound intent can expose a wallet-scoped approval request, quorum, expiry, responses, and whether signing may proceed",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",

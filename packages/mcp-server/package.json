@@ -1,6 +1,6 @@
 {
   "name": "@magen3/mcp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Official local MCP server for the Magen3 Web3 execution firewall.",
   "type": "module",
   "main": "./dist/server.js",

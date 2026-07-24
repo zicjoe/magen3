@@ -470,3 +470,62 @@ test("preserves unsigned Token Permission metadata without permit signatures", a
   assert.equal(captured.action.tokenPermission.nonce, "nonce-1");
   assert.equal(response.result.tokenPermissionControlsContext.replayStatus, "clear");
 });
+
+
+test("preserves unsigned Privileged Action metadata and response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: false,
+        result: {
+          decision: "Review Required",
+          risk: "High",
+          riskScore: 72,
+          reason: "ownership transfer requires quorum",
+          recommendedAction: "complete approval",
+          privilegedActionControlsContext: {
+            classifiedAction: "Ownership Transfer",
+            parameterFingerprint: "b".repeat(64),
+            approvalRequired: true,
+            requiredApprovalCount: 2,
+          },
+        },
+        gatewayRequest: {},
+        auditLog: {},
+        approvalRequest: { id: "APR-1" },
+        nextAction: "review",
+      }), { status: 201 });
+    },
+  });
+
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: {
+      type: "Contract Interaction",
+      target: `contract-hash-${"2".repeat(64)}`,
+      entryPoint: "transfer_ownership",
+      chainName: "casper-test",
+      privilegedAction: {
+        classifiedAction: "Ownership Transfer",
+        contract: `contract-hash-${"2".repeat(64)}`,
+        entryPoint: "transfer_ownership",
+        currentValue: `01${"1".repeat(64)}`,
+        requestedValue: `01${"3".repeat(64)}`,
+        recipient: `01${"3".repeat(64)}`,
+        classifierSource: "sdk-test",
+        classifierVersion: "1.0.0",
+        network: "casper-test",
+      },
+    },
+  });
+
+  assert.equal(captured.action.privilegedAction.classifiedAction, "Ownership Transfer");
+  assert.equal(captured.action.privilegedAction.recipient, `01${"3".repeat(64)}`);
+  assert.equal(response.result.privilegedActionControlsContext.requiredApprovalCount, 2);
+});

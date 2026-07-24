@@ -141,6 +141,51 @@ class ClientTests(unittest.TestCase):
         self.assertNotIn("signature", permission)
         self.assertEqual(result["result"]["tokenPermissionControlsContext"]["replayStatus"], "clear")
 
+    def test_privileged_action_metadata_passes_through_without_signatures(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {
+                "ok": True,
+                "executionApproved": False,
+                "result": {
+                    "decision": "Review Required",
+                    "privilegedActionControlsContext": {
+                        "classifiedAction": "Proxy Upgrade",
+                        "parameterFingerprint": "b" * 64,
+                        "approvalRequired": True,
+                        "requiredApprovalCount": 2,
+                    },
+                },
+            }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "01" + "1" * 64,
+            "action": {
+                "type": "Contract Interaction",
+                "target": "contract-hash-" + "2" * 64,
+                "entryPoint": "upgrade_to",
+                "chainName": "casper-test",
+                "privilegedAction": {
+                    "classifiedAction": "Proxy Upgrade",
+                    "contract": "contract-hash-" + "2" * 64,
+                    "entryPoint": "upgrade_to",
+                    "currentValue": "contract-hash-" + "3" * 64,
+                    "requestedValue": "contract-hash-" + "4" * 64,
+                    "implementation": "contract-hash-" + "4" * 64,
+                    "classifierSource": "python-sdk-test",
+                    "classifierVersion": "1.0.0",
+                    "network": "casper-test",
+                },
+            },
+        })
+
+        metadata = captured["payload"]["action"]["privilegedAction"]
+        self.assertEqual(metadata["classifiedAction"], "Proxy Upgrade")
+        self.assertNotIn("signature", metadata)
+        self.assertEqual(result["result"]["privilegedActionControlsContext"]["requiredApprovalCount"], 2)
+
     def test_get_approval(self):
         captured = {}
         def transport(method, url, headers, data, timeout):

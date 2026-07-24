@@ -129,6 +129,18 @@ function normalizeRuntimeArgs(value) {
   return Object.fromEntries(Object.entries(value).slice(0, 100));
 }
 
+
+function normalizeMetadataValue(value, depth = 0) {
+  if (value === undefined) return null;
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 3) return cleanString(value);
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => normalizeMetadataValue(item, depth + 1));
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).slice(0, 50).map(([key, child]) => [cleanString(key).slice(0, 80), normalizeMetadataValue(child, depth + 1)]));
+  }
+  return cleanString(value);
+}
+
 function requireField(value, name) {
   if (!cleanString(value)) {
     const err = new Error(`${name} is required for Agent Gateway requests`);
@@ -196,6 +208,17 @@ export function normalizeAgentGatewayIntent(body = {}) {
         : body.tokenPermission && typeof body.tokenPermission === "object"
           ? body.tokenPermission
           : {};
+  const privilegedAction = action.privilegedAction && typeof action.privilegedAction === "object"
+    ? action.privilegedAction
+    : action.privileged_action && typeof action.privileged_action === "object"
+      ? action.privileged_action
+      : action.administrativeAction && typeof action.administrativeAction === "object"
+        ? action.administrativeAction
+        : action.administrative_action && typeof action.administrative_action === "object"
+          ? action.administrative_action
+          : body.privilegedAction && typeof body.privilegedAction === "object"
+            ? body.privilegedAction
+            : {};
   const lifecycle = action.lifecycle && typeof action.lifecycle === "object"
     ? action.lifecycle
     : action.executionLifecycle && typeof action.executionLifecycle === "object"
@@ -337,6 +360,20 @@ export function normalizeAgentGatewayIntent(body = {}) {
     tokenPermissionOperatorForAll: Boolean(tokenPermission.operatorForAll === true || tokenPermission.operator_for_all === true || String(tokenPermission.operatorForAll || tokenPermission.operator_for_all || "").toLowerCase() === "true"),
     tokenPermissionBatchItems: Array.isArray(tokenPermission.batchItems || tokenPermission.batch_items) ? (tokenPermission.batchItems || tokenPermission.batch_items).slice(0, 100) : [],
     tokenPermissionAllowanceResetExpected: Boolean(tokenPermission.allowanceResetExpected === true || tokenPermission.allowance_reset_expected === true || String(tokenPermission.allowanceResetExpected || tokenPermission.allowance_reset_expected || "").toLowerCase() === "true"),
+    privilegedActionMetadataSupplied: Object.keys(privilegedAction).length > 0,
+    privilegedActionClassifiedAction: cleanString(privilegedAction.classifiedAction || privilegedAction.classified_action || privilegedAction.action || privilegedAction.type || "", ""),
+    privilegedActionContract: cleanString(privilegedAction.contract || privilegedAction.contractHash || privilegedAction.contract_hash || contract.identifier || contract.hash || target || "", ""),
+    privilegedActionPackage: cleanString(privilegedAction.package || privilegedAction.packageHash || privilegedAction.package_hash || action.contractPackageHash || action.contract_package_hash || "", ""),
+    privilegedActionEntryPoint: cleanString(privilegedAction.entryPoint || privilegedAction.entry_point || contract.entryPoint || contract.entry_point || action.entryPoint || action.entry_point || "", ""),
+    privilegedActionMethodSignature: cleanString(privilegedAction.methodSignature || privilegedAction.method_signature || privilegedAction.method || "", ""),
+    privilegedActionCurrentValue: normalizeMetadataValue(privilegedAction.currentValue ?? privilegedAction.current_value),
+    privilegedActionRequestedValue: normalizeMetadataValue(privilegedAction.requestedValue ?? privilegedAction.requested_value ?? privilegedAction.newValue ?? privilegedAction.new_value),
+    privilegedActionRole: cleanString(privilegedAction.role || privilegedAction.permission || "", ""),
+    privilegedActionRecipient: cleanString(privilegedAction.recipient || privilegedAction.administrator || privilegedAction.admin || privilegedAction.beneficiary || "", ""),
+    privilegedActionImplementation: cleanString(privilegedAction.implementation || privilegedAction.newImplementation || privilegedAction.new_implementation || "", ""),
+    privilegedActionClassifierSource: cleanString(privilegedAction.classifierSource || privilegedAction.classifier_source || "", ""),
+    privilegedActionClassifierVersion: cleanString(privilegedAction.classifierVersion || privilegedAction.classifier_version || "", ""),
+    privilegedActionNetwork: cleanString(privilegedAction.network || privilegedAction.chainName || privilegedAction.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

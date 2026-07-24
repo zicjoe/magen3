@@ -102,7 +102,7 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
 | Policy & Approval Controls | Deterministic policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety | — | Privileged-action classification; contract upgrades; contract argument policies |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; contract argument policies |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
 | Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
@@ -158,6 +158,12 @@ Token Permission Controls runs only when an adapter explicitly supplies `action.
 Deterministic checks cover owner, token, wallet/contract spender, execution-wallet and network binding, approved or blocked spenders, bounded amounts, approval-to-transaction ratio, unlimited authority, permit nonce and expiry, maximum lifetime, NFT operator policy, batch item validity and exact aggregate binding, allowance-reset expectations, and Human Approval binding. Magen3 computes and persists a canonical token-permission fingerprint. Exact permit replay and reuse of a permit ID or token-scoped nonce with changed protected parameters are hard blocked.
 
 Policies expose Observe, Review, and Enforce modes plus explicit actions for unknown spenders and unlimited authority. An empty approved-spender list uses the safe default path rather than treating every spender as trusted. Existing policies and integrations remain compatible because requests without token-permission metadata are skipped rather than treated as approvals. The Gateway rejects permit signatures and raw signed authority payloads. For relevant capabilities, Security Coverage checks bounded configuration and observed evidence, while Integration Health reflects actual Token Permission findings. See `docs/TOKEN_PERMISSION_CONTROLS.md`.
+
+### Live Privileged Contract Action Classification
+
+Privileged Action Controls classifies supported ownership, administrator, proxy or implementation upgrade, role, mint, burn, pause, freeze, withdrawal, oracle, fee-recipient, bridge-validator, and permission changes before signing. It activates for explicit `action.privilegedAction` metadata or an entry point or method signature in Magen3's deterministic supported map. Generic contract calls remain unclassified.
+
+The control validates classifier consistency and provenance, contract and network binding, blocked and review-required action matrices, approved administrators and implementations, required recipients, roles and amounts, and material protected-value changes. Magen3 computes a SHA-256 parameter fingerprint and reuses the exact-intent Human Approval workflow. Per-action quorum can only increase the base quorum; insufficient approvers produce `Configuration Required` instead of silently weakening authorization. See `docs/PRIVILEGED_ACTION_CONTROLS.md`.
 
 ### Execution Simulation foundation
 
@@ -383,6 +389,7 @@ Supported policy fields are enforced by the current backend:
 - Bridge Controls provider, chain, asset, amount, fee, quote, destination, and confirmation boundaries through `structuredRules`
 - Compliance Controls attestation, Travel Rule, jurisdiction, counterparty, screening, risk, provider, freshness, and unavailable-evidence behavior through `structuredRules`
 - Token Permission Controls mode, spender lists, unlimited-approval action, amount and ratio limits, permit lifetime, nonce, chain binding, batch, NFT operator, and allowance-reset requirements through `structuredRules`
+- Privileged Action Controls mode, review and block matrices, administrator and implementation allowlists, unknown-action behavior, and per-action quorum through `structuredRules`
 
 Available presets:
 
@@ -834,7 +841,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 has started with **Token Approval & Permit Safety complete and Live**. Magen3 is not finished. The next recommended milestone is **Privileged Contract Action Classification**, followed by Emergency Circuit Breaker, cryptographic reviewer signatures, organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 now has **Token Approval & Permit Safety** and **Privileged Contract Action Classification** complete and Live. Magen3 is not finished. The next recommended milestone is **Emergency Circuit Breaker**, followed by cryptographic reviewer signatures, organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -862,7 +869,7 @@ The repository retains the existing Dockerfile and `railway.json`.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
 5. Run `pnpm db:migrate` against the production database before relying on the Human Approval & Quorum fields.
-6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/token-permission-controls/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
+6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/token-permission-controls/status`, `/api/privileged-action-controls/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
 

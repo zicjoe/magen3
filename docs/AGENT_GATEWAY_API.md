@@ -553,3 +553,10 @@ Explicit token approvals, permits, NFT operator authority, batch approval, and d
 
 The Gateway accepts unsigned metadata only. `signature`, `signatures`, approvals, raw signed permission payloads, private keys, and mnemonics are rejected.
 
+
+
+## Privileged Action Controls
+
+Supported administrative actions use `action.privilegedAction`. The object may include `classifiedAction`, `contract`, `package`, `entryPoint`, `methodSignature`, sanitized `currentValue` and `requestedValue`, `role`, `recipient`, `implementation`, classifier source/version, and network. A supported deterministic entry point can activate classification without the object, while unrelated generic calls remain skipped.
+
+The result may include `privilegedActionControlsContext` with the resolved classification, protected-parameter fingerprint, classification status, approval requirement, and required approval count. Policy fields and the complete boundary are documented in `PRIVILEGED_ACTION_CONTROLS.md`. Never include administrator keys, signatures, raw signed transactions, mnemonics, or wallet secrets.

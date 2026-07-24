@@ -440,6 +440,45 @@ interface DecisionResult {
     replayWindowSeconds?: number;
     maxRetryAttempts?: number;
   };
+  tokenPermissionControlsContext?: {
+    permissionType?: string;
+    owner?: string;
+    tokenContract?: string;
+    spender?: string;
+    approvalAmount?: number | null;
+    intendedTransactionAmount?: number | null;
+    unlimited?: boolean;
+    nonce?: string;
+    permitId?: string;
+    deadline?: string;
+    network?: string;
+    fingerprint?: string;
+    replayStatus?: string;
+    mode?: string;
+  };
+  privilegedActionControlsContext?: {
+    metadataSupplied?: boolean;
+    declaredAction?: string;
+    classifiedAction?: string;
+    methodClassifiedAction?: string;
+    classificationContradiction?: boolean;
+    contract?: string;
+    package?: string;
+    entryPoint?: string;
+    methodSignature?: string;
+    currentValue?: unknown;
+    requestedValue?: unknown;
+    role?: string;
+    recipient?: string;
+    implementation?: string;
+    classifierSource?: string;
+    classifierVersion?: string;
+    network?: string;
+    parameterFingerprint?: string;
+    classificationStatus?: string;
+    approvalRequired?: boolean;
+    requiredApprovalCount?: number;
+  };
   bridgeControlsContext?: {
     status?: string;
     mode?: string;
@@ -713,6 +752,24 @@ function stringifyAssetDecimals(value: unknown) {
     .filter(([, decimals]) => Number.isInteger(Number(decimals)) && Number(decimals) >= 0 && Number(decimals) <= 30)
     .map(([asset, decimals]) => `${asset.toUpperCase()}=${Number(decimals)}`);
   return lines.length ? lines.join("\n") : "USDC=6";
+}
+
+function parsePrivilegedQuorumRules(value: string) {
+  return Object.fromEntries(value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(/[=:]/, 2).map((part) => part.trim()))
+    .filter(([action, count]) => Boolean(action) && Number.isInteger(Number(count)) && Number(count) >= 1 && Number(count) <= 10)
+    .map(([action, count]) => [action, Number(count)]));
+}
+
+function stringifyPrivilegedQuorumRules(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return Object.entries(value as Record<string, unknown>)
+    .filter(([, count]) => Number.isInteger(Number(count)) && Number(count) >= 1 && Number(count) <= 10)
+    .map(([action, count]) => `${action}=${Number(count)}`)
+    .join("\n");
 }
 
 // ──────────────────────────────────────────────────────────
@@ -2364,6 +2421,14 @@ function AgentRegistrationWizard({
           tokenPermissionRequireChainBinding: typeof sourceRules.tokenPermissionRequireChainBinding === "boolean" ? sourceRules.tokenPermissionRequireChainBinding : true,
           tokenPermissionRequireNonce: typeof sourceRules.tokenPermissionRequireNonce === "boolean" ? sourceRules.tokenPermissionRequireNonce : true,
           tokenPermissionMaximumBatchSize: typeof sourceRules.tokenPermissionMaximumBatchSize === "number" ? sourceRules.tokenPermissionMaximumBatchSize : 10,
+          privilegedActionControlsEnabled: typeof sourceRules.privilegedActionControlsEnabled === "boolean" ? sourceRules.privilegedActionControlsEnabled : capabilities.some((item) => ["Trading", "Treasury Operations", "dApp Interactions", "Enterprise Automation"].includes(item)),
+          privilegedActionMode: typeof sourceRules.privilegedActionMode === "string" ? sourceRules.privilegedActionMode : "Review",
+          privilegedActionsRequiringReview: Array.isArray(sourceRules.privilegedActionsRequiringReview) ? sourceRules.privilegedActionsRequiringReview : ["Ownership Transfer", "Administrator Change", "Proxy Upgrade", "Implementation Change", "Role Grant", "Role Revoke", "Mint", "Pause", "Unpause", "Freeze", "Emergency Withdrawal", "Treasury Withdrawal", "Oracle Replacement", "Fee Recipient Change", "Bridge Validator Change", "Permission Change"],
+          privilegedActionsBlocked: Array.isArray(sourceRules.privilegedActionsBlocked) ? sourceRules.privilegedActionsBlocked : [],
+          approvedAdministrators: Array.isArray(sourceRules.approvedAdministrators) ? sourceRules.approvedAdministrators : [],
+          approvedImplementations: Array.isArray(sourceRules.approvedImplementations) ? sourceRules.approvedImplementations : [],
+          privilegedActionQuorumRules: sourceRules.privilegedActionQuorumRules && typeof sourceRules.privilegedActionQuorumRules === "object" && !Array.isArray(sourceRules.privilegedActionQuorumRules) ? sourceRules.privilegedActionQuorumRules : {},
+          unknownPrivilegedAction: typeof sourceRules.unknownPrivilegedAction === "string" ? sourceRules.unknownPrivilegedAction : "Review",
           x402ControlsEnabled: typeof sourceRules.x402ControlsEnabled === "boolean" ? sourceRules.x402ControlsEnabled : capabilities.some((item) => ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"].includes(item)),
           x402ControlMode: typeof sourceRules.x402ControlMode === "string" ? sourceRules.x402ControlMode : "Review",
           x402UnavailableAction: typeof sourceRules.x402UnavailableAction === "string" ? sourceRules.x402UnavailableAction : "Review",
@@ -2415,7 +2480,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -3590,6 +3655,42 @@ function TokenPermissionPolicyFields({
   );
 }
 
+function PrivilegedActionPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Contract & Permission Safety · Privileged Actions</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Classify supported administrative calls and bind upgrades, ownership, roles, minting, pausing, treasury withdrawals, oracle changes, and permission changes to deterministic policy and Human Approval.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.privilegedActionControlsEnabled ?? "")} onChange={(value) => onChange({ privilegedActionControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.privilegedActionMode ?? "")} onChange={(value) => onChange({ privilegedActionMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Unknown Privileged Action" value={String(values.unknownPrivilegedAction ?? "")} onChange={(value) => onChange({ unknownPrivilegedAction: value })} options={["Warn", "Review", "Block"]} />
+        <TextareaField label="Actions Requiring Review" value={String(values.privilegedActionsRequiringReview ?? "")} onChange={(value) => onChange({ privilegedActionsRequiringReview: value })} />
+        <TextareaField label="Blocked Privileged Actions" value={String(values.privilegedActionsBlocked ?? "")} onChange={(value) => onChange({ privilegedActionsBlocked: value })} />
+        <TextareaField label="Approved Administrators" value={String(values.approvedAdministrators ?? "")} onChange={(value) => onChange({ approvedAdministrators: value })} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Advanced implementation and quorum rules</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <TextareaField label="Approved Implementations" value={String(values.approvedImplementations ?? "")} onChange={(value) => onChange({ approvedImplementations: value })} />
+          <TextareaField label="Per-action Quorum (Action=Count)" value={String(values.privilegedActionQuorumRules ?? "")} onChange={(value) => onChange({ privilegedActionQuorumRules: value })} />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Only explicit metadata or entry points in Magen3's supported deterministic map are classified. Unknown calls follow policy; generic contract calls are not mislabeled as privileged.</p>
+    </div>
+  );
+}
+
 function X402PolicyFields({
   values,
   onChange,
@@ -3768,6 +3869,14 @@ function PoliciesPage({
     tokenPermissionRequireChainBinding: "Yes",
     tokenPermissionRequireNonce: "Yes",
     tokenPermissionMaximumBatchSize: "10",
+    privilegedActionControlsEnabled: "Yes",
+    privilegedActionMode: "Review",
+    privilegedActionsRequiringReview: "Ownership Transfer\nAdministrator Change\nProxy Upgrade\nImplementation Change\nRole Grant\nRole Revoke\nMint\nPause\nUnpause\nFreeze\nEmergency Withdrawal\nTreasury Withdrawal\nOracle Replacement\nFee Recipient Change\nBridge Validator Change\nPermission Change",
+    privilegedActionsBlocked: "",
+    approvedAdministrators: "",
+    approvedImplementations: "",
+    privilegedActionQuorumRules: "",
+    unknownPrivilegedAction: "Review",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -3895,6 +4004,14 @@ function PoliciesPage({
     tokenPermissionRequireChainBinding: "Yes",
     tokenPermissionRequireNonce: "Yes",
     tokenPermissionMaximumBatchSize: "10",
+    privilegedActionControlsEnabled: "Yes",
+    privilegedActionMode: "Review",
+    privilegedActionsRequiringReview: "Ownership Transfer\nAdministrator Change\nProxy Upgrade\nImplementation Change\nRole Grant\nRole Revoke\nMint\nPause\nUnpause\nFreeze\nEmergency Withdrawal\nTreasury Withdrawal\nOracle Replacement\nFee Recipient Change\nBridge Validator Change\nPermission Change",
+    privilegedActionsBlocked: "",
+    approvedAdministrators: "",
+    approvedImplementations: "",
+    privilegedActionQuorumRules: "",
+    unknownPrivilegedAction: "Review",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4024,6 +4141,14 @@ function PoliciesPage({
         tokenPermissionRequireChainBinding: form.tokenPermissionRequireChainBinding !== "No",
         tokenPermissionRequireNonce: form.tokenPermissionRequireNonce !== "No",
         tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(form.tokenPermissionMaximumBatchSize) || 10)),
+        privilegedActionControlsEnabled: form.privilegedActionControlsEnabled !== "No",
+        privilegedActionMode: form.privilegedActionMode,
+        privilegedActionsRequiringReview: form.privilegedActionsRequiringReview.split("\n").map((item) => item.trim()).filter(Boolean),
+        privilegedActionsBlocked: form.privilegedActionsBlocked.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedAdministrators: form.approvedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedImplementations: form.approvedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        privilegedActionQuorumRules: parsePrivilegedQuorumRules(form.privilegedActionQuorumRules),
+        unknownPrivilegedAction: form.unknownPrivilegedAction,
         x402ControlsEnabled: form.x402ControlsEnabled !== "No",
         x402ControlMode: form.x402ControlMode,
         x402UnavailableAction: form.x402UnavailableAction,
@@ -4141,6 +4266,14 @@ function PoliciesPage({
     tokenPermissionRequireChainBinding: "Yes",
     tokenPermissionRequireNonce: "Yes",
     tokenPermissionMaximumBatchSize: "10",
+    privilegedActionControlsEnabled: "Yes",
+    privilegedActionMode: "Review",
+    privilegedActionsRequiringReview: "Ownership Transfer\nAdministrator Change\nProxy Upgrade\nImplementation Change\nRole Grant\nRole Revoke\nMint\nPause\nUnpause\nFreeze\nEmergency Withdrawal\nTreasury Withdrawal\nOracle Replacement\nFee Recipient Change\nBridge Validator Change\nPermission Change",
+    privilegedActionsBlocked: "",
+    approvedAdministrators: "",
+    approvedImplementations: "",
+    privilegedActionQuorumRules: "",
+    unknownPrivilegedAction: "Review",
     x402ControlsEnabled: "Yes",
       x402ControlMode: "Review",
       x402UnavailableAction: "Review",
@@ -4262,6 +4395,14 @@ function PoliciesPage({
       tokenPermissionRequireChainBinding: policy.structuredRules?.tokenPermissionRequireChainBinding === false ? "No" : "Yes",
       tokenPermissionRequireNonce: policy.structuredRules?.tokenPermissionRequireNonce === false ? "No" : "Yes",
       tokenPermissionMaximumBatchSize: String(typeof policy.structuredRules?.tokenPermissionMaximumBatchSize === "number" ? policy.structuredRules.tokenPermissionMaximumBatchSize : 10),
+      privilegedActionControlsEnabled: policy.structuredRules?.privilegedActionControlsEnabled === true ? "Yes" : "No",
+      privilegedActionMode: typeof policy.structuredRules?.privilegedActionMode === "string" ? policy.structuredRules.privilegedActionMode : "Review",
+      privilegedActionsRequiringReview: Array.isArray(policy.structuredRules?.privilegedActionsRequiringReview) ? (policy.structuredRules.privilegedActionsRequiringReview as string[]).join("\n") : "",
+      privilegedActionsBlocked: Array.isArray(policy.structuredRules?.privilegedActionsBlocked) ? (policy.structuredRules.privilegedActionsBlocked as string[]).join("\n") : "",
+      approvedAdministrators: Array.isArray(policy.structuredRules?.approvedAdministrators) ? (policy.structuredRules.approvedAdministrators as string[]).join("\n") : "",
+      approvedImplementations: Array.isArray(policy.structuredRules?.approvedImplementations) ? (policy.structuredRules.approvedImplementations as string[]).join("\n") : "",
+      privilegedActionQuorumRules: stringifyPrivilegedQuorumRules(policy.structuredRules?.privilegedActionQuorumRules),
+      unknownPrivilegedAction: typeof policy.structuredRules?.unknownPrivilegedAction === "string" ? policy.structuredRules.unknownPrivilegedAction : "Review",
       x402ControlsEnabled: policy.structuredRules?.x402ControlsEnabled === false ? "No" : "Yes",
       x402ControlMode: typeof policy.structuredRules?.x402ControlMode === "string" ? policy.structuredRules.x402ControlMode : "Observe",
       x402UnavailableAction: typeof policy.structuredRules?.x402UnavailableAction === "string" ? policy.structuredRules.x402UnavailableAction : "Warn",
@@ -4392,6 +4533,14 @@ function PoliciesPage({
         tokenPermissionRequireChainBinding: editForm.tokenPermissionRequireChainBinding !== "No",
         tokenPermissionRequireNonce: editForm.tokenPermissionRequireNonce !== "No",
         tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(editForm.tokenPermissionMaximumBatchSize) || 10)),
+        privilegedActionControlsEnabled: editForm.privilegedActionControlsEnabled !== "No",
+        privilegedActionMode: editForm.privilegedActionMode,
+        privilegedActionsRequiringReview: editForm.privilegedActionsRequiringReview.split("\n").map((item) => item.trim()).filter(Boolean),
+        privilegedActionsBlocked: editForm.privilegedActionsBlocked.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedAdministrators: editForm.approvedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedImplementations: editForm.approvedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        privilegedActionQuorumRules: parsePrivilegedQuorumRules(editForm.privilegedActionQuorumRules),
+        unknownPrivilegedAction: editForm.unknownPrivilegedAction,
         x402ControlsEnabled: editForm.x402ControlsEnabled !== "No",
         x402ControlMode: editForm.x402ControlMode,
         x402UnavailableAction: editForm.x402UnavailableAction,
@@ -4680,6 +4829,7 @@ function PoliciesPage({
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <PrivilegedActionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
@@ -4773,6 +4923,15 @@ function PoliciesPage({
                   <span>·</span>
                   <span>{typeof pol.structuredRules?.oracleValidationMinSources === "number" ? pol.structuredRules.oracleValidationMinSources : 1} source minimum</span>
                   <span>· unavailable: {typeof pol.structuredRules?.oracleValidationUnavailableAction === "string" ? pol.structuredRules.oracleValidationUnavailableAction : "Warn"}</span>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
+                  <span className="font-semibold text-[#F8FAFC]">Privileged Actions</span>
+                  <span>{typeof pol.structuredRules?.privilegedActionMode === "string" ? pol.structuredRules.privilegedActionMode : "Disabled"}</span>
+                  <span>·</span>
+                  <span>{Array.isArray(pol.structuredRules?.privilegedActionsRequiringReview) ? pol.structuredRules.privilegedActionsRequiringReview.length : 0} review classes</span>
+                  <span>·</span>
+                  <span>{Array.isArray(pol.structuredRules?.privilegedActionsBlocked) ? pol.structuredRules.privilegedActionsBlocked.length : 0} blocked classes</span>
+                  <span>· unknown: {typeof pol.structuredRules?.unknownPrivilegedAction === "string" ? pol.structuredRules.unknownPrivilegedAction : "Review"}</span>
                 </div>
                 <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
                   <span className="font-semibold text-[#F8FAFC]">Bridge Controls</span>
@@ -4951,6 +5110,7 @@ function PoliciesPage({
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <PrivilegedActionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
@@ -6760,6 +6920,26 @@ function playgroundLifecycle(overrides: Record<string, unknown> = {}) {
 }
 
 
+function playgroundPrivilegedAction(policy: Policy | undefined, classifiedAction: string, overrides: Record<string, unknown> = {}) {
+  const contract = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+  const approvedAdministrator = firstStringRule(policy, "approvedAdministrators", PLAYGROUND_DEMO_RECIPIENT);
+  const approvedImplementation = firstStringRule(policy, "approvedImplementations", `contract-hash-${"b".repeat(64)}`);
+  return {
+    classifiedAction,
+    contract,
+    entryPoint: classifiedAction.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+    methodSignature: "",
+    currentValue: "current",
+    requestedValue: "requested",
+    recipient: approvedAdministrator,
+    implementation: approvedImplementation,
+    classifierSource: "magen3-intent-playground",
+    classifierVersion: "1.0.0",
+    network: "casper-test",
+    ...overrides,
+  };
+}
+
 function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
   const now = Date.now();
   return {
@@ -7024,6 +7204,94 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       chainName: "casper",
     },
   }),
+  "Approved privileged mint": (agent, walletAddress, policy) => {
+    const target = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Mint a bounded amount through an explicitly classified administrative call",
+      reason: "Exercise supported classification, contract binding, recipient validation, amount validation, policy review, and exact Human Approval binding.",
+      action: {
+        type: "Contract Interaction",
+        amount: 10,
+        asset: "CSPR",
+        target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        entryPoint: "mint",
+        chainName: "casper-test",
+        privilegedAction: playgroundPrivilegedAction(policy, "Mint", { entryPoint: "mint", recipient: walletAddress, requestedValue: { amount: 10 }, currentValue: { totalSupply: 1000 } }),
+        preflight: playgroundPreflight({ runtimeArgs: { recipient: walletAddress, amount: "10" } }),
+      },
+    };
+  },
+  "Ownership transfer requiring review": (agent, walletAddress, policy) => {
+    const target = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+    const newOwner = firstStringRule(policy, "approvedAdministrators", PLAYGROUND_DEMO_RECIPIENT);
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Transfer contract ownership only through configured Human Approval",
+      reason: "Ownership Transfer should resolve against the privileged review matrix and any action-specific quorum without changing the generic contract flow.",
+      action: {
+        type: "Contract Interaction", amount: 0, asset: "CSPR", target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target), entryPoint: "transfer_ownership", chainName: "casper-test",
+        privilegedAction: playgroundPrivilegedAction(policy, "Ownership Transfer", { entryPoint: "transfer_ownership", currentValue: walletAddress, requestedValue: newOwner, recipient: newOwner, implementation: "" }),
+        preflight: playgroundPreflight({ runtimeArgs: { new_owner: newOwner } }),
+      },
+    };
+  },
+  "Unapproved proxy implementation": (agent, walletAddress, policy) => {
+    const target = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+    const implementation = `contract-hash-${"c".repeat(64)}`;
+    return {
+      source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+      goal: "Reject or review a proxy upgrade to an implementation outside policy",
+      reason: "The requested implementation is intentionally not selected from approvedImplementations.",
+      action: {
+        type: "Contract Interaction", amount: 0, asset: "CSPR", target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target), entryPoint: "upgrade_to", chainName: "casper-test",
+        privilegedAction: playgroundPrivilegedAction(policy, "Proxy Upgrade", { entryPoint: "upgrade_to", currentValue: `contract-hash-${"a".repeat(64)}`, requestedValue: implementation, implementation, recipient: "" }),
+        preflight: playgroundPreflight({ runtimeArgs: { implementation } }),
+      },
+    };
+  },
+  "Unknown privileged method": (agent, walletAddress, policy) => {
+    const target = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+      goal: "Apply configured unknown-action behavior to an explicit administrative call",
+      reason: "The declared action is intentionally outside Magen3's supported deterministic classification set.",
+      action: {
+        type: "Contract Interaction", amount: 0, asset: "CSPR", target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target), entryPoint: "admin_sweep", chainName: "casper-test",
+        privilegedAction: playgroundPrivilegedAction(policy, "Custom Admin Sweep", { entryPoint: "admin_sweep", recipient: walletAddress, implementation: "" }),
+        preflight: playgroundPreflight({ runtimeArgs: { recipient: walletAddress } }),
+      },
+    };
+  },
+  "Contradictory privileged classification": (agent, walletAddress, policy) => {
+    const target = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
+    return {
+      source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+      goal: "Block an adapter that labels a pause call as minting",
+      reason: "Declared action and deterministic entry-point classification intentionally contradict each other.",
+      action: {
+        type: "Contract Interaction", amount: 0, asset: "CSPR", target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target), entryPoint: "pause", chainName: "casper-test",
+        privilegedAction: playgroundPrivilegedAction(policy, "Mint", { entryPoint: "pause", recipient: walletAddress, requestedValue: { paused: true }, implementation: "" }),
+        preflight: playgroundPreflight(),
+      },
+    };
+  },
   "Bounded token approval": (agent, walletAddress, policy) => {
     const permission = playgroundTokenPermission(policy, walletAddress);
     return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Grant one bounded token allowance to an approved spender", reason: "Evaluate token identity, spender policy, amount, and approval-to-transaction ratio before signing.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "approve", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };

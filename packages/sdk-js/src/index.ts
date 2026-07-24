@@ -179,6 +179,44 @@ export interface Magen3TokenPermission {
   allowanceResetExpected?: boolean;
 }
 
+export type Magen3PrivilegedActionName =
+  | "Ownership Transfer"
+  | "Administrator Change"
+  | "Proxy Upgrade"
+  | "Implementation Change"
+  | "Role Grant"
+  | "Role Revoke"
+  | "Mint"
+  | "Burn"
+  | "Pause"
+  | "Unpause"
+  | "Freeze"
+  | "Emergency Withdrawal"
+  | "Treasury Withdrawal"
+  | "Oracle Replacement"
+  | "Fee Recipient Change"
+  | "Bridge Validator Change"
+  | "Permission Change";
+
+export interface Magen3PrivilegedAction {
+  /** Explicit supported action. Adapters may omit this only when entryPoint or methodSignature maps deterministically. */
+  classifiedAction?: Magen3PrivilegedActionName | string;
+  contract?: string;
+  package?: string;
+  entryPoint?: string;
+  methodSignature?: string;
+  /** Sanitized current protected value. Never include private state or secrets. */
+  currentValue?: unknown;
+  /** Exact requested protected value bound into the approval fingerprint. */
+  requestedValue?: unknown;
+  role?: string;
+  recipient?: string;
+  implementation?: string;
+  classifierSource?: string;
+  classifierVersion?: string;
+  network?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -205,6 +243,8 @@ export interface Magen3Action {
   x402?: Magen3X402Payment;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
+  /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
+  privilegedAction?: Magen3PrivilegedAction;
   /** Exact-once lifecycle metadata evaluated before wallet signing. */
   lifecycle?: Magen3Lifecycle;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
@@ -443,6 +483,34 @@ export interface Magen3TokenPermissionControlsContext {
   };
 }
 
+export interface Magen3PrivilegedActionControlsContext {
+  metadataSupplied?: boolean;
+  declaredAction?: string;
+  classifiedAction?: string;
+  methodClassifiedAction?: string;
+  classificationContradiction?: boolean;
+  contract?: string;
+  package?: string;
+  entryPoint?: string;
+  methodSignature?: string;
+  currentValue?: unknown;
+  requestedValue?: unknown;
+  role?: string;
+  recipient?: string;
+  implementation?: string;
+  classifierSource?: string;
+  classifierVersion?: string;
+  network?: string;
+  parameterFingerprint?: string;
+  classificationStatus?: "supported" | "unknown" | "contradictory" | string;
+  approvalRequired?: boolean;
+  requiredApprovalCount?: number;
+  config?: {
+    mode?: "Observe" | "Review" | "Enforce" | string;
+    unknownAction?: "Warn" | "Review" | "Block" | string;
+  };
+}
+
 export interface Magen3X402SettlementUpdate {
   auditLogId: string;
   status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
@@ -518,6 +586,8 @@ export interface Magen3DecisionResult {
   x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
+  /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
+  privilegedActionControlsContext?: Magen3PrivilegedActionControlsContext;
 }
 
 export interface Magen3IntentResponse {

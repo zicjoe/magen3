@@ -57,6 +57,14 @@ test("security coverage reaches 100 only when every configured protection check 
         tokenPermissionApprovedSpenders: ["01" + "2".repeat(64)],
         tokenPermissionBlockedSpenders: [],
         tokenPermissionMaximumBatchSize: 10,
+        privilegedActionControlsEnabled: true,
+        privilegedActionMode: "Review",
+        privilegedActionsRequiringReview: ["Mint", "Ownership Transfer", "Proxy Upgrade"],
+        privilegedActionsBlocked: [],
+        approvedAdministrators: ["01" + "3".repeat(64)],
+        approvedImplementations: ["contract-package-hash-approved-implementation"],
+        privilegedActionQuorumRules: { "Ownership Transfer": 2 },
+        unknownPrivilegedAction: "Review",
       },
     },
     [{
@@ -75,6 +83,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle price deviation", message: "Price within policy." },
         { module: "Bridge Controls", status: "pass", severity: "info", rule: "Bridge route metadata", message: "Required bridge route metadata is present." },
         { module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." },
+        { module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." },
       ],
     }],
   );
@@ -203,6 +212,40 @@ test("Token Permission coverage requires deterministic configuration and an obse
   assert.equal(observed.checks.find((item) => item.id === "token-permission-controls").passed, true);
 });
 
+test("Privileged Action coverage requires deterministic configuration and an observed supported classification", () => {
+  const timestamp = new Date().toISOString();
+  const agent = {
+    status: "Active",
+    type: "Treasury Manager",
+    executionCapabilities: ["Treasury Operations"],
+    apiKeyPreview: "mg3_live_…f91a",
+    onboardingStatus: "complete",
+    lastIntentAt: timestamp,
+  };
+  const policy = {
+    status: "Active",
+    structuredRules: {
+      privilegedActionControlsEnabled: true,
+      privilegedActionMode: "Review",
+      privilegedActionsRequiringReview: ["Ownership Transfer", "Proxy Upgrade"],
+      privilegedActionsBlocked: [],
+      approvedAdministrators: ["01" + "3".repeat(64)],
+      approvedImplementations: ["contract-package-hash-approved"],
+      privilegedActionQuorumRules: { "Ownership Transfer": 2 },
+      unknownPrivilegedAction: "Review",
+    },
+  };
+
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "privileged-action-controls").passed, false);
+
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp,
+    moduleFindings: [{ module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "privileged-action-controls").passed, true);
+});
+
 test("integration health never reports healthy when core services or configuration are missing", () => {
   const degraded = securityModel.deriveIntegrationHealth(
     { status: "Active" },
@@ -234,4 +277,12 @@ test("integration health never reports healthy when core services or configurati
     true,
   );
   assert.ok(tokenAttention.checks.some((check) => check.label === "Token Permission Controls" && check.status === "attention"));
+
+  const privilegedAttention = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Privileged Action Controls", status: "fail", severity: "critical", rule: "Consistent privileged-action classification", message: "Contradictory classification." }] }],
+    true,
+  );
+  assert.ok(privilegedAttention.checks.some((check) => check.label === "Privileged Action Controls" && check.status === "attention"));
 });

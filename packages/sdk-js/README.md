@@ -187,3 +187,8 @@ The SDK never accepts or transmits `PAYMENT-SIGNATURE` through the intent API. x
 ## Token approvals and permits
 
 Use `action.tokenPermission` only for explicit approval, permit, NFT operator, batch, or delegated spender authority. The SDK exposes `Magen3TokenPermission` and the response can include `tokenPermissionControlsContext`. Never include permit signatures, wallet signatures, private keys, or raw signed authority payloads.
+
+
+## Privileged Action Controls
+
+Use the typed `Magen3PrivilegedAction` object at `action.privilegedAction` for supported administrative calls. The response can include `privilegedActionControlsContext` with deterministic classification, parameter fingerprint, and approval/quorum requirements. Generic calls may omit the object. Never include administrator keys, signatures, or raw signed transactions.

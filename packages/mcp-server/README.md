@@ -86,3 +86,8 @@ After an Allowed decision and real facilitator activity, call `magen3_report_x40
 ## Token Permission Controls
 
 The MCP intent schema exposes `action.tokenPermission` for explicit unsigned token-authority metadata. Magen3 returns deterministic Token Permission Controls findings and replay context. The MCP server never accepts permit signatures, wallet signatures, private keys, or raw signed authority payloads.
+
+
+## Privileged Action Controls
+
+The MCP intent schema accepts unsigned `action.privilegedAction` metadata for supported administrative calls. Inspect Privileged Action Controls findings, the parameter fingerprint, and any exact-bound Human Approval requirement. The server rejects administrator keys, signatures, and raw signed transactions. Generic contract calls remain compatible.

@@ -30,3 +30,5 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 ## Archived notes
 
 Historic build notes, recording scripts, and old walkthroughs live in `archive/`. They are retained for project history and should not override the current README, in-app Docs, or `MAGEN3_PLATFORM.md`.
+
+- [Privileged Action Controls](./PRIVILEGED_ACTION_CONTROLS.md) — deterministic administrative-call classification, policy, fingerprinting, and Human Approval binding.

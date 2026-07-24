@@ -22,7 +22,7 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; approvalWorkflow?: Record<string, unknown>; tokenPermissionControls?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; approvalWorkflow?: Record<string, unknown>; tokenPermissionControls?: Record<string, unknown>; privilegedActionControls?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
@@ -48,6 +48,10 @@ export const api = {
 
   tokenPermissionControlsStatus() {
     return request<{ ok: boolean; tokenPermissionControls: Record<string, unknown> }>("/api/token-permission-controls/status");
+  },
+
+  privilegedActionControlsStatus() {
+    return request<{ ok: boolean; privilegedActionControls: Record<string, unknown> }>("/api/privileged-action-controls/status");
   },
 
   x402PaymentControlsStatus() {

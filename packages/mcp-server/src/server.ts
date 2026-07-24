@@ -74,6 +74,26 @@ const actionSchema = z.object({
     }).strict()).max(100).optional(),
     allowanceResetExpected: z.boolean().optional(),
   }).strict().optional(),
+  privilegedAction: z.object({
+    classifiedAction: z.enum([
+      "Ownership Transfer", "Administrator Change", "Proxy Upgrade", "Implementation Change",
+      "Role Grant", "Role Revoke", "Mint", "Burn", "Pause", "Unpause", "Freeze",
+      "Emergency Withdrawal", "Treasury Withdrawal", "Oracle Replacement", "Fee Recipient Change",
+      "Bridge Validator Change", "Permission Change",
+    ]).or(z.string().min(1)).optional(),
+    contract: z.string().min(1).optional(),
+    package: z.string().min(1).optional(),
+    entryPoint: z.string().min(1).max(128).optional(),
+    methodSignature: z.string().min(1).max(256).optional(),
+    currentValue: z.unknown().optional(),
+    requestedValue: z.unknown().optional(),
+    role: z.string().min(1).max(128).optional(),
+    recipient: z.string().min(1).optional(),
+    implementation: z.string().min(1).optional(),
+    classifierSource: z.string().min(1).max(128).optional(),
+    classifierVersion: z.string().min(1).max(64).optional(),
+    network: z.string().min(1).max(128).optional(),
+  }).strict().optional(),
   x402: z.object({
     version: z.number().int().positive(),
     scheme: z.string().min(1),
@@ -168,8 +188,8 @@ const x402SettlementSchema = z.object({
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
-    { name: "magen3-execution-firewall", version: "0.3.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Token Permission Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { name: "magen3-execution-firewall", version: "0.4.0" },
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Token Permission Controls, Privileged Action Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());
