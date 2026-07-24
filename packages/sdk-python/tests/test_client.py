@@ -257,6 +257,48 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured[1]["payload"]["agentId"], "MAG-1")
         self.assertNotIn("paymentSignature", captured[1]["payload"])
 
+    def test_emergency_circuit_breaker_response_passes_through(self):
+        pause = {
+            "id": "EPAUSE-1",
+            "agentId": "MAG-1",
+            "scopeType": "Agent",
+            "scopeValue": "MAG-1",
+            "enforcementAction": "Blocked",
+            "triggerType": "Manual",
+            "reason": "Investigating repeated execution failures",
+            "status": "Active",
+            "createdAt": "2026-07-24T10:00:00.000Z",
+            "expiresAt": "2026-07-24T11:00:00.000Z",
+        }
+
+        def transport(*_):
+            return {
+                "ok": True,
+                "executionApproved": False,
+                "result": {
+                    "decision": "Blocked",
+                    "reason": "An active emergency pause blocks this execution.",
+                    "emergencyControlsContext": {
+                        "evaluated": True,
+                        "active": True,
+                        "automatic": False,
+                        "enforcementAction": "Blocked",
+                        "matchingPauses": [pause],
+                        "pause": pause,
+                    },
+                },
+                "emergencyPause": pause,
+            }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "01abc",
+            "action": {"type": "Transfer", "amount": 1, "target": "01def"},
+        })
+        self.assertTrue(result["result"]["emergencyControlsContext"]["active"])
+        self.assertEqual(result["result"]["emergencyControlsContext"]["pause"]["scopeType"], "Agent")
+        self.assertEqual(result["emergencyPause"]["id"], "EPAUSE-1")
+
 
 if __name__ == "__main__":
     unittest.main()

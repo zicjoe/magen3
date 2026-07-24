@@ -529,3 +529,60 @@ test("preserves unsigned Privileged Action metadata and response context", async
   assert.equal(captured.action.privilegedAction.recipient, `01${"3".repeat(64)}`);
   assert.equal(response.result.privilegedActionControlsContext.requiredApprovalCount, 2);
 });
+
+test("preserves Emergency Circuit Breaker response context and pause evidence", async () => {
+  const pause = {
+    id: "EPAUSE-1",
+    ownerWalletAddress: `01${"1".repeat(64)}`,
+    agentId: "MAG-1",
+    scopeType: "Agent",
+    scopeValue: "MAG-1",
+    enforcementAction: "Blocked",
+    triggerType: "Manual",
+    triggerRule: "Operator emergency pause",
+    reason: "Investigating repeated execution failures",
+    status: "Active",
+    createdAt: "2026-07-24T10:00:00.000Z",
+    expiresAt: "2026-07-24T11:00:00.000Z",
+    resumeRequiresApproval: false,
+    resumeQuorum: 1,
+  };
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async () => new Response(JSON.stringify({
+      ok: true,
+      executionApproved: false,
+      result: {
+        decision: "Blocked",
+        risk: "Critical",
+        riskScore: 100,
+        reason: "An active emergency pause blocks this execution.",
+        recommendedAction: "Resolve the pause before retrying.",
+        emergencyControlsContext: {
+          evaluated: true,
+          active: true,
+          automatic: false,
+          enforcementAction: "Blocked",
+          matchingPauses: [pause],
+          pause,
+        },
+      },
+      gatewayRequest: {},
+      auditLog: {},
+      emergencyPause: pause,
+      nextAction: "stop",
+    }), { status: 201 }),
+  });
+
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: { type: "Transfer", amount: 1, target: `01${"2".repeat(64)}` },
+  });
+
+  assert.equal(response.result.emergencyControlsContext.active, true);
+  assert.equal(response.result.emergencyControlsContext.pause.scopeType, "Agent");
+  assert.equal(response.emergencyPause.id, "EPAUSE-1");
+});
+

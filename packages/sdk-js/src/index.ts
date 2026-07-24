@@ -451,6 +451,38 @@ export interface Magen3ExecutionIntegrityContext {
   maxRetryAttempts?: number;
 }
 
+
+export interface Magen3EmergencyPause {
+  id?: string;
+  ownerWalletAddress?: string;
+  agentId?: string;
+  policyId?: string;
+  scopeType?: "Platform" | "Agent" | "Capability" | "Action" | "Policy" | "Trading" | "Contract" | "Bridge" | "x402" | "All Execution" | string;
+  scopeValue?: string;
+  enforcementAction?: "Blocked" | "Review Required" | string;
+  triggerType?: "Manual" | "Automatic" | string;
+  triggerRule?: string;
+  reason?: string;
+  status?: "Active" | "Resumed" | "Expired" | string;
+  createdAt?: string;
+  expiresAt?: string;
+  resumeAuthorityWallets?: string[];
+  resumeRequiresApproval?: boolean;
+  resumeQuorum?: number;
+  resumeApprovalRequestId?: string;
+  resumedAt?: string;
+  resumeReason?: string;
+  active?: boolean;
+}
+
+export interface Magen3EmergencyControlsContext {
+  active?: boolean;
+  automaticPauseActivated?: boolean;
+  effectiveDecision?: Magen3Decision | string;
+  matchingPauses?: Magen3EmergencyPause[];
+  pause?: Magen3EmergencyPause;
+}
+
 export interface Magen3TokenPermissionControlsContext {
   permissionType?: string;
   owner?: string;
@@ -572,6 +604,8 @@ export interface Magen3DecisionResult {
   suggestedResolution?: string;
   moduleFindings?: Magen3ModuleFinding[];
   pipelineStages?: Magen3PipelineStage[];
+  /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
+  emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */
   threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
   /** Sanitized oracle-feed state and deterministic price-integrity evidence. */
@@ -598,6 +632,8 @@ export interface Magen3IntentResponse {
   auditLog: Record<string, unknown>;
   casperPayload?: Record<string, unknown>;
   nextAction: string;
+  /** Newly activated automatic pause, when the current finding crossed a configured circuit-breaker threshold. */
+  emergencyPause?: Magen3EmergencyPause | null;
   /** Exact-intent approval request for Review Required decisions when the active policy enables the workflow. */
   approval?: Magen3ApprovalRequest | null;
 }

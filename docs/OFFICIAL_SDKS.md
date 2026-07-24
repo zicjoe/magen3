@@ -139,3 +139,9 @@ Token permissions use the typed `Magen3TokenPermission` object at `action.tokenP
 ## Privileged Action Controls types
 
 The TypeScript SDK exposes `Magen3PrivilegedAction`, `Magen3PrivilegedActionName`, and `Magen3PrivilegedActionControlsContext`. Place unsigned administrative intent metadata at `action.privilegedAction`; Python callers use the same JSON object as a dictionary. The response reports the resolved classification, parameter fingerprint, Human Approval requirement, and action-specific quorum. Never send administrator private keys, wallet signatures, or raw signed transactions.
+
+## Emergency Circuit Breaker response types
+
+The TypeScript SDK exposes `Magen3EmergencyPause` and `Magen3EmergencyControlsContext`. Every Gateway response can report whether pause state was evaluated, whether a pause matched, the effective decision, scope, trigger, reason, and expiry. When the current intent activates an automatic circuit breaker, the top-level response may include `emergencyPause`.
+
+Agent SDKs do not create or resume pauses. Those are owner-wallet administrative operations performed through the Magen3 application or REST management endpoints. An MCP or SDK client must stop on an active `Blocked` or `Review Required` pause and must never retry through another tool to bypass it.

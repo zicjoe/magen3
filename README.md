@@ -100,7 +100,7 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Protection area | Live controls | Foundation controls | Planned controls |
 | --- | --- | --- | --- |
 | Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
-| Policy & Approval Controls | Deterministic policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
+| Policy & Approval Controls | Deterministic policy enforcement; review thresholds; Emergency Circuit Breaker | Human approval and quorum | Cryptographic reviewer signatures; organizational approval escalation |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; contract argument policies |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
@@ -164,6 +164,12 @@ Policies expose Observe, Review, and Enforce modes plus explicit actions for unk
 Privileged Action Controls classifies supported ownership, administrator, proxy or implementation upgrade, role, mint, burn, pause, freeze, withdrawal, oracle, fee-recipient, bridge-validator, and permission changes before signing. It activates for explicit `action.privilegedAction` metadata or an entry point or method signature in Magen3's deterministic supported map. Generic contract calls remain unclassified.
 
 The control validates classifier consistency and provenance, contract and network binding, blocked and review-required action matrices, approved administrators and implementations, required recipients, roles and amounts, and material protected-value changes. Magen3 computes a SHA-256 parameter fingerprint and reuses the exact-intent Human Approval workflow. Per-action quorum can only increase the base quorum; insufficient approvers produce `Configuration Required` instead of silently weakening authorization. See `docs/PRIVILEGED_ACTION_CONTROLS.md`.
+
+### Live Emergency Circuit Breaker
+
+Emergency Circuit Breaker persists scoped pause records independently from agent status, API credentials, and policies. Owners can pause one agent, capability, action, policy, Trading, Contract, Bridge, x402, all execution, or the owner platform scope. Matching requests are deterministically `Blocked` or `Review Required`, with Blocked precedence. Pause state is checked before normal authorization and checked again before execution confirmation.
+
+Manual pause, expiry, direct resume, and approval-gated resume are audited. Automatic triggers are opt-in and can react to replay findings, threat hard matches, oracle disagreement, privileged-action failures, repeated blocks, request-frequency or spending spikes, unresolved execution or x402 state, bridge failures, and proof/provider failures. Automatic activation creates the same persistent record as manual activation. See `docs/EMERGENCY_CIRCUIT_BREAKER.md`.
 
 ### Execution Simulation foundation
 
@@ -841,7 +847,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 now has **Token Approval & Permit Safety** and **Privileged Contract Action Classification** complete and Live. Magen3 is not finished. The next recommended milestone is **Emergency Circuit Breaker**, followed by cryptographic reviewer signatures, organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, and **Emergency Circuit Breaker** complete and Live. Magen3 is not finished. The next recommended milestone is **Cryptographic Reviewer Signatures**, followed by organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 

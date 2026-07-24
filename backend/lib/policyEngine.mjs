@@ -10,6 +10,7 @@ import { evaluateComplianceControls } from "./complianceControls.mjs";
 import { evaluateX402PaymentControls } from "./x402PaymentControls.mjs";
 import { evaluateTokenPermissionControls } from "./tokenPermissionControls.mjs";
 import { evaluatePrivilegedActionControls } from "./privilegedActionControls.mjs";
+import { evaluateEmergencyControls } from "./emergencyControls.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -99,6 +100,7 @@ function withStructuredResult({
   executionIntegrityContext = null,
   tokenPermissionControlsContext = null,
   privilegedActionControlsContext = null,
+  emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -125,10 +127,11 @@ function withStructuredResult({
     executionIntegrityContext,
     tokenPermissionControlsContext,
     privilegedActionControlsContext,
+    emergencyControlsContext,
   };
 }
 
-export function evaluateAction({ request, agents, policies, auditLogs, threatIntelligence = {}, oracleValidation = {}, complianceControls = {} }) {
+export function evaluateAction({ request, agents, policies, auditLogs, emergencyPauses = [], threatIntelligence = {}, oracleValidation = {}, complianceControls = {} }) {
   const timestamp = new Date().toISOString();
   const agent = agents.find((item) => item.id === request.agentId);
   const policy = policies.find((item) => item.agentId === request.agentId && item.status === "Active");
@@ -230,6 +233,31 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     evidence: { policyId: policy.id, policyName: policy.name, riskMode: policy.riskMode },
   }));
 
+  const emergencyControlsResult = evaluateEmergencyControls({ request, agent, policy, pauses: emergencyPauses });
+  checksPassed.push(...emergencyControlsResult.checksPassed);
+  checksFailed.push(...emergencyControlsResult.checksFailed);
+  moduleFindings.push(...emergencyControlsResult.findings);
+  if (emergencyControlsResult.hardBlock || emergencyControlsResult.needsReview) {
+    const decision = emergencyControlsResult.hardBlock ? "Blocked" : "Review Required";
+    const riskScore = emergencyControlsResult.hardBlock ? 99 : 82;
+    return withStructuredResult({
+      decision,
+      risk: emergencyControlsResult.hardBlock ? "Critical" : "High",
+      riskScore,
+      checksPassed,
+      checksFailed,
+      reason: emergencyControlsResult.hardBlock
+        ? "An active emergency pause blocks this request before the remaining authorization pipeline can run."
+        : "An active emergency pause requires controlled human review before the remaining authorization pipeline can run.",
+      recommendedAction: "Do not execute or bypass the circuit breaker. Resolve the incident and complete the authorized resume workflow.",
+      moduleFindings,
+      timestamp,
+      agent,
+      policy,
+      emergencyControlsContext: emergencyControlsResult.context,
+    });
+  }
+
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
@@ -327,8 +355,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -366,5 +394,6 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     executionIntegrityContext: executionIntegrityResult.context,
     tokenPermissionControlsContext: tokenPermissionControlsResult.context,
     privilegedActionControlsContext: privilegedActionControlsResult.context,
+    emergencyControlsContext: emergencyControlsResult.context,
   });
 }

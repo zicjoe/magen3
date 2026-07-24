@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { shieldModules } from "../data/seed.mjs";
 import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
-import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, policiesTable } from "../db/schema.mjs";
+import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, emergencyPausesTable, policiesTable } from "../db/schema.mjs";
 import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
@@ -14,6 +14,8 @@ import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecisi
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
+import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -162,6 +164,135 @@ function normalizeReview(row) {
   };
 }
 
+function normalizeEmergencyPause(row) {
+  return publicEmergencyPause({
+    id: row.id,
+    ownerWalletAddress: row.ownerWalletAddress || "",
+    agentId: row.agentId || "",
+    policyId: row.policyId || "",
+    scopeType: row.scopeType || "",
+    scopeValue: row.scopeValue || "",
+    enforcementAction: row.enforcementAction || "Blocked",
+    triggerType: row.triggerType || "Manual",
+    triggerRule: row.triggerRule || "Manual emergency pause",
+    reason: row.reason || "",
+    triggerEvidence: row.triggerEvidence && typeof row.triggerEvidence === "object" ? row.triggerEvidence : {},
+    status: row.status || "Active",
+    createdByWallet: row.createdByWallet || row.ownerWalletAddress || "",
+    createdAt: row.createdAt ? toDate(row.createdAt).toISOString() : "",
+    expiresAt: row.expiresAt ? toDate(row.expiresAt).toISOString() : "",
+    resumeAuthorityWallets: Array.isArray(row.resumeAuthorityWallets) ? row.resumeAuthorityWallets : [],
+    resumeRequiresApproval: row.resumeRequiresApproval === true,
+    resumeQuorum: Number(row.resumeQuorum || 1),
+    resumeApprovalRequestId: row.resumeApprovalRequestId || "",
+    resumedByWallet: row.resumedByWallet || "",
+    resumeReason: row.resumeReason || "",
+    resumedAt: row.resumedAt ? toDate(row.resumedAt).toISOString() : "",
+    updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : "",
+  });
+}
+
+function pauseDbValues(pause) {
+  return {
+    id: pause.id,
+    ownerWalletAddress: pause.ownerWalletAddress,
+    agentId: pause.agentId || "",
+    policyId: pause.policyId || "",
+    scopeType: pause.scopeType,
+    scopeValue: pause.scopeValue || "",
+    enforcementAction: pause.enforcementAction || "Blocked",
+    triggerType: pause.triggerType || "Manual",
+    triggerRule: pause.triggerRule || "Manual emergency pause",
+    reason: pause.reason,
+    triggerEvidence: pause.triggerEvidence || {},
+    status: pause.status || "Active",
+    createdByWallet: pause.createdByWallet || pause.ownerWalletAddress,
+    createdAt: pause.createdAt ? new Date(pause.createdAt) : new Date(),
+    expiresAt: pause.expiresAt ? new Date(pause.expiresAt) : null,
+    resumeAuthorityWallets: pause.resumeAuthorityWallets || [],
+    resumeRequiresApproval: pause.resumeRequiresApproval === true,
+    resumeQuorum: Number(pause.resumeQuorum || 1),
+    resumeApprovalRequestId: pause.resumeApprovalRequestId || "",
+    resumedByWallet: pause.resumedByWallet || "",
+    resumeReason: pause.resumeReason || "",
+    resumedAt: pause.resumedAt ? new Date(pause.resumedAt) : null,
+    updatedAt: pause.updatedAt ? new Date(pause.updatedAt) : new Date(),
+  };
+}
+
+async function listEmergencyPauses(walletAddress, { activeOnly = false } = {}) {
+  const normalizedWallet = normalizeWalletAddress(walletAddress);
+  if (!normalizedWallet) return [];
+  const rows = await db.select().from(emergencyPausesTable)
+    .where(eq(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
+    .orderBy(desc(emergencyPausesTable.createdAt));
+  const now = new Date();
+  const pauses = [];
+  for (const row of rows) {
+    let pause = normalizeEmergencyPause(row);
+    if (row.status === "Active" && pause.status === "Expired") {
+      const [updated] = await db.update(emergencyPausesTable)
+        .set({ status: "Expired", updatedAt: now })
+        .where(eq(emergencyPausesTable.id, row.id))
+        .returning();
+      pause = normalizeEmergencyPause(updated || { ...row, status: "Expired", updatedAt: now });
+    }
+    if (!activeOnly || pause.active) pauses.push(pause);
+  }
+  return pauses;
+}
+
+async function persistEmergencyAudit(auditLog) {
+  const initialProof = initialDecisionProofState(auditLog);
+  const [row] = await db.insert(auditLogsTable).values({
+    ...auditLog,
+    timestamp: new Date(auditLog.timestamp),
+    executionUpdatedAt: auditLog.executionUpdatedAt ? new Date(auditLog.executionUpdatedAt) : null,
+    decisionProofUpdatedAt: initialProof.decisionProofUpdatedAt ? new Date(initialProof.decisionProofUpdatedAt) : null,
+    proofSubmittedAt: auditLog.proofSubmittedAt ? new Date(auditLog.proofSubmittedAt) : new Date(),
+    proofConfirmedAt: null,
+    approvalExpiresAt: auditLog.approvalExpiresAt ? new Date(auditLog.approvalExpiresAt) : null,
+    approvalResolvedAt: null,
+    decisionProofStatus: initialProof.decisionProofStatus,
+    decisionProofPayloadHash: initialProof.decisionProofPayloadHash,
+    decisionProofError: initialProof.decisionProofError,
+    decisionProofMode: initialProof.decisionProofMode,
+  }).returning();
+  const normalized = normalizeAuditLog(row);
+  const proof = await recordDecisionProof(normalized);
+  const [updated] = await db.update(auditLogsTable).set({
+    ...(proof.txHash ? { txHash: proof.txHash } : {}),
+    decisionProofStatus: proof.decisionProofStatus,
+    decisionProofPayloadHash: proof.decisionProofPayloadHash,
+    decisionProofError: proof.decisionProofError,
+    decisionProofMode: proof.decisionProofMode,
+    decisionProofUpdatedAt: proof.decisionProofUpdatedAt ? new Date(proof.decisionProofUpdatedAt) : new Date(),
+    proofConfirmedAt: proof.decisionProofStatus === "recorded" ? new Date(proof.decisionProofUpdatedAt || Date.now()) : null,
+    pipelineStages: updatePipelineStage(row.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
+  }).where(eq(auditLogsTable.id, row.id)).returning();
+  return normalizeAuditLog(updated || row);
+}
+
+function applyAutomaticPauseToResult(result, pause) {
+  const pauseFinding = automaticPauseFinding(pause);
+  const decision = pause.enforcementAction === "Review Required" ? "Review Required" : "Blocked";
+  result.decision = decision;
+  result.risk = decision === "Blocked" ? "Critical" : "High";
+  result.riskScore = Math.max(Number(result.riskScore || 0), decision === "Blocked" ? 99 : 82);
+  result.reason = decision === "Blocked" ? "The current finding activated the Emergency Circuit Breaker, so execution is blocked." : "The current finding activated the Emergency Circuit Breaker, so execution requires human review.";
+  result.recommendedAction = "Investigate the trigger and complete the authorized resume workflow before execution.";
+  result.primaryReason = pauseFinding.message;
+  result.triggeredRule = pauseFinding.rule;
+  result.suggestedResolution = pauseFinding.remediation;
+  result.moduleFindings = [...(result.moduleFindings || []), pauseFinding];
+  result.modulesEvaluated = [...new Set([...(result.modulesEvaluated || []), "Emergency Circuit Breaker"])];
+  result.policyChecksFailed = [...(result.policyChecksFailed || []), pauseFinding.message];
+  result.pipelineStages = updatePipelineStage(result.pipelineStages, "emergency-circuit-breaker", decision === "Blocked" ? "failed" : "warning", new Date().toISOString(), "Automatic emergency pause activated");
+  result.emergencyControlsContext = { active: true, automaticPauseActivated: true, effectiveDecision: decision, pause: publicEmergencyPause(pause) };
+  return result;
+}
+
+
 async function listAgents(walletAddress) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
@@ -195,8 +326,11 @@ async function persistAuditApproval(review) {
   const current = rows[0];
   if (!current) return null;
   const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
-  const executionStatus = review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : current.executionStatus;
-  const executionNote = review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : current.executionNote;
+  const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
+  const executionStatus = emergencyResume ? "not_required" : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : current.executionStatus;
+  const executionNote = emergencyResume
+    ? review.reviewStatus === "Approved" ? "Emergency resume quorum completed and the bound pause was resumed." : review.reviewStatus === "Rejected" ? `Emergency resume rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Emergency resume approval expired. The pause remains active." : "Emergency resume approval remains pending; the pause stays active."
+    : review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : current.executionNote;
   const [updated] = await db.update(auditLogsTable).set({
     approvalRequestId: review.id,
     approvalStatus: review.reviewStatus,
@@ -207,7 +341,7 @@ async function persistAuditApproval(review) {
     approvalResolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
     executionStatus,
     executionNote,
-    pipelineStages: updatePipelineStage(current.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending"),
+    pipelineStages: updatePipelineStage(current.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), emergencyResume ? (review.reviewStatus === "Approved" ? "Emergency resume quorum completed" : review.reviewStatus === "Rejected" ? "Emergency resume rejected" : review.reviewStatus === "Expired" ? "Emergency resume approval expired" : "Emergency resume approval pending") : (review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending")),
   }).where(eq(auditLogsTable.id, review.auditLogId)).returning();
   return updated ? normalizeAuditLog(updated) : null;
 }
@@ -229,6 +363,40 @@ async function refreshReview(review) {
   const refreshed = expireApproval(review);
   if (refreshed.reviewStatus !== review.reviewStatus) return persistReview(refreshed);
   return review;
+}
+
+async function insertApprovalReview(approval) {
+  const [row] = await db.insert(actionReviewsTable).values({
+    id: approval.id,
+    agentId: approval.agentId,
+    actionType: approval.actionType,
+    amount: approval.amount,
+    target: approval.target,
+    targetType: approval.targetType,
+    decision: approval.decision,
+    risk: approval.risk,
+    riskScore: approval.riskScore,
+    reason: approval.reason,
+    checksPassed: approval.checksPassed,
+    checksFailed: approval.checksFailed,
+    auditLogId: approval.auditLogId,
+    walletAddress: approval.walletAddress,
+    requesterWalletAddress: approval.requesterWalletAddress,
+    policyId: approval.policyId,
+    policyName: approval.policyName,
+    reviewStatus: approval.reviewStatus,
+    bindingHash: approval.bindingHash,
+    requiredApprovals: approval.requiredApprovals,
+    approverWallets: approval.approverWallets,
+    responses: approval.responses,
+    expiresAt: approval.expiresAt ? new Date(approval.expiresAt) : null,
+    resolvedAt: approval.resolvedAt ? new Date(approval.resolvedAt) : null,
+    rejectionReason: approval.rejectionReason || "",
+    reviewContext: approval.reviewContext || {},
+    updatedAt: approval.updatedAt ? new Date(approval.updatedAt) : new Date(),
+    createdAt: approval.createdAt ? new Date(approval.createdAt) : new Date(),
+  }).returning();
+  return normalizeReview(row);
 }
 
 async function listApprovals(walletAddress) {
@@ -270,13 +438,14 @@ function appendX402PipelineStages(stages, decision, timestamp = new Date().toISO
   ];
 }
 
-function deriveDashboardStats(policies, auditLogs) {
+function deriveDashboardStats(policies, auditLogs, emergencyPauses = []) {
   return {
     activeShields: policies.some((policy) => policy.status === "Active") ? 1 : 0,
     protectedActions: auditLogs.length,
     blockedActions: auditLogs.filter((log) => log.decision === "Blocked").length,
     reviewRequired: auditLogs.filter((log) => log.decision === "Review Required").length,
     casperAuditRecords: auditLogs.filter((log) => isRealDeployHash(log.txHash)).length,
+    activeEmergencyPauses: emergencyPauses.filter((pause) => pause.active).length,
   };
 }
 
@@ -288,13 +457,14 @@ export async function createPostgresStore() {
 
     async bootstrap(walletAddress) {
       const normalizedWallet = normalizeWalletAddress(walletAddress);
-      const [agents, policies, auditLogs, approvals] = await Promise.all([
+      const [agents, policies, auditLogs, approvals, emergencyPauses] = await Promise.all([
         listAgents(normalizedWallet),
         listPolicies(normalizedWallet),
         listAuditLogs(normalizedWallet),
         listApprovals(normalizedWallet),
+        listEmergencyPauses(normalizedWallet),
       ]);
-      return { agents, policies, auditLogs, approvals, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs) };
+      return { agents, policies, auditLogs, approvals, emergencyPauses, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
     },
 
     async connectWallet() {
@@ -401,6 +571,7 @@ export async function createPostgresStore() {
         ok: true,
         agent: normalizeAgent(agentRecord),
         activePolicy,
+        emergencyPauses: (await listEmergencyPauses(agentRecord.ownerWalletAddress, { activeOnly: true })).filter((pause) => !pause.agentId || pause.agentId === agentRecord.id),
         gatewayReady: Boolean(activePolicy),
         endpoint: "/api/agent-gateway/intents",
         ...(!activePolicy ? { reason: "No active policy assigned to this agent." } : {}),
@@ -554,7 +725,7 @@ export async function createPostgresStore() {
 
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
-      const [agents, policies, auditLogs] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress)]);
+      const [agents, policies, auditLogs, emergencyPauses] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress), listEmergencyPauses(walletAddress, { activeOnly: true })]);
       const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot(),
         getOracleValidationSnapshot(),
@@ -570,6 +741,7 @@ export async function createPostgresStore() {
         agents,
         policies,
         auditLogs,
+        emergencyPauses,
         threatIntelligence,
         oracleValidation,
         complianceControls,
@@ -683,10 +855,11 @@ export async function createPostgresStore() {
       }
       const walletAddress = requireWalletAddress(agentRecord.ownerWalletAddress);
       const executionWalletAddress = normalizeWalletAddress(intent.executionWalletAddress);
-      const [agents, policies, auditLogs] = await Promise.all([
+      const [agents, policies, auditLogs, emergencyPauses] = await Promise.all([
         listAgents(walletAddress),
         listPolicies(walletAddress),
         listAuditLogs(walletAddress),
+        listEmergencyPauses(walletAddress, { activeOnly: true }),
       ]);
       const request = {
         agentId: intent.agentId,
@@ -816,10 +989,30 @@ export async function createPostgresStore() {
         getOracleValidationSnapshot(),
         getComplianceControlsSnapshot(),
       ]);
-      const result = evaluatePolicy({ request, agents, policies, auditLogs, threatIntelligence, oracleValidation, complianceControls });
-      const authorizedAmount = result.x402PaymentControlsContext?.amount ?? intent.amount;
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
+      let result = evaluatePolicy({ request, agents, policies, auditLogs, emergencyPauses, threatIntelligence, oracleValidation, complianceControls });
+      let activatedEmergencyPause = null;
+      if (!result.emergencyControlsContext?.active) {
+        const trigger = detectAutomaticEmergencyTrigger({ request, agent: agentRecord, policy, auditLogs, result });
+        if (trigger) {
+          const duplicate = emergencyPauses.find((pause) => pause.agentId === agentRecord.id && pause.scopeType === trigger.scopeType && pause.scopeValue === trigger.scopeValue && pause.triggerRule === trigger.triggerRule);
+          if (!duplicate) {
+            const normalized = normalizeEmergencyPauseInput({
+              body: { ...trigger, reason: trigger.reason, triggerEvidence: trigger.evidence, agentId: trigger.agentId || agentRecord.id },
+              ownerWalletAddress: walletAddress,
+              agents,
+              policies,
+              triggerType: "Automatic",
+            });
+            const { agent: _pauseAgent, policy: _pausePolicy, ...pauseRecord } = normalized;
+            const [insertedPause] = await db.insert(emergencyPausesTable).values(pauseDbValues(pauseRecord)).returning();
+            activatedEmergencyPause = normalizeEmergencyPause(insertedPause || pauseRecord);
+            result = applyAutomaticPauseToResult(result, activatedEmergencyPause);
+          }
+        }
+      }
+      const authorizedAmount = result.x402PaymentControlsContext?.amount ?? intent.amount;
       const status = gatewayStatusFromDecision(result.decision);
 
       const auditTimestamp = new Date();
@@ -852,6 +1045,7 @@ export async function createPostgresStore() {
           executionWalletAddress,
           goal: intent.goal,
           reason: intent.reason,
+          emergencyControl: result.emergencyControlsContext || null,
           lifecycle: {
             intentId: intent.lifecycleIntentId,
             idempotencyKey: intent.lifecycleIdempotencyKey,
@@ -1235,8 +1429,118 @@ export async function createPostgresStore() {
         casperPayload: buildAuditDecisionPayload(recordedAuditLog),
         executionApproved: result.decision === "Allowed",
         approval: approvalRequest ? approvalPublicSummary(approvalRequest) : null,
+        emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: approvalRequest ? `Review Required. ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} must be recorded before signing.` : gatewayNextAction(result.decision),
       };
+    },
+
+    async listEmergencyPauses(walletAddress) {
+      const ownerWalletAddress = requireWalletAddress(walletAddress);
+      return { emergencyPauses: await listEmergencyPauses(ownerWalletAddress) };
+    },
+
+    async emergencyControlsStatus(walletAddress = "") {
+      const ownerWalletAddress = normalizeWalletAddress(walletAddress);
+      const pauses = ownerWalletAddress ? await listEmergencyPauses(ownerWalletAddress) : [];
+      return {
+        status: "live",
+        protectionArea: "Policy & Approval Controls",
+        control: "Emergency Circuit Breaker",
+        active: pauses.filter((pause) => pause.active).length,
+        total: pauses.length,
+        scopedEnforcement: true,
+        automaticTriggers: true,
+        expiry: true,
+        authorizedResume: true,
+        approvalGatedResume: true,
+        securityBoundary: "Emergency controls change authorization state only. Magen3 never receives wallet private keys, mnemonics, or raw signed transactions.",
+      };
+    },
+
+    async createEmergencyPause(body = {}) {
+      const ownerWalletAddress = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const [agents, policies, activePauses] = await Promise.all([
+        listAgents(ownerWalletAddress),
+        listPolicies(ownerWalletAddress),
+        listEmergencyPauses(ownerWalletAddress, { activeOnly: true }),
+      ]);
+      const normalized = normalizeEmergencyPauseInput({ body, ownerWalletAddress, agents, policies, triggerType: body.triggerType || "Manual" });
+      const { agent, policy, ...pauseRecord } = normalized;
+      const duplicate = activePauses.find((pause) => pause.scopeType === pauseRecord.scopeType && pause.scopeValue === pauseRecord.scopeValue && pause.agentId === pauseRecord.agentId && pause.policyId === pauseRecord.policyId);
+      if (duplicate) {
+        const err = new Error(`An active ${pauseRecord.scopeType} emergency pause already covers this scope.`);
+        err.status = 409;
+        throw err;
+      }
+      const [row] = await db.insert(emergencyPausesTable).values(pauseDbValues(pauseRecord)).returning();
+      const emergencyPause = normalizeEmergencyPause(row || pauseRecord);
+      const auditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: emergencyPause, agent, policy, event: "activated" }));
+      return { emergencyPause, auditLog };
+    },
+
+    async resumeEmergencyPause(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.resumedByWallet);
+      const rows = await db.select().from(emergencyPausesTable).where(eq(emergencyPausesTable.id, id));
+      let pause = rows[0] ? normalizeEmergencyPause(rows[0]) : null;
+      if (!pause || normalizeWalletAddress(pause.ownerWalletAddress).toLowerCase() !== walletAddress.toLowerCase()) {
+        const err = new Error("Emergency pause not found for the connected wallet.");
+        err.status = 404;
+        throw err;
+      }
+      if (pause.status !== "Active") {
+        const err = new Error(`Emergency pause is ${pause.status.toLowerCase()} and cannot be resumed.`);
+        err.status = 409;
+        throw err;
+      }
+      const authorized = [pause.ownerWalletAddress, ...(pause.resumeAuthorityWallets || [])].some((item) => normalizeWalletAddress(item).toLowerCase() === walletAddress.toLowerCase());
+      if (!authorized) {
+        const err = new Error("Connected wallet is not authorized to resume this emergency pause.");
+        err.status = 403;
+        throw err;
+      }
+      const resumeReason = String(body.reason || body.resumeReason || "").trim();
+      if (resumeReason.length < 8) {
+        const err = new Error("Resume reason must contain at least 8 characters.");
+        err.status = 400;
+        throw err;
+      }
+      const [agents, policies] = await Promise.all([listAgents(pause.ownerWalletAddress), listPolicies(pause.ownerWalletAddress)]);
+      const pauseAgent = agents.find((item) => item.id === pause.agentId) || null;
+      const pausePolicy = policies.find((item) => item.id === pause.policyId) || null;
+      if (pause.resumeRequiresApproval) {
+        if (pause.resumeApprovalRequestId) {
+          const reviewRows = await db.select().from(actionReviewsTable).where(eq(actionReviewsTable.id, pause.resumeApprovalRequestId));
+          const review = reviewRows[0] ? await refreshReview(normalizeReview(reviewRows[0])) : null;
+          const auditRows = review?.auditLogId ? await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, review.auditLogId)) : [];
+          return { emergencyPause: pause, approval: review ? approvalPublicSummary(review) : null, auditLog: auditRows[0] ? normalizeAuditLog(auditRows[0]) : null };
+        }
+        const pendingPause = { ...pause, pendingResumeReason: resumeReason };
+        const { approval, auditLog } = createEmergencyResumeApproval({ pause: pendingPause, policy: pausePolicy || {}, agent: pauseAgent, ownerWalletAddress: pause.ownerWalletAddress });
+        if (!approval) {
+          const err = new Error("Emergency resume approval could not be created. Configure eligible resume authority wallets.");
+          err.status = 409;
+          throw err;
+        }
+        const storedApproval = await insertApprovalReview(approval);
+        const [pauseRow] = await db.update(emergencyPausesTable).set({
+          resumeApprovalRequestId: storedApproval.id,
+          triggerEvidence: { ...(pause.triggerEvidence || {}), pendingResumeReason: resumeReason },
+          updatedAt: new Date(),
+        }).where(eq(emergencyPausesTable.id, pause.id)).returning();
+        const recordedAudit = await persistEmergencyAudit(auditLog);
+        return { emergencyPause: normalizeEmergencyPause(pauseRow), approval: approvalPublicSummary(storedApproval), auditLog: recordedAudit };
+      }
+      const now = new Date();
+      const [pauseRow] = await db.update(emergencyPausesTable).set({
+        status: "Resumed",
+        resumedByWallet: walletAddress,
+        resumeReason,
+        resumedAt: now,
+        updatedAt: now,
+      }).where(eq(emergencyPausesTable.id, pause.id)).returning();
+      const resumed = normalizeEmergencyPause(pauseRow);
+      const auditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: resumed, agent: pauseAgent, policy: pausePolicy, event: "resumed" }));
+      return { emergencyPause: resumed, auditLog };
     },
 
     async listApprovals(walletAddress) {
@@ -1253,8 +1557,30 @@ export async function createPostgresStore() {
       }
       const updated = respondToApproval(normalizeReview(rows[0]), { ...body, walletAddress });
       const approval = await persistReview(updated);
+      let resumedPause = null;
+      let resumeAuditLog = null;
+      if (approval.reviewStatus === "Approved" && approval.reviewContext?.kind === "emergency-pause-resume") {
+        const pauseId = String(approval.reviewContext.emergencyPauseId || "").trim();
+        const pauseRows = pauseId ? await db.select().from(emergencyPausesTable).where(eq(emergencyPausesTable.id, pauseId)) : [];
+        const activePause = pauseRows[0] && pauseRows[0].status === "Active" ? normalizeEmergencyPause(pauseRows[0]) : null;
+        if (activePause) {
+          const now = new Date();
+          const [pauseRow] = await db.update(emergencyPausesTable).set({
+            status: "Resumed",
+            resumedByWallet: walletAddress,
+            resumeReason: String(approval.reviewContext.requestedResumeReason || "Emergency resume quorum approved.").trim(),
+            resumedAt: now,
+            updatedAt: now,
+          }).where(eq(emergencyPausesTable.id, activePause.id)).returning();
+          resumedPause = normalizeEmergencyPause(pauseRow);
+          const [agents, policies] = await Promise.all([listAgents(resumedPause.ownerWalletAddress), listPolicies(resumedPause.ownerWalletAddress)]);
+          const pauseAgent = agents.find((item) => item.id === resumedPause.agentId) || null;
+          const pausePolicy = policies.find((item) => item.id === resumedPause.policyId) || null;
+          resumeAuditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: resumedPause, agent: pauseAgent, policy: pausePolicy, event: "resumed" }));
+        }
+      }
       const auditRows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, approval.auditLogId));
-      return { approval: approvalPublicSummary(approval), auditLog: auditRows[0] ? normalizeAuditLog(auditRows[0]) : null };
+      return { approval: approvalPublicSummary(approval), auditLog: auditRows[0] ? normalizeAuditLog(auditRows[0]) : null, emergencyPause: resumedPause, resumeAuditLog };
     },
 
     async getAgentApproval(id, body = {}, context = {}) {
@@ -1351,6 +1677,31 @@ export async function createPostgresStore() {
         const err = new Error("Audit log not found");
         err.status = 404;
         throw err;
+      }
+      const executionAgentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, current.agentId));
+      const executionAgent = executionAgentRows[0] ? normalizeAgent(executionAgentRows[0]) : null;
+      const executionPolicies = executionAgent ? await listPolicies(executionAgent.ownerWalletAddress) : [];
+      const executionPolicy = executionPolicies.find((item) => item.agentId === current.agentId && item.status === "Active") || null;
+      if (executionAgent && executionPolicy) {
+        const activePauses = await listEmergencyPauses(current.agentOwnerWalletAddress || current.walletAddress, { activeOnly: true });
+        const emergency = evaluateEmergencyControls({
+          request: {
+            agentId: current.agentId,
+            actionType: current.action,
+            target: current.target,
+            targetType: current.targetType,
+            tokenPermissionMetadataSupplied: Boolean(current.originalIntent?.action?.tokenPermission),
+            privilegedActionMetadataSupplied: Boolean(current.originalIntent?.action?.privilegedAction),
+          },
+          agent: executionAgent,
+          policy: executionPolicy,
+          pauses: activePauses,
+        });
+        if (emergency.hardBlock || emergency.needsReview) {
+          const err = new Error("Execution cannot be recorded while an active Emergency Circuit Breaker pause applies to this authorized intent.");
+          err.status = 409;
+          throw err;
+        }
       }
       let approvedAfterReview = false;
       if (current.decision === "Review Required" && current.approvalRequestId) {

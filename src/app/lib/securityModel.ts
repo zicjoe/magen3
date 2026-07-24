@@ -142,7 +142,7 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
       { id: "policy-enforcement", name: "Deterministic policy enforcement", description: "Blocked actions, transaction limits, daily limits, target controls, and risk modes.", status: "Live", configurable: true },
       { id: "review-thresholds", name: "Review thresholds", description: "Escalates high-value or policy-sensitive requests to Review Required.", status: "Live", configurable: true },
       { id: "approval-quorum", name: "Human approval and quorum", description: "Bind one or more approvers to the exact reviewed intent before execution.", status: "Foundation Available", configurable: true },
-      { id: "emergency-controls", name: "Emergency circuit breaker", description: "Pause an agent, capability, action family, payment flow, or all execution.", status: "Planned", configurable: true },
+      { id: "emergency-controls", name: "Emergency circuit breaker", description: "Pause an agent, capability, action family, payment flow, or all execution with audited expiry and authorized resume.", status: "Live", configurable: true },
     ],
   }),
   protectionArea({
@@ -461,6 +461,16 @@ export function calculateSecurityCoverage(
   const approvalRequiredCount = Number(policy?.structuredRules?.approvalRequiredCount || 1);
   const approvalConfigured = approvalEnabled && approvalRequiredCount > 0 && (approvalOwnerFallback || approvalApprovers.length >= approvalRequiredCount);
   const approvalOperational = logs.some((log) => log.moduleFindings?.some((finding) => finding.module === "Policy & Approval Controls" && finding.rule === "Human approval quorum"));
+  const emergencyControlsEnabled = policy?.structuredRules?.emergencyControlsEnabled === true;
+  const emergencyPauseAction = String(policy?.structuredRules?.emergencyAutomaticPauseAction || "Blocked");
+  const emergencyControlsConfigured = emergencyControlsEnabled &&
+    ["Blocked", "Review Required"].includes(emergencyPauseAction) &&
+    Number(policy?.structuredRules?.emergencyPauseDurationSeconds || 3600) >= 60 &&
+    Number(policy?.structuredRules?.emergencyResumeQuorum || 1) >= 1;
+  const emergencyControlsOperational = logs.some((log) => log.moduleFindings?.some((finding) =>
+    finding.module === "Emergency Circuit Breaker" &&
+    finding.rule === "Active emergency pause" &&
+    ["pass", "warning", "fail"].includes(finding.status)));
   const requiredProtectionObserved = contractRelevant ? contractValidationObserved : walletValidationObserved;
 
   const checks: CoverageCheck[] = [
@@ -471,6 +481,7 @@ export function calculateSecurityCoverage(
     { id: "contract-controls", label: "Contract controls", weight: 8, passed: !contractRelevant || Boolean(policy?.trustedContracts?.length), detail: !contractRelevant ? "Not required by the selected capabilities." : policy?.trustedContracts?.length ? "Trusted contract controls are configured." : "No trusted contracts are configured.", recommendation: "Add approved contracts for dApp and trading interactions.", page: "policies" },
     { id: "review-threshold", label: "Human review threshold", weight: 8, passed: !reviewRelevant || Number(policy?.approvalThreshold) > 0, detail: !reviewRelevant ? "Not required by the selected capabilities." : Number(policy?.approvalThreshold) > 0 ? `Review required above ${policy?.approvalThreshold} CSPR.` : "No review threshold is configured.", recommendation: "Configure a review threshold for higher-value actions.", page: "policies" },
     { id: "approval-workflow", label: "Human approval workflow", weight: 6, passed: !reviewRelevant || (approvalConfigured && approvalOperational), detail: !reviewRelevant ? "Not required by the selected capabilities." : approvalConfigured ? approvalOperational ? `Review Required decisions are bound to ${approvalRequiredCount} approval${approvalRequiredCount === 1 ? "" : "s"} and the workflow has been observed.` : `The workflow is configured for ${approvalRequiredCount} approval${approvalRequiredCount === 1 ? "" : "s"}, but no review request has been observed yet.` : "Review Required decisions do not yet have a complete approver and quorum configuration.", recommendation: approvalConfigured ? "Trigger a Review Required Playground request and resolve it in the Human Approval Queue." : "Enable Human Approval & Quorum and configure eligible approver wallets or owner-wallet fallback.", page: "policies" },
+    { id: "emergency-controls", label: "Emergency circuit breaker", weight: 6, passed: emergencyControlsConfigured && emergencyControlsOperational, detail: emergencyControlsConfigured ? emergencyControlsOperational ? "Scoped pause enforcement has been evaluated by the Gateway." : "Emergency Controls are configured, but no Gateway evaluation is visible yet." : "Emergency Controls are not fully configured with an enforcement action, expiry, and resume quorum.", recommendation: emergencyControlsConfigured ? "Send a normal Playground request to verify the no-active-pause check, then test a scoped pause safely." : "Enable Emergency Controls and configure pause duration, automatic behavior, and resume authority rules.", page: emergencyControlsConfigured ? "intent-playground" : "policies" },
     { id: "credential", label: "API credential active", weight: 10, passed: agent.status === "Active" && Boolean(agent.apiKeyPreview), detail: agent.apiKeyPreview ? `Credential ${agent.apiKeyPreview} is active.` : "No active credential preview is available.", recommendation: "Rotate or issue an API credential.", page: "connected-agents" },
     { id: "gateway-activity", label: "Recent live protection activity", weight: 3, passed: recentGateway && requiredProtectionObserved, detail: recentGateway && requiredProtectionObserved ? `${contractRelevant ? "Contract Validation" : "Wallet Validation"} was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? `A recent intent exists, but no ${contractRelevant ? "Contract Validation" : "Wallet Validation"} finding is visible yet.` : "No gateway request has been received.", recommendation: `Send a valid ${contractRelevant ? "contract" : "wallet"} intent through the Intent Playground to verify live protection.`, page: "intent-playground" },
     { id: "execution-preflight", label: "Execution preflight observed", weight: 5, passed: !executionPreflightRelevant || executionPreflightObserved, detail: !executionPreflightRelevant ? "Not required by the selected capabilities." : executionPreflightObserved ? "Deterministic transaction-construction preflight has been observed. Full stateful simulation remains unavailable." : "No successful Execution Simulation preflight finding is visible yet.", recommendation: "Send an intent with preflight payment, gas, TTL, timestamp, and action-specific bounds through the Intent Playground.", page: "intent-playground" },
@@ -498,6 +509,7 @@ export function deriveIntegrationHealth(
   policy: { status?: string } | undefined,
   logs: Array<{ timestamp: string; decision?: string; decisionProofStatus?: string; moduleFindings?: ModuleFinding[] }> = [],
   gatewayOnline = false,
+  emergencyPauses: Array<{ active?: boolean; status?: string; scopeType?: string; reason?: string; expiresAt?: string }> = [],
 ) {
   const latest = logs[0];
   const proofState = latest?.decisionProofStatus || "not observed";
@@ -566,10 +578,17 @@ export function deriveIntegrationHealth(
   const complianceWarned = complianceFindings.some((finding) => finding.status === "warning");
   const compliancePassed = complianceFindings.some((finding) => ["Compliance feed availability", "Sanctions screening result"].includes(finding.rule) && finding.status === "pass");
   const complianceHealth = complianceFindings.length === 0 ? "unknown" : complianceFailed || complianceWarned ? "attention" : complianceUnavailable ? "unavailable" : compliancePassed ? "observed" : "unknown";
+  const emergencyFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Emergency Circuit Breaker") || [];
+  const activeEmergencyPauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
+  const emergencyFailed = emergencyFindings.some((finding) => finding.status === "fail");
+  const emergencyWarned = emergencyFindings.some((finding) => finding.status === "warning");
+  const emergencyPassed = emergencyFindings.some((finding) => finding.rule === "Active emergency pause" && finding.status === "pass");
+  const emergencyHealth = activeEmergencyPauses.length > 0 || emergencyFailed || emergencyWarned ? "attention" : emergencyPassed ? "healthy" : "unknown";
   const checks = [
     { label: "Gateway connectivity", status: gatewayOnline ? "healthy" : "unavailable", detail: gatewayOnline ? "Backend health check succeeded." : "Backend health check is currently unavailable." },
     { label: "API credential", status: agent.status === "Active" && agent.apiKeyPreview ? "healthy" : "attention", detail: agent.apiKeyPreview || "No credential preview." },
     { label: "Active policy", status: policy?.status === "Active" ? "healthy" : "attention", detail: policy?.status === "Active" ? "Policy is active." : "No active policy." },
+    { label: "Emergency Circuit Breaker", status: emergencyHealth, detail: activeEmergencyPauses.length > 0 ? `${activeEmergencyPauses.length} active emergency pause${activeEmergencyPauses.length === 1 ? "" : "s"} require attention.` : emergencyFailed || emergencyWarned ? "The latest request was stopped or escalated by Emergency Controls." : emergencyPassed ? "The Gateway evaluated pause state and no active pause applied." : "No Emergency Circuit Breaker evaluation is visible yet." },
     { label: "Last received intent", status: agent.lastIntentAt || latest ? "observed" : "unknown", detail: agent.lastIntentAt || latest?.timestamp || "No intent received." },
     { label: "Last decision", status: latest ? "observed" : "unknown", detail: latest?.decision || "No decision recorded." },
     { label: "Wallet Validation", status: walletHealth, detail: walletFindings.length === 0 ? "No Wallet Validation finding is available yet." : walletFailed ? "The latest request failed one or more wallet checks." : walletWarned ? "The latest request needs attention before execution." : "The latest request passed the evaluated wallet checks." },

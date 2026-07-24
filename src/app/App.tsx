@@ -99,7 +99,10 @@ type ActionType =
   | "Oracle Data Update"
   | "Bridge"
   | "x402 Payment"
-  | "Policy Activation";
+  | "Policy Activation"
+  | "Emergency Pause Activated"
+  | "Emergency Pause Resumed"
+  | "Emergency Resume Requested";
 type TargetType =
   | "Trusted Contract"
   | "Unknown Contract"
@@ -108,7 +111,8 @@ type TargetType =
   | "RWA Registry"
   | "Oracle Feed"
   | "Bridge Contract"
-  | "x402 Merchant";
+  | "x402 Merchant"
+  | "Emergency Control";
 
 interface Agent {
   id: string;
@@ -241,12 +245,40 @@ interface ApprovalRequest {
   updatedAt: string;
 }
 
+interface EmergencyPause {
+  id: string;
+  ownerWalletAddress: string;
+  agentId?: string;
+  policyId?: string;
+  scopeType: "Platform" | "Agent" | "Capability" | "Action" | "Policy" | "Trading" | "Contract" | "Bridge" | "x402" | "All Execution" | string;
+  scopeValue?: string;
+  enforcementAction: "Blocked" | "Review Required";
+  triggerType: "Manual" | "Automatic" | string;
+  triggerRule?: string;
+  reason: string;
+  triggerEvidence?: Record<string, unknown>;
+  status: "Active" | "Resumed" | "Expired" | string;
+  active?: boolean;
+  createdByWallet?: string;
+  createdAt: string;
+  expiresAt?: string;
+  resumeAuthorityWallets?: string[];
+  resumeRequiresApproval?: boolean;
+  resumeQuorum?: number;
+  resumeApprovalRequestId?: string;
+  resumedByWallet?: string;
+  resumeReason?: string;
+  resumedAt?: string;
+  updatedAt?: string;
+}
+
 interface DashboardStats {
   activeShields: number;
   protectedActions: number;
   blockedActions: number;
   reviewRequired: number;
   casperAuditRecords: number;
+  activeEmergencyPauses?: number;
 }
 
 interface ThreatIntelligenceStatus {
@@ -318,6 +350,23 @@ interface DecisionResult {
   modulesEvaluated?: string[];
   capabilityContext?: ExecutionCapability[];
   pipelineStages?: PipelineStage[];
+  emergencyControlsContext?: {
+    active?: boolean;
+    automaticPauseActivated?: boolean;
+    effectiveDecision?: Decision;
+    matchingPauses?: Array<{
+      id?: string;
+      scopeType?: string;
+      scopeValue?: string;
+      reason?: string;
+      triggerType?: string;
+      triggerRule?: string;
+      enforcementAction?: Decision;
+      createdAt?: string;
+      expiresAt?: string;
+    }>;
+    pause?: EmergencyPause;
+  };
   threatIntelligenceContext?: {
     status?: string;
     sourceType?: string;
@@ -542,6 +591,7 @@ interface AgentGatewayResponse {
   casperPayload: CasperPreparedPayload;
   executionApproved: boolean;
   approval?: ApprovalRequest | null;
+  emergencyPause?: EmergencyPause | null;
   nextAction: string;
 }
 
@@ -998,8 +1048,8 @@ function FindingsPanel({ findings }: { findings?: ModuleFinding[] }) {
   );
 }
 
-function IntegrationHealthPanel({ agent, policy, logs, apiOnline }: { agent: Agent; policy?: Policy; logs: AuditLog[]; apiOnline: boolean }) {
-  const health = deriveIntegrationHealth(agent, policy, logs, apiOnline);
+function IntegrationHealthPanel({ agent, policy, logs, apiOnline, emergencyPauses = [] }: { agent: Agent; policy?: Policy; logs: AuditLog[]; apiOnline: boolean; emergencyPauses?: EmergencyPause[] }) {
+  const health = deriveIntegrationHealth(agent, policy, logs, apiOnline, emergencyPauses);
   return (
     <div className={`${CARD} p-4`}>
       <div className="flex items-center justify-between gap-3">
@@ -1020,6 +1070,163 @@ function IntegrationHealthPanel({ agent, policy, logs, apiOnline }: { agent: Age
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function EmergencyControlsPanel({
+  pauses,
+  agents,
+  policies,
+  walletAddress,
+  selectedAgentId = "",
+  compact = false,
+  onCreatePause,
+  onResumePause,
+}: {
+  pauses: EmergencyPause[];
+  agents: Agent[];
+  policies: Policy[];
+  walletAddress: string;
+  selectedAgentId?: string;
+  compact?: boolean;
+  onCreatePause: (body: Record<string, unknown>) => Promise<unknown>;
+  onResumePause: (id: string, reason: string) => Promise<unknown>;
+}) {
+  const initialScope = selectedAgentId ? "Agent" : "Platform";
+  const [scopeType, setScopeType] = useState(initialScope);
+  const [scopeValue, setScopeValue] = useState(selectedAgentId);
+  const [scopeAgentId, setScopeAgentId] = useState(selectedAgentId || agents[0]?.id || "");
+  const [enforcementAction, setEnforcementAction] = useState<"Blocked" | "Review Required">("Blocked");
+  const [reason, setReason] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("60");
+  const [resumeRequiresApproval, setResumeRequiresApproval] = useState(false);
+  const [resumeQuorum, setResumeQuorum] = useState("1");
+  const [resumeReasons, setResumeReasons] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (selectedAgentId) {
+      setScopeType("Agent");
+      setScopeAgentId(selectedAgentId);
+      setScopeValue(selectedAgentId);
+    }
+  }, [selectedAgentId]);
+
+  const visiblePauses = pauses.filter((pause) => !selectedAgentId || !pause.agentId || pause.agentId === selectedAgentId);
+  const activePauses = visiblePauses.filter((pause) => pause.active === true || pause.status === "Active");
+  const scopeOptions = selectedAgentId
+    ? ["Agent", "Capability", "Action", "Policy", "Trading", "Contract", "Bridge", "x402"]
+    : ["Platform", "All Execution", "Agent", "Capability", "Action", "Policy", "Trading", "Contract", "Bridge", "x402"];
+
+  const resolvedAgentId = selectedAgentId || scopeAgentId;
+  const scopedAgent = agents.find((agent) => agent.id === resolvedAgentId);
+  const scopedPolicies = policies.filter((policy) => policy.agentId === resolvedAgentId);
+  const resolvedScopeValue = scopeType === "Agent" ? resolvedAgentId : scopeValue;
+  const requiresAgent = !["Platform", "All Execution"].includes(scopeType);
+  const createPause = async () => {
+    setMessage("");
+    setBusy("create");
+    try {
+      await onCreatePause({
+        walletAddress,
+        agentId: requiresAgent ? resolvedAgentId : "",
+        policyId: scopeType === "Policy" ? resolvedScopeValue : "",
+        scopeType,
+        scopeValue: ["Platform", "All Execution", "Trading", "Contract", "Bridge", "x402"].includes(scopeType) ? scopeType : resolvedScopeValue,
+        enforcementAction,
+        reason,
+        durationSeconds: Math.max(60, Number(durationMinutes || 60) * 60),
+        resumeRequiresApproval,
+        resumeQuorum: Math.max(1, Number(resumeQuorum || 1)),
+      });
+      setReason("");
+      setMessage("Emergency pause activated and recorded in the audit trail.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to activate emergency pause.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const resumePause = async (pause: EmergencyPause) => {
+    setMessage("");
+    setBusy(pause.id);
+    try {
+      await onResumePause(pause.id, resumeReasons[pause.id] || "Resolved incident and verified safe operation.");
+      setMessage(pause.resumeRequiresApproval ? "Emergency resume approval request created or updated." : "Emergency pause resumed and audited.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to resume emergency pause.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <div className={`${CARD} p-4`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[#EF4444]"><ShieldAlert size={18} /><h3 className="text-sm font-semibold text-[#F8FAFC]">Emergency Circuit Breaker</h3></div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Pause execution deterministically before signing. Every activation, expiry, approval request, and resume is audited.</p>
+        </div>
+        <StatusBadge status={activePauses.length ? "Attention" : "Live"} />
+      </div>
+
+      {activePauses.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {activePauses.map((pause) => (
+            <div key={pause.id} className="rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/5 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-[#F8FAFC]">{pause.scopeType}{pause.scopeValue ? ` · ${pause.scopeValue}` : ""}</div>
+                  <div className="mt-1 text-xs leading-relaxed text-[#FCA5A5]">{pause.reason}</div>
+                  <div className="mt-1 text-[11px] text-[#94A3B8]">{pause.triggerType} · {pause.enforcementAction}{pause.expiresAt ? ` · expires ${fmtTs(pause.expiresAt)}` : " · indefinite"}</div>
+                </div>
+                <StatusBadge status={pause.status} />
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  className={INPUT_CLS}
+                  value={resumeReasons[pause.id] || ""}
+                  onChange={(event) => setResumeReasons((current) => ({ ...current, [pause.id]: event.target.value }))}
+                  placeholder="Reason for resuming after investigation"
+                />
+                <Btn variant="secondary" size="sm" disabled={busy === pause.id} onClick={() => void resumePause(pause)}>
+                  {pause.resumeRequiresApproval ? <Clock size={14} /> : <ShieldCheck size={14} />}
+                  {busy === pause.id ? "Processing…" : pause.resumeRequiresApproval ? "Request Resume" : "Resume"}
+                </Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <details className="mt-4" open={!compact && activePauses.length === 0}>
+        <summary className="cursor-pointer text-xs font-semibold text-[#22D3EE]">Activate a scoped pause</summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><label className={LABEL_CLS}>Scope</label><select className={INPUT_CLS} value={scopeType} onChange={(event) => { const next = event.target.value; setScopeType(next); setScopeValue(next === "Agent" ? (selectedAgentId || scopeAgentId) : ""); }}>{scopeOptions.map((scope) => <option key={scope}>{scope}</option>)}</select></div>
+          <div><label className={LABEL_CLS}>Enforcement</label><select className={INPUT_CLS} value={enforcementAction} onChange={(event) => setEnforcementAction(event.target.value as "Blocked" | "Review Required")}><option>Blocked</option><option>Review Required</option></select></div>
+          {requiresAgent && !selectedAgentId && (
+            <div className="sm:col-span-2"><label className={LABEL_CLS}>Agent</label><select className={INPUT_CLS} value={scopeAgentId} onChange={(event) => { setScopeAgentId(event.target.value); if (scopeType === "Agent") setScopeValue(event.target.value); else setScopeValue(""); }}><option value="">Select agent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.id}</option>)}</select></div>
+          )}
+          {scopeType === "Capability" && (
+            <div className="sm:col-span-2"><label className={LABEL_CLS}>Capability</label><select className={INPUT_CLS} value={scopeValue} onChange={(event) => setScopeValue(event.target.value)}><option value="">Select capability</option>{normalizeCapabilities(scopedAgent?.executionCapabilities, scopedAgent?.type).map((capability) => <option key={capability}>{capability}</option>)}</select></div>
+          )}
+          {scopeType === "Action" && (
+            <div className="sm:col-span-2"><label className={LABEL_CLS}>Action type</label><input className={INPUT_CLS} value={scopeValue} onChange={(event) => setScopeValue(event.target.value)} placeholder="Transfer, Swap, Bridge, Contract Interaction…" /></div>
+          )}
+          {scopeType === "Policy" && (
+            <div className="sm:col-span-2"><label className={LABEL_CLS}>Policy</label><select className={INPUT_CLS} value={scopeValue} onChange={(event) => setScopeValue(event.target.value)}><option value="">Select policy</option>{scopedPolicies.map((policy) => <option key={policy.id} value={policy.id}>{policy.name} · {policy.id}</option>)}</select></div>
+          )}
+          <div><label className={LABEL_CLS}>Duration (minutes)</label><input className={INPUT_CLS} type="number" min="1" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} /></div>
+          <div><label className={LABEL_CLS}>Resume quorum</label><input className={INPUT_CLS} type="number" min="1" max="10" value={resumeQuorum} onChange={(event) => setResumeQuorum(event.target.value)} disabled={!resumeRequiresApproval} /></div>
+          <label className="sm:col-span-2 flex items-center gap-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]"><input type="checkbox" checked={resumeRequiresApproval} onChange={(event) => setResumeRequiresApproval(event.target.checked)} /> Require Human Approval quorum before resume</label>
+          <div className="sm:col-span-2"><label className={LABEL_CLS}>Incident reason</label><textarea className={`${INPUT_CLS} min-h-20`} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Describe the incident, anomaly, provider failure, or operator concern." /></div>
+        </div>
+        <div className="mt-3 flex justify-end"><Btn variant="danger" disabled={busy === "create" || reason.trim().length < 8 || (requiresAgent && !resolvedAgentId) || (["Capability", "Action", "Policy"].includes(scopeType) && !resolvedScopeValue)} onClick={() => void createPause()}><ShieldX size={14} />{busy === "create" ? "Activating…" : "Activate Pause"}</Btn></div>
+      </details>
+      {message && <div className="mt-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#F8FAFC]">{message}</div>}
     </div>
   );
 }
@@ -1768,6 +1975,7 @@ function DashboardPage({
   policies,
   agents,
   approvals,
+  emergencyPauses,
   onNavigate,
 }: {
   walletConnected: boolean;
@@ -1783,6 +1991,7 @@ function DashboardPage({
   policies: Policy[];
   agents: Agent[];
   approvals: ApprovalRequest[];
+  emergencyPauses: EmergencyPause[];
   onNavigate: (p: Page) => void;
 }) {
   if (!walletConnected) {
@@ -1838,6 +2047,7 @@ function DashboardPage({
   const x402FoundationAvailable = x402PaymentControlsStatus.status === "foundation-available";
   const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
   const pendingApprovals = approvals.filter((approval) => approval.reviewStatus === "Pending" || approval.reviewStatus === "Configuration Required");
+  const activeEmergencyPauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
   const complianceFeedOperational = complianceControlsStatus.status === "available";
   const complianceFeedLabel = complianceFeedOperational
     ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
@@ -1856,10 +2066,16 @@ function DashboardPage({
     { label: "Compliance feed", value: complianceFeedLabel, done: complianceFeedOperational },
     { label: "x402 controls", value: x402PaymentsToday.length ? `${x402PaymentsToday.length} today` : "Ready", done: x402FoundationAvailable },
     { label: "Approval queue", value: String(pendingApprovals.length), done: pendingApprovals.length === 0 },
+    { label: "Emergency pauses", value: String(activeEmergencyPauses.length), done: activeEmergencyPauses.length === 0 },
   ];
 
   return (
     <div className="space-y-6">
+      {activeEmergencyPauses.length > 0 && (
+        <button type="button" onClick={() => onNavigate("settings")} className="w-full rounded-xl border border-[#EF4444]/35 bg-[#EF4444]/10 p-4 text-left">
+          <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 text-[#EF4444]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{activeEmergencyPauses.length} active emergency pause{activeEmergencyPauses.length === 1 ? "" : "s"}</div><div className="mt-1 text-xs leading-relaxed text-[#FCA5A5]">Execution is currently blocked or routed to review for one or more scopes. Open Settings to investigate and use the authorized resume workflow.</div></div></div>
+        </button>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Connected Agents" value={agents.length} icon={<Bot size={20} />} color="cyan" />
         <StatCard label="Decisions Today" value={decisionsToday.length} icon={<Activity size={20} />} color="purple" />
@@ -2366,6 +2582,24 @@ function AgentRegistrationWizard({
         capabilityScope: capabilities,
         structuredRules: {
           ...sourceRules,
+          emergencyControlsEnabled: typeof sourceRules.emergencyControlsEnabled === "boolean" ? sourceRules.emergencyControlsEnabled : true,
+          automaticPauseEnabled: typeof sourceRules.automaticPauseEnabled === "boolean" ? sourceRules.automaticPauseEnabled : false,
+          emergencyAutomaticPauseAction: typeof sourceRules.emergencyAutomaticPauseAction === "string" ? sourceRules.emergencyAutomaticPauseAction : "Blocked",
+          emergencyRepeatedBlockThreshold: typeof sourceRules.emergencyRepeatedBlockThreshold === "number" ? sourceRules.emergencyRepeatedBlockThreshold : 5,
+          emergencyReplayAttemptThreshold: typeof sourceRules.emergencyReplayAttemptThreshold === "number" ? sourceRules.emergencyReplayAttemptThreshold : 1,
+          emergencyRequestFrequencyThreshold: typeof sourceRules.emergencyRequestFrequencyThreshold === "number" ? sourceRules.emergencyRequestFrequencyThreshold : 120,
+          emergencyLookbackSeconds: typeof sourceRules.emergencyLookbackSeconds === "number" ? sourceRules.emergencyLookbackSeconds : 3600,
+          emergencySpendingSpikeMultiplier: typeof sourceRules.emergencySpendingSpikeMultiplier === "number" ? sourceRules.emergencySpendingSpikeMultiplier : 5,
+          emergencyProviderFailureThreshold: typeof sourceRules.emergencyProviderFailureThreshold === "number" ? sourceRules.emergencyProviderFailureThreshold : 3,
+          emergencyUnresolvedExecutionThreshold: typeof sourceRules.emergencyUnresolvedExecutionThreshold === "number" ? sourceRules.emergencyUnresolvedExecutionThreshold : 5,
+          emergencyUnresolvedX402Threshold: typeof sourceRules.emergencyUnresolvedX402Threshold === "number" ? sourceRules.emergencyUnresolvedX402Threshold : 3,
+          emergencyBridgeFailureThreshold: typeof sourceRules.emergencyBridgeFailureThreshold === "number" ? sourceRules.emergencyBridgeFailureThreshold : 3,
+          emergencyPauseDurationSeconds: typeof sourceRules.emergencyPauseDurationSeconds === "number" ? sourceRules.emergencyPauseDurationSeconds : 3600,
+          emergencyResumeRequiresApproval: typeof sourceRules.emergencyResumeRequiresApproval === "boolean" ? sourceRules.emergencyResumeRequiresApproval : false,
+          emergencyResumeQuorum: typeof sourceRules.emergencyResumeQuorum === "number" ? sourceRules.emergencyResumeQuorum : 1,
+          emergencyPauseOnThreatMatch: typeof sourceRules.emergencyPauseOnThreatMatch === "boolean" ? sourceRules.emergencyPauseOnThreatMatch : true,
+          emergencyPauseOnOracleDisagreement: typeof sourceRules.emergencyPauseOnOracleDisagreement === "boolean" ? sourceRules.emergencyPauseOnOracleDisagreement : true,
+          emergencyPauseOnPrivilegedActionFailure: typeof sourceRules.emergencyPauseOnPrivilegedActionFailure === "boolean" ? sourceRules.emergencyPauseOnPrivilegedActionFailure : true,
           lifecycleControlsEnabled: typeof sourceRules.lifecycleControlsEnabled === "boolean" ? sourceRules.lifecycleControlsEnabled : true,
           lifecycleControlMode: typeof sourceRules.lifecycleControlMode === "string" ? sourceRules.lifecycleControlMode : "Enforce",
           lifecycleUnavailableAction: typeof sourceRules.lifecycleUnavailableAction === "string" ? sourceRules.lifecycleUnavailableAction : "Warn",
@@ -2480,7 +2714,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -2784,6 +3018,9 @@ function ConnectedAgentsPage({
   auditLogs,
   walletAddress,
   apiOnline,
+  emergencyPauses,
+  onCreateEmergencyPause,
+  onResumeEmergencyPause,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -2795,6 +3032,9 @@ function ConnectedAgentsPage({
   auditLogs: AuditLog[];
   walletAddress: string;
   apiOnline: boolean;
+  emergencyPauses: EmergencyPause[];
+  onCreateEmergencyPause: (body: Record<string, unknown>) => Promise<unknown>;
+  onResumeEmergencyPause: (id: string, reason: string) => Promise<unknown>;
 }) {
   const [latestCredentials, setLatestCredentials] = useState<Agent | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -3174,6 +3414,7 @@ ${snippet}
               const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
               const latestLog = agentLogs[0];
               const coverage = calculateSecurityCoverage(agent, assignedPolicy, agentLogs);
+              const activePauseCount = emergencyPauses.filter((pause) => (pause.active === true || pause.status === "Active") && (!pause.agentId || pause.agentId === agent.id)).length;
               const active = selectedAgent?.id === agent.id;
               return (
                 <button
@@ -3193,6 +3434,7 @@ ${snippet}
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="truncate font-semibold text-[#F8FAFC] font-['Space_Grotesk']">{agent.name}</h3>
                         <StatusBadge status={agent.status} />
+                        {activePauseCount > 0 && <span className="rounded-full border border-[#EF4444]/30 bg-[#EF4444]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FCA5A5]">Paused · {activePauseCount}</span>}
                       </div>
                       <div className="mt-1 truncate text-xs text-[#94A3B8]">{agent.id}</div>
                     </div>
@@ -3284,9 +3526,10 @@ ${snippet}
                   <div className="space-y-4">
                     <div className="grid gap-4 lg:grid-cols-2">
                       <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} onNavigate={onNavigate} />
-                      <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} />
+                      <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} emergencyPauses={emergencyPauses.filter((pause) => !pause.agentId || pause.agentId === selectedAgent.id)} />
                     </div>
                     <AgentInsightsPanel agent={selectedAgent} logs={auditLogs} />
+                    <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} selectedAgentId={selectedAgent.id} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
                     <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div><h3 className="text-sm font-semibold text-[#F8FAFC]">Execution Capabilities</h3><p className="mt-1 text-xs text-[#94A3B8]">Capabilities shape recommendations and relevant module coverage; the active policy remains the authorization source.</p></div>
@@ -3572,6 +3815,57 @@ function ApprovalPolicyFields({
   );
 }
 
+
+function EmergencyControlsPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  const enabled = String(values.emergencyControlsEnabled ?? "Yes") !== "No";
+  const automaticEnabled = String(values.automaticPauseEnabled ?? "No") === "Yes";
+  return (
+    <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Emergency Circuit Breaker</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Stop signing and execution through deterministic, scoped pauses. Manual pauses are available from Agent Details and Settings; optional automatic triggers create the same audited pause records.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Policy Controls" value={String(values.emergencyControlsEnabled ?? "Yes")} onChange={(value) => onChange({ emergencyControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Automatic Pause Triggers" value={String(values.automaticPauseEnabled ?? "No")} onChange={(value) => onChange({ automaticPauseEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Automatic Pause Decision" value={String(values.emergencyAutomaticPauseAction ?? "Blocked")} onChange={(value) => onChange({ emergencyAutomaticPauseAction: value })} options={["Blocked", "Review Required"]} />
+        <InputField label="Default Pause Duration (sec)" value={String(values.emergencyPauseDurationSeconds ?? "3600")} onChange={(value) => onChange({ emergencyPauseDurationSeconds: value })} type="number" />
+        <SelectField label="Resume Requires Approval" value={String(values.emergencyResumeRequiresApproval ?? "No")} onChange={(value) => onChange({ emergencyResumeRequiresApproval: value })} options={["Yes", "No"]} />
+        <InputField label="Resume Quorum" value={String(values.emergencyResumeQuorum ?? "1")} onChange={(value) => onChange({ emergencyResumeQuorum: value })} type="number" />
+      </div>
+      {enabled && automaticEnabled && (
+        <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Automatic trigger thresholds</summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <InputField label="Repeated Blocks" value={String(values.emergencyRepeatedBlockThreshold ?? "5")} onChange={(value) => onChange({ emergencyRepeatedBlockThreshold: value })} type="number" />
+            <InputField label="Replay Attempts" value={String(values.emergencyReplayAttemptThreshold ?? "1")} onChange={(value) => onChange({ emergencyReplayAttemptThreshold: value })} type="number" />
+            <InputField label="Requests Per Window" value={String(values.emergencyRequestFrequencyThreshold ?? "120")} onChange={(value) => onChange({ emergencyRequestFrequencyThreshold: value })} type="number" />
+            <InputField label="Lookback Window (sec)" value={String(values.emergencyLookbackSeconds ?? "3600")} onChange={(value) => onChange({ emergencyLookbackSeconds: value })} type="number" />
+            <InputField label="Spending Spike Multiplier" value={String(values.emergencySpendingSpikeMultiplier ?? "5")} onChange={(value) => onChange({ emergencySpendingSpikeMultiplier: value })} type="number" />
+            <InputField label="Provider Failures" value={String(values.emergencyProviderFailureThreshold ?? "3")} onChange={(value) => onChange({ emergencyProviderFailureThreshold: value })} type="number" />
+            <InputField label="Unresolved Executions" value={String(values.emergencyUnresolvedExecutionThreshold ?? "5")} onChange={(value) => onChange({ emergencyUnresolvedExecutionThreshold: value })} type="number" />
+            <InputField label="Unresolved x402" value={String(values.emergencyUnresolvedX402Threshold ?? "3")} onChange={(value) => onChange({ emergencyUnresolvedX402Threshold: value })} type="number" />
+            <InputField label="Bridge Failures" value={String(values.emergencyBridgeFailureThreshold ?? "3")} onChange={(value) => onChange({ emergencyBridgeFailureThreshold: value })} type="number" />
+            <SelectField label="Pause on Threat Match" value={String(values.emergencyPauseOnThreatMatch ?? "Yes")} onChange={(value) => onChange({ emergencyPauseOnThreatMatch: value })} options={["Yes", "No"]} />
+            <SelectField label="Pause on Oracle Disagreement" value={String(values.emergencyPauseOnOracleDisagreement ?? "Yes")} onChange={(value) => onChange({ emergencyPauseOnOracleDisagreement: value })} options={["Yes", "No"]} />
+            <SelectField label="Pause on Privileged Failure" value={String(values.emergencyPauseOnPrivilegedActionFailure ?? "Yes")} onChange={(value) => onChange({ emergencyPauseOnPrivilegedActionFailure: value })} options={["Yes", "No"]} />
+          </div>
+        </details>
+      )}
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Pause state is enforced before authorization and checked again before execution confirmation. Resume never bypasses audit history; approval-gated resumes remain bound to the exact pause.</p>
+    </div>
+  );
+}
+
 function ExecutionIntegrityPolicyFields({
   values,
   onChange,
@@ -3803,6 +4097,24 @@ function PoliciesPage({
     maxTransaction: "",
     dailyLimit: "",
     approvalThreshold: "",
+    emergencyControlsEnabled: "Yes",
+    automaticPauseEnabled: "No",
+    emergencyAutomaticPauseAction: "Blocked",
+    emergencyRepeatedBlockThreshold: "5",
+    emergencyReplayAttemptThreshold: "1",
+    emergencyRequestFrequencyThreshold: "120",
+    emergencyLookbackSeconds: "3600",
+    emergencySpendingSpikeMultiplier: "5",
+    emergencyProviderFailureThreshold: "3",
+    emergencyUnresolvedExecutionThreshold: "5",
+    emergencyUnresolvedX402Threshold: "3",
+    emergencyBridgeFailureThreshold: "3",
+    emergencyPauseDurationSeconds: "3600",
+    emergencyResumeRequiresApproval: "No",
+    emergencyResumeQuorum: "1",
+    emergencyPauseOnThreatMatch: "Yes",
+    emergencyPauseOnOracleDisagreement: "Yes",
+    emergencyPauseOnPrivilegedActionFailure: "Yes",
     approvalWorkflowEnabled: "Yes",
     approvalWorkflowMode: "Single",
     approvalRequiredCount: "1",
@@ -3938,6 +4250,24 @@ function PoliciesPage({
     maxTransaction: "",
     dailyLimit: "",
     approvalThreshold: "",
+    emergencyControlsEnabled: "Yes",
+    automaticPauseEnabled: "No",
+    emergencyAutomaticPauseAction: "Blocked",
+    emergencyRepeatedBlockThreshold: "5",
+    emergencyReplayAttemptThreshold: "1",
+    emergencyRequestFrequencyThreshold: "120",
+    emergencyLookbackSeconds: "3600",
+    emergencySpendingSpikeMultiplier: "5",
+    emergencyProviderFailureThreshold: "3",
+    emergencyUnresolvedExecutionThreshold: "5",
+    emergencyUnresolvedX402Threshold: "3",
+    emergencyBridgeFailureThreshold: "3",
+    emergencyPauseDurationSeconds: "3600",
+    emergencyResumeRequiresApproval: "No",
+    emergencyResumeQuorum: "1",
+    emergencyPauseOnThreatMatch: "Yes",
+    emergencyPauseOnOracleDisagreement: "Yes",
+    emergencyPauseOnPrivilegedActionFailure: "Yes",
     approvalWorkflowEnabled: "Yes",
     approvalWorkflowMode: "Single",
     approvalRequiredCount: "1",
@@ -4078,6 +4408,24 @@ function PoliciesPage({
       structuredRules: {
         blockedContracts: form.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: form.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        emergencyControlsEnabled: form.emergencyControlsEnabled !== "No",
+        automaticPauseEnabled: form.automaticPauseEnabled === "Yes",
+        emergencyAutomaticPauseAction: form.emergencyAutomaticPauseAction,
+        emergencyRepeatedBlockThreshold: Math.max(1, Number(form.emergencyRepeatedBlockThreshold) || 5),
+        emergencyReplayAttemptThreshold: Math.max(1, Number(form.emergencyReplayAttemptThreshold) || 1),
+        emergencyRequestFrequencyThreshold: Math.max(1, Number(form.emergencyRequestFrequencyThreshold) || 120),
+        emergencyLookbackSeconds: Math.max(60, Number(form.emergencyLookbackSeconds) || 3600),
+        emergencySpendingSpikeMultiplier: Math.max(1, Number(form.emergencySpendingSpikeMultiplier) || 5),
+        emergencyProviderFailureThreshold: Math.max(1, Number(form.emergencyProviderFailureThreshold) || 3),
+        emergencyUnresolvedExecutionThreshold: Math.max(1, Number(form.emergencyUnresolvedExecutionThreshold) || 5),
+        emergencyUnresolvedX402Threshold: Math.max(1, Number(form.emergencyUnresolvedX402Threshold) || 3),
+        emergencyBridgeFailureThreshold: Math.max(1, Number(form.emergencyBridgeFailureThreshold) || 3),
+        emergencyPauseDurationSeconds: Math.max(0, Number(form.emergencyPauseDurationSeconds) || 3600),
+        emergencyResumeRequiresApproval: form.emergencyResumeRequiresApproval === "Yes",
+        emergencyResumeQuorum: Math.max(1, Math.min(10, Number(form.emergencyResumeQuorum) || 1)),
+        emergencyPauseOnThreatMatch: form.emergencyPauseOnThreatMatch !== "No",
+        emergencyPauseOnOracleDisagreement: form.emergencyPauseOnOracleDisagreement !== "No",
+        emergencyPauseOnPrivilegedActionFailure: form.emergencyPauseOnPrivilegedActionFailure !== "No",
         approvalWorkflowEnabled: form.approvalWorkflowEnabled !== "No",
         approvalWorkflowMode: form.approvalWorkflowMode,
         approvalRequiredCount: Math.max(1, Math.min(10, Number(form.approvalRequiredCount) || 1)),
@@ -4200,7 +4548,25 @@ function PoliciesPage({
       maxTransaction: "",
       dailyLimit: "",
       approvalThreshold: "",
-      approvalWorkflowEnabled: "Yes",
+      emergencyControlsEnabled: "Yes",
+    automaticPauseEnabled: "No",
+    emergencyAutomaticPauseAction: "Blocked",
+    emergencyRepeatedBlockThreshold: "5",
+    emergencyReplayAttemptThreshold: "1",
+    emergencyRequestFrequencyThreshold: "120",
+    emergencyLookbackSeconds: "3600",
+    emergencySpendingSpikeMultiplier: "5",
+    emergencyProviderFailureThreshold: "3",
+    emergencyUnresolvedExecutionThreshold: "5",
+    emergencyUnresolvedX402Threshold: "3",
+    emergencyBridgeFailureThreshold: "3",
+    emergencyPauseDurationSeconds: "3600",
+    emergencyResumeRequiresApproval: "No",
+    emergencyResumeQuorum: "1",
+    emergencyPauseOnThreatMatch: "Yes",
+    emergencyPauseOnOracleDisagreement: "Yes",
+    emergencyPauseOnPrivilegedActionFailure: "Yes",
+    approvalWorkflowEnabled: "Yes",
       approvalWorkflowMode: "Single",
       approvalRequiredCount: "1",
       approvalExpiryMinutes: "60",
@@ -4329,6 +4695,24 @@ function PoliciesPage({
       maxTransaction: String(policy.maxTransaction),
       dailyLimit: String(policy.dailyLimit),
       approvalThreshold: String(policy.approvalThreshold),
+      emergencyControlsEnabled: policy.structuredRules?.emergencyControlsEnabled === false ? "No" : "Yes",
+      automaticPauseEnabled: policy.structuredRules?.automaticPauseEnabled === true ? "Yes" : "No",
+      emergencyAutomaticPauseAction: String(policy.structuredRules?.emergencyAutomaticPauseAction || "Blocked"),
+      emergencyRepeatedBlockThreshold: String(typeof policy.structuredRules?.emergencyRepeatedBlockThreshold === "number" ? policy.structuredRules.emergencyRepeatedBlockThreshold : 5),
+      emergencyReplayAttemptThreshold: String(typeof policy.structuredRules?.emergencyReplayAttemptThreshold === "number" ? policy.structuredRules.emergencyReplayAttemptThreshold : 1),
+      emergencyRequestFrequencyThreshold: String(typeof policy.structuredRules?.emergencyRequestFrequencyThreshold === "number" ? policy.structuredRules.emergencyRequestFrequencyThreshold : 120),
+      emergencyLookbackSeconds: String(typeof policy.structuredRules?.emergencyLookbackSeconds === "number" ? policy.structuredRules.emergencyLookbackSeconds : 3600),
+      emergencySpendingSpikeMultiplier: String(typeof policy.structuredRules?.emergencySpendingSpikeMultiplier === "number" ? policy.structuredRules.emergencySpendingSpikeMultiplier : 5),
+      emergencyProviderFailureThreshold: String(typeof policy.structuredRules?.emergencyProviderFailureThreshold === "number" ? policy.structuredRules.emergencyProviderFailureThreshold : 3),
+      emergencyUnresolvedExecutionThreshold: String(typeof policy.structuredRules?.emergencyUnresolvedExecutionThreshold === "number" ? policy.structuredRules.emergencyUnresolvedExecutionThreshold : 5),
+      emergencyUnresolvedX402Threshold: String(typeof policy.structuredRules?.emergencyUnresolvedX402Threshold === "number" ? policy.structuredRules.emergencyUnresolvedX402Threshold : 3),
+      emergencyBridgeFailureThreshold: String(typeof policy.structuredRules?.emergencyBridgeFailureThreshold === "number" ? policy.structuredRules.emergencyBridgeFailureThreshold : 3),
+      emergencyPauseDurationSeconds: String(typeof policy.structuredRules?.emergencyPauseDurationSeconds === "number" ? policy.structuredRules.emergencyPauseDurationSeconds : 3600),
+      emergencyResumeRequiresApproval: policy.structuredRules?.emergencyResumeRequiresApproval === true ? "Yes" : "No",
+      emergencyResumeQuorum: String(typeof policy.structuredRules?.emergencyResumeQuorum === "number" ? policy.structuredRules.emergencyResumeQuorum : 1),
+      emergencyPauseOnThreatMatch: policy.structuredRules?.emergencyPauseOnThreatMatch === false ? "No" : "Yes",
+      emergencyPauseOnOracleDisagreement: policy.structuredRules?.emergencyPauseOnOracleDisagreement === false ? "No" : "Yes",
+      emergencyPauseOnPrivilegedActionFailure: policy.structuredRules?.emergencyPauseOnPrivilegedActionFailure === false ? "No" : "Yes",
       approvalWorkflowEnabled: policy.structuredRules?.approvalWorkflowEnabled === true ? "Yes" : "No",
       approvalWorkflowMode: typeof policy.structuredRules?.approvalWorkflowMode === "string" ? policy.structuredRules.approvalWorkflowMode : "Single",
       approvalRequiredCount: String(typeof policy.structuredRules?.approvalRequiredCount === "number" ? policy.structuredRules.approvalRequiredCount : 1),
@@ -4470,6 +4854,24 @@ function PoliciesPage({
         ...(editingPolicy.structuredRules || {}),
         blockedContracts: editForm.blockedContracts.split("\n").map((item) => item.trim()).filter(Boolean),
         allowedEntryPoints: editForm.allowedEntryPoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        emergencyControlsEnabled: editForm.emergencyControlsEnabled !== "No",
+        automaticPauseEnabled: editForm.automaticPauseEnabled === "Yes",
+        emergencyAutomaticPauseAction: editForm.emergencyAutomaticPauseAction,
+        emergencyRepeatedBlockThreshold: Math.max(1, Number(editForm.emergencyRepeatedBlockThreshold) || 5),
+        emergencyReplayAttemptThreshold: Math.max(1, Number(editForm.emergencyReplayAttemptThreshold) || 1),
+        emergencyRequestFrequencyThreshold: Math.max(1, Number(editForm.emergencyRequestFrequencyThreshold) || 120),
+        emergencyLookbackSeconds: Math.max(60, Number(editForm.emergencyLookbackSeconds) || 3600),
+        emergencySpendingSpikeMultiplier: Math.max(1, Number(editForm.emergencySpendingSpikeMultiplier) || 5),
+        emergencyProviderFailureThreshold: Math.max(1, Number(editForm.emergencyProviderFailureThreshold) || 3),
+        emergencyUnresolvedExecutionThreshold: Math.max(1, Number(editForm.emergencyUnresolvedExecutionThreshold) || 5),
+        emergencyUnresolvedX402Threshold: Math.max(1, Number(editForm.emergencyUnresolvedX402Threshold) || 3),
+        emergencyBridgeFailureThreshold: Math.max(1, Number(editForm.emergencyBridgeFailureThreshold) || 3),
+        emergencyPauseDurationSeconds: Math.max(0, Number(editForm.emergencyPauseDurationSeconds) || 3600),
+        emergencyResumeRequiresApproval: editForm.emergencyResumeRequiresApproval === "Yes",
+        emergencyResumeQuorum: Math.max(1, Math.min(10, Number(editForm.emergencyResumeQuorum) || 1)),
+        emergencyPauseOnThreatMatch: editForm.emergencyPauseOnThreatMatch !== "No",
+        emergencyPauseOnOracleDisagreement: editForm.emergencyPauseOnOracleDisagreement !== "No",
+        emergencyPauseOnPrivilegedActionFailure: editForm.emergencyPauseOnPrivilegedActionFailure !== "No",
         approvalWorkflowEnabled: editForm.approvalWorkflowEnabled !== "No",
         approvalWorkflowMode: editForm.approvalWorkflowMode,
         approvalRequiredCount: Math.max(1, Math.min(10, Number(editForm.approvalRequiredCount) || 1)),
@@ -4827,6 +5229,7 @@ function PoliciesPage({
               </div>
             </div>
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <PrivilegedActionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -5108,6 +5511,7 @@ function PoliciesPage({
               </div>
             </div>
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <PrivilegedActionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -5952,6 +6356,7 @@ const docsSidebar = [
     items: [
       { id: "agent-shield-doc", label: "Agent Shield Overview" },
       { id: "shield-modules-doc", label: "Protection Modules" },
+      { id: "emergency-controls-doc", label: "Emergency Circuit Breaker" },
       { id: "threat-intelligence-doc", label: "Threat Intelligence" },
       { id: "agent-flow-doc", label: "Security Pipeline" },
       { id: "connected-agents-doc", label: "Execution Capabilities" },
@@ -6001,6 +6406,7 @@ const docsOnThisPage = [
   { id: "architecture", label: "Platform Architecture" },
   { id: "cross-chain-doc", label: "Cross-chain Model" },
   { id: "shield-modules-doc", label: "Protection Modules" },
+  { id: "emergency-controls-doc", label: "Emergency Circuit Breaker" },
   { id: "threat-intelligence-doc", label: "Threat Intelligence" },
   { id: "agent-flow-doc", label: "Agent Shield Flow" },
   { id: "connected-agents-doc", label: "Connected Agents" },
@@ -6410,6 +6816,22 @@ Content-Type: application/json
                 <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Eight protection areas:</span> Agent Trust & Access, Policy & Approval Controls, Wallet & Asset Safety, Contract & Permission Safety, Execution Integrity, Market & Oracle Integrity, Cross-chain & Payment Controls, and Threat & Compliance. Status is shown per control. Transaction preflight and Lifecycle & Replay are Live inside Execution Integrity; stateful simulation and settlement reconciliation remain Foundation Available.</DocsCallout></div>
               </section>
 
+
+              <section id="emergency-controls-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
+                <div className="flex flex-wrap items-center gap-2"><h2 className={SECTION_TITLE}>Emergency Circuit Breaker</h2><DocsBadge label="Live" variant="live" /></div>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
+                  Emergency Controls persist scoped pause records separately from agent credentials and policies. Owners can stop one agent, capability, action, policy, Trading, Contract, Bridge, x402, all execution, or the wallet-owned platform scope. Matching requests return Blocked or Review Required before wallet signing.
+                </p>
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  {[
+                    ["Persistent scope", "Pause state survives process restarts in PostgreSQL and has matching memory-store behavior."],
+                    ["Automatic triggers", "Opt-in thresholds can react to replay, repeated blocks, threat, oracle, provider, settlement, and privileged-action findings."],
+                    ["Audited resume", "Expiry, direct resume, and approval-gated quorum resume preserve exact evidence and Casper proof state."],
+                  ].map(([title, description]) => <div key={title} className={`${CARD} p-4`}><h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{description}</p></div>)}
+                </div>
+                <div className="mt-5"><DocsCallout type="danger">An active pause must not be bypassed through a different tool, route, provider, action label, or retry key. Resolve the incident through the authorized resume workflow.</DocsCallout></div>
+              </section>
+
               <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Threat Intelligence Foundation</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
@@ -6443,6 +6865,8 @@ Content-Type: application/json
                     <DocsFlowStep label="Agent authenticated" />
                     <DocsFlowArrow />
                     <DocsFlowStep label="Configuration + policy" />
+                    <DocsFlowArrow />
+                    <DocsFlowStep label="Emergency pause state" />
                     <DocsFlowArrow />
                     <DocsFlowStep label="Relevant checks" />
                     <DocsFlowArrow />
@@ -7838,6 +8262,28 @@ function IntentPlaygroundPage({
                     </div>
                   </div>
                 )}
+                {result.result.emergencyControlsContext && (
+                  <div className="mt-3 rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Emergency Circuit Breaker</div>
+                      <span className={`text-xs font-semibold ${result.result.emergencyControlsContext.active ? "text-[#EF4444]" : "text-[#22C55E]"}`}>{result.result.emergencyControlsContext.active ? result.result.emergencyControlsContext.effectiveDecision || "Active" : "No active pause"}</span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
+                      <div>Pause state <span className="block text-[#F8FAFC]">{result.result.emergencyControlsContext.active ? "Active" : "Clear"}</span></div>
+                      <div>Automatic activation <span className="block text-[#F8FAFC]">{result.result.emergencyControlsContext.automaticPauseActivated ? "Yes" : "No"}</span></div>
+                      <div>Matching scopes <span className="block text-[#F8FAFC]">{result.result.emergencyControlsContext.matchingPauses?.length ?? (result.result.emergencyControlsContext.pause ? 1 : 0)}</span></div>
+                    </div>
+                    {(result.result.emergencyControlsContext.pause || result.result.emergencyControlsContext.matchingPauses?.[0]) && (() => {
+                      const pause = result.result.emergencyControlsContext?.pause || result.result.emergencyControlsContext?.matchingPauses?.[0];
+                      return <div className="mt-3 rounded-lg border border-[#EF4444]/20 bg-[#050B14] p-3 text-xs text-[#94A3B8]">
+                        <div className="font-semibold text-[#F8FAFC]">{pause?.scopeType || "Emergency"}{pause?.scopeValue ? ` · ${pause.scopeValue}` : ""}</div>
+                        <div className="mt-1 leading-relaxed text-[#FCA5A5]">{pause?.reason || "Emergency controls are active."}</div>
+                        <div className="mt-1">{pause?.triggerType || "Manual"}{pause?.expiresAt ? ` · expires ${fmtTs(pause.expiresAt)}` : " · indefinite"}</div>
+                      </div>;
+                    })()}
+                    <div className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Pause state is evaluated before authorization and again before execution confirmation. Use Agent Details or Settings for the audited resume workflow.</div>
+                  </div>
+                )}
                 {result.result.threatIntelligenceContext && (
                   <div className="mt-3 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7970,6 +8416,10 @@ function SettingsPage({
   oracleValidationStatus,
   complianceControlsStatus,
   x402PaymentControlsStatus,
+  emergencyPauses,
+  walletAddress,
+  onCreateEmergencyPause,
+  onResumeEmergencyPause,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -7978,6 +8428,10 @@ function SettingsPage({
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
   x402PaymentControlsStatus: X402PaymentControlsStatus;
+  emergencyPauses: EmergencyPause[];
+  walletAddress: string;
+  onCreateEmergencyPause: (body: Record<string, unknown>) => Promise<unknown>;
+  onResumeEmergencyPause: (id: string, reason: string) => Promise<unknown>;
 }) {
   const [devMode, setDevMode] = useState(false);
   const [copiedSetting, setCopiedSetting] = useState("");
@@ -7994,6 +8448,8 @@ function SettingsPage({
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
+    ["Emergency Controls Status", `${api.baseUrl}/api/emergency-controls/status`],
+    ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],
     ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
@@ -8010,6 +8466,8 @@ function SettingsPage({
           View the active Magen3 environment and adjust local dashboard preferences.
         </p>
       </div>
+
+      <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
 
       {/* Network */}
       <div className={`${CARD} p-5`}>
@@ -8218,6 +8676,7 @@ export default function App() {
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [emergencyPauses, setEmergencyPauses] = useState<EmergencyPause[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -8306,6 +8765,7 @@ export default function App() {
       setPolicies([]);
       setAuditLogs([]);
       setApprovals([]);
+      setEmergencyPauses([]);
       return () => {
         cancelled = true;
       };
@@ -8324,6 +8784,7 @@ export default function App() {
         if (Array.isArray(payload.policies)) setPolicies(payload.policies as Policy[]);
         if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
         if (Array.isArray(payload.approvals)) setApprovals(payload.approvals as ApprovalRequest[]);
+        if (Array.isArray(payload.emergencyPauses)) setEmergencyPauses(payload.emergencyPauses as EmergencyPause[]);
         setApiOnline(true);
       } catch {
         if (!cancelled) setApiOnline(false);
@@ -8507,8 +8968,47 @@ export default function App() {
       const updatedAudit = payload.auditLog as AuditLog;
       setAuditLogs((previous) => previous.map((item) => item.id === updatedAudit.id ? updatedAudit : item));
     }
+    if (payload.emergencyPause) {
+      const updatedPause = payload.emergencyPause as EmergencyPause;
+      setEmergencyPauses((previous) => previous.map((item) => item.id === updatedPause.id ? updatedPause : item));
+    }
+    if (payload.resumeAuditLog) {
+      const resumeAudit = payload.resumeAuditLog as AuditLog;
+      setAuditLogs((previous) => previous.some((item) => item.id === resumeAudit.id) ? previous : [resumeAudit, ...previous]);
+    }
     setApiOnline(true);
     return payload.approval as ApprovalRequest;
+  }, [walletAddress]);
+
+  const onCreateEmergencyPause = useCallback(async (body: Record<string, unknown>) => {
+    if (!walletAddress) throw new Error("Connect Casper Wallet before activating Emergency Controls.");
+    const payload = await api.createEmergencyPause({ ...body, walletAddress });
+    if (payload.emergencyPause) {
+      const pause = payload.emergencyPause as EmergencyPause;
+      setEmergencyPauses((previous) => previous.some((item) => item.id === pause.id) ? previous.map((item) => item.id === pause.id ? pause : item) : [pause, ...previous]);
+    }
+    if (payload.auditLog) setAuditLogs((previous) => [payload.auditLog as AuditLog, ...previous]);
+    setApiOnline(true);
+    return payload;
+  }, [walletAddress]);
+
+  const onResumeEmergencyPause = useCallback(async (id: string, reason: string) => {
+    if (!walletAddress) throw new Error("Connect Casper Wallet before resuming Emergency Controls.");
+    const payload = await api.resumeEmergencyPause(id, { walletAddress, reason });
+    if (payload.emergencyPause) {
+      const pause = payload.emergencyPause as EmergencyPause;
+      setEmergencyPauses((previous) => previous.map((item) => item.id === pause.id ? pause : item));
+    }
+    if (payload.approval) {
+      const approval = payload.approval as ApprovalRequest;
+      setApprovals((previous) => previous.some((item) => item.id === approval.id) ? previous.map((item) => item.id === approval.id ? approval : item) : [approval, ...previous]);
+    }
+    if (payload.auditLog) {
+      const audit = payload.auditLog as AuditLog;
+      setAuditLogs((previous) => previous.some((item) => item.id === audit.id) ? previous : [audit, ...previous]);
+    }
+    setApiOnline(true);
+    return payload;
   }, [walletAddress]);
 
   const onPrepareCasperPayload = useCallback(async (id: string) => {
@@ -8550,6 +9050,9 @@ export default function App() {
         const exists = previous.some((item) => item.id === response.approval?.id);
         return exists ? previous.map((item) => item.id === response.approval?.id ? response.approval as ApprovalRequest : item) : [response.approval as ApprovalRequest, ...previous];
       });
+    }
+    if (response.emergencyPause) {
+      setEmergencyPauses((previous) => previous.some((item) => item.id === response.emergencyPause?.id) ? previous : [response.emergencyPause as EmergencyPause, ...previous]);
     }
     setApiOnline(true);
     return response;
@@ -8595,6 +9098,7 @@ export default function App() {
         policies={policies}
         agents={agents}
         approvals={approvals}
+        emergencyPauses={emergencyPauses}
         onNavigate={navigate}
       />
     ),
@@ -8610,6 +9114,9 @@ export default function App() {
         auditLogs={auditLogs}
         walletAddress={walletAddress}
         apiOnline={apiOnline}
+        emergencyPauses={emergencyPauses}
+        onCreateEmergencyPause={onCreateEmergencyPause}
+        onResumeEmergencyPause={onResumeEmergencyPause}
       />
     ),
     shields: (
@@ -8653,7 +9160,7 @@ export default function App() {
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} x402PaymentControlsStatus={x402PaymentControlsStatus} />
+      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} x402PaymentControlsStatus={x402PaymentControlsStatus} emergencyPauses={emergencyPauses} walletAddress={walletAddress} onCreateEmergencyPause={onCreateEmergencyPause} onResumeEmergencyPause={onResumeEmergencyPause} />
     ),
   };
 

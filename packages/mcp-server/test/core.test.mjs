@@ -59,6 +59,7 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.tokenPermission.permissionType, /classification/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.tokenPermission.deadline, /expiration/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.privilegedActionControls, /administrative/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.emergencyCircuitBreaker, /pause state/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.privilegedAction.classifiedAction, /classification/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.privilegedAction.requestedValue, /approval/i);
 });

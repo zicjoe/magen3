@@ -65,6 +65,12 @@ test("security coverage reaches 100 only when every configured protection check 
         approvedImplementations: ["contract-package-hash-approved-implementation"],
         privilegedActionQuorumRules: { "Ownership Transfer": 2 },
         unknownPrivilegedAction: "Review",
+        emergencyControlsEnabled: true,
+        automaticPauseEnabled: false,
+        emergencyAutomaticPauseAction: "Blocked",
+        emergencyPauseDurationSeconds: 3600,
+        emergencyResumeRequiresApproval: false,
+        emergencyResumeQuorum: 1,
       },
     },
     [{
@@ -84,6 +90,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Bridge Controls", status: "pass", severity: "info", rule: "Bridge route metadata", message: "Required bridge route metadata is present." },
         { module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." },
         { module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." },
+        { module: "Emergency Circuit Breaker", status: "pass", severity: "info", rule: "Active emergency pause", message: "No active emergency pause applies." },
       ],
     }],
   );
@@ -244,6 +251,29 @@ test("Privileged Action coverage requires deterministic configuration and an obs
     moduleFindings: [{ module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." }],
   }]);
   assert.equal(observed.checks.find((item) => item.id === "privileged-action-controls").passed, true);
+});
+
+test("Emergency Controls coverage requires configuration and a Gateway pause-state evaluation", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", executionCapabilities: ["Treasury Operations"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp };
+  const policy = { status: "Active", structuredRules: { emergencyControlsEnabled: true, emergencyAutomaticPauseAction: "Blocked", emergencyPauseDurationSeconds: 3600, emergencyResumeQuorum: 1 } };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "emergency-controls").passed, false);
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{ timestamp, moduleFindings: [{ module: "Emergency Circuit Breaker", status: "pass", severity: "info", rule: "Active emergency pause", message: "No active pause." }] }]);
+  assert.equal(observed.checks.find((item) => item.id === "emergency-controls").passed, true);
+});
+
+test("Integration Health surfaces active emergency pauses", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Emergency Circuit Breaker", status: "fail", severity: "critical", rule: "Active emergency pause", message: "Agent paused." }] }],
+    true,
+    [{ active: true, status: "Active", scopeType: "Agent", reason: "Incident response" }],
+  );
+  assert.ok(health.checks.some((check) => check.label === "Emergency Circuit Breaker" && check.status === "attention"));
+  assert.notEqual(health.overall, "Healthy");
 });
 
 test("integration health never reports healthy when core services or configuration are missing", () => {

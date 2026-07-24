@@ -91,3 +91,10 @@ The MCP intent schema exposes `action.tokenPermission` for explicit unsigned tok
 ## Privileged Action Controls
 
 The MCP intent schema accepts unsigned `action.privilegedAction` metadata for supported administrative calls. Inspect Privileged Action Controls findings, the parameter fingerprint, and any exact-bound Human Approval requirement. The server rejects administrator keys, signatures, and raw signed transactions. Generic contract calls remain compatible.
+
+## Emergency Circuit Breaker
+
+Every MCP intent is evaluated against persistent scoped pause state before ordinary authorization. `magen3_require_allowed` fails closed for both `Blocked` and `Review Required`. Surface the Emergency Circuit Breaker finding and matching scope, trigger, reason, expiry, and remediation to the operator.
+
+The MCP server deliberately exposes no pause-management tool. An agent must not activate, resume, or bypass a pause through MCP, alternate tools, modified action labels, routes, providers, wallets, or idempotency keys. Owner pause management remains in the Magen3 application and REST API.
+

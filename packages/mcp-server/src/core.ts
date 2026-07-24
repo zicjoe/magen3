@@ -12,6 +12,7 @@ export interface Magen3McpConfig {
 export type ToolTextResult = CallToolResult;
 
 export const INTENT_SCHEMA_DESCRIPTION = {
+  emergencyCircuitBreaker: "Magen3 evaluates active scoped pause state before authorization and again before execution confirmation. A Blocked or Review Required pause must never be bypassed. Pause creation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP execution tool.",
   executionIntegrity: "For exact-once authorization, include action.lifecycle with a unique intent ID, idempotency key, creation time, expiry, optional sequence, retry/replacement reference, and optional client fingerprint. Magen3 always computes its own canonical fingerprint.",
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
   oracleValidation: "For priced swaps and DeFi intents, include action.outputAsset plus action.oracle. Magen3 compares the proposed execution price with a configured freshness-checked multi-source oracle feed and returns structured Oracle Validation findings.",
@@ -205,7 +206,8 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized wallet-scoped reviewers respond through the Magen3 application. Approval does not sign or broadcast the transaction.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         tokenPermissionControlsBoundary: "Token Permission Controls evaluate explicit unsigned authority metadata only. Never send permit signatures, wallet signatures, raw signed approvals, private keys, mnemonics, or wallet secrets to Magen3.",
-        privilegedActionControlsBoundary: "Privileged Action Controls classify supported unsigned administrative intent metadata and bind protected parameters to policy and Human Approval. Never send administrator private keys, signatures, raw signed transactions, mnemonics, or wallet secrets.",
+      emergencyCircuitBreakerBoundary: "An active Emergency Circuit Breaker pause overrides ordinary authorization. Stop on Blocked or Review Required, surface the exact pause evidence, and never attempt retries or alternate tools to bypass it.",
+      privilegedActionControlsBoundary: "Privileged Action Controls classify supported unsigned administrative intent metadata and bind protected parameters to policy and Human Approval. Never send administrator private keys, signatures, raw signed transactions, mnemonics, or wallet secrets.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
     },

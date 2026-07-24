@@ -31,4 +31,5 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 
 Historic build notes, recording scripts, and old walkthroughs live in `archive/`. They are retained for project history and should not override the current README, in-app Docs, or `MAGEN3_PLATFORM.md`.
 
+- [Emergency Circuit Breaker](./EMERGENCY_CIRCUIT_BREAKER.md) — persistent scoped pauses, automatic triggers, expiry, authorized resume, approval-gated resume, and Gateway enforcement.
 - [Privileged Action Controls](./PRIVILEGED_ACTION_CONTROLS.md) — deterministic administrative-call classification, policy, fingerprinting, and Human Approval binding.

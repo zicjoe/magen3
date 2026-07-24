@@ -176,3 +176,10 @@ After real settlement, call `client.report_x402_settlement(...)` with the audit 
 ## Privileged Action Controls
 
 Python callers can pass unsigned `action["privilegedAction"]` metadata with a supported classification, exact contract/method/network binding, sanitized current/requested values, and proposed administrator or implementation. The response can include `privilegedActionControlsContext`. Never send private keys, signatures, or raw signed transactions.
+
+## Emergency Circuit Breaker responses
+
+The Python client passes through `result["emergencyControlsContext"]` and the optional top-level `emergencyPause`. These fields explain the matching scope, manual or automatic trigger, enforcement action, reason, expiry, and approval-gated resume state.
+
+The SDK cannot activate, resume, or bypass a pause. Stop on both `Blocked` and `Review Required`; never retry through a different action label, route, provider, wallet, or idempotency key to avoid the control.
+

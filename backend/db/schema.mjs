@@ -1,4 +1,4 @@
-import { doublePrecision, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const agentsTable = pgTable("agents", {
   id: text("id").primaryKey(),
@@ -118,6 +118,33 @@ export const auditLogsTable = pgTable("audit_logs", {
   riskScore: integer("risk_score").notNull(),
 });
 
+
+
+export const emergencyPausesTable = pgTable("emergency_pauses", {
+  id: text("id").primaryKey(),
+  ownerWalletAddress: text("owner_wallet_address").notNull(),
+  agentId: text("agent_id").notNull().default(""),
+  policyId: text("policy_id").notNull().default(""),
+  scopeType: text("scope_type").notNull(),
+  scopeValue: text("scope_value").notNull().default(""),
+  enforcementAction: text("enforcement_action").notNull().default("Blocked"),
+  triggerType: text("trigger_type").notNull().default("Manual"),
+  triggerRule: text("trigger_rule").notNull().default("Manual emergency pause"),
+  reason: text("reason").notNull(),
+  triggerEvidence: jsonb("trigger_evidence").notNull().default({}),
+  status: text("status").notNull().default("Active"),
+  createdByWallet: text("created_by_wallet").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  resumeAuthorityWallets: jsonb("resume_authority_wallets").notNull().default([]),
+  resumeRequiresApproval: boolean("resume_requires_approval").notNull().default(false),
+  resumeQuorum: integer("resume_quorum").notNull().default(1),
+  resumeApprovalRequestId: text("resume_approval_request_id").notNull().default(""),
+  resumedByWallet: text("resumed_by_wallet").notNull().default(""),
+  resumeReason: text("resume_reason").notNull().default(""),
+  resumedAt: timestamp("resumed_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const agentGatewayRequestsTable = pgTable("agent_gateway_requests", {
   id: text("id").primaryKey(),

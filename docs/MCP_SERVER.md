@@ -122,3 +122,9 @@ For supported administrative contract calls, include unsigned metadata under `ac
 Magen3 independently resolves supported entry-point and method aliases, compares explicit and derived classifications, applies the active blocked/review matrix, validates approved administrators and implementations, computes a protected-parameter fingerprint, and binds any Human Approval request to the exact original intent. Per-action quorum can increase the policy's normal approval count; it is never silently reduced to the number of currently available reviewers.
 
 Test with `Approved privileged mint`, `Ownership transfer requiring review`, `Unapproved proxy implementation`, `Unknown privileged method`, and `Contradictory privileged classification` in the Intent Playground. MCP clients must stop unless the final decision and `executionApproved` authorize continuation. The MCP server never accepts administrator private keys, contract-owner secrets, wallet signatures, or raw signed administrative transactions.
+
+## Emergency Circuit Breaker boundary
+
+Every MCP intent is evaluated against active scoped pause state. `magen3_require_allowed` remains fail-closed: an Emergency Circuit Breaker `Blocked` or `Review Required` result stops execution. Surface the matching scope, trigger, reason, expiry, and remediation; do not retry through a different tool, action label, route, provider, or idempotency key to bypass the pause.
+
+Pause activation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP tool. Approval-gated resume is resolved in the existing Human Approval Queue.

@@ -560,3 +560,83 @@ The Gateway accepts unsigned metadata only. `signature`, `signatures`, approvals
 Supported administrative actions use `action.privilegedAction`. The object may include `classifiedAction`, `contract`, `package`, `entryPoint`, `methodSignature`, sanitized `currentValue` and `requestedValue`, `role`, `recipient`, `implementation`, classifier source/version, and network. A supported deterministic entry point can activate classification without the object, while unrelated generic calls remain skipped.
 
 The result may include `privilegedActionControlsContext` with the resolved classification, protected-parameter fingerprint, classification status, approval requirement, and required approval count. Policy fields and the complete boundary are documented in `PRIVILEGED_ACTION_CONTROLS.md`. Never include administrator keys, signatures, raw signed transactions, mnemonics, or wallet secrets.
+
+## Emergency Circuit Breaker
+
+Emergency Circuit Breaker is a **Live** owner-controlled protection under Policy & Approval Controls. Active pause state is evaluated before ordinary authorization and checked again before execution confirmation. A matching `Blocked` pause takes precedence over `Review Required`.
+
+The Gateway result may include:
+
+```json
+{
+  "result": {
+    "decision": "Blocked",
+    "emergencyControlsContext": {
+      "evaluated": true,
+      "active": true,
+      "automatic": false,
+      "enforcementAction": "Blocked",
+      "matchingPauses": [
+        {
+          "id": "EPAUSE-...",
+          "agentId": "MAG-AGENT-...",
+          "scopeType": "Agent",
+          "scopeValue": "MAG-AGENT-...",
+          "triggerType": "Manual",
+          "reason": "Investigating repeated execution failures",
+          "status": "Active",
+          "createdAt": "2026-07-24T10:00:00.000Z",
+          "expiresAt": "2026-07-24T11:00:00.000Z"
+        }
+      ]
+    }
+  },
+  "emergencyPause": {
+    "id": "EPAUSE-...",
+    "scopeType": "Agent",
+    "enforcementAction": "Blocked",
+    "status": "Active"
+  }
+}
+```
+
+External agents must stop on both `Blocked` and `Review Required`. They must not change action labels, routes, tools, providers, idempotency keys, or wallets to bypass the pause.
+
+### Owner pause management
+
+```http
+GET /api/emergency-controls/status?walletAddress=CASPER_OWNER_PUBLIC_KEY
+GET /api/emergency-pauses?walletAddress=CASPER_OWNER_PUBLIC_KEY
+POST /api/emergency-pauses
+POST /api/emergency-pauses/EPAUSE-.../resume
+```
+
+Example manual activation:
+
+```json
+{
+  "walletAddress": "CASPER_OWNER_PUBLIC_KEY",
+  "agentId": "MAG-AGENT-...",
+  "scopeType": "Agent",
+  "scopeValue": "MAG-AGENT-...",
+  "enforcementAction": "Blocked",
+  "reason": "Investigating repeated execution failures",
+  "expiresAt": "2026-07-24T11:00:00.000Z",
+  "resumeRequiresApproval": false,
+  "resumeQuorum": 1
+}
+```
+
+Example direct resume:
+
+```json
+{
+  "walletAddress": "CASPER_OWNER_PUBLIC_KEY",
+  "reason": "Incident reviewed and execution path verified"
+}
+```
+
+When the pause requires approval, the resume request creates an exact-bound Human Approval record. The pause remains active until the configured quorum resolves the request. Human Approval remains **Foundation Available** because reviewer responses are not yet separately cryptographically signed.
+
+Supported scopes are `Platform`, `All Execution`, `Agent`, `Capability`, `Action`, `Policy`, `Trading`, `Contract`, `Bridge`, and `x402`. Automatic pause triggers are opt-in policy behavior. See `EMERGENCY_CIRCUIT_BREAKER.md` for fields, thresholds, audit evidence, expiry, and the current wallet-scoped administrative boundary.
+

@@ -80,6 +80,35 @@ export async function runMigrations() {
 
 
 
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS emergency_pauses (
+      id TEXT PRIMARY KEY,
+      owner_wallet_address TEXT NOT NULL,
+      agent_id TEXT NOT NULL DEFAULT '',
+      policy_id TEXT NOT NULL DEFAULT '',
+      scope_type TEXT NOT NULL,
+      scope_value TEXT NOT NULL DEFAULT '',
+      enforcement_action TEXT NOT NULL DEFAULT 'Blocked',
+      trigger_type TEXT NOT NULL DEFAULT 'Manual',
+      trigger_rule TEXT NOT NULL DEFAULT 'Manual emergency pause',
+      reason TEXT NOT NULL,
+      trigger_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'Active',
+      created_by_wallet TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ,
+      resume_authority_wallets JSONB NOT NULL DEFAULT '[]'::jsonb,
+      resume_requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+      resume_quorum INTEGER NOT NULL DEFAULT 1,
+      resume_approval_request_id TEXT NOT NULL DEFAULT '',
+      resumed_by_wallet TEXT NOT NULL DEFAULT '',
+      resume_reason TEXT NOT NULL DEFAULT '',
+      resumed_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agent_gateway_requests (
       id TEXT PRIMARY KEY,
@@ -296,6 +325,11 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_wallet_address ON agent_gateway_requests(wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_execution_wallet_address ON agent_gateway_requests(execution_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_received_at ON agent_gateway_requests(received_at DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_owner_wallet ON emergency_pauses(owner_wallet_address);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_agent_id ON emergency_pauses(agent_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_policy_id ON emergency_pauses(policy_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_status ON emergency_pauses(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_expires_at ON emergency_pauses(expires_at);`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

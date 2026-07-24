@@ -81,7 +81,7 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Protection area | Live | Foundation Available | Planned |
 | --- | --- | --- | --- |
 | Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
-| Policy & Approval Controls | Policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
+| Policy & Approval Controls | Policy enforcement; review thresholds; Emergency Circuit Breaker | Human approval and quorum | Cryptographic reviewer signatures; approval escalation |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; argument policies |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
@@ -154,6 +154,12 @@ Token Permission Controls is Live inside Contract & Permission Safety. It activa
 The control validates owner, token, spender, approved and blocked spender policy, amount, ratio, unlimited authority, chain binding, nonce, expiry, lifetime, reusable authority, NFT operator policy, batch size, and allowance-reset expectations. It stores a canonical SHA-256 fingerprint in the audit trail and blocks exact permit replay or changed protected parameters under a previously used permit ID or token-scoped nonce.
 
 Generic contract calls remain backward compatible. Raw permit signatures, wallet signatures, and signed authority payloads are rejected by the Gateway. See `TOKEN_PERMISSION_CONTROLS.md`.
+
+### Emergency Circuit Breaker decision model
+
+Emergency Circuit Breaker is Live inside Policy & Approval Controls. Persistent owner-scoped pause records can target the platform, all execution, one agent, one capability, one action type, one policy, Trading, Contract interactions, Bridge, or x402. The Gateway evaluates applicable pause state before ordinary authorization and execution confirmation evaluates it again before accepting a deploy hash.
+
+Automatic pausing is disabled by default and is enabled explicitly in policy `structuredRules`. Manual and automatic pauses share the same persistence, expiry, structured finding, audit, Casper proof, and authorized resume workflow. Approval-gated resume reuses exact-bound Human Approval; cryptographic reviewer signatures remain Foundation Available. See `EMERGENCY_CIRCUIT_BREAKER.md`.
 
 ### Privileged Action Controls decision model
 

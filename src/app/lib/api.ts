@@ -22,7 +22,7 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   health() {
-    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; approvalWorkflow?: Record<string, unknown>; tokenPermissionControls?: Record<string, unknown>; privilegedActionControls?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
+    return request<{ ok: boolean; service: string; network: string; version: string; storage?: string; casper?: Record<string, unknown>; threatIntelligence?: Record<string, unknown>; oracleValidation?: Record<string, unknown>; complianceControls?: Record<string, unknown>; executionIntegrity?: Record<string, unknown>; approvalWorkflow?: Record<string, unknown>; emergencyControls?: Record<string, unknown>; tokenPermissionControls?: Record<string, unknown>; privilegedActionControls?: Record<string, unknown>; x402PaymentControls?: Record<string, unknown> }>("/api/health");
   },
 
   casperStatus() {
@@ -45,6 +45,11 @@ export const api = {
     return request<{ ok: boolean; executionIntegrity: Record<string, unknown> }>("/api/execution-integrity/status");
   },
 
+
+  emergencyControlsStatus(walletAddress?: string) {
+    const query = walletAddress ? `?walletAddress=${encodeURIComponent(walletAddress)}` : "";
+    return request<{ ok: boolean; emergencyControls: Record<string, unknown> }>(`/api/emergency-controls/status${query}`);
+  },
 
   tokenPermissionControlsStatus() {
     return request<{ ok: boolean; tokenPermissionControls: Record<string, unknown> }>("/api/token-permission-controls/status");
@@ -102,6 +107,18 @@ export const api = {
     return request<any>(`/api/agent-gateway/approvals/${encodeURIComponent(id)}?agentId=${encodeURIComponent(agentId)}`, {
       headers: { "x-magen3-agent-key": apiKey },
     });
+  },
+
+  listEmergencyPauses(walletAddress: string) {
+    return request<any>(`/api/emergency-pauses?walletAddress=${encodeURIComponent(walletAddress)}`);
+  },
+
+  createEmergencyPause(body: Record<string, unknown>) {
+    return request<any>("/api/emergency-pauses", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  resumeEmergencyPause(id: string, body: Record<string, unknown>) {
+    return request<any>(`/api/emergency-pauses/${encodeURIComponent(id)}/resume`, { method: "POST", body: JSON.stringify(body) });
   },
 
   listApprovals(walletAddress: string) {

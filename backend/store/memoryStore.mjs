@@ -10,6 +10,8 @@ import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecisi
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
+import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
@@ -62,6 +64,7 @@ export function createMemoryStore() {
   let auditLogs = [];
   let actionReviews = [];
   let gatewayRequests = [];
+  let emergencyPauses = [];
 
   function publicAgent(agent, extra = {}) {
     if (!agent) return agent;
@@ -93,9 +96,66 @@ export function createMemoryStore() {
     return wallet ? auditLogs.filter((log) => log.walletAddress === wallet || log.agentOwnerWalletAddress === wallet) : [];
   }
 
+  function refreshEmergencyPause(pause, now = new Date()) {
+    const publicPause = publicEmergencyPause(pause, now);
+    if (publicPause.status !== pause.status) {
+      emergencyPauses = emergencyPauses.map((item) => item.id === pause.id ? { ...item, status: publicPause.status, updatedAt: now.toISOString() } : item);
+      return emergencyPauses.find((item) => item.id === pause.id);
+    }
+    return pause;
+  }
+
+  function scopedEmergencyPauses(walletAddress, { activeOnly = false } = {}) {
+    const wallet = normalizeWalletAddress(walletAddress).toLowerCase();
+    const records = emergencyPauses
+      .filter((pause) => normalizeWalletAddress(pause.ownerWalletAddress).toLowerCase() === wallet)
+      .map((pause) => refreshEmergencyPause(pause));
+    return records.filter((pause) => !activeOnly || pause.status === "Active").map((pause) => publicEmergencyPause(pause));
+  }
+
+  async function persistEmergencyAudit(auditLog) {
+    Object.assign(auditLog, initialDecisionProofState(auditLog));
+    auditLogs = [auditLog, ...auditLogs];
+    const proof = await recordDecisionProof(auditLog);
+    auditLogs = auditLogs.map((log) => log.id === auditLog.id ? {
+      ...log,
+      ...proof,
+      proofConfirmedAt: proof.decisionProofStatus === "recorded" ? (proof.decisionProofUpdatedAt || new Date().toISOString()) : log.proofConfirmedAt,
+      pipelineStages: updatePipelineStage(log.pipelineStages, "casper-proof", proof.decisionProofStatus === "recorded" ? "completed" : proof.decisionProofStatus === "failed" ? "failed" : "pending", proof.decisionProofUpdatedAt || new Date().toISOString(), "Casper decision proof"),
+    } : log);
+    return auditLogs.find((log) => log.id === auditLog.id) || auditLog;
+  }
+
+  function applyAutomaticPauseToResult(result, pause) {
+    const pauseFinding = automaticPauseFinding(pause);
+    const decision = pause.enforcementAction === "Review Required" ? "Review Required" : "Blocked";
+    result.decision = decision;
+    result.risk = decision === "Blocked" ? "Critical" : "High";
+    result.riskScore = Math.max(Number(result.riskScore || 0), decision === "Blocked" ? 99 : 82);
+    result.reason = decision === "Blocked"
+      ? "The current finding activated the Emergency Circuit Breaker, so execution is blocked and the pause applies to future matching requests."
+      : "The current finding activated the Emergency Circuit Breaker, so execution requires human review and the pause applies to future matching requests.";
+    result.recommendedAction = "Do not bypass the circuit breaker. Investigate the trigger, resolve the incident, and use the authorized resume workflow.";
+    result.primaryReason = pauseFinding.message;
+    result.triggeredRule = pauseFinding.rule;
+    result.suggestedResolution = pauseFinding.remediation;
+    result.moduleFindings = [...(result.moduleFindings || []), pauseFinding];
+    result.modulesEvaluated = [...new Set([...(result.modulesEvaluated || []), "Emergency Circuit Breaker"])];
+    result.policyChecksFailed = [...(result.policyChecksFailed || []), pauseFinding.message];
+    result.pipelineStages = updatePipelineStage(result.pipelineStages, "emergency-circuit-breaker", decision === "Blocked" ? "failed" : "warning", new Date().toISOString(), "Automatic emergency pause activated");
+    result.emergencyControlsContext = {
+      active: true,
+      automaticPauseActivated: true,
+      effectiveDecision: decision,
+      pause: publicEmergencyPause(pause),
+    };
+    return result;
+  }
+
   function syncAuditApproval(review) {
     if (!review?.auditLogId) return;
     const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
+    const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
     auditLogs = auditLogs.map((log) => log.id === review.auditLogId ? {
       ...log,
       approvalRequestId: review.id,
@@ -105,9 +165,13 @@ export function createMemoryStore() {
       approvalReceivedCount: approvalsReceived,
       approvalExpiresAt: review.expiresAt || "",
       approvalResolvedAt: review.resolvedAt || "",
-      executionStatus: review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : log.executionStatus,
-      executionNote: review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : log.executionNote,
-      pipelineStages: updatePipelineStage(log.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending"),
+      executionStatus: emergencyResume
+        ? "not_required"
+        : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : log.executionStatus,
+      executionNote: emergencyResume
+        ? review.reviewStatus === "Approved" ? "Emergency resume quorum completed and the bound pause was resumed." : review.reviewStatus === "Rejected" ? `Emergency resume rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Emergency resume approval expired. The pause remains active." : "Emergency resume approval remains pending; the pause stays active."
+        : review.reviewStatus === "Approved" ? "Human approval quorum completed. The exact bound intent may proceed to wallet signing before approval expiry." : review.reviewStatus === "Rejected" ? `Human approval rejected${review.rejectionReason ? `: ${review.rejectionReason}` : "."}` : review.reviewStatus === "Expired" ? "Human approval expired before execution." : log.executionNote,
+      pipelineStages: updatePipelineStage(log.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), emergencyResume ? (review.reviewStatus === "Approved" ? "Emergency resume quorum completed" : review.reviewStatus === "Rejected" ? "Emergency resume rejected" : review.reviewStatus === "Expired" ? "Emergency resume approval expired" : "Emergency resume approval pending") : (review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending")),
     } : log);
   }
 
@@ -157,6 +221,7 @@ export function createMemoryStore() {
       blockedActions: logs.filter((log) => log.decision === "Blocked").length,
       reviewRequired: logs.filter((log) => log.decision === "Review Required").length,
       casperAuditRecords: logs.filter((log) => isRealDeployHash(log.txHash)).length,
+      activeEmergencyPauses: scopedEmergencyPauses(walletAddress, { activeOnly: true }).length,
     };
   }
 
@@ -169,6 +234,7 @@ export function createMemoryStore() {
         policies: scopedPolicies(walletAddress),
         auditLogs: scopedAuditLogs(walletAddress),
         approvals: scopedApprovals(walletAddress),
+        emergencyPauses: scopedEmergencyPauses(walletAddress),
         shieldModules,
         dashboardStats: dashboardStats(walletAddress),
       };
@@ -254,6 +320,7 @@ export function createMemoryStore() {
         ok: true,
         agent: publicAgent(agentRecord),
         activePolicy,
+        emergencyPauses: scopedEmergencyPauses(ownerWalletAddress, { activeOnly: true }).filter((pause) => !pause.agentId || pause.agentId === agentRecord.id),
         gatewayReady: Boolean(activePolicy),
         endpoint: "/api/agent-gateway/intents",
         ...(!activePolicy ? { reason: "No active policy assigned to this agent." } : {}),
@@ -401,6 +468,7 @@ export function createMemoryStore() {
         agents: scopedAgents(walletAddress),
         policies: scopedPolicies(walletAddress),
         auditLogs: scopedAuditLogs(walletAddress),
+        emergencyPauses: scopedEmergencyPauses(walletAddress, { activeOnly: true }),
         threatIntelligence,
         oracleValidation,
         complianceControls,
@@ -612,10 +680,33 @@ export function createMemoryStore() {
         getOracleValidationSnapshot(),
         getComplianceControlsSnapshot(),
       ]);
-      const result = evaluatePolicy({ request, agents: scopedAgents(walletAddress), policies: scopedPolicies(walletAddress), auditLogs: scopedAuditLogs(walletAddress), threatIntelligence, oracleValidation, complianceControls });
+      const walletAgents = scopedAgents(walletAddress);
+      const walletPolicies = scopedPolicies(walletAddress);
+      const walletAuditLogs = scopedAuditLogs(walletAddress);
+      const policy = walletPolicies.find((item) => item.agentId === intent.agentId && item.status === "Active");
+      let result = evaluatePolicy({ request, agents: walletAgents, policies: walletPolicies, auditLogs: walletAuditLogs, emergencyPauses: scopedEmergencyPauses(walletAddress, { activeOnly: true }), threatIntelligence, oracleValidation, complianceControls });
+      let activatedEmergencyPause = null;
+      if (!result.emergencyControlsContext?.active) {
+        const trigger = detectAutomaticEmergencyTrigger({ request, agent: agentRecord, policy, auditLogs: walletAuditLogs, result });
+        if (trigger) {
+          const duplicate = scopedEmergencyPauses(walletAddress, { activeOnly: true }).find((pause) => pause.agentId === agentRecord.id && pause.scopeType === trigger.scopeType && pause.scopeValue === trigger.scopeValue && pause.triggerRule === trigger.triggerRule);
+          if (!duplicate) {
+            const normalized = normalizeEmergencyPauseInput({
+              body: { ...trigger, reason: trigger.reason, triggerEvidence: trigger.evidence, agentId: trigger.agentId || agentRecord.id },
+              ownerWalletAddress: walletAddress,
+              agents,
+              policies,
+              triggerType: "Automatic",
+            });
+            const { agent: _pauseAgent, policy: _pausePolicy, ...pauseRecord } = normalized;
+            emergencyPauses = [pauseRecord, ...emergencyPauses];
+            activatedEmergencyPause = pauseRecord;
+            result = applyAutomaticPauseToResult(result, pauseRecord);
+          }
+        }
+      }
       const authorizedAmount = result.x402PaymentControlsContext?.amount ?? intent.amount;
       const agent = publicAgent(agentRecord);
-      const policy = scopedPolicies(walletAddress).find((item) => item.agentId === intent.agentId && item.status === "Active");
       const status = gatewayStatusFromDecision(result.decision);
       const auditTimestamp = new Date().toISOString();
       const auditLog = {
@@ -652,6 +743,7 @@ export function createMemoryStore() {
           executionWalletAddress,
           goal: intent.goal,
           reason: intent.reason,
+          emergencyControl: result.emergencyControlsContext || null,
           lifecycle: {
             intentId: intent.lifecycleIntentId,
             idempotencyKey: intent.lifecycleIdempotencyKey,
@@ -900,8 +992,99 @@ export function createMemoryStore() {
         casperPayload,
         executionApproved: result.decision === "Allowed",
         approval: approvalRequest ? approvalPublicSummary(approvalRequest) : null,
+        emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: approvalRequest ? `Review Required. ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} must be recorded before signing.` : gatewayNextAction(result.decision),
       };
+    },
+
+    async listEmergencyPauses(walletAddress) {
+      const ownerWalletAddress = requireWalletAddress(walletAddress);
+      return { emergencyPauses: scopedEmergencyPauses(ownerWalletAddress) };
+    },
+
+    async emergencyControlsStatus(walletAddress = "") {
+      const ownerWalletAddress = normalizeWalletAddress(walletAddress);
+      const pauses = ownerWalletAddress ? scopedEmergencyPauses(ownerWalletAddress) : [];
+      return {
+        status: "live",
+        protectionArea: "Policy & Approval Controls",
+        control: "Emergency Circuit Breaker",
+        active: pauses.filter((pause) => pause.active).length,
+        total: pauses.length,
+        scopedEnforcement: true,
+        automaticTriggers: true,
+        expiry: true,
+        authorizedResume: true,
+        approvalGatedResume: true,
+        securityBoundary: "Emergency controls change authorization state only. Magen3 never receives wallet private keys, mnemonics, or raw signed transactions.",
+      };
+    },
+
+    async createEmergencyPause(body = {}) {
+      const ownerWalletAddress = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const normalized = normalizeEmergencyPauseInput({ body, ownerWalletAddress, agents, policies, triggerType: body.triggerType || "Manual" });
+      const { agent, policy, ...pauseRecord } = normalized;
+      const duplicate = scopedEmergencyPauses(ownerWalletAddress, { activeOnly: true }).find((pause) => pause.scopeType === pauseRecord.scopeType && pause.scopeValue === pauseRecord.scopeValue && pause.agentId === pauseRecord.agentId && pause.policyId === pauseRecord.policyId);
+      if (duplicate) {
+        const err = new Error(`An active ${pauseRecord.scopeType} emergency pause already covers this scope.`);
+        err.status = 409;
+        throw err;
+      }
+      emergencyPauses = [pauseRecord, ...emergencyPauses];
+      const auditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: pauseRecord, agent, policy, event: "activated" }));
+      return { emergencyPause: publicEmergencyPause(pauseRecord), auditLog };
+    },
+
+    async resumeEmergencyPause(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.resumedByWallet);
+      let pause = emergencyPauses.find((item) => item.id === id && normalizeWalletAddress(item.ownerWalletAddress).toLowerCase() === walletAddress.toLowerCase());
+      if (!pause) {
+        const err = new Error("Emergency pause not found for the connected wallet.");
+        err.status = 404;
+        throw err;
+      }
+      pause = refreshEmergencyPause(pause);
+      if (pause.status !== "Active") {
+        const err = new Error(`Emergency pause is ${pause.status.toLowerCase()} and cannot be resumed.`);
+        err.status = 409;
+        throw err;
+      }
+      const authorized = [pause.ownerWalletAddress, ...(pause.resumeAuthorityWallets || [])].some((item) => normalizeWalletAddress(item).toLowerCase() === walletAddress.toLowerCase());
+      if (!authorized) {
+        const err = new Error("Connected wallet is not authorized to resume this emergency pause.");
+        err.status = 403;
+        throw err;
+      }
+      const resumeReason = String(body.reason || body.resumeReason || "").trim();
+      if (resumeReason.length < 8) {
+        const err = new Error("Resume reason must contain at least 8 characters.");
+        err.status = 400;
+        throw err;
+      }
+      const pauseAgent = agents.find((item) => item.id === pause.agentId) || null;
+      const pausePolicy = policies.find((item) => item.id === pause.policyId) || null;
+      if (pause.resumeRequiresApproval) {
+        if (pause.resumeApprovalRequestId) {
+          const review = actionReviews.find((item) => item.id === pause.resumeApprovalRequestId);
+          return { emergencyPause: publicEmergencyPause(pause), approval: review ? approvalPublicSummary(refreshApproval(review)) : null, auditLog: review ? auditLogs.find((log) => log.id === review.auditLogId) || null : null };
+        }
+        const pendingPause = { ...pause, pendingResumeReason: resumeReason };
+        const { approval, auditLog } = createEmergencyResumeApproval({ pause: pendingPause, policy: pausePolicy || {}, agent: pauseAgent, ownerWalletAddress: pause.ownerWalletAddress });
+        if (!approval) {
+          const err = new Error("Emergency resume approval could not be created. Configure eligible resume authority wallets.");
+          err.status = 409;
+          throw err;
+        }
+        actionReviews = [approval, ...actionReviews];
+        emergencyPauses = emergencyPauses.map((item) => item.id === pause.id ? { ...item, resumeApprovalRequestId: approval.id, pendingResumeReason: resumeReason, updatedAt: new Date().toISOString() } : item);
+        const recordedAudit = await persistEmergencyAudit(auditLog);
+        return { emergencyPause: publicEmergencyPause(emergencyPauses.find((item) => item.id === pause.id)), approval: approvalPublicSummary(approval), auditLog: recordedAudit };
+      }
+      const now = new Date().toISOString();
+      const resumed = { ...pause, status: "Resumed", resumedByWallet: walletAddress, resumeReason, resumedAt: now, updatedAt: now };
+      emergencyPauses = emergencyPauses.map((item) => item.id === pause.id ? resumed : item);
+      const auditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: resumed, agent: pauseAgent, policy: pausePolicy, event: "resumed" }));
+      return { emergencyPause: publicEmergencyPause(resumed), auditLog };
     },
 
     async listApprovals(walletAddress) {
@@ -918,8 +1101,29 @@ export function createMemoryStore() {
       }
       const updated = respondToApproval(actionReviews[index], { ...body, walletAddress });
       actionReviews = actionReviews.map((review) => review.id === id ? updated : review);
+      let resumedPause = null;
+      let resumeAuditLog = null;
+      if (updated.reviewStatus === "Approved" && updated.reviewContext?.kind === "emergency-pause-resume") {
+        const pauseId = String(updated.reviewContext.emergencyPauseId || "").trim();
+        const pause = emergencyPauses.find((item) => item.id === pauseId && item.status === "Active");
+        if (pause) {
+          const now = new Date().toISOString();
+          resumedPause = {
+            ...pause,
+            status: "Resumed",
+            resumedByWallet: walletAddress,
+            resumeReason: String(updated.reviewContext.requestedResumeReason || "Emergency resume quorum approved.").trim(),
+            resumedAt: now,
+            updatedAt: now,
+          };
+          emergencyPauses = emergencyPauses.map((item) => item.id === pause.id ? resumedPause : item);
+          const pauseAgent = agents.find((item) => item.id === pause.agentId) || null;
+          const pausePolicy = policies.find((item) => item.id === pause.policyId) || null;
+          resumeAuditLog = await persistEmergencyAudit(buildEmergencyAuditLog({ pause: resumedPause, agent: pauseAgent, policy: pausePolicy, event: "resumed" }));
+        }
+      }
       syncAuditApproval(updated);
-      return { approval: approvalPublicSummary(updated), auditLog: auditLogs.find((log) => log.id === updated.auditLogId) || null };
+      return { approval: approvalPublicSummary(updated), auditLog: auditLogs.find((log) => log.id === updated.auditLogId) || null, emergencyPause: resumedPause ? publicEmergencyPause(resumedPause) : null, resumeAuditLog };
     },
 
     async getAgentApproval(id, body = {}, context = {}) {
@@ -989,6 +1193,28 @@ export function createMemoryStore() {
         const err = new Error("Audit log not found");
         err.status = 404;
         throw err;
+      }
+      const executionAgent = agents.find((item) => item.id === auditLog.agentId) || null;
+      const executionPolicy = policies.find((item) => item.agentId === auditLog.agentId && item.status === "Active") || null;
+      if (executionAgent && executionPolicy) {
+        const emergency = evaluateEmergencyControls({
+          request: {
+            agentId: auditLog.agentId,
+            actionType: auditLog.action,
+            target: auditLog.target,
+            targetType: auditLog.targetType,
+            tokenPermissionMetadataSupplied: Boolean(auditLog.originalIntent?.action?.tokenPermission),
+            privilegedActionMetadataSupplied: Boolean(auditLog.originalIntent?.action?.privilegedAction),
+          },
+          agent: executionAgent,
+          policy: executionPolicy,
+          pauses: scopedEmergencyPauses(auditLog.agentOwnerWalletAddress || auditLog.walletAddress, { activeOnly: true }),
+        });
+        if (emergency.hardBlock || emergency.needsReview) {
+          const err = new Error("Execution cannot be recorded while an active Emergency Circuit Breaker pause applies to this authorized intent.");
+          err.status = 409;
+          throw err;
+        }
       }
       const review = auditLog.approvalRequestId ? actionReviews.find((item) => item.id === auditLog.approvalRequestId) : null;
       const approvedAfterReview = auditLog.decision === "Review Required" && approvalExecutionAuthorized(review);

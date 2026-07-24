@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.4.0",
+        version: "1.5.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -187,6 +187,7 @@ const server = createServer(async (req, res) => {
         complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
         executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
         approvalWorkflow: { status: "foundation-available", exactIntentBinding: true, quorum: true, expiry: true, rejection: true },
+        emergencyControls: { status: "live", scopedEnforcement: true, automaticTriggers: true, expiry: true, authorizedResume: true, approvalGatedResume: true },
         tokenPermissionControls: { status: "live", classification: true, spenderPolicy: true, boundedAuthority: true, permitReplayProtection: true },
         privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
@@ -263,6 +264,11 @@ const server = createServer(async (req, res) => {
         });
       }
       return send(res, 200, { ok: true, approvalWorkflow: await store.approvalStatus(walletAddress) });
+    }
+
+    if (route === "GET /api/emergency-controls/status") {
+      const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
+      return send(res, 200, { ok: true, emergencyControls: await store.emergencyControlsStatus(walletAddress) });
     }
 
     if (route === "GET /api/token-permission-controls/status") {
@@ -349,7 +355,7 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
+          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Emergency Circuit Breaker", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
           foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
@@ -358,6 +364,8 @@ const server = createServer(async (req, res) => {
         gateway: {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
+          emergencyControlsStatusEndpoint: "/api/emergency-controls/status",
+          emergencyPauseManagementEndpoints: ["/api/emergency-pauses", "/api/emergency-pauses/:id/resume"],
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
           executionRule: "External agents may request wallet signing only after Magen3 returns Allowed, or after an exact-bound Review Required approval reaches Approved before expiry."
@@ -673,6 +681,44 @@ const server = createServer(async (req, res) => {
           },
           decisionRule: "Configured exact matches and rejected attestations can block; missing required evidence can warn, require review, or block according to policy. This module provides technical controls and evidence handling, not legal advice or a guarantee of regulatory compliance."
         },
+        emergencyCircuitBreaker: {
+          status: "Live",
+          statusEndpoint: "GET /api/emergency-controls/status?walletAddress=PUBLIC_OWNER_WALLET",
+          listEndpoint: "GET /api/emergency-pauses?walletAddress=PUBLIC_OWNER_WALLET",
+          activateEndpoint: "POST /api/emergency-pauses",
+          resumeEndpoint: "POST /api/emergency-pauses/:id/resume",
+          purpose: "Persist and enforce scoped emergency pauses before authorization and before execution confirmation.",
+          scopes: ["Platform", "All Execution", "Agent", "Capability", "Action", "Policy", "Trading", "Contract", "Bridge", "x402"],
+          enforcementActions: ["Blocked", "Review Required"],
+          deterministicChecks: [
+            "Owner, agent, policy, capability, and exact scope validation",
+            "Persistent active-state and expiry evaluation",
+            "Blocked precedence when multiple pauses match",
+            "Manual and policy-configured automatic activation",
+            "Authorized direct resume or exact-bound Human Approval quorum",
+            "Execution-confirmation recheck after prior authorization",
+            "Audit event and Casper decision-proof state for activation, resume request, and resume"
+          ],
+          automaticTriggers: ["Replay attempts", "Threat-intelligence hard matches", "Oracle disagreement", "Privileged-action failures", "Repeated blocks", "Request frequency", "Spending spikes", "Unresolved execution", "Unresolved x402 settlement", "Bridge failures", "Casper proof or configured provider failures"],
+          policyFields: {
+            enabled: "structuredRules.emergencyControlsEnabled",
+            automatic: "structuredRules.automaticPauseEnabled",
+            action: "structuredRules.emergencyAutomaticPauseAction: Blocked | Review Required",
+            repeatedBlocks: "structuredRules.emergencyRepeatedBlockThreshold",
+            replayAttempts: "structuredRules.emergencyReplayAttemptThreshold",
+            requestFrequency: "structuredRules.emergencyRequestFrequencyThreshold",
+            lookback: "structuredRules.emergencyLookbackSeconds",
+            spendingSpike: "structuredRules.emergencySpendingSpikeMultiplier",
+            providerFailures: "structuredRules.emergencyProviderFailureThreshold",
+            unresolvedExecutions: "structuredRules.emergencyUnresolvedExecutionThreshold",
+            unresolvedX402: "structuredRules.emergencyUnresolvedX402Threshold",
+            bridgeFailures: "structuredRules.emergencyBridgeFailureThreshold",
+            duration: "structuredRules.emergencyPauseDurationSeconds",
+            approvalGatedResume: "structuredRules.emergencyResumeRequiresApproval",
+            resumeQuorum: "structuredRules.emergencyResumeQuorum"
+          },
+          securityBoundary: "Agent SDK and MCP clients cannot bypass or administratively resume pauses. Pause management follows the existing wallet-scoped owner application boundary; cryptographic administrative challenges are not claimed in this release."
+        },
         tokenPermissionControls: {
           status: "Live",
           statusEndpoint: "GET /api/token-permission-controls/status",
@@ -799,6 +845,9 @@ const server = createServer(async (req, res) => {
           executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
           tokenPermissionControlsContext: "Classification, owner, token, spender, bounded amount, ratio, deadline, nonce, chain, fingerprint, replay state, batch, NFT operator, and policy-limit evidence",
           privilegedActionControlsContext: "Classification source, target, protected parameters, administrator or implementation policy, fingerprint, review requirement, and action-specific quorum evidence",
+          emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
+          emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
+          emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],
           approval: "For Review Required decisions, the exact bound intent can expose a wallet-scoped approval request, quorum, expiry, responses, and whether signing may proceed",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
@@ -863,6 +912,22 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && revokeAgentMatch) {
       const body = await readJson(req);
       return send(res, 200, { agent: await store.revokeAgent(revokeAgentMatch[1], body) });
+    }
+
+    if (route === "GET /api/emergency-pauses") {
+      const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
+      return send(res, 200, await store.listEmergencyPauses(walletAddress));
+    }
+
+    if (route === "POST /api/emergency-pauses") {
+      const body = await readJson(req);
+      return send(res, 201, await store.createEmergencyPause(body));
+    }
+
+    const resumeEmergencyPauseMatch = url.pathname.match(/^\/api\/emergency-pauses\/([^/]+)\/resume$/);
+    if (req.method === "POST" && resumeEmergencyPauseMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.resumeEmergencyPause(resumeEmergencyPauseMatch[1], body));
     }
 
     if (route === "GET /api/approvals") {

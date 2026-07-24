@@ -192,3 +192,10 @@ Use `action.tokenPermission` only for explicit approval, permit, NFT operator, b
 ## Privileged Action Controls
 
 Use the typed `Magen3PrivilegedAction` object at `action.privilegedAction` for supported administrative calls. The response can include `privilegedActionControlsContext` with deterministic classification, parameter fingerprint, and approval/quorum requirements. Generic calls may omit the object. Never include administrator keys, signatures, or raw signed transactions.
+
+## Emergency Circuit Breaker responses
+
+The SDK does not create, resume, or bypass emergency pauses. Every `checkIntent` or `requireAllowed` request is evaluated against active scoped pause state. The response may include `result.emergencyControlsContext` and a top-level `emergencyPause` with the matching scope, trigger, reason, enforcement action, expiry, and resume requirements.
+
+Treat both `Blocked` and `Review Required` as a hard stop. Do not retry with another tool, action label, route, provider, wallet, or idempotency key to evade the pause. Pause administration remains an owner-wallet application and REST API operation.
+
