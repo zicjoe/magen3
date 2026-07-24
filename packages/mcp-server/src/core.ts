@@ -204,6 +204,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
         approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized reviewers respond through the Magen3 application. Signature-enabled policies require one-time Casper Wallet message signatures; MCP never receives or submits those signatures. Approval does not sign or broadcast the transaction.",
+        organizationalApprovalBoundary: "Approval tiers, named role groups, backup escalation, total quorum, execution delays, and signing windows are resolved deterministically by Magen3. MCP may report this state but cannot join an approver group, accelerate escalation, shorten a delay, extend a window, or submit a human approval response.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         tokenPermissionControlsBoundary: "Token Permission Controls evaluate explicit unsigned authority metadata only. Never send permit signatures, wallet signatures, raw signed approvals, private keys, mnemonics, or wallet secrets to Magen3.",
       emergencyCircuitBreakerBoundary: "An active Emergency Circuit Breaker pause overrides ordinary authorization. Stop on Blocked or Review Required, surface the exact pause evidence, and never attempt retries or alternate tools to bypass it.",
@@ -220,16 +221,24 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     async getApproval(input: { approvalOrAuditId: string }): Promise<ToolTextResult> {
       try {
         const response = await client.getApproval(input.approvalOrAuditId);
-        return text({
-          ...response,
-          mcpGuidance: response.approval.mayProceedToSigning
-            ? response.approval.signatureRequired
-              ? "The exact-bound request has completed its cryptographically verified reviewer quorum and may continue to human-controlled wallet signing before expiry."
-              : "The exact bound Review Required intent has completed its approval workflow and may continue to human-controlled wallet signing before expiry."
-            : response.approval.reviewStatus === "Pending"
-              ? "Approval is still pending. Do not sign or execute the intent."
-              : `Approval is ${String(response.approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`,
-        });
+        const approval = response.approval;
+        const remainingGroups = Array.isArray(approval.groupProgress)
+          ? approval.groupProgress.filter((group) => !group.satisfied).map((group) => `${group.groupName || group.groupId}: ${group.remaining} remaining`)
+          : [];
+        const guidance = approval.mayProceedToSigning
+          ? approval.signatureRequired
+            ? "The exact-bound request has completed its cryptographically verified organizational quorum and is inside its execution window. It may continue to human-controlled wallet signing."
+            : "The exact-bound request has completed its organizational approval workflow and is inside its execution window. It may continue to human-controlled wallet signing."
+          : approval.reviewStatus === "Approved" && approval.executionWindowStatus === "delay"
+            ? `Approval quorum is complete, but execution remains locked for ${Number(approval.executionDelayRemainingSeconds || 0)} more second${Number(approval.executionDelayRemainingSeconds || 0) === 1 ? "" : "s"}. Do not sign early.`
+            : approval.reviewStatus === "Approved" && approval.executionWindowStatus === "expired"
+              ? "Approval quorum completed, but the bound execution window has expired. Do not sign or retry under this approval; create a fresh intent and approval request."
+              : approval.reviewStatus === "Pending"
+                ? remainingGroups.length > 0
+                  ? `Approval is pending required organizational roles (${remainingGroups.join("; ")}). Do not sign or execute the intent.`
+                  : "Approval is still pending. Do not sign or execute the intent."
+                : `Approval is ${String(approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`;
+        return text({ ...response, mcpGuidance: guidance });
       } catch (error) { return text(errorPayload(error), true); }
     },
     async reportX402Settlement(update: Parameters<Magen3Client["reportX402Settlement"]>[0]): Promise<ToolTextResult> {

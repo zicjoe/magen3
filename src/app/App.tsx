@@ -222,6 +222,30 @@ interface ApprovalResponseRecord {
   signatureAlgorithm?: string;
   signatureDomain?: string;
   signatureChainName?: string;
+  memberGroupIds?: string[];
+  groupIds?: string[];
+}
+
+
+interface ApprovalGroupProgress {
+  groupId: string;
+  groupName: string;
+  role?: string;
+  required: number;
+  received: number;
+  remaining: number;
+  satisfied: boolean;
+}
+
+interface ApprovalTierSummary {
+  id: string;
+  name: string;
+  priority?: number;
+  minAmount?: number | null;
+  maxAmount?: number | null;
+  actions?: string[];
+  capabilities?: string[];
+  contracts?: string[];
 }
 
 interface ApprovalRequest {
@@ -250,6 +274,15 @@ interface ApprovalRequest {
   signatureDomain?: string;
   signatureChainName?: string;
   remainingApprovals: number;
+  resolvedTier?: ApprovalTierSummary | null;
+  groupProgress?: ApprovalGroupProgress[];
+  escalationHistory?: Array<{ id: string; name?: string; activatedAt?: string; afterSeconds?: number }>;
+  nextEscalation?: { id: string; name?: string; afterSeconds?: number } | null;
+  executionNotBefore?: string;
+  executionWindowEndsAt?: string;
+  executionDelayRemainingSeconds?: number;
+  executionWindowStatus?: "not_started" | "delay" | "open" | "expired" | string;
+  organizationalQuorum?: { enabled?: boolean; satisfied?: boolean; groups?: ApprovalGroupProgress[]; resolvedTier?: ApprovalTierSummary | null };
   approverWallets: string[];
   responses: ApprovalResponseRecord[];
   expiresAt: string;
@@ -1419,6 +1452,112 @@ function TextareaField({
       />
     </div>
   );
+}
+
+function parseJsonArrayField(value: string, label = "Value"): unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value || "[]");
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!Array.isArray(parsed)) throw new Error(`${label} must be a JSON array.`);
+  return parsed;
+}
+
+function parseJsonObjectField(value: string, label = "Value"): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value || "{}");
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must be a JSON object.`);
+  return parsed as Record<string, unknown>;
+}
+
+function parseOrganizationalApprovalFields(values: Record<string, unknown>) {
+  const enabled = String(values.approvalOrganizationalQuorumEnabled ?? "No") === "Yes";
+  const emergencyGroupIds = String(values.approvalEmergencyGroupIds ?? "").split("\n").map((item) => item.trim()).filter(Boolean);
+  if (!enabled) {
+    try {
+      return {
+        groups: parseJsonArrayField(String(values.approvalGroups ?? "[]"), "Approver Groups"),
+        tiers: parseJsonArrayField(String(values.approvalTiers ?? "[]"), "Approval Tiers"),
+        defaults: parseJsonObjectField(String(values.approvalOrganizationDefaults ?? "{}"), "Organization Defaults"),
+        escalations: parseJsonArrayField(String(values.approvalEscalationRules ?? "[]"), "Timed Escalation Rules"),
+        emergencyGroupIds,
+      };
+    } catch {
+      return { groups: [], tiers: [], defaults: {}, escalations: [], emergencyGroupIds: [] };
+    }
+  }
+  const groups = parseJsonArrayField(String(values.approvalGroups ?? "[]"), "Approver Groups");
+  const tiers = parseJsonArrayField(String(values.approvalTiers ?? "[]"), "Approval Tiers");
+  const defaults = parseJsonObjectField(String(values.approvalOrganizationDefaults ?? "{}"), "Organization Defaults");
+  const escalations = parseJsonArrayField(String(values.approvalEscalationRules ?? "[]"), "Timed Escalation Rules");
+
+  const normalizedGroups = groups.map((group, index) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) throw new Error(`Approver Groups item ${index + 1} must be an object.`);
+    const record = group as Record<string, unknown>;
+    const id = String(record.id || record.name || record.role || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const wallets = Array.isArray(record.wallets) ? record.wallets.map((wallet) => String(wallet).trim()).filter(Boolean) : [];
+    if (!id) throw new Error(`Approver Groups item ${index + 1} needs an id, name, or role.`);
+    if (wallets.length === 0) throw new Error(`Approver group ${id} needs at least one reviewer wallet.`);
+    return { id, wallets, record };
+  });
+  const groupIds = new Set(normalizedGroups.map((group) => group.id));
+  if (groupIds.size !== normalizedGroups.length) throw new Error("Approver group IDs must be unique.");
+  const assertGroupReference = (groupId: unknown, source: string) => {
+    const normalized = String(groupId || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    if (!normalized || !groupIds.has(normalized)) throw new Error(`${source} references unknown approver group ${String(groupId || "(missing)")}.`);
+  };
+  const validateRequirements = (value: unknown, source: string) => {
+    if (value === undefined) return;
+    if (!Array.isArray(value)) throw new Error(`${source} requiredGroups must be an array.`);
+    for (const requirement of value) {
+      if (!requirement || typeof requirement !== "object" || Array.isArray(requirement)) throw new Error(`${source} has an invalid group requirement.`);
+      assertGroupReference((requirement as Record<string, unknown>).groupId || (requirement as Record<string, unknown>).id, source);
+      const approvals = Number((requirement as Record<string, unknown>).approvals ?? (requirement as Record<string, unknown>).requiredApprovals ?? 1);
+      if (!Number.isInteger(approvals) || approvals < 1 || approvals > 10) throw new Error(`${source} group approval counts must be integers from 1 to 10.`);
+    }
+  };
+  for (const group of normalizedGroups) {
+    const backups = Array.isArray(group.record.backupGroupIds) ? group.record.backupGroupIds : [];
+    backups.forEach((groupId) => assertGroupReference(groupId, `Approver group ${group.id}`));
+  }
+  tiers.forEach((tier, index) => {
+    if (!tier || typeof tier !== "object" || Array.isArray(tier)) throw new Error(`Approval Tiers item ${index + 1} must be an object.`);
+    const record = tier as Record<string, unknown>;
+    validateRequirements(record.requiredGroups, `Approval tier ${String(record.id || record.name || index + 1)}`);
+    const min = record.minAmount == null || record.minAmount === "" ? null : Number(record.minAmount);
+    const max = record.maxAmount == null || record.maxAmount === "" ? null : Number(record.maxAmount);
+    if (min !== null && (!Number.isFinite(min) || min < 0)) throw new Error(`Approval tier ${String(record.id || record.name || index + 1)} has an invalid minimum amount.`);
+    if (max !== null && (!Number.isFinite(max) || max < 0)) throw new Error(`Approval tier ${String(record.id || record.name || index + 1)} has an invalid maximum amount.`);
+    if (min !== null && max !== null && min > max) throw new Error(`Approval tier ${String(record.id || record.name || index + 1)} has a minimum amount greater than its maximum amount.`);
+  });
+  validateRequirements(defaults.requiredGroups, "Organization Defaults");
+  escalations.forEach((rule, index) => {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) throw new Error(`Timed Escalation Rules item ${index + 1} must be an object.`);
+    const record = rule as Record<string, unknown>;
+    (Array.isArray(record.addGroupIds) ? record.addGroupIds : []).forEach((groupId) => assertGroupReference(groupId, `Escalation ${String(record.id || record.name || index + 1)}`));
+    validateRequirements(record.requiredGroups, `Escalation ${String(record.id || record.name || index + 1)}`);
+  });
+  emergencyGroupIds.forEach((groupId) => assertGroupReference(groupId, "Emergency Group IDs"));
+  if (tiers.length === 0 && (!Array.isArray(defaults.requiredGroups) || defaults.requiredGroups.length === 0)) throw new Error("Enable at least one approval tier or an Organization Defaults requiredGroups rule.");
+  const expirySeconds = Math.max(5, Number(values.approvalExpiryMinutes) || 60) * 60;
+  const delaySeconds = Math.max(0, Number(values.approvalExecutionDelaySeconds) || 0);
+  if (delaySeconds >= expirySeconds) throw new Error("The default execution delay must be shorter than the approval expiry.");
+  return { groups, tiers, defaults, escalations, emergencyGroupIds };
+}
+
+function formatPolicyJson(value: unknown, fallback: "[]" | "{}") {
+  if (!value || typeof value !== "object") return fallback;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return fallback;
+  }
 }
 
 function SelectField({
@@ -2721,6 +2860,14 @@ function AgentRegistrationWizard({
           requireReviewerChainBinding: typeof sourceRules.requireReviewerChainBinding === "boolean" ? sourceRules.requireReviewerChainBinding : true,
           requireApprovalDomainSeparation: typeof sourceRules.requireApprovalDomainSeparation === "boolean" ? sourceRules.requireApprovalDomainSeparation : true,
           approvalSignatureChainName: typeof sourceRules.approvalSignatureChainName === "string" ? sourceRules.approvalSignatureChainName : "casper-test",
+          approvalOrganizationalQuorumEnabled: sourceRules.approvalOrganizationalQuorumEnabled === true,
+          approvalGroups: Array.isArray(sourceRules.approvalGroups) ? sourceRules.approvalGroups : [],
+          approvalTiers: Array.isArray(sourceRules.approvalTiers) ? sourceRules.approvalTiers : [],
+          approvalOrganizationDefaults: sourceRules.approvalOrganizationDefaults && typeof sourceRules.approvalOrganizationDefaults === "object" ? sourceRules.approvalOrganizationDefaults : {},
+          approvalEscalationRules: Array.isArray(sourceRules.approvalEscalationRules) ? sourceRules.approvalEscalationRules : [],
+          approvalEmergencyGroupIds: Array.isArray(sourceRules.approvalEmergencyGroupIds) ? sourceRules.approvalEmergencyGroupIds : [],
+          approvalExecutionDelaySeconds: typeof sourceRules.approvalExecutionDelaySeconds === "number" ? sourceRules.approvalExecutionDelaySeconds : 0,
+          approvalExecutionWindowSeconds: typeof sourceRules.approvalExecutionWindowSeconds === "number" ? sourceRules.approvalExecutionWindowSeconds : 0,
           complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
           complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
           complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
@@ -2738,7 +2885,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -3813,6 +3960,47 @@ function ApprovalPolicyFields({
   values: Record<string, unknown>;
   onChange: (patch: Record<string, string>) => void;
 }) {
+  const organizationalEnabled = String(values.approvalOrganizationalQuorumEnabled ?? "No") === "Yes";
+  const configuredWallets = String(values.approvalApproverWallets ?? "").split("\n").map((wallet) => wallet.trim()).filter(Boolean);
+  const applyTeamQuorumPreset = () => {
+    if (configuredWallets.length === 0) return;
+    const required = Math.min(2, configuredWallets.length);
+    onChange({
+      approvalOrganizationalQuorumEnabled: "Yes",
+      approvalWorkflowMode: required > 1 ? "Quorum" : "Single",
+      approvalRequiredCount: String(required),
+      approvalGroups: JSON.stringify([{ id: "approvers", name: "Authorized Approvers", role: "Approver", wallets: configuredWallets }], null, 2),
+      approvalTiers: JSON.stringify([{ id: "standard", name: "Standard Approval", requiredGroups: [{ groupId: "approvers", approvals: required }], requiredApprovals: required }], null, 2),
+      approvalOrganizationDefaults: "{}",
+      approvalEscalationRules: "[]",
+      approvalEmergencyGroupIds: "",
+    });
+  };
+  const applyTreasurySecurityPreset = () => {
+    if (configuredWallets.length < 4) return;
+    const treasuryWallets = configuredWallets.slice(0, -2);
+    const securityWallet = configuredWallets.at(-2) as string;
+    const backupWallet = configuredWallets.at(-1) as string;
+    const treasuryRequired = Math.min(2, treasuryWallets.length);
+    onChange({
+      approvalOrganizationalQuorumEnabled: "Yes",
+      approvalWorkflowMode: "Quorum",
+      approvalRequiredCount: "1",
+      approvalGroups: JSON.stringify([
+        { id: "treasury", name: "Treasury", role: "Treasury Approver", wallets: treasuryWallets, backupGroupIds: ["backup"] },
+        { id: "security", name: "Security", role: "Security Approver", wallets: [securityWallet] },
+        { id: "backup", name: "Backup Approvers", role: "Backup Treasury Approver", wallets: [backupWallet] },
+      ], null, 2),
+      approvalTiers: JSON.stringify([
+        { id: "standard", name: "Standard Treasury", maxAmount: 999.999999, capabilities: ["Treasury Operations"], requiredGroups: [{ groupId: "treasury", approvals: 1 }], requiredApprovals: 1 },
+        { id: "controlled", name: "Controlled Treasury", minAmount: 1000, maxAmount: 9999.999999, capabilities: ["Treasury Operations"], requiredGroups: [{ groupId: "treasury", approvals: treasuryRequired }], requiredApprovals: treasuryRequired },
+        { id: "high-value", name: "High Value Treasury", minAmount: 10000, capabilities: ["Treasury Operations"], requiredGroups: [{ groupId: "treasury", approvals: treasuryRequired }, { groupId: "security", approvals: 1 }], requiredApprovals: treasuryRequired + 1, executionDelaySeconds: 1800, executionWindowSeconds: 900 },
+      ], null, 2),
+      approvalOrganizationDefaults: "{}",
+      approvalEscalationRules: JSON.stringify([{ id: "activate-backup-after-15m", name: "Activate treasury backup", afterSeconds: 900, activateBackups: true }], null, 2),
+      approvalEmergencyGroupIds: "security",
+    });
+  };
   return (
     <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -3839,6 +4027,49 @@ function ApprovalPolicyFields({
           <TextareaField label="Authorized Approver Wallets (one per line)" value={String(values.approvalApproverWallets ?? "")} onChange={(value) => onChange({ approvalApproverWallets: value })} />
         </div>
       </div>
+      <details className="mt-4 rounded-xl border border-[#22D3EE]/20 bg-[#07131F] p-4" open={organizationalEnabled}>
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[#F8FAFC]">Approval Escalation & Organizational Quorum</div>
+              <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Resolve value-, capability-, action-, and contract-specific approval tiers; require named organizational groups; activate backups over time; and enforce execution delays and signing windows.</p>
+            </div>
+            <StatusBadge status="Live" />
+          </div>
+        </summary>
+        <div className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Safe starter configurations</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#64748B]">Add authorized reviewer wallets above, then apply a deterministic preset and customize its JSON only where needed.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Btn variant="secondary" size="sm" disabled={configuredWallets.length === 0} onClick={applyTeamQuorumPreset}>Team Quorum</Btn>
+              <Btn variant="outline" size="sm" disabled={configuredWallets.length < 4} onClick={applyTreasurySecurityPreset}>Treasury + Security</Btn>
+            </div>
+          </div>
+          {configuredWallets.length < 4 && <p className="mt-2 text-[11px] text-[#64748B]">Treasury + Security needs at least four authorized wallets: two treasury reviewers, one security reviewer, and one backup.</p>}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <SelectField label="Enable Organizational Quorum" value={String(values.approvalOrganizationalQuorumEnabled ?? "No")} onChange={(value) => onChange({ approvalOrganizationalQuorumEnabled: value })} options={["Yes", "No"]} />
+          <InputField label="Default Execution Delay (sec)" value={String(values.approvalExecutionDelaySeconds ?? "0")} onChange={(value) => onChange({ approvalExecutionDelaySeconds: value })} type="number" />
+          <InputField label="Default Execution Window (sec)" value={String(values.approvalExecutionWindowSeconds ?? "0")} onChange={(value) => onChange({ approvalExecutionWindowSeconds: value })} type="number" />
+          <div className="md:col-span-3">
+            <TextareaField label="Approver Groups (JSON)" value={String(values.approvalGroups ?? "[]")} onChange={(value) => onChange({ approvalGroups: value })} placeholder={`[\n  {\"id\":\"treasury\",\"name\":\"Treasury\",\"role\":\"Treasury Approver\",\"wallets\":[\"01...\"],\"backupGroupIds\":[\"backup\"]}\n]`} />
+          </div>
+          <div className="md:col-span-3">
+            <TextareaField label="Approval Tiers (JSON)" value={String(values.approvalTiers ?? "[]")} onChange={(value) => onChange({ approvalTiers: value })} placeholder={`[\n  {\"id\":\"high-value\",\"name\":\"High Value\",\"minAmount\":1000,\"capabilities\":[\"Treasury Operations\"],\"requiredGroups\":[{\"groupId\":\"treasury\",\"approvals\":2},{\"groupId\":\"security\",\"approvals\":1}],\"requiredApprovals\":3,\"executionDelaySeconds\":1800,\"executionWindowSeconds\":900}\n]`} />
+          </div>
+          <div className="md:col-span-2">
+            <TextareaField label="Timed Escalation Rules (JSON)" value={String(values.approvalEscalationRules ?? "[]")} onChange={(value) => onChange({ approvalEscalationRules: value })} placeholder={`[\n  {\"id\":\"backup-after-15m\",\"afterSeconds\":900,\"activateBackups\":true}\n]`} />
+          </div>
+          <TextareaField label="Emergency Group IDs (one per line)" value={String(values.approvalEmergencyGroupIds ?? "")} onChange={(value) => onChange({ approvalEmergencyGroupIds: value })} placeholder={"security\nemergency"} />
+          <div className="md:col-span-3">
+            <TextareaField label="Organization Defaults (JSON)" value={String(values.approvalOrganizationDefaults ?? "{}")} onChange={(value) => onChange({ approvalOrganizationDefaults: value })} placeholder={'{"requiredGroups":[{"groupId":"treasury","approvals":1}],"requiredApprovals":1}'} />
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Tier resolution is deterministic. A tier matches only when every configured amount, action, capability, and contract condition matches. Unknown groups or impossible quorum configurations become Configuration Required; Magen3 never silently weakens the rule.</p>
+      </details>
       <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">When enabled, Magen3 issues a one-time, exact-bound challenge and Casper Wallet signs the response. Only verified signatures count toward quorum. Signature hashes and verification evidence are stored; private keys and raw transaction signatures never enter Magen3.</p>
     </div>
   );
@@ -4157,6 +4388,14 @@ function PoliciesPage({
     requireReviewerChainBinding: "Yes",
     requireApprovalDomainSeparation: "Yes",
     approvalSignatureChainName: "casper-test",
+    approvalOrganizationalQuorumEnabled: "No",
+    approvalGroups: "[]",
+    approvalTiers: "[]",
+    approvalOrganizationDefaults: "{}",
+    approvalEscalationRules: "[]",
+    approvalEmergencyGroupIds: "",
+    approvalExecutionDelaySeconds: "0",
+    approvalExecutionWindowSeconds: "0",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -4274,6 +4513,7 @@ function PoliciesPage({
   const [approvalComments, setApprovalComments] = useState<Record<string, string>>({});
   const [approvalBusy, setApprovalBusy] = useState("");
   const [approvalError, setApprovalError] = useState("");
+  const [policyFormError, setPolicyFormError] = useState("");
   const copyPolicyHash = useCallback(async (policyHash: string) => {
     const copiedOk = await writeClipboard(policyHash);
     setCopiedPolicyHash(copiedOk ? policyHash : "copy failed");
@@ -4315,6 +4555,14 @@ function PoliciesPage({
     requireReviewerChainBinding: "Yes",
     requireApprovalDomainSeparation: "Yes",
     approvalSignatureChainName: "casper-test",
+    approvalOrganizationalQuorumEnabled: "No",
+    approvalGroups: "[]",
+    approvalTiers: "[]",
+    approvalOrganizationDefaults: "{}",
+    approvalEscalationRules: "[]",
+    approvalEmergencyGroupIds: "",
+    approvalExecutionDelaySeconds: "0",
+    approvalExecutionWindowSeconds: "0",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -4431,6 +4679,14 @@ function PoliciesPage({
 
   const createPolicy = useCallback(async () => {
     if (!form.name.trim() || !form.agentId) return;
+    setPolicyFormError("");
+    let organizationalFields: ReturnType<typeof parseOrganizationalApprovalFields>;
+    try {
+      organizationalFields = parseOrganizationalApprovalFields(form);
+    } catch (error) {
+      setPolicyFormError(error instanceof Error ? error.message : "The organizational approval configuration is invalid.");
+      return;
+    }
     await onCreatePolicy({
       name: form.name,
       agentId: form.agentId,
@@ -4478,6 +4734,14 @@ function PoliciesPage({
         requireReviewerChainBinding: form.requireReviewerChainBinding !== "No",
         requireApprovalDomainSeparation: form.requireApprovalDomainSeparation !== "No",
         approvalSignatureChainName: form.approvalSignatureChainName.trim() || "casper-test",
+        approvalOrganizationalQuorumEnabled: form.approvalOrganizationalQuorumEnabled === "Yes",
+        approvalGroups: organizationalFields.groups,
+        approvalTiers: organizationalFields.tiers,
+        approvalOrganizationDefaults: organizationalFields.defaults,
+        approvalEscalationRules: organizationalFields.escalations,
+        approvalEmergencyGroupIds: organizationalFields.emergencyGroupIds,
+        approvalExecutionDelaySeconds: Math.max(0, Number(form.approvalExecutionDelaySeconds) || 0),
+        approvalExecutionWindowSeconds: Math.max(0, Number(form.approvalExecutionWindowSeconds) || 0),
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -4623,6 +4887,14 @@ function PoliciesPage({
     requireReviewerChainBinding: "Yes",
     requireApprovalDomainSeparation: "Yes",
     approvalSignatureChainName: "casper-test",
+    approvalOrganizationalQuorumEnabled: "No",
+    approvalGroups: "[]",
+    approvalTiers: "[]",
+    approvalOrganizationDefaults: "{}",
+    approvalEscalationRules: "[]",
+    approvalEmergencyGroupIds: "",
+    approvalExecutionDelaySeconds: "0",
+    approvalExecutionWindowSeconds: "0",
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
@@ -4738,6 +5010,7 @@ function PoliciesPage({
   }, [agents, form, onCreatePolicy, walletAddress]);
 
   const openPolicyEditor = useCallback((policy: Policy) => {
+    setPolicyFormError("");
     setEditingPolicy(policy);
     setEditForm({
       name: policy.name,
@@ -4775,6 +5048,14 @@ function PoliciesPage({
       requireReviewerChainBinding: policy.structuredRules?.requireReviewerChainBinding === false ? "No" : "Yes",
       requireApprovalDomainSeparation: policy.structuredRules?.requireApprovalDomainSeparation === false ? "No" : "Yes",
       approvalSignatureChainName: String(policy.structuredRules?.approvalSignatureChainName || "casper-test"),
+      approvalOrganizationalQuorumEnabled: policy.structuredRules?.approvalOrganizationalQuorumEnabled === true ? "Yes" : "No",
+      approvalGroups: formatPolicyJson(policy.structuredRules?.approvalGroups, "[]"),
+      approvalTiers: formatPolicyJson(policy.structuredRules?.approvalTiers, "[]"),
+      approvalOrganizationDefaults: formatPolicyJson(policy.structuredRules?.approvalOrganizationDefaults, "{}"),
+      approvalEscalationRules: formatPolicyJson(policy.structuredRules?.approvalEscalationRules, "[]"),
+      approvalEmergencyGroupIds: Array.isArray(policy.structuredRules?.approvalEmergencyGroupIds) ? (policy.structuredRules.approvalEmergencyGroupIds as string[]).join("\n") : "",
+      approvalExecutionDelaySeconds: String(typeof policy.structuredRules?.approvalExecutionDelaySeconds === "number" ? policy.structuredRules.approvalExecutionDelaySeconds : 0),
+      approvalExecutionWindowSeconds: String(typeof policy.structuredRules?.approvalExecutionWindowSeconds === "number" ? policy.structuredRules.approvalExecutionWindowSeconds : 0),
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
@@ -4892,6 +5173,14 @@ function PoliciesPage({
 
   const savePolicyEdit = useCallback(async () => {
     if (!editingPolicy || !editForm.name.trim()) return;
+    setPolicyFormError("");
+    let organizationalFields: ReturnType<typeof parseOrganizationalApprovalFields>;
+    try {
+      organizationalFields = parseOrganizationalApprovalFields(editForm);
+    } catch (error) {
+      setPolicyFormError(error instanceof Error ? error.message : "The organizational approval configuration is invalid.");
+      return;
+    }
     await onUpdatePolicy(editingPolicy.id, {
       name: editForm.name,
       maxTransaction: Number(editForm.maxTransaction) || editingPolicy.maxTransaction,
@@ -4939,6 +5228,14 @@ function PoliciesPage({
         requireReviewerChainBinding: editForm.requireReviewerChainBinding !== "No",
         requireApprovalDomainSeparation: editForm.requireApprovalDomainSeparation !== "No",
         approvalSignatureChainName: editForm.approvalSignatureChainName.trim() || "casper-test",
+        approvalOrganizationalQuorumEnabled: editForm.approvalOrganizationalQuorumEnabled === "Yes",
+        approvalGroups: organizationalFields.groups,
+        approvalTiers: organizationalFields.tiers,
+        approvalOrganizationDefaults: organizationalFields.defaults,
+        approvalEscalationRules: organizationalFields.escalations,
+        approvalEmergencyGroupIds: organizationalFields.emergencyGroupIds,
+        approvalExecutionDelaySeconds: Math.max(0, Number(editForm.approvalExecutionDelaySeconds) || 0),
+        approvalExecutionWindowSeconds: Math.max(0, Number(editForm.approvalExecutionWindowSeconds) || 0),
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -5125,6 +5422,30 @@ function PoliciesPage({
                       <div><span className="text-[#64748B]">Expires</span><div className="mt-0.5 text-[#F8FAFC]">{approval.expiresAt ? new Date(approval.expiresAt).toLocaleString() : "Not set"}</div></div>
                       <div><span className="text-[#64748B]">Binding</span><div className="mt-0.5 truncate font-mono text-[#22D3EE]" title={approval.bindingHash}>{approval.bindingHash || "Unavailable"}</div></div>
                     </div>
+                    {approval.resolvedTier && (
+                      <div className="mt-3 rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-wider text-[#22D3EE]">Resolved tier</span>
+                          <span className="text-xs font-semibold text-[#F8FAFC]">{approval.resolvedTier.name}</span>
+                          {approval.executionWindowStatus === "delay" && <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] text-[#F59E0B]">Execution delay · {approval.executionDelayRemainingSeconds || 0}s remaining</span>}
+                          {approval.executionWindowStatus === "open" && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Execution window open</span>}
+                          {approval.executionWindowStatus === "expired" && <span className="rounded-full border border-[#EF4444]/25 bg-[#EF4444]/10 px-2 py-0.5 text-[10px] text-[#EF4444]">Execution window expired</span>}
+                        </div>
+                        {(approval.groupProgress || []).length > 0 && (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {(approval.groupProgress || []).map((group) => (
+                              <div key={group.groupId} className="rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs">
+                                <div className="flex items-center justify-between gap-2"><span className="text-[#F8FAFC]">{group.groupName}</span><span className={group.satisfied ? "text-[#22C55E]" : "text-[#F59E0B]"}>{group.received}/{group.required}</span></div>
+                                {group.role && <div className="mt-0.5 text-[10px] text-[#64748B]">{group.role}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {(approval.escalationHistory || []).length > 0 && <div className="mt-2 text-[10px] text-[#F59E0B]">Escalated: {(approval.escalationHistory || []).map((item) => item.name || item.id).join(", ")}</div>}
+                        {approval.nextEscalation && approval.reviewStatus === "Pending" && <div className="mt-1 text-[10px] text-[#64748B]">Next escalation: {approval.nextEscalation.name || approval.nextEscalation.id} after {approval.nextEscalation.afterSeconds || 0}s</div>}
+                        {approval.executionNotBefore && <div className="mt-2 text-[10px] text-[#64748B]">Not before {new Date(approval.executionNotBefore).toLocaleString()} · window ends {approval.executionWindowEndsAt ? new Date(approval.executionWindowEndsAt).toLocaleString() : "with approval expiry"}</div>}
+                      </div>
+                    )}
                   </div>
                   <div className="w-full shrink-0 lg:w-72">
                     {actionable ? (
@@ -5146,7 +5467,7 @@ function PoliciesPage({
                   <div className="mt-3 border-t border-[#1E293B] pt-3">
                     <div className="text-[10px] uppercase tracking-wider text-[#64748B]">Responses</div>
                     <div className="mt-2 space-y-1">
-                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span>{response.signatureVerified && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Verified {response.signatureAlgorithm || "signature"}</span>}<span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span>{response.signatureHash && <span className="font-mono text-[10px] text-[#64748B]" title={response.signatureHash}>sig {response.signatureHash.slice(0, 12)}…</span>}</div>)}
+                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span>{response.signatureVerified && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Verified {response.signatureAlgorithm || "signature"}</span>}{(response.groupIds || []).map((groupId) => <span key={groupId} className="rounded-full border border-[#A78BFA]/25 bg-[#A78BFA]/10 px-2 py-0.5 text-[10px] text-[#C4B5FD]">{groupId}</span>)}<span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span>{response.signatureHash && <span className="font-mono text-[10px] text-[#64748B]" title={response.signatureHash}>sig {response.signatureHash.slice(0, 12)}…</span>}</div>)}
                     </div>
                   </div>
                 )}
@@ -5308,6 +5629,11 @@ function PoliciesPage({
               }
               options={["Conservative", "Balanced", "Aggressive"]}
             />
+            {policyFormError && (
+              <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs leading-relaxed text-[#FCA5A5]">
+                {policyFormError}
+              </div>
+            )}
             <Btn
               variant="primary"
               className="w-full justify-center"
@@ -5595,8 +5921,13 @@ function PoliciesPage({
                   options={["Active", "Inactive"]}
                 />
               </div>
+              {policyFormError && (
+                <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs leading-relaxed text-[#FCA5A5]">
+                  {policyFormError}
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
-                <Btn variant="secondary" onClick={() => setEditingPolicy(null)}>
+                <Btn variant="secondary" onClick={() => { setPolicyFormError(""); setEditingPolicy(null); }}>
                   Cancel
                 </Btn>
                 <Btn variant="primary" onClick={savePolicyEdit}>

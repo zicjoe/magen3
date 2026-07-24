@@ -570,6 +570,53 @@ export interface Magen3ApprovalResponseRecord {
   signatureAlgorithm?: "Ed25519" | "Secp256k1" | string;
   signatureDomain?: string;
   signatureChainName?: string;
+  /** Groups in which the reviewer is directly configured. */
+  memberGroupIds?: string[];
+  /** Organizational roles satisfied by this response, including activated backup substitutions. */
+  groupIds?: string[];
+}
+
+export interface Magen3ApprovalGroupProgress {
+  groupId: string;
+  groupName: string;
+  role?: string;
+  required: number;
+  received: number;
+  remaining: number;
+  satisfied: boolean;
+}
+
+export interface Magen3ApprovalTierSummary {
+  id: string;
+  name: string;
+  priority?: number;
+  minAmount?: number | null;
+  maxAmount?: number | null;
+  actions?: string[];
+  capabilities?: string[];
+  contracts?: string[];
+  requiredGroups?: Array<{ groupId: string; approvals: number }>;
+  requiredApprovals?: number;
+  executionDelaySeconds?: number | null;
+  executionWindowSeconds?: number | null;
+}
+
+export interface Magen3ApprovalEscalationSummary {
+  id: string;
+  name?: string;
+  afterSeconds?: number;
+  activatedAt?: string;
+}
+
+export interface Magen3OrganizationalApprovalSummary {
+  enabled?: boolean;
+  satisfied?: boolean;
+  groups?: Magen3ApprovalGroupProgress[];
+  resolvedTier?: Magen3ApprovalTierSummary | null;
+  activeGroupIds?: string[];
+  backupSubstitutions?: Record<string, string[]>;
+  escalationHistory?: Magen3ApprovalEscalationSummary[];
+  nextEscalation?: Magen3ApprovalEscalationSummary | null;
 }
 
 export interface Magen3ApprovalRequest {
@@ -596,6 +643,17 @@ export interface Magen3ApprovalRequest {
   signatureDomain?: string;
   signatureChainName?: string;
   remainingApprovals: number;
+  /** Deterministically selected value/action/capability/contract approval tier. */
+  resolvedTier?: Magen3ApprovalTierSummary | null;
+  /** Required organizational role progress. */
+  groupProgress?: Magen3ApprovalGroupProgress[];
+  escalationHistory?: Magen3ApprovalEscalationSummary[];
+  nextEscalation?: Magen3ApprovalEscalationSummary | null;
+  executionNotBefore?: string;
+  executionWindowEndsAt?: string;
+  executionDelayRemainingSeconds?: number;
+  executionWindowStatus?: "not_started" | "delay" | "open" | "expired" | string;
+  organizationalQuorum?: Magen3OrganizationalApprovalSummary;
   approverWallets?: string[];
   responses?: Magen3ApprovalResponseRecord[];
   expiresAt: string;

@@ -99,7 +99,7 @@ if not approval.get("mayProceedToSigning"):
     return
 ```
 
-For signature-enabled policies, the approval dictionary exposes `signatureRequired`, `verifiedApprovalsReceived`, and sanitized verified-response evidence. Only verified Casper Ed25519 or Secp256k1 reviewer responses count toward quorum. Human Approval & Quorum remains Foundation Available pending deployed browser verification. The agent SDK cannot create approval challenges, approve a request, access a reviewer wallet, sign, or broadcast. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require execution to remain stopped.
+For signature-enabled policies, the approval dictionary exposes `signatureRequired`, `verifiedApprovalsReceived`, and sanitized verified-response evidence. Only verified Casper Ed25519 or Secp256k1 reviewer responses count toward quorum. Human Approval & Quorum remains Foundation Available pending deployed browser verification. The agent SDK cannot create approval challenges, approve a request, access a reviewer wallet, sign, or broadcast. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require execution to remain stopped. Organizational policies also expose resolved tier, required role progress, escalation, execution delay, and signing-window state. Use only `mayProceedToSigning`; an `Approved` status can still be locked by delay or an expired execution window.
 
 ## Oracle Validation
 

@@ -95,6 +95,8 @@ if decision["result"]["decision"] == "Review Required" and approval_request:
 
 Approval is bound to the exact agent, action, amount, target, execution wallet, policy, and original intent. Changing those parameters requires a new Gateway decision. For signature-enabled policies, only backend-verified Casper Ed25519 or Secp256k1 responses count toward quorum. SDK and MCP clients receive sanitized fields such as `signatureRequired`, `verifiedApprovalsReceived`, verification algorithm, challenge hash, signature hash, domain, chain, and verification time; they never receive the raw reviewer signature or create approval challenges. Human Approval & Quorum remains Foundation Available until the deployed Casper Wallet browser flow is verified end to end.
 
+Organizational policies also expose `resolvedTier`, `groupProgress`, `organizationalQuorum`, `escalationHistory`, `nextEscalation`, `executionNotBefore`, `executionWindowEndsAt`, `executionDelayRemainingSeconds`, and `executionWindowStatus`. SDK callers must use only `mayProceedToSigning` as the final authorization. They cannot activate escalation, shorten delays, extend windows, or submit human approval responses.
+
 ## Threat Intelligence response types
 
 The TypeScript result exposes `threatIntelligenceContext` with sanitized feed status, source type/name, freshness timestamps, indicator count, policy mode, confidence threshold, checked identities, and matched indicator summaries. Provider credentials are not part of the SDK response. Python callers receive the same JSON object as a dictionary.

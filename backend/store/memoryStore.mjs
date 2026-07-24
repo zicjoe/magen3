@@ -9,7 +9,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
-import { approvalExecutionAuthorized, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalExecutionAuthorized, approvalOrganizationalFinding, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
 import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
@@ -158,6 +158,7 @@ export function createMemoryStore() {
     if (!review?.auditLogId) return;
     const approvalsReceived = approvalVerifiedCount(review);
     const signatureFinding = approvalSignatureFinding(review);
+    const organizationalFinding = approvalOrganizationalFinding(review);
     const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
     auditLogs = auditLogs.map((log) => log.id === review.auditLogId ? {
       ...log,
@@ -168,7 +169,11 @@ export function createMemoryStore() {
       approvalReceivedCount: approvalsReceived,
       approvalExpiresAt: review.expiresAt || "",
       approvalResolvedAt: review.resolvedAt || "",
-      moduleFindings: signatureFinding ? [...(log.moduleFindings || []).filter((finding) => finding?.rule !== "Cryptographic reviewer signature"), signatureFinding] : (log.moduleFindings || []),
+      moduleFindings: [
+        ...(log.moduleFindings || []).filter((finding) => !["Cryptographic reviewer signature", "Organizational approval quorum"].includes(finding?.rule)),
+        ...(signatureFinding ? [signatureFinding] : []),
+        ...(organizationalFinding ? [organizationalFinding] : []),
+      ],
       executionStatus: emergencyResume
         ? "not_required"
         : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : log.executionStatus,
@@ -940,8 +945,9 @@ export function createMemoryStore() {
           evidence: { policyId: policy?.id || "", policyName: policy?.name || "" },
           remediation: "Enable Human Approval & Quorum in the active policy to turn Review Required into a controlled approval workflow.",
         };
-        auditLog.moduleFindings = [...(auditLog.moduleFindings || []), approvalFinding];
-        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding];
+        const organizationalFinding = approvalRequest ? approvalOrganizationalFinding(approvalRequest) : null;
+        auditLog.moduleFindings = [...(auditLog.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
+        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
         auditLog.pipelineStages = updatePipelineStage(auditLog.pipelineStages, "human-approval", approvalRequest ? "pending" : "skipped", approvalRequest ? auditTimestamp : "", approvalRequest ? "Human approval pending" : "Human approval workflow not configured");
         result.pipelineStages = auditLog.pipelineStages;
       }
@@ -1206,9 +1212,16 @@ export function createMemoryStore() {
         signatureEnabledRequests: approvals.filter((item) => item.signatureRequired === true).length,
         verifiedResponses: approvals.reduce((total, item) => total + Number(item.verifiedResponses || 0), 0),
         cryptographicReviewerSignatures: "foundation_available",
+        approvalEscalationAndOrganizationalQuorum: "live",
+        organizationalRequests: approvals.filter((item) => item.organizationalQuorum?.enabled === true).length,
+        escalatedRequests: approvals.filter((item) => Array.isArray(item.escalationHistory) && item.escalationHistory.length > 0).length,
+        delayedExecutions: approvals.filter((item) => item.executionWindowStatus === "delay").length,
+        openExecutionWindows: approvals.filter((item) => item.executionWindowStatus === "open").length,
+        expiredExecutionWindows: approvals.filter((item) => item.executionWindowStatus === "expired").length,
         signatureAlgorithms: ["Ed25519", "Secp256k1"],
         challengeReplayProtection: true,
         securityBoundary: "Signature-enabled policies require a one-time Casper Wallet message signature bound to the exact approval, response, reviewer, nonce, chain, domain, and expiry. Magen3 stores signature hashes and verification metadata, not private keys or raw transaction signatures.",
+        organizationalBoundary: "Organizational policies resolve immutable approval tiers, named role quotas, timed backup escalation, execution delays, and bounded signing windows. Agents may poll this state but cannot change it or submit reviewer responses.",
       };
     },
 

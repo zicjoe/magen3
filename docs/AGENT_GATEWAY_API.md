@@ -508,6 +508,28 @@ Content-Type: application/json
 
 Cryptographic Reviewer Signatures is **Foundation Available**. Backend verification, one-time challenge persistence, replay protection, UI signing, audit evidence, and SDK/MCP response support are implemented. Signature-enabled policies count only verified Ed25519 or Secp256k1 responses toward quorum. The control is not marked Live until a deployed browser flow with the real Casper Wallet extension is verified end to end.
 
+### Approval Escalation & Organizational Quorum
+
+This control is **Live**. When enabled, the approval response can additionally include:
+
+```json
+{
+  "resolvedTier": { "id": "high-value", "name": "High Value Treasury" },
+  "groupProgress": [
+    { "groupId": "treasury", "groupName": "Treasury", "required": 2, "received": 1, "remaining": 1, "satisfied": false }
+  ],
+  "escalationHistory": [],
+  "nextEscalation": { "id": "activate-backup", "afterSeconds": 900 },
+  "executionNotBefore": "",
+  "executionWindowEndsAt": "2026-07-24T12:00:00.000Z",
+  "executionDelayRemainingSeconds": 0,
+  "executionWindowStatus": "not_started",
+  "mayProceedToSigning": false
+}
+```
+
+Tier and group resolution is deterministic. Only distinct eligible reviewers count, backup role substitution requires an activated explicit relationship, and the agent must remain stopped until `mayProceedToSigning` is true. See `APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md`.
+
 ## Owner Wallet and Execution Wallet
 
 The owner wallet registers the agent, manages credentials, and controls its policy in Magen3. The execution wallet is supplied with each intent and signs the real blockchain action only after an Allowed decision. They can be different wallets.

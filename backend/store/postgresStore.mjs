@@ -13,7 +13,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
-import { approvalExecutionAuthorized, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalExecutionAuthorized, approvalOrganizationalFinding, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
 import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
@@ -357,6 +357,7 @@ async function persistAuditApproval(review) {
   if (!current) return null;
   const approvalsReceived = approvalVerifiedCount(review);
   const signatureFinding = approvalSignatureFinding(review);
+  const organizationalFinding = approvalOrganizationalFinding(review);
   const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
   const executionStatus = emergencyResume ? "not_required" : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : current.executionStatus;
   const executionNote = emergencyResume
@@ -370,7 +371,11 @@ async function persistAuditApproval(review) {
     approvalReceivedCount: approvalsReceived,
     approvalExpiresAt: review.expiresAt ? new Date(review.expiresAt) : null,
     approvalResolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
-    moduleFindings: signatureFinding ? [...(current.moduleFindings || []).filter((finding) => finding?.rule !== "Cryptographic reviewer signature"), signatureFinding] : (current.moduleFindings || []),
+    moduleFindings: [
+      ...(current.moduleFindings || []).filter((finding) => !["Cryptographic reviewer signature", "Organizational approval quorum"].includes(finding?.rule)),
+      ...(signatureFinding ? [signatureFinding] : []),
+      ...(organizationalFinding ? [organizationalFinding] : []),
+    ],
     executionStatus,
     executionNote,
     pipelineStages: updatePipelineStage(current.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), emergencyResume ? (review.reviewStatus === "Approved" ? "Emergency resume quorum completed" : review.reviewStatus === "Rejected" ? "Emergency resume rejected" : review.reviewStatus === "Expired" ? "Emergency resume approval expired" : "Emergency resume approval pending") : (review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending")),
@@ -381,9 +386,12 @@ async function persistAuditApproval(review) {
 async function persistReview(review) {
   const [updated] = await db.update(actionReviewsTable).set({
     reviewStatus: review.reviewStatus,
+    requiredApprovals: Number(review.requiredApprovals || 1),
+    approverWallets: review.approverWallets || [],
     responses: review.responses || [],
     resolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
     rejectionReason: review.rejectionReason || "",
+    reviewContext: review.reviewContext || {},
     updatedAt: review.updatedAt ? new Date(review.updatedAt) : new Date(),
   }).where(eq(actionReviewsTable.id, review.id)).returning();
   const normalized = normalizeReview(updated);
@@ -393,7 +401,22 @@ async function persistReview(review) {
 
 async function refreshReview(review) {
   const refreshed = expireApproval(review);
-  if (refreshed.reviewStatus !== review.reviewStatus) return persistReview(refreshed);
+  const changed = refreshed !== review && JSON.stringify({
+    reviewStatus: refreshed.reviewStatus,
+    requiredApprovals: refreshed.requiredApprovals,
+    approverWallets: refreshed.approverWallets,
+    reviewContext: refreshed.reviewContext,
+    resolvedAt: refreshed.resolvedAt,
+    updatedAt: refreshed.updatedAt,
+  }) !== JSON.stringify({
+    reviewStatus: review.reviewStatus,
+    requiredApprovals: review.requiredApprovals,
+    approverWallets: review.approverWallets,
+    reviewContext: review.reviewContext,
+    resolvedAt: review.resolvedAt,
+    updatedAt: review.updatedAt,
+  });
+  if (changed) return persistReview(refreshed);
   return review;
 }
 
@@ -1270,8 +1293,9 @@ export async function createPostgresStore() {
           evidence: { policyId: policy?.id || "", policyName: policy?.name || "" },
           remediation: "Enable Human Approval & Quorum in the active policy to turn Review Required into a controlled approval workflow.",
         };
-        auditValues.moduleFindings = [...(auditValues.moduleFindings || []), approvalFinding];
-        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding];
+        const organizationalFinding = approvalRequest ? approvalOrganizationalFinding(approvalRequest) : null;
+        auditValues.moduleFindings = [...(auditValues.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
+        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
         auditValues.pipelineStages = updatePipelineStage(auditValues.pipelineStages, "human-approval", approvalRequest ? "pending" : "skipped", approvalRequest ? auditTimestamp.toISOString() : "", approvalRequest ? "Human approval pending" : "Human approval workflow not configured");
         result.pipelineStages = auditValues.pipelineStages;
       }
@@ -1754,9 +1778,16 @@ export async function createPostgresStore() {
         signatureEnabledRequests: approvals.filter((item) => item.signatureRequired === true).length,
         verifiedResponses: approvals.reduce((total, item) => total + Number(item.verifiedResponses || 0), 0),
         cryptographicReviewerSignatures: "foundation_available",
+        approvalEscalationAndOrganizationalQuorum: "live",
+        organizationalRequests: approvals.filter((item) => item.organizationalQuorum?.enabled === true).length,
+        escalatedRequests: approvals.filter((item) => Array.isArray(item.escalationHistory) && item.escalationHistory.length > 0).length,
+        delayedExecutions: approvals.filter((item) => item.executionWindowStatus === "delay").length,
+        openExecutionWindows: approvals.filter((item) => item.executionWindowStatus === "open").length,
+        expiredExecutionWindows: approvals.filter((item) => item.executionWindowStatus === "expired").length,
         signatureAlgorithms: ["Ed25519", "Secp256k1"],
         challengeReplayProtection: true,
         securityBoundary: "Signature-enabled policies require a one-time Casper Wallet message signature bound to the exact approval, response, reviewer, nonce, chain, domain, and expiry. Magen3 stores signature hashes and verification metadata, not private keys or raw transaction signatures.",
+        organizationalBoundary: "Organizational policies resolve immutable approval tiers, named role quotas, timed backup escalation, execution delays, and bounded signing windows. Agents may poll this state but cannot change it or submit reviewer responses.",
       };
     },
 

@@ -68,7 +68,7 @@ const { approval } = await magen3.getApproval(decision.approval.id);
 if (!approval.mayProceedToSigning) return;
 ```
 
-The path accepts the approval ID or related audit ID. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require the agent to remain stopped. For signature-enabled policies, the response exposes `signatureRequired`, `verifiedApprovalsReceived`, and sanitized verified-response evidence. Only verified Casper Ed25519 or Secp256k1 reviewer responses count toward quorum. Human Approval & Quorum remains Foundation Available pending deployed browser verification. The agent SDK can read the workflow but cannot create approval challenges, approve, access a reviewer wallet, sign, or broadcast.
+The path accepts the approval ID or related audit ID. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require the agent to remain stopped. For signature-enabled policies, the response exposes `signatureRequired`, `verifiedApprovalsReceived`, and sanitized verified-response evidence. Only verified Casper Ed25519 or Secp256k1 reviewer responses count toward quorum. Human Approval & Quorum remains Foundation Available pending deployed browser verification. The agent SDK can read the workflow but cannot create approval challenges, approve, access a reviewer wallet, sign, or broadcast. Organizational policies also return resolved tier, group progress, escalation, execution delay, and signing-window evidence. Continue only when `mayProceedToSigning` is true; `Approved` alone is insufficient when a delay or expired window applies.
 
 ## Oracle Validation
 

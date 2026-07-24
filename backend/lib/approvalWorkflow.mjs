@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
 import { makeId } from "./ids.mjs";
+import {
+  applyOrganizationalEscalations,
+  buildApprovalExecutionTiming,
+  organizationalApprovalFinding,
+  organizationalApprovalProgress,
+  responderGroupMembership,
+  resolveOrganizationalApproval,
+} from "./organizationalApproval.mjs";
 
 const FINAL_STATUSES = new Set(["Rejected", "Expired", "Cancelled"]);
 
@@ -92,10 +100,25 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
   const config = normalizeApprovalPolicy(policy, ownerWalletAddress);
   if (!config.enabled || auditLog?.decision !== "Review Required") return null;
   const privilegedRequirement = privilegedApprovalRequirement(auditLog);
-  const requiredApprovals = Math.max(config.requiredApprovals, Number(privilegedRequirement?.requiredApprovals || 0));
+  const organizational = resolveOrganizationalApproval({
+    policy,
+    auditLog,
+    baseApproverWallets: config.approverWallets,
+    baseRequiredApprovals: config.requiredApprovals,
+    minimumRequiredApprovals: Number(privilegedRequirement?.requiredApprovals || 0),
+  });
+  const requiredApprovals = organizational.enabled
+    ? Number(organizational.requiredApprovals || 1)
+    : Math.max(config.requiredApprovals, Number(privilegedRequirement?.requiredApprovals || 0));
   const createdAt = now instanceof Date ? now : new Date(now);
   const expiresAt = new Date(createdAt.getTime() + config.expiryMinutes * 60_000);
-  const status = config.approverWallets.length < requiredApprovals ? "Configuration Required" : "Pending";
+  const organizationalConfigurationErrors = [...(organizational.configurationErrors || [])];
+  if (organizational.enabled && Number(organizational.executionDelaySeconds || 0) >= config.expiryMinutes * 60) {
+    organizationalConfigurationErrors.push("The execution delay must be shorter than the approval request expiry.");
+  }
+  const approverWallets = organizational.enabled ? organizational.eligibleWallets : config.approverWallets;
+  const availableReviewerCount = organizational.enabled ? organizational.allPossibleWallets.length : approverWallets.length;
+  const status = organizationalConfigurationErrors.length > 0 || availableReviewerCount < requiredApprovals ? "Configuration Required" : "Pending";
   return {
     id: makeId("APR"),
     auditLogId: clean(auditLog.id),
@@ -117,7 +140,7 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
     reviewStatus: status,
     bindingHash: computeApprovalBindingHash(auditLog),
     requiredApprovals,
-    approverWallets: config.approverWallets,
+    approverWallets,
     responses: [],
     expiresAt: expiresAt.toISOString(),
     resolvedAt: "",
@@ -131,6 +154,24 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
       requireReviewerChainBinding: config.requireReviewerChainBinding,
       requireApprovalDomainSeparation: config.requireApprovalDomainSeparation,
       approvalSignatureChainName: config.approvalSignatureChainName,
+      organizationalQuorum: {
+        enabled: organizational.enabled,
+        groups: organizational.groups,
+        resolvedTier: organizational.resolvedTier,
+        requiredGroups: organizational.requiredGroups,
+        initialGroupIds: organizational.initialGroupIds,
+        activeGroupIds: organizational.initialGroupIds,
+        emergencyGroupIds: organizational.emergencyGroupIds,
+        escalationRules: organizational.escalationRules,
+        activatedEscalationIds: [],
+        escalationHistory: [],
+        directApproverWallets: organizational.directApproverWallets,
+        executionDelaySeconds: organizational.executionDelaySeconds,
+        executionWindowSeconds: organizational.executionWindowSeconds,
+        configurationErrors: organizationalConfigurationErrors,
+        backupSubstitutions: {},
+      },
+      executionTiming: null,
       capabilityContext: Array.isArray(auditLog.capabilityContext) ? auditLog.capabilityContext : [],
       triggeredRule: clean(auditLog.triggeredRule),
       suggestedResolution: clean(auditLog.suggestedResolution),
@@ -148,10 +189,16 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
 export function expireApproval(review, now = new Date()) {
   if (!review || FINAL_STATUSES.has(review.reviewStatus) || review.reviewStatus === "Configuration Required") return review;
   const current = now instanceof Date ? now : new Date(now);
-  const expiresAt = new Date(review.expiresAt || 0);
-  if (Number.isNaN(expiresAt.getTime()) || current <= expiresAt) return review;
+  let refreshed = applyOrganizationalEscalations(review, current);
+  const approvalExpiry = new Date(refreshed.expiresAt || 0);
+  const executionWindowValue = refreshed.reviewContext?.executionTiming?.windowEndsAt;
+  const executionWindowEndsAt = executionWindowValue ? new Date(executionWindowValue) : null;
+  const effectiveExpiry = refreshed.reviewStatus === "Approved" && executionWindowEndsAt && !Number.isNaN(executionWindowEndsAt.getTime())
+    ? executionWindowEndsAt
+    : approvalExpiry;
+  if (Number.isNaN(effectiveExpiry.getTime()) || current <= effectiveExpiry) return refreshed;
   return {
-    ...review,
+    ...refreshed,
     reviewStatus: "Expired",
     resolvedAt: current.toISOString(),
     updatedAt: current.toISOString(),
@@ -213,7 +260,9 @@ export function respondToApproval(review, input = {}, now = new Date()) {
     error.status = 403;
     throw error;
   }
-  const timestamp = (now instanceof Date ? now : new Date(now)).toISOString();
+  const timestampDate = now instanceof Date ? now : new Date(now);
+  const timestamp = timestampDate.toISOString();
+  const groupMembership = responderGroupMembership(current, walletAddress);
   const responses = [...(current.responses || []), {
     walletAddress,
     response: isReject ? "Rejected" : "Approved",
@@ -229,15 +278,24 @@ export function respondToApproval(review, input = {}, now = new Date()) {
     signatureAlgorithm: clean(signatureVerification.signatureAlgorithm),
     signatureDomain: clean(signatureVerification.domain),
     signatureChainName: clean(signatureVerification.chainName),
+    memberGroupIds: groupMembership.memberGroupIds,
+    groupIds: groupMembership.satisfiedGroupIds,
   }];
   const approvalsReceived = responses.filter((response) => response.response === "Approved" && (!signatureRequired || response.signatureVerified === true)).length;
-  const reviewStatus = isReject ? "Rejected" : approvalsReceived >= Number(current.requiredApprovals || 1) ? "Approved" : "Pending";
+  const progressCandidate = { ...current, responses };
+  const groupQuorumSatisfied = organizationalApprovalProgress(progressCandidate).satisfied;
+  const reviewStatus = isReject ? "Rejected" : approvalsReceived >= Number(current.requiredApprovals || 1) && groupQuorumSatisfied ? "Approved" : "Pending";
+  const executionTiming = reviewStatus === "Approved" ? buildApprovalExecutionTiming(progressCandidate, timestampDate) : current.reviewContext?.executionTiming || null;
   return {
     ...current,
     responses,
     reviewStatus,
     resolvedAt: reviewStatus === "Pending" ? "" : timestamp,
     rejectionReason: isReject ? comment : current.rejectionReason || "",
+    reviewContext: {
+      ...(current.reviewContext || {}),
+      executionTiming,
+    },
     updatedAt: timestamp,
   };
 }
@@ -248,9 +306,15 @@ export function approvalVerifiedCount(review) {
 }
 
 export function approvalExecutionAuthorized(review, now = new Date()) {
-  const current = expireApproval(review, now);
+  const timestamp = now instanceof Date ? now : new Date(now);
+  const current = expireApproval(review, timestamp);
   const enoughVerifiedApprovals = approvalVerifiedCount(current) >= Number(current?.requiredApprovals || 1);
-  return Boolean(current && current.reviewStatus === "Approved" && enoughVerifiedApprovals && new Date(current.expiresAt).getTime() >= (now instanceof Date ? now : new Date(now)).getTime());
+  const groupQuorumSatisfied = organizationalApprovalProgress(current).satisfied;
+  const notBefore = new Date(current?.reviewContext?.executionTiming?.notBefore || 0);
+  const windowEndsAt = new Date(current?.reviewContext?.executionTiming?.windowEndsAt || current?.expiresAt || 0);
+  const delaySatisfied = Number.isNaN(notBefore.getTime()) || timestamp >= notBefore;
+  const insideWindow = !Number.isNaN(windowEndsAt.getTime()) && timestamp <= windowEndsAt;
+  return Boolean(current && current.reviewStatus === "Approved" && enoughVerifiedApprovals && groupQuorumSatisfied && delaySatisfied && insideWindow);
 }
 
 export function approvalPublicSummary(review, now = new Date()) {
@@ -259,6 +323,12 @@ export function approvalPublicSummary(review, now = new Date()) {
   const approvalsReceived = approvalVerifiedCount(current);
   const signatureRequired = current.reviewContext?.requireCryptographicReviewerSignature === true;
   const verifiedResponses = (current.responses || []).filter((response) => response.signatureVerified === true).length;
+  const organizationalQuorum = organizationalApprovalProgress(current);
+  const timestamp = now instanceof Date ? now : new Date(now);
+  const notBefore = new Date(current.reviewContext?.executionTiming?.notBefore || 0);
+  const windowEndsAt = new Date(current.reviewContext?.executionTiming?.windowEndsAt || current.expiresAt || 0);
+  const executionDelayRemainingSeconds = Number.isNaN(notBefore.getTime()) ? 0 : Math.max(0, Math.ceil((notBefore.getTime() - timestamp.getTime()) / 1000));
+  const executionWindowStatus = current.reviewStatus !== "Approved" ? "not_started" : executionDelayRemainingSeconds > 0 ? "delay" : timestamp > windowEndsAt ? "expired" : "open";
   return {
     ...current,
     approvalsReceived,
@@ -267,6 +337,15 @@ export function approvalPublicSummary(review, now = new Date()) {
     signatureRequired,
     signatureDomain: current.reviewContext?.requireApprovalDomainSeparation === false ? "" : "magen3.approval-response.v1",
     signatureChainName: current.reviewContext?.requireReviewerChainBinding === false ? "" : clean(current.reviewContext?.approvalSignatureChainName || process.env.CASPER_NETWORK_NAME || "casper-test"),
+    organizationalQuorum,
+    resolvedTier: organizationalQuorum.resolvedTier,
+    groupProgress: organizationalQuorum.groups,
+    escalationHistory: organizationalQuorum.escalationHistory || [],
+    nextEscalation: organizationalQuorum.nextEscalation || null,
+    executionNotBefore: current.reviewContext?.executionTiming?.notBefore || "",
+    executionWindowEndsAt: current.reviewContext?.executionTiming?.windowEndsAt || current.expiresAt,
+    executionDelayRemainingSeconds,
+    executionWindowStatus,
     remainingApprovals: Math.max(0, Number(current.requiredApprovals || 1) - approvalsReceived),
     mayProceedToSigning: approvalExecutionAuthorized(current, now),
   };
@@ -316,3 +395,5 @@ export function approvalSignatureFinding(review) {
       : "Enable Require Cryptographic Reviewer Signature on the policy to harden future approval responses.",
   };
 }
+
+export { organizationalApprovalFinding, organizationalApprovalFinding as approvalOrganizationalFinding };

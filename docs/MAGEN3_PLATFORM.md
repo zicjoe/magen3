@@ -101,6 +101,8 @@ Legacy policies remain non-breaking. Duplicate-fingerprint enforcement is activa
 
 Human Approval & Quorum is a Foundation Available control inside Policy & Approval Controls. When enabled and the deterministic result is `Review Required`, Magen3 creates an approval request bound to the audit record, agent, action, amount, target, execution wallet, active policy, and original intent.
 
+Approval Escalation & Organizational Quorum is Live as a deterministic extension of that workflow. It resolves amount-, action-, capability-, and contract-aware tiers; requires named role groups; activates configured backup or emergency reviewers after timed escalation; and enforces post-quorum execution delays and signing windows. It never reduces an existing quorum or lets an agent approve through SDK or MCP.
+
 The workflow supports single or quorum approval, explicit approver wallets, optional owner fallback, expiry, separation of duties, mandatory rejection comments, duplicate-response prevention, and one-rejection resolution. Agents poll the workflow with their existing API key but cannot approve themselves through the agent endpoint. Reviewers use the wallet-scoped queue under Policies.
 
 An Approved request does not sign or broadcast. It permits the exact unchanged intent to progress to the existing human-controlled wallet-signing boundary before expiry. Signature-enabled policies require one-time Casper Wallet message signatures, and only verified Ed25519 or Secp256k1 responses count toward quorum. The control remains Foundation Available pending deployed browser verification. See `HUMAN_APPROVAL_WORKFLOW.md` and `CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`.
@@ -200,6 +202,7 @@ Enforced policy fields:
 - Daily spending limit
 - Human-review threshold
 - Human Approval & Quorum: workflow enablement, mode, approvers, required count, expiry, separation of duties, and rejection-comment requirement
+- Approval Escalation & Organizational Quorum: named groups, role quotas, deterministic tiers, backup escalation, execution delays, and signing windows
 - Trusted contract or destination list
 - Blocked contracts through `structuredRules.blockedContracts`
 - Optional allowed contract entry points through `structuredRules.allowedEntryPoints`

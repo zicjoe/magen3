@@ -23,6 +23,10 @@ Implemented today:
 - Agent polling by approval ID or audit ID
 - Execution-hash rejection until quorum completes
 - Approval invalidation after expiry
+- Deterministic organizational tier resolution
+- Named approver groups and role-specific quorum
+- Timed backup and emergency escalation
+- Execution delays and bounded signing windows
 
 Security boundary:
 
@@ -98,6 +102,12 @@ Approval settings live under `structuredRules`:
 
 For Treasury Operations and Enterprise Automation, the registration wizard recommends Quorum mode. Other starter policies default to a single approval while remaining editable.
 
+## Organizational approval rules
+
+When `approvalOrganizationalQuorumEnabled` is true, the workflow additionally resolves named groups and deterministic tiers from `approvalGroups`, `approvalTiers`, `approvalOrganizationDefaults`, and `approvalEscalationRules`. The public approval response includes `resolvedTier`, `groupProgress`, escalation evidence, execution-delay state, execution-window state, and the final `mayProceedToSigning` authorization.
+
+A request is not Approved until both total distinct quorum and every required role quota pass. Activated backup reviewers may satisfy only the roles that explicitly designate their group. Execution remains blocked during a configured delay and after the signing window expires. See `APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md` for the complete policy contract.
+
 ## Approval states
 
 | State | Meaning |
@@ -142,7 +152,7 @@ GET /api/agent-gateway/approvals/APR-OR-AUDIT-ID?agentId=MAG-AGENT-ID
 x-magen3-agent-key: YOUR_AGENT_KEY
 ```
 
-The response includes `reviewStatus`, quorum progress, expiry, exact binding, and `mayProceedToSigning`.
+The response includes `reviewStatus`, total and role quorum progress, resolved tier, escalation history, execution delay/window state, expiry, exact binding, and `mayProceedToSigning`.
 
 TypeScript:
 
@@ -183,6 +193,9 @@ The queue shows:
 - Amount and destination
 - Policy and reason
 - Quorum progress
+- Resolved organizational tier and named role progress
+- Timed escalation and backup-reviewer state
+- Execution delay and signing-window state
 - Exact-intent binding hash
 - Expiry
 - Previous responses
@@ -198,6 +211,9 @@ Approval evidence is stored alongside the original audit record:
 - Approval state
 - Binding hash
 - Required and received approvals
+- Resolved tier, required groups, direct membership, and backup substitutions
+- Escalation history and next escalation
+- Execution delay and signing window
 - Expiry and resolution timestamps
 - Security Pipeline stage
 - Execution state
@@ -213,7 +229,7 @@ The original `Review Required` decision is preserved. Approval does not rewrite 
 Before accepting an execution hash, Magen3 checks either:
 
 1. The original decision was `Allowed`, or
-2. The original decision was `Review Required` and its approval request is still `Approved` and unexpired.
+2. The original decision was `Review Required`, its approval request is still `Approved`, all named role and total quorum rules pass, its delay has elapsed, and its signing window is still open.
 
 Blocked, rejected, pending, configuration-required, and expired requests cannot attach execution proof.
 
@@ -229,7 +245,7 @@ With wallet-scoped counts:
 GET /api/approval-workflow/status?walletAddress=CASPER_PUBLIC_KEY
 ```
 
-The endpoint reports pending, approved, rejected, expired, signature-enabled, and verified-response counts plus the cryptographic security boundary.
+The endpoint reports pending, approved, rejected, expired, signature-enabled, organizational, escalated, delayed, and open-window counts plus the cryptographic and organizational security boundaries.
 
 ## Recommended production posture
 

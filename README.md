@@ -242,6 +242,12 @@ The workflow states are `Pending`, `Approved`, `Rejected`, `Expired`, and `Confi
 
 Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. Signature-enabled policies issue a one-time domain-separated and chain-bound challenge that the authorized Casper Wallet account signs before its response counts toward quorum. Magen3 verifies Ed25519 and Secp256k1 signatures, prevents challenge replay, and stores signature hashes plus verification evidence rather than raw signatures. An approved request still permits progression only to the separate human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The control remains Foundation Available until the deployed browser flow is verified end to end. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md) and [`docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`](docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md).
 
+### Approval Escalation & Organizational Quorum
+
+Approval Escalation & Organizational Quorum is now **Live** inside Policy & Approval Controls. It extends the same exact-bound request with named approver groups, deterministic value/action/capability/contract tiers, timed backup and emergency escalation, role-specific quorum, execution delays, and bounded signing windows.
+
+The total distinct quorum is never allowed to fall below the sum of required role quotas. Backup wallets may satisfy only roles that explicitly designate their group as a backup, and only after the configured escalation activates. Invalid group references, impossible reviewer counts, duplicate identifiers, or delays that outlive approval expiry produce `Configuration Required` rather than weaker authorization. Existing flat-quorum policies remain compatible. See [`docs/APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md`](docs/APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md).
+
 ### Threat Intelligence foundation
 
 Threat Intelligence now evaluates normalized wallet, account-hash, Contract Hash, and Package Hash identities against an operator-configured JSON feed. It is **Foundation Available**, not Live, because Magen3 does not bundle or endorse an external reputation provider and cannot guarantee the completeness or accuracy of operator-supplied intelligence.
@@ -847,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, and **Emergency Circuit Breaker** complete and Live. **Cryptographic Reviewer Signatures** is implemented as Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Approval Escalation & Organizational Quorum**, followed by contract-upgrade safety and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, and **Approval Escalation & Organizational Quorum** complete and Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Contract Upgrade Safety**, followed by Contract Argument Policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 

@@ -141,5 +141,68 @@ test("getApproval surfaces cryptographically verified quorum guidance", async ()
     reportX402Settlement: async () => ({ ok: true }),
   });
   const result = await handlers.getApproval({ approvalOrAuditId: "AUD-SIGNED" });
-  assert.match(result.content[0].text, /cryptographically verified reviewer quorum/i);
+  assert.match(result.content[0].text, /cryptographically verified organizational quorum/i);
+});
+
+test("intent schema exposes the organizational approval security boundary", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /named role groups/i);
+  assert.match(result.content[0].text, /cannot.*accelerate escalation/i);
+});
+
+test("getApproval prevents signing during an organizational execution delay", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => ({
+      ok: true,
+      approval: {
+        id: "APR-DELAY", auditLogId: "AUD-DELAY", agentId: "MAG-1", actionType: "DAO Treasury Payment", amount: 15000, target: "01def",
+        decision: "Review Required", reviewStatus: "Approved", bindingHash: "a".repeat(64), requiredApprovals: 3, approvalsReceived: 3,
+        verifiedApprovalsReceived: 3, signatureRequired: true, remainingApprovals: 0, expiresAt: "2026-07-23T13:00:00.000Z",
+        executionWindowStatus: "delay", executionDelayRemainingSeconds: 1200, mayProceedToSigning: false,
+        groupProgress: [
+          { groupId: "treasury", groupName: "Treasury", required: 2, received: 2, remaining: 0, satisfied: true },
+          { groupId: "security", groupName: "Security", required: 1, received: 1, remaining: 0, satisfied: true },
+        ],
+      },
+    }),
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getApproval({ approvalOrAuditId: "AUD-DELAY" });
+  assert.match(result.content[0].text, /execution remains locked/i);
+  assert.match(result.content[0].text, /Do not sign early/i);
+});
+
+test("getApproval names missing organizational roles while pending", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => ({
+      ok: true,
+      approval: {
+        id: "APR-ROLES", auditLogId: "AUD-ROLES", agentId: "MAG-1", actionType: "DAO Treasury Payment", amount: 15000, target: "01def",
+        decision: "Review Required", reviewStatus: "Pending", bindingHash: "a".repeat(64), requiredApprovals: 3, approvalsReceived: 2,
+        verifiedApprovalsReceived: 2, signatureRequired: true, remainingApprovals: 1, expiresAt: "2026-07-23T13:00:00.000Z",
+        executionWindowStatus: "not_started", mayProceedToSigning: false,
+        groupProgress: [
+          { groupId: "treasury", groupName: "Treasury", required: 2, received: 2, remaining: 0, satisfied: true },
+          { groupId: "security", groupName: "Security", required: 1, received: 0, remaining: 1, satisfied: false },
+        ],
+      },
+    }),
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getApproval({ approvalOrAuditId: "AUD-ROLES" });
+  assert.match(result.content[0].text, /Security: 1 remaining/i);
+  assert.match(result.content[0].text, /Do not sign/i);
 });

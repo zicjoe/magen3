@@ -1,577 +1,469 @@
-# Magen3 Cryptographic Reviewer Signatures Implementation Report
+# Magen3 Approval Escalation & Organizational Quorum — Implementation Report
 
-## Release
+## Release summary
 
-- **Release:** Magen3 1.6.0
-- **Milestone:** Cryptographic Reviewer Signatures
-- **Protection area:** Policy & Approval Controls
-- **Control:** Human Approval & Quorum → Reviewer Signature Verification
-- **Control status:** Foundation Available
-- **Implementation state:** Backend verification, persistent one-time challenges, browser signing workflow, verified-quorum enforcement, audit evidence, SDK/MCP response support, and automated tests are complete. The control remains Foundation Available until the deployed Casper Wallet browser flow is verified end to end.
-- **Source baseline:** `magen3-emergency-circuit-breaker-upgrade.zip`
-- **Compatibility approach:** Additive database migration, additive policy fields, additive response fields, and no changes to existing Agent IDs, API keys, API-key hashes, Gateway authentication headers, approval IDs, approval binding format, Casper contract configuration, relayer configuration, SDK methods, MCP tool names, Railway configuration, or Vercel configuration.
+- **Release:** 1.7.0
+- **Milestone:** Approval Escalation & Organizational Quorum
+- **Protection area:** Agent Shield → Policy & Approval Controls → Approval Rules
+- **Control status:** **Live**
+- **Source baseline:** corrected Cryptographic Reviewer Signatures deployment-fix release
+- **Next Phase 1 milestone:** Contract Upgrade Safety
 
-## 1. Architecture found in the source ZIP
+Magen3 now resolves deterministic approval tiers, enforces named organizational-role quorums, activates explicitly configured backup or emergency reviewers over time, and constrains an approved intent with execution delays and bounded signing windows. The implementation extends the existing exact-bound Human Approval workflow; it does not create a second approval path or permit an agent to approve itself.
 
-The source release preserves Magen3 as a modular execution firewall with these layers:
+## 1. Architecture verified before editing
 
-1. React/Vite/TypeScript operator application with fixed navigation and wallet-gated operational pages.
-2. Node.js ESM backend with deterministic protection evaluators and risk precedence.
-3. Agent Gateway authentication using Agent ID plus a hashed API credential.
-4. Agent capability configuration and additive structured policy rules.
-5. Structured findings with `pass`, `warning`, `fail`, `unavailable`, and `skipped` statuses.
-6. Deterministic final outcomes: `Blocked` → `Review Required` → `Allowed` precedence.
-7. PostgreSQL persistence through Drizzle plus an aligned memory-store fallback.
-8. Exact-bound Human Approval and Quorum workflow.
-9. Emergency Circuit Breaker, audit persistence, and Casper decision-proof submission.
-10. JavaScript/TypeScript SDK, Python SDK, MCP server, Codex integration, Intent Playground, Developer Portal, and embedded documentation.
-11. Railway backend and Vercel frontend deployment configuration.
+The source ZIP contains:
 
-The current Magen3 visual identity, fixed sidebar, wallet flow, eight broad protection areas, Agent Shield, Connected Agents, Policies, Human Approval Queue, Audit Logs, Developer Portal, Intent Playground, SDKs, MCP, Casper proof system, and deployment configuration were preserved.
+- React + TypeScript + Vite frontend with the existing fixed sidebar and wallet-gated experience.
+- Node ESM backend with a deterministic evaluator/policy architecture.
+- PostgreSQL/Drizzle persistence and an aligned memory-store fallback.
+- Agent ID plus hashed API-key Gateway authentication.
+- Structured findings and ordered Security Pipeline evidence.
+- Exact-bound Human Approval, quorum, expiry, rejection, agent polling, and optional Casper reviewer-signature verification.
+- Emergency Circuit Breaker enforcement.
+- Audit persistence and Casper decision-proof submission.
+- JavaScript/TypeScript SDK, Python SDK, MCP integration, Codex guidance, Intent Playground, and Developer Portal documentation.
+- Railway Docker deployment and Vercel frontend deployment configuration.
 
-## 2. Pre-implementation gap
+## 2. Frontend structure
 
-The previous Human Approval workflow already supported:
+The existing `src/app/App.tsx` application remains intact. The release extends:
 
-- Exact-intent approval binding.
-- Authorized reviewer-wallet lists.
-- Distinct-wallet quorum.
-- Approval expiry.
-- Requester/approver separation where configured.
-- Rejection comments.
-- Duplicate-response prevention.
-- Agent polling.
-- Execution gating.
-- Approval evidence in audit records.
-- Approval-gated emergency-pause resume.
+- **Policies:** organizational quorum enablement, named group JSON, deterministic tier JSON, organization defaults, escalation rules, emergency groups, delays, windows, strict validation, and safe presets.
+- **Human Approval Queue:** resolved tier, group progress, active/escalated groups, missing roles, execution-delay state, window state, and whether wallet signing may proceed.
+- **Security Coverage:** deterministic evidence for organizational configuration and successful evaluation.
+- **Integration Health:** actual organizational finding states, pending groups, configuration failures, and observed pass evidence.
+- **Agent Shield:** the control appears inside the existing Policy & Approval Controls area. No new sidebar item was introduced.
 
-However, reviewer identity was accepted from the submitted public wallet address. The workflow did not yet provide:
+The prior Emergency Circuit Breaker deployment fix is retained: `StatusBadge` accepts all actual pause states and `EmergencyPause.status` remains a strict backend-compatible union.
 
-- A one-time cryptographic challenge.
-- Reviewer-wallet proof through Casper Wallet message signing.
-- Ed25519 or Secp256k1 signature verification.
-- Domain separation.
-- Chain binding.
-- Response binding.
-- Challenge expiry.
-- Nonce replay protection.
-- Persistent challenge state across Railway restarts.
-- Verified-response-only quorum calculation.
-- Sanitized signature-verification evidence in audits and SDK responses.
-- A browser flow that requests the challenge, opens Casper Wallet, signs, and submits the response.
+## 3. Backend structure
 
-That limitation meant Human Approval & Quorum correctly remained Foundation Available.
+A dedicated deterministic module was added:
 
-## 3. Implemented cryptographic challenge model
+- `backend/lib/organizationalApproval.mjs`
 
-A dedicated deterministic approval-signature module was added.
+It handles:
 
-### Challenge domain
+- group, tier, default, and escalation normalization;
+- deterministic tier matching and tie-breaking;
+- distinct-wallet role quorum;
+- backup-role substitution only after explicit activation;
+- emergency-group activation;
+- execution-delay and execution-window state;
+- configuration validation;
+- structured organizational findings;
+- public approval progress summaries.
+
+The module is integrated into the existing approval workflow, stores, Gateway result, Audit Logs, status routes, and execution confirmation gate.
+
+## 4. Database and migrations
+
+### New migration
+
+**None required for this milestone.**
+
+The existing policy `structured_rules`, approval `review_context`, approval response JSON, audit findings, and pipeline JSON fields can persist all organizational evidence without weakening relational integrity or changing existing records.
+
+The cumulative project still includes prior additive migrations, including the reviewer-signature challenge table and emergency-pause table. Railway should continue running the existing migration command during normal deployment.
+
+PostgreSQL and memory-store behavior were updated together. PostgreSQL persists refreshed escalation state, resolved tier, active group membership, group response evidence, timing state, and audit findings.
+
+## 5. Gateway contract
+
+The public Gateway endpoint is unchanged:
 
 ```text
-magen3.approval-response.v1
+POST /api/agent-gateway/intents
 ```
 
-### Exact challenge binding
+No new required intent field was introduced. The workflow uses existing normalized evidence:
 
-Every challenge binds all of the following:
+- amount;
+- action type;
+- agent execution capabilities;
+- contract/target identity;
+- effective policy;
+- privileged-action minimum quorum where relevant.
 
-- Approval request ID.
-- Audit record ID.
-- Agent ID.
-- Exact approval binding hash.
-- Reviewer response: Approve or Reject.
-- Reviewer Casper public key.
-- One-time 32-byte nonce.
-- Issued timestamp.
-- Expiry timestamp.
-- Domain.
-- Casper chain name.
+For `Review Required`, the existing approval object now additionally exposes sanitized:
 
-Changing the reviewer, response, approval binding, chain, domain, nonce, message, or expiry causes verification to fail.
-
-### Lifetime
-
-- Default challenge lifetime: 300 seconds.
-- Policy-configurable range: 30–1,800 seconds.
-- A challenge can never outlive its approval request.
-- Expired challenges cannot count toward quorum.
-
-### Supported Casper reviewer keys
-
-- Ed25519 public keys with Casper algorithm tag `01`.
-- Secp256k1 public keys with Casper algorithm tag `02`.
-
-Unsupported, malformed, or mismatched reviewer keys fail closed.
-
-### Verification behavior
-
-The backend:
-
-1. Loads the exact pending approval request.
-2. Confirms that cryptographic signatures are enabled by the active approval context.
-3. Confirms that the reviewer is authorized.
-4. Confirms that the challenge belongs to the same approval, audit, agent, binding, reviewer, response, domain, and chain.
-5. Confirms that the challenge is pending and unexpired.
-6. Reconstructs and hashes the canonical message.
-7. Verifies the Ed25519 or Secp256k1 signature.
-8. Atomically marks the challenge used.
-9. Stores only the signature hash and verification metadata.
-10. Counts the response toward quorum only after verification succeeds.
-
-Raw reviewer signatures are processed transiently for verification and are not returned in public approval records or persisted in approval responses.
-
-## 4. Replay and mutation protection
-
-The challenge store enforces one-time use.
-
-The implementation rejects:
-
-- Reusing a consumed challenge.
-- Using a challenge for a changed Approve/Reject response.
-- Using a challenge with a different reviewer wallet.
-- Using a challenge after expiry.
-- Using a challenge after the approval binding changes.
-- Using a challenge against another request, audit record, or agent.
-- Using a challenge with a different domain or chain.
-- Using a signature from the wrong Casper key.
-- Submitting a second response from the same reviewer.
-
-When a reviewer requests a replacement challenge for the same approval and response, older pending challenges for that reviewer are superseded so only the current challenge can be used.
-
-## 5. Database and migration
-
-An additive `approval_signature_challenges` table was added.
-
-It stores:
-
-- Challenge ID.
-- Approval request, audit, and agent binding.
-- Approval binding hash.
-- Expected response.
-- Reviewer wallet.
-- One-time nonce.
-- Issued and expiry timestamps.
-- Domain and chain name.
-- Canonical message and challenge hash.
-- Pending, Used, Superseded, or Expired state.
-- Used timestamp.
-- Signature hash.
-- Signature algorithm.
-- Verification status and sanitized verification error.
-- Created and updated timestamps.
-
-Indexes were added for:
-
-- Approval request ID.
-- Reviewer wallet.
-- Challenge status.
-- Expiry timestamp.
-
-No existing table, record, migration history, agent, API key, policy, approval request, audit record, emergency pause, or Casper proof was deleted or rewritten.
-
-### Migration command
-
-```bash
-pnpm db:migrate
-```
-
-The existing PostgreSQL store startup path still runs the migration function during initialization, so Railway remains compatible with the established deployment flow.
-
-### Memory-store parity
-
-The memory store implements the same challenge creation, supersession, expiry, verification, one-time use, response counting, audit synchronization, and public-status behavior as PostgreSQL.
-
-## 6. Human Approval and quorum enforcement
-
-Signature-enabled approval requests now expose:
-
-- `signatureRequired`.
-- `verifiedApprovalsReceived`.
-- Sanitized verified-response metadata.
-- Signature domain and chain.
-- Remaining approval count.
+- resolved tier;
+- organizational quorum state;
+- role/group progress;
+- escalation history and next escalation;
+- execution-not-before time;
+- execution-window end;
+- delay remaining;
+- window status;
 - `mayProceedToSigning`.
 
-For signature-enabled policies:
+## 6. Policy model
 
-- Unsigned reviewer responses are rejected.
-- Invalid signatures are rejected.
-- Only verified responses count toward quorum.
-- Only verified approvals can make `mayProceedToSigning` true.
-- Execution authorization rechecks verified quorum instead of trusting a previously calculated count.
-- Verified rejection signatures terminate the workflow according to existing rejection rules.
-- Invalid responses cannot be mixed into quorum.
+The control extends `structuredRules` with:
 
-The existing exact approval binding, authorized reviewer list, distinct-wallet requirement, expiry, requester separation, rejection comment, duplicate prevention, agent polling, execution gating, and emergency-resume approval flow remain in place.
+- `approvalOrganizationalQuorumEnabled`
+- `approvalGroups`
+- `approvalTiers`
+- `approvalOrganizationDefaults`
+- `approvalEscalationRules`
+- `approvalEmergencyGroupIds`
+- `approvalExecutionDelaySeconds`
+- `approvalExecutionWindowSeconds`
 
-## 7. Backward compatibility and policy defaults
+When organizational quorum is enabled, the resolved tier or organizational default determines the approval count instead of applying one flat legacy count to every tier. Privileged-action policy may still raise that minimum.
 
-The existing `structuredRules` policy model was extended with:
+Legacy policies without organizational fields retain their existing flat Single/Quorum behavior.
 
-- `requireCryptographicReviewerSignature`
-- `approvalSignatureLifetimeSeconds`
-- `requireReviewerChainBinding`
-- `requireApprovalDomainSeparation`
-- `approvalSignatureChainName`
+## 7. Finding model
 
-### Legacy policies
+The control uses the existing structured finding contract:
 
-A policy created before this release and lacking `requireCryptographicReviewerSignature` remains unsigned by default. This prevents existing approval integrations from breaking immediately after deployment.
+- evaluator/protection area;
+- control;
+- `pass`, `warning`, `fail`, `unavailable`, or `skipped`;
+- severity;
+- rule;
+- message;
+- evidence;
+- remediation.
 
-### New starter policies
+Important behaviors:
 
-New starter policies enable cryptographic reviewer signatures by default and use safe chain/domain binding defaults.
+- malformed, contradictory, impossible, or missing organizational configuration becomes `unavailable`/`Configuration Required` rather than passing;
+- pending role quorum or timing gates produce explained warnings;
+- approved, role-complete, in-window requests produce pass evidence;
+- rejected, expired, or cancelled requests produce fail evidence.
 
-### Existing integrations preserved
+## 8. Audit model
 
-No user must recreate:
+Audit evidence now includes:
 
-- Agents.
-- Agent IDs.
-- API keys.
-- API-key hashes.
-- Policies.
-- Approval requests.
-- Audit records.
-- Emergency pauses.
-- SDK clients.
-- MCP integrations.
-- Casper decision proofs.
+- resolved tier and matching context;
+- effective required total approvals;
+- required groups and quotas;
+- reviewer membership groups;
+- roles each response satisfied;
+- active backup/emergency groups;
+- escalation history;
+- execution delay and signing window;
+- current timing status;
+- exact approval binding;
+- cryptographic verification evidence where enabled;
+- whether signing is currently authorized.
 
-## 8. API changes
+No private keys, mnemonics, full API keys, raw reviewer signatures, raw signed transactions, or personal identity data are stored.
 
-### Existing approval response endpoint preserved
+## 9. Human Approval implementation
 
-```http
-POST /api/approvals/:approvalId/respond
-```
+The existing Human Approval workflow remains the only approval authority. This release adds:
 
-For a signature-enabled request, its body additionally requires:
+- deterministic tier resolution;
+- named role requirements;
+- distinct-wallet group counting;
+- explicit backup substitution;
+- timed escalation;
+- value-, capability-, action-, and contract-aware quorum;
+- action-specific quorum floors;
+- execution delay;
+- bounded signing window;
+- fresh-intent requirement after window expiry;
+- execution-confirmation recheck.
 
-- `challengeId`
-- `signatureHex`
+Cryptographic Reviewer Signatures remains **Foundation Available** until the deployed Casper Wallet browser flow is verified. Organizational quorum itself is **Live** because its deterministic backend enforcement, persistence, execution gate, HTTP workflow, and integration tests were executed successfully.
 
-### New challenge endpoint
+## 10. Eight protection areas and current control status
 
-```http
-POST /api/approvals/:approvalId/challenge
-```
+### Agent Trust & Access
 
-The request specifies:
+- Agent Authentication — Live
+- Credential Lifecycle — Live
+- Instruction Integrity — Planned
+- Tool & MCP Integrity — Planned
+- Delegation & Session Key Safety — Planned
 
-- Public reviewer wallet.
-- Intended response: Approve or Reject.
+### Policy & Approval Controls
 
-The response contains the public one-time challenge message and sanitized challenge metadata needed for Casper Wallet message signing.
+- Deterministic Policy Enforcement — Live
+- Review Thresholds — Live
+- Human Approval & Quorum — Foundation Available
+- Cryptographic Reviewer Signatures — Foundation Available
+- Approval Escalation & Organizational Quorum — **Live**
+- Emergency Circuit Breaker — Live
 
-### Approval workflow status
+### Wallet & Asset Safety
 
-```http
-GET /api/approval-workflow/status
-```
+- Wallet Identity and Destination Validation — Live
+- Wallet Spending Controls — Live
+- Asset Identity and Network Consistency — Foundation Available
+- Asset Contract/Market Risk — Planned
 
-The status response now documents:
+### Contract & Permission Safety
 
-- Foundation Available maturity.
-- Challenge endpoint.
-- Ed25519 and Secp256k1 support.
-- Replay protection.
-- Exact response binding.
-- Domain separation.
-- Security boundary.
+- Contract Identity and Allowlists — Live
+- Entry Point and Package Version Controls — Live
+- Token Approval & Permit Safety — Live
+- Privileged Contract Action Classification — Live
+- Contract Upgrade Safety — Planned
+- Contract Argument Policies — Planned
 
-### Agent polling preserved
+### Execution Integrity
 
-```http
-GET /api/agent-gateway/approvals/:approvalOrAuditId?agentId=...
-```
+- Transaction Preflight — Live
+- Lifecycle & Replay — Live
+- Execution and Settlement Reconciliation — Foundation Available
+- Stateful Simulation — Foundation Available
+- RPC & Chain Integrity — Planned
+- Gas Sponsorship & Fee Safety — Planned
 
-Agents continue polling the same endpoint. They receive sanitized verified-quorum evidence but never receive the raw reviewer signature.
+### Market & Oracle Integrity
 
-## 9. Casper Wallet browser workflow
+- Slippage and Output Bounds — Live
+- Oracle Validation — Foundation Available
+- MEV & Execution Quality — Planned
+- Trading Route Integrity — Planned
+- Market Risk Signals — Planned
 
-The existing Casper Wallet integration was extended with message signing.
+### Cross-chain & Payment Controls
 
-For a signature-enabled request, the Human Approval Queue now performs this flow:
+- Bridge Controls — Foundation Available
+- x402 Authorization — Foundation Available
+- x402 Settlement Reconciliation — Foundation Available
+- Real provider/facilitator integrations — Planned
 
-1. Validate the selected reviewer wallet and required rejection comment.
-2. Request a short-lived challenge from the backend.
-3. Confirm the currently connected Casper Wallet public key matches the authorized reviewer.
-4. Open Casper Wallet message signing for the canonical challenge.
-5. Submit the returned signature with the challenge ID.
-6. Let the backend verify the signature and update quorum.
-7. Refresh the exact approval and audit state.
+### Threat & Compliance
 
-The UI displays:
+- Threat Intelligence — Foundation Available
+- Compliance Controls — Foundation Available
+- Production providers and Continuous Monitoring — Planned
 
-- Casper signature required.
-- Sign & Approve or Sign & Reject actions.
-- Verified response state.
-- Verification algorithm.
-- Sanitized signature-hash evidence.
-- Verified approval count.
-
-The UI does not display or preserve the raw signature after verification.
-
-## 10. Structured findings, Security Pipeline, and Audit
-
-A dedicated `Cryptographic Reviewer Signatures` finding is added to the existing Policy & Approval Controls evidence.
-
-The finding explains:
-
-- Whether the policy requires a signature.
-- Whether a verified response exists.
-- Verification algorithm.
-- Domain and chain binding.
-- Challenge and signature hashes.
-- Reviewer and verification timestamp.
-- Remaining quorum state.
-- Remediation where verification is missing or invalid.
-
-Audit synchronization records only necessary evidence. It does not store:
-
-- Private keys.
-- Seed phrases.
-- Mnemonics.
-- Wallet secrets.
-- Full API keys.
-- Raw transaction signatures.
-- Raw reviewer signatures in approval response evidence.
-- Raw signed transactions.
-
-Existing Casper decision-proof submission remains unchanged and can anchor the deterministic final decision and audit evidence through the current proof pipeline.
-
-## 11. Security Coverage and Integration Health
-
-Security Coverage remains deterministic and explainable.
-
-When a policy requires cryptographic reviewer signatures, approval coverage requires observed signature-verification evidence rather than treating an unsigned approval workflow as complete protection.
-
-Integration Health consumes the real Policy & Approval Controls findings. Invalid, unavailable, or missing required reviewer-signature evidence cannot be reported as a healthy passing control.
-
-This remains configured protection coverage, not a trust score or guarantee of safety.
-
-## 12. Frontend and UX changes
-
-The current interface and navigation were preserved. No sidebar item was added.
-
-The milestone appears through progressive disclosure in:
-
-- **Policies:** Require Casper Wallet Signature, signature lifetime, chain binding, domain separation, and reviewer chain name.
-- **Human Approval Queue:** Signature-required status, challenge request, wallet signing, and verified response evidence.
-- **Agent Details:** Updated Human Approval maturity and recent signature findings.
-- **Security Coverage:** Configured and observed signature coverage.
-- **Integration Health:** Real Policy & Approval signature state.
-- **Docs:** Dedicated Cryptographic Reviewer Signatures documentation and updated approval/developer references.
-
-No heavy animation, additional glow, generic dashboard redesign, or artificial pipeline delay was introduced.
-
-## 13. SDK, MCP, and developer boundaries
+## 11. SDK and MCP structures
 
 ### JavaScript/TypeScript SDK
 
-The existing approval polling method remains unchanged. Approval types now expose sanitized fields including:
+Approval response types now expose:
 
-- Signature-required state.
-- Verified approval count.
-- Sanitized response verification evidence.
-
-The agent SDK cannot create reviewer challenges, access a reviewer wallet, sign approval responses, approve a request, or broadcast a transaction.
+- organizational tier;
+- group progress;
+- escalation evidence;
+- timing/window state;
+- reviewer membership and satisfied-role groups.
 
 ### Python SDK
 
-The dictionary response preserves the same sanitized approval fields. No approval-signing method was added.
+The existing dictionary-preserving client returns the same sanitized evidence. Regression tests confirm it remains compatible.
 
-### MCP and Codex
+### MCP
 
-`magen3_get_approval` reports whether cryptographically verified quorum has completed and continues to fail closed until `mayProceedToSigning` is true.
+MCP agents may poll organizational approval state but cannot:
 
-The MCP server cannot:
+- approve or reject;
+- request reviewer-signature challenges;
+- add reviewers;
+- activate escalation early;
+- shorten delays;
+- extend signing windows;
+- bypass missing role groups.
 
-- Create reviewer challenges.
-- Receive reviewer signatures.
-- Impersonate a reviewer.
-- Approve or reject a request.
-- Access wallet secrets.
+MCP guidance fails closed while role quorum, delay, or window conditions are incomplete.
 
-Human approval stays inside the wallet-gated Magen3 operator interface.
+## 12. Gap analysis completed
 
-## 14. Major files changed
+Before this release, Magen3 had flat authorized-wallet quorum but lacked:
 
-### Backend and persistence
+- named organizational roles;
+- deterministic value/action/capability/contract tiers;
+- backup and emergency approver activation;
+- timed escalation;
+- role-specific quorum;
+- execution delays;
+- bounded signing windows;
+- organizational evidence in Audit, SDK, MCP, Security Coverage, and Integration Health.
 
-- `backend/lib/approvalSignatures.mjs` — canonical challenge creation and Ed25519/Secp256k1 verification.
-- `backend/lib/approvalSignatures.test.mjs` — deterministic cryptographic unit tests.
-- `backend/lib/approvalSignatures.gateway.integration.test.mjs` — signed approval and replay integration tests.
-- `backend/lib/approvalWorkflow.mjs` — policy normalization, verified-response-only quorum, public summaries, and signature findings.
-- `backend/store/memoryStore.mjs` — challenge persistence and approval integration.
-- `backend/store/postgresStore.mjs` — PostgreSQL challenge persistence and atomic one-time claim.
-- `backend/db/schema.mjs` — additive challenge table.
-- `backend/db/migrate.mjs` — additive migration and indexes.
-- `backend/server.mjs` — challenge route, workflow status, API specification, and version 1.6.0.
-- `package.json` — release version 1.6.0.
+All milestone gaps above are implemented.
 
-### Frontend
+## 13. Exact implementation plan executed
 
-- `src/app/App.tsx` — policy controls and signed Human Approval Queue flow.
-- `src/app/lib/api.ts` — challenge API client.
-- `src/app/lib/casperWallet.ts` — Casper Wallet message signing.
-- `src/app/lib/securityModel.ts` — control catalog, Security Coverage, and maturity state.
+1. Verify the corrected reviewer-signature release.
+2. Add deterministic organizational normalization and validation.
+3. Resolve immutable approval tiers at request creation.
+4. Enforce role quotas and distinct total quorum.
+5. Reuse exact-intent and cryptographic-signature infrastructure.
+6. Add backup/emergency escalation without weakening original roles.
+7. Gate execution with delays and bounded windows.
+8. Persist memory/PostgreSQL state and audit evidence.
+9. Add Policy and Approval Queue UX.
+10. Extend Security Coverage and Integration Health.
+11. Extend SDK, Python, MCP, API, and product documentation.
+12. Execute regression, semantic type, HTTP, and packaging checks.
 
-### SDK and MCP
+## 14. Genuine blockers and unavailable checks
 
+The configured Corepack package endpoint returned HTTP 503 when downloading pnpm 10.14.0. Therefore, this environment could not execute the dependency-installed root command:
+
+```text
+pnpm run build
+```
+
+To prevent a repeat of the earlier Railway/Vercel TypeScript defect, the release did execute a semantic TypeScript project check over the frontend using the system TypeScript compiler and module declarations, plus parser validation over every TypeScript/TSX source.
+
+External checks that require deployed infrastructure were not claimed:
+
+- Railway PostgreSQL migration/startup;
+- deployed Casper Wallet browser signing;
+- Casper Testnet relayer confirmation;
+- Vercel production deployment;
+- full dependency-installed MCP stdio protocol test.
+
+## 15. Major files changed
+
+### Added
+
+- `backend/lib/organizationalApproval.mjs`
+- `backend/lib/organizationalApproval.test.mjs`
+- `backend/lib/organizationalApproval.gateway.integration.test.mjs`
+- `docs/APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md`
+
+### Updated
+
+- `backend/lib/approvalWorkflow.mjs`
+- `backend/lib/frontendSecurityModel.test.mjs`
+- `backend/server.mjs`
+- `backend/store/memoryStore.mjs`
+- `backend/store/postgresStore.mjs`
+- `src/app/App.tsx`
+- `src/app/lib/securityModel.ts`
 - `packages/sdk-js/src/index.ts`
 - `packages/sdk-js/test/sdk.test.mjs`
-- `packages/sdk-js/README.md`
 - `packages/sdk-python/tests/test_client.py`
-- `packages/sdk-python/README.md`
 - `packages/mcp-server/src/core.ts`
 - `packages/mcp-server/test/core.test.mjs`
-- `packages/mcp-server/README.md`
-
-### Documentation
-
-- `docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`
-- `docs/HUMAN_APPROVAL_WORKFLOW.md`
-- `docs/AGENT_GATEWAY_API.md`
-- `docs/OFFICIAL_SDKS.md`
-- `docs/MAGEN3_PLATFORM.md`
-- `docs/EMERGENCY_CIRCUIT_BREAKER.md`
-- `docs/PRIVILEGED_ACTION_CONTROLS.md`
+- SDK/MCP/API/platform/Human Approval documentation
 - `README.md`
-
-## 15. Environment variables
-
-No new required environment variable was introduced.
-
-The implementation uses the existing Casper network configuration where available and otherwise derives the configured policy chain name. New starter policies default to `casper-test` for the current testnet workflow.
-
-No private key, mnemonic, reviewer key, or signature belongs in `.env`.
+- `package.json`
 
 ## 16. Local run instructions
 
-Preserve your current `.env`, then run:
-
 ```bash
 corepack enable
+corepack prepare pnpm@10.14.0 --activate
 pnpm install --frozen-lockfile
 pnpm db:migrate
-pnpm dev:backend
+pnpm run build
+pnpm test:backend
+pnpm sdk:test
+pnpm mcp:test
+pnpm dev
 ```
 
-In another terminal:
+For deliberate local memory mode only:
 
 ```bash
-pnpm dev:frontend
-```
-
-For the complete configured verification workflow:
-
-```bash
-pnpm verify
+ALLOW_MEMORY_STORE=true CASPER_RECORDING_MODE=manual pnpm dev:backend
 ```
 
 ## 17. Railway notes
 
-- Keep the existing `DATABASE_URL`.
-- Keep the current Casper relayer variables and private PEM path unchanged.
-- The backend start command remains `node backend/server.mjs`.
-- The additive challenge-table migration runs through the existing store startup/migration flow.
-- No API-key rotation or agent recreation is required.
-- Verify challenge creation, signature verification, approval audit synchronization, and agent polling against the deployed PostgreSQL store after deployment.
+- Keep the existing `DATABASE_URL` and relayer environment.
+- The release adds no new migration, but Railway should run cumulative migrations normally.
+- No new required environment variable exists.
+- Confirm `/api/health` reports version `1.7.0`.
+- Confirm `/api/approval-workflow/status` reports `approvalEscalationAndOrganizationalQuorum: live`.
+- Test a real PostgreSQL organizational approval request after deployment.
 
 ## 18. Vercel notes
 
-- Existing Vercel configuration is unchanged.
-- Existing frontend API-base configuration is unchanged.
-- Confirm that the deployed frontend reaches the upgraded Railway backend.
-- Test both Casper Ed25519 and Secp256k1 reviewer accounts where available.
-- Verify wallet cancellation, wrong connected wallet, expired challenge, valid approval, valid rejection, and refreshed audit state.
+- No Vercel configuration change is required.
+- Preserve the existing API base URL and CORS configuration.
+- Verify Policy preset/edit validation and Human Approval Queue timing states after deployment.
+- Run the production build before merging if CI is available.
 
-## 19. Verification performed
+## 19. Environment-variable changes
 
-### Passed
+**None required.**
 
-- **235/235 backend tests**.
-- **20/20 focused approval and cryptographic-signature tests** within the backend suite.
-- **14/14 JavaScript SDK tests**.
-- **10/10 Python SDK tests**.
-- **7/7 MCP core tests**.
-- **74 JavaScript/ESM files** passed Node syntax validation.
-- **58 TypeScript/TSX files** passed parser-level syntax validation.
-- Real memory-store HTTP workflow passed:
-  - Health version 1.6.0.
-  - Agent registration.
-  - Signature-enabled policy creation.
-  - Authenticated `Review Required` Gateway decision.
-  - Challenge creation.
-  - Ed25519 message signing.
-  - Backend verification.
-  - Verified quorum completion.
-  - `mayProceedToSigning` true.
-  - Agent polling.
-  - No raw signature exposed in the public approval response.
+## 20. Compatibility notes
 
-### Not executed or unavailable
+Preserved:
 
-- The pinned pnpm package manager and dependencies could not be downloaded because the configured Corepack package endpoint returned HTTP 503.
-- Therefore, the dependency-installed root `tsc -b`, Vite production build, and full MCP stdio protocol test were not executed.
-- JavaScript SDK compilation used the available system TypeScript compiler, not the unavailable pinned TypeScript 6.0.3 package.
-- MCP core tests used temporary transpilation and did not include the dependency-backed stdio protocol test.
-- A real browser Casper Wallet extension flow could not be run in the container.
-- Live Railway PostgreSQL, Casper Testnet, relayer, and Vercel deployment checks require the deployed environment.
+- existing Agent IDs and API keys;
+- existing API-key hashes;
+- existing policies and flat quorum;
+- existing approval requests and responses;
+- exact approval bindings;
+- reviewer-signature challenges;
+- emergency pauses;
+- audit records;
+- Gateway endpoint and authentication headers;
+- Casper contract hash, proof payload, and relayer;
+- Railway and Vercel setup;
+- JavaScript/Python SDK methods;
+- MCP and Codex integration;
+- YieldBot and legacy requests.
 
-No test is reported as passed unless it was actually executed.
+Existing approval requests remain governed by their persisted context. Policy edits do not silently rewrite an approval already under review.
 
-## 20. Manual QA checklist
+## 21. Verification executed
 
-1. Replace project files while preserving `.git`, `.env`, and the private relayer key.
-2. Run the additive database migration.
-3. Deploy Railway and confirm `/api/health` reports version 1.6.0.
-4. Open a new starter policy and verify Casper reviewer signatures default to enabled.
-5. Open a legacy policy and confirm an absent signature field remains disabled until explicitly enabled.
-6. Configure one or more authorized reviewer Casper wallets.
-7. Trigger `Review Required` from Intent Playground or an external agent.
-8. Confirm the Approval Queue shows Casper signature required.
-9. Try approval with the wrong connected wallet and confirm rejection.
-10. Request a challenge, cancel wallet signing, and confirm quorum does not change.
-11. Sign and approve with an authorized Ed25519 wallet.
-12. Where available, repeat with a Secp256k1 wallet.
-13. Confirm only verified responses count toward quorum.
-14. Confirm the same challenge cannot be reused.
-15. Confirm an expired challenge cannot be submitted.
-16. Confirm a challenge for Approve cannot be used for Reject.
-17. Confirm a rejection follows the comment requirement and ends the workflow.
-18. Confirm the agent polling endpoint reports verified quorum and permits signing only after completion.
-19. Confirm Audit Logs show signature verification evidence but not the raw signature.
-20. Confirm an approved action can continue to wallet signing and execution confirmation.
-21. Confirm emergency-pause resume approvals still work with signature-enabled policy rules.
-22. Confirm mobile layout, fixed sidebar, Docs navigation, and wallet gating remain intact.
+- Backend/security regression: **249/249 passed**
+- JavaScript SDK: **15/15 passed**
+- Python SDK: **10/10 passed**
+- MCP core: **10/10 passed** through temporary dependency-free transpilation
+- JavaScript/ESM syntax: **77 files passed**
+- TypeScript/TSX parser validation: **58 files passed**
+- Frontend semantic TypeScript check: **passed**
+- Memory-store HTTP flow: version, control status, tier resolution, role quorum, approval, and signing authorization **passed**
 
-## 21. Updated control status and roadmap
+## 22. Manual QA checklist
 
-### Completed Phase 1 milestones
+- [ ] Create a Treasury policy using the Team Quorum preset.
+- [ ] Create a Treasury + Security policy with at least four distinct authorized wallets.
+- [ ] Verify under-1,000, 1,000–10,000, and over-10,000 CSPR tier resolution.
+- [ ] Verify two Treasury approvals do not satisfy a required Security role.
+- [ ] Verify one wallet cannot count twice toward distinct quorum.
+- [ ] Verify an unauthorized wallet cannot respond.
+- [ ] Verify backup reviewers are ineligible before escalation.
+- [ ] Verify an activated backup satisfies only its configured original role.
+- [ ] Verify signing remains blocked during the execution delay.
+- [ ] Verify signing opens only inside the configured window.
+- [ ] Verify window expiry requires a fresh intent/approval.
+- [ ] Verify protected parameter changes invalidate the old approval binding.
+- [ ] Verify signed organizational approvals with Casper Wallet.
+- [ ] Verify Audit Logs show tier, groups, responses, escalation, delay, and window.
+- [ ] Verify agent SDK/MCP polling shows missing roles and timing gates.
+- [ ] Verify mobile and desktop Policy/Approval Queue layout.
+- [ ] Verify Railway PostgreSQL persistence after restart.
 
-1. Token Approval & Permit Safety — **Live**.
-2. Privileged Contract Action Classification — **Live**.
-3. Emergency Circuit Breaker — **Live**.
-4. Cryptographic Reviewer Signatures — **Foundation Available; implementation complete, deployed Casper Wallet browser verification pending**.
+## 23. Roadmap progress
 
-### Existing relevant controls
+Completed Phase 1 milestones:
 
-- Human Approval & Quorum — **Foundation Available**.
-- Execution Simulation — **Foundation Available**.
-- Threat Intelligence — **Foundation Available**.
-- Oracle Validation — **Foundation Available**.
-- Bridge Controls — **Foundation Available**.
-- Compliance Controls — **Foundation Available**.
-- x402 Payment Controls — **Foundation Available**.
+1. Token Approval & Permit Safety — Live
+2. Privileged Contract Action Classification — Live
+3. Emergency Circuit Breaker — Live
+4. Cryptographic Reviewer Signatures — Foundation Available pending deployed wallet verification
+5. Approval Escalation & Organizational Quorum — **Live**
 
-Magen3 is not finished. The next Phase 1 milestone is **Approval Escalation & Organizational Quorum**, followed by Contract Upgrade Safety and Contract Argument Policies.
+Remaining Phase 1:
 
-## 22. Recommended conventional commit
+6. Contract Upgrade Safety
+7. Contract Argument Policies
+
+## 24. Conventional commit
 
 ```text
-feat(policy-controls): add cryptographic reviewer signatures
+feat(policy-controls): add organizational approval escalation
 ```
+
+## 25. Recommended next milestone
+
+**Contract Upgrade Safety** under:
+
+```text
+Agent Shield
+→ Contract & Permission Safety
+→ Contract Upgrades
+```
+
+It should reuse Privileged Action Classification, exact approval binding, organizational quorum, execution delays, and approved implementation lists rather than duplicating those systems.

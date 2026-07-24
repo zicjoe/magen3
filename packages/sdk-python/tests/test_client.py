@@ -204,8 +204,12 @@ class ClientTests(unittest.TestCase):
                     "signatureRequired": True,
                     "signatureDomain": "magen3.approval-response.v1",
                     "signatureChainName": "casper-test",
-                    "responses": [{"walletAddress": "01abc", "response": "Approved", "timestamp": "2026-07-23T11:00:00.000Z", "signatureVerified": True, "signatureAlgorithm": "Ed25519", "signatureHash": "b" * 64}],
+                    "responses": [{"walletAddress": "01abc", "response": "Approved", "timestamp": "2026-07-23T11:00:00.000Z", "signatureVerified": True, "signatureAlgorithm": "Ed25519", "signatureHash": "b" * 64, "memberGroupIds": ["treasury"], "groupIds": ["treasury"]}],
                     "remainingApprovals": 0,
+                    "resolvedTier": {"id": "high-value", "name": "High Value Treasury"},
+                    "groupProgress": [{"groupId": "treasury", "groupName": "Treasury", "required": 1, "received": 1, "remaining": 0, "satisfied": True}],
+                    "organizationalQuorum": {"enabled": True, "satisfied": True},
+                    "executionWindowStatus": "open",
                     "expiresAt": "2026-07-23T12:00:00.000Z",
                     "mayProceedToSigning": True,
                 },
@@ -219,6 +223,9 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(result["approval"]["signatureRequired"])
         self.assertEqual(result["approval"]["verifiedApprovalsReceived"], 1)
         self.assertTrue(result["approval"]["responses"][0]["signatureVerified"])
+        self.assertEqual(result["approval"]["resolvedTier"]["name"], "High Value Treasury")
+        self.assertTrue(result["approval"]["organizationalQuorum"]["satisfied"])
+        self.assertEqual(result["approval"]["responses"][0]["memberGroupIds"], ["treasury"])
 
     def test_x402_authorization_and_settlement_reporting(self):
         captured = []

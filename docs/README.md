@@ -33,3 +33,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 
 - [Emergency Circuit Breaker](./EMERGENCY_CIRCUIT_BREAKER.md) — persistent scoped pauses, automatic triggers, expiry, authorized resume, approval-gated resume, and Gateway enforcement.
 - [Privileged Action Controls](./PRIVILEGED_ACTION_CONTROLS.md) — deterministic administrative-call classification, policy, fingerprinting, and Human Approval binding.
+
+- [Approval Escalation & Organizational Quorum](./APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md) — deterministic tiers, named role groups, timed escalation, delays, and signing windows.

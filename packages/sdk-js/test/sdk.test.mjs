@@ -596,3 +596,48 @@ test("preserves Emergency Circuit Breaker response context and pause evidence", 
   assert.equal(response.emergencyPause.id, "EPAUSE-1");
 });
 
+
+test("preserves organizational approval tier, group, escalation, and execution-window evidence", async () => {
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async () => new Response(JSON.stringify({
+      ok: true,
+      approval: {
+        id: "APR-ORG",
+        auditLogId: "AUD-ORG",
+        agentId: "MAG-1",
+        actionType: "Transfer",
+        amount: 12000,
+        target: "01def",
+        decision: "Review Required",
+        reviewStatus: "Approved",
+        bindingHash: "a".repeat(64),
+        requiredApprovals: 3,
+        approvalsReceived: 3,
+        remainingApprovals: 0,
+        resolvedTier: { id: "high-value", name: "High Value Treasury", requiredApprovals: 3 },
+        groupProgress: [
+          { groupId: "treasury", groupName: "Treasury", required: 2, received: 2, remaining: 0, satisfied: true },
+          { groupId: "security", groupName: "Security", required: 1, received: 1, remaining: 0, satisfied: true },
+        ],
+        escalationHistory: [{ id: "backup-after-15m", name: "Backup escalation", afterSeconds: 900, activatedAt: "2026-07-24T10:15:00.000Z" }],
+        executionNotBefore: "2026-07-24T10:45:00.000Z",
+        executionWindowEndsAt: "2026-07-24T11:00:00.000Z",
+        executionWindowStatus: "delay",
+        organizationalQuorum: { enabled: true, satisfied: true, activeGroupIds: ["treasury", "security"] },
+        approverWallets: [],
+        responses: [{ walletAddress: "01abc", response: "Approved", timestamp: "2026-07-24T10:30:00.000Z", memberGroupIds: ["treasury"], groupIds: ["treasury"] }],
+        expiresAt: "2026-07-24T11:30:00.000Z",
+        mayProceedToSigning: false,
+      },
+    }), { status: 200 }),
+  });
+
+  const response = await client.getApproval("APR-ORG");
+  assert.equal(response.approval.resolvedTier.name, "High Value Treasury");
+  assert.equal(response.approval.groupProgress[0].received, 2);
+  assert.equal(response.approval.executionWindowStatus, "delay");
+  assert.deepEqual(response.approval.responses[0].memberGroupIds, ["treasury"]);
+});

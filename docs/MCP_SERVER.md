@@ -128,3 +128,7 @@ Test with `Approved privileged mint`, `Ownership transfer requiring review`, `Un
 Every MCP intent is evaluated against active scoped pause state. `magen3_require_allowed` remains fail-closed: an Emergency Circuit Breaker `Blocked` or `Review Required` result stops execution. Surface the matching scope, trigger, reason, expiry, and remediation; do not retry through a different tool, action label, route, provider, or idempotency key to bypass the pause.
 
 Pause activation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP tool. Approval-gated resume is resolved in the existing Human Approval Queue.
+
+## Organizational approval boundary
+
+MCP can poll and display the resolved approval tier, named role progress, escalation history, next escalation, execution delay, signing window, and `mayProceedToSigning`. It cannot become an approver, submit a reviewer response, request a reviewer-signature challenge, activate backups early, lower quorum, shorten a delay, or extend an expired window. During `Pending`, `Configuration Required`, execution delay, or expired-window states, the agent must remain stopped.

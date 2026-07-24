@@ -316,3 +316,63 @@ test("integration health never reports healthy when core services or configurati
   );
   assert.ok(privilegedAttention.checks.some((check) => check.label === "Privileged Action Controls" && check.status === "attention"));
 });
+
+test("Organizational approval coverage requires named groups, deterministic rules, and an observed pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = {
+    status: "Active",
+    type: "Treasury Manager",
+    executionCapabilities: ["Treasury Operations"],
+    apiKeyPreview: "mg3_live_…f91a",
+    onboardingStatus: "complete",
+    lastIntentAt: timestamp,
+  };
+  const policy = {
+    status: "Active",
+    maxTransaction: 250,
+    dailyLimit: 1000,
+    approvalThreshold: 100,
+    structuredRules: {
+      approvalWorkflowEnabled: true,
+      approvalWorkflowMode: "Quorum",
+      approvalRequiredCount: 3,
+      approvalAllowOwnerFallback: false,
+      approvalApproverWallets: [],
+      approvalOrganizationalQuorumEnabled: true,
+      approvalGroups: [
+        { id: "treasury", role: "Treasury Approver", wallets: ["01" + "1".repeat(64), "01" + "2".repeat(64)] },
+        { id: "security", role: "Security Approver", wallets: ["01" + "3".repeat(64)] },
+      ],
+      approvalTiers: [{ id: "high-value", minAmount: 1000, requiredGroups: [{ groupId: "treasury", approvals: 2 }, { groupId: "security", approvals: 1 }], requiredApprovals: 3 }],
+      approvalOrganizationDefaults: {},
+    },
+  };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "organizational-approval").passed, false);
+
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp,
+    moduleFindings: [{ module: "Policy & Approval Controls", status: "pass", severity: "low", rule: "Organizational approval quorum", message: "Role quorum satisfied." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "organizational-approval").passed, true);
+});
+
+test("Integration Health exposes pending and failed organizational approval state", () => {
+  const timestamp = new Date().toISOString();
+  const pending = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Review Required", decisionProofStatus: "recorded", moduleFindings: [{ module: "Policy & Approval Controls", status: "warning", severity: "medium", rule: "Organizational approval quorum", message: "Security role pending." }] }],
+    true,
+  );
+  assert.ok(pending.checks.some((check) => check.label === "Organizational approval quorum" && check.status === "pending"));
+
+  const failed = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Review Required", decisionProofStatus: "recorded", moduleFindings: [{ module: "Policy & Approval Controls", status: "fail", severity: "high", rule: "Organizational approval quorum", message: "Approval expired." }] }],
+    true,
+  );
+  assert.ok(failed.checks.some((check) => check.label === "Organizational approval quorum" && check.status === "attention"));
+  assert.notEqual(failed.overall, "Healthy");
+});
