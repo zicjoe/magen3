@@ -547,3 +547,12 @@ The gateway and policy model are chain-agnostic. Casper Testnet is the current d
 ## Contract Upgrade Safety
 
 Contract Upgrade Safety is Live. Gateway intents may include `action.contractUpgrade` with the current and requested implementation, optional code hashes, package version, upgrade administrator, request time, execution time, and network. The deterministic control binds these parameters to Human Approval and enforces implementation allowlists/blocklists, quorum, administrator rules, and delay before wallet signing.
+
+
+## Contract Argument Policies
+
+Contract Argument Policies is Live under Contract & Permission Safety. An enabled policy matches `action.preflight.runtimeArgs` against one exact contract-and-entry-point rule and deterministically evaluates required and allowed names, value types, numeric limits, address allowlists/blocklists, boolean values, and enum values. A blocked address hard-blocks in every mode. Other violations follow Observe, Review, or Enforce behavior.
+
+The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
+
+Phase 1 deterministic permission and approval safety is complete. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Phase 2: Agent Instruction Integrity.

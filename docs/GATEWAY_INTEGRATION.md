@@ -312,3 +312,11 @@ See also:
 - `MCP_SERVER.md`
 - `CONNECTED_WALLET_EXECUTION.md`
 - `THREAT_INTELLIGENCE.md`
+
+## Add contract runtime-argument evidence
+
+For exact contract and entry-point enforcement, include public unsigned values in `action.preflight.runtimeArgs`. Do not flatten them into the top-level action or send encoded signed deploy bytes. Magen3 applies the active Contract Argument Policy before wallet signing and returns `contractArgumentPoliciesContext` plus structured findings.
+
+External agents must stop on Blocked, pause on Review Required, and request wallet signing only when `result.decision === "Allowed"` and `executionApproved === true`. Changing a protected runtime argument after Human Approval changes both the argument fingerprint and the exact-intent approval binding.
+
+See `CONTRACT_ARGUMENT_POLICIES.md` for policy examples and the security boundary.

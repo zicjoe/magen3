@@ -676,3 +676,28 @@ When the pause requires approval, the resume request creates an exact-bound Huma
 
 Supported scopes are `Platform`, `All Execution`, `Agent`, `Capability`, `Action`, `Policy`, `Trading`, `Contract`, `Bridge`, and `x402`. Automatic pause triggers are opt-in policy behavior. See `EMERGENCY_CIRCUIT_BREAKER.md` for fields, thresholds, audit evidence, expiry, and the current wallet-scoped administrative boundary.
 
+
+## Contract Argument Policies
+
+For a direct contract call, submit public unsigned runtime arguments under `action.preflight.runtimeArgs`. When the active policy enables Contract Argument Policies, Magen3 matches the exact `action.target` and `action.entryPoint`, then applies required/allowed argument rules, types, numeric ranges, address allowlists/blocklists, boolean restrictions, and enums.
+
+```json
+{
+  "action": {
+    "type": "Contract Interaction",
+    "target": "contract-package-hash-...",
+    "contractIdentifierType": "Package Hash",
+    "entryPoint": "transfer",
+    "preflight": {
+      "runtimeArgs": {
+        "recipient": "01...",
+        "amount": "25"
+      }
+    }
+  }
+}
+```
+
+The result may include `contractArgumentPoliciesContext` with the matching rule ID, evaluated arguments, violations, and canonical `parameterFingerprint`. Human Approval binds the complete normalized intent, including `runtimeArgs`.
+
+Do not submit private keys, mnemonics, wallet signatures, raw signed transactions, wallet approvals, provider credentials, or secret application data. See `CONTRACT_ARGUMENT_POLICIES.md`.

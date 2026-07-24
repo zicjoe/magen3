@@ -147,3 +147,7 @@ The TypeScript SDK exposes `Magen3PrivilegedAction`, `Magen3PrivilegedActionName
 The TypeScript SDK exposes `Magen3EmergencyPause` and `Magen3EmergencyControlsContext`. Every Gateway response can report whether pause state was evaluated, whether a pause matched, the effective decision, scope, trigger, reason, and expiry. When the current intent activates an automatic circuit breaker, the top-level response may include `emergencyPause`.
 
 Agent SDKs do not create or resume pauses. Those are owner-wallet administrative operations performed through the Magen3 application or REST management endpoints. An MCP or SDK client must stop on an active `Blocked` or `Review Required` pause and must never retry through another tool to bypass it.
+
+## Contract Argument Policies
+
+Both official SDKs pass public unsigned contract parameters through `action.preflight.runtimeArgs`. The response may expose `contractArgumentPoliciesContext` with the exact matching rule, parameter fingerprint, evaluated names, and violations. SDK clients must not place private keys, signatures, raw signed transactions, wallet approvals, or secret application data in runtime arguments. See `CONTRACT_ARGUMENT_POLICIES.md`.

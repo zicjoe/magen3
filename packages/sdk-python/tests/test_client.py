@@ -273,6 +273,50 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured[1]["payload"]["agentId"], "MAG-1")
         self.assertNotIn("paymentSignature", captured[1]["payload"])
 
+
+    def test_contract_argument_runtime_args_and_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {
+                "ok": True,
+                "executionApproved": True,
+                "result": {
+                    "decision": "Allowed",
+                    "contractArgumentPoliciesContext": {
+                        "target": "contract-package-hash-" + "a" * 64,
+                        "entryPoint": "transfer",
+                        "ruleId": "transfer-rule",
+                        "parameterFingerprint": "c" * 64,
+                        "evaluatedArguments": ["recipient", "amount"],
+                        "violations": [],
+                    },
+                },
+            }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "01" + "1" * 64,
+            "action": {
+                "type": "Contract Interaction",
+                "target": "contract-package-hash-" + "a" * 64,
+                "targetType": "Trusted Contract",
+                "contractIdentifierType": "Package Hash",
+                "entryPoint": "transfer",
+                "chainName": "casper-test",
+                "preflight": {
+                    "runtimeArgs": {
+                        "recipient": "01" + "2" * 64,
+                        "amount": "25",
+                    },
+                },
+            },
+        })
+
+        self.assertEqual(captured["payload"]["action"]["preflight"]["runtimeArgs"]["amount"], "25")
+        self.assertEqual(result["result"]["contractArgumentPoliciesContext"]["ruleId"], "transfer-rule")
+        self.assertEqual(result["result"]["contractArgumentPoliciesContext"]["violations"], [])
+
     def test_emergency_circuit_breaker_response_passes_through(self):
         pause = {
             "id": "EPAUSE-1",

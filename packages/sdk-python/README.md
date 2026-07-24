@@ -187,3 +187,7 @@ The SDK cannot activate, resume, or bypass a pause. Stop on both `Blocked` and `
 ## Contract Upgrade Safety
 
 Python callers may include unsigned `action["contractUpgrade"]` metadata containing the current and requested implementation, optional code hashes, upgrade administrator, network, and any configured `executeAfter` time. Inspect `result["contractUpgradeSafetyContext"]` for the exact parameter fingerprint, policy mode, delay, and required approval quorum. Never send administrator private keys, signatures, or raw signed transactions.
+
+## Contract Argument Policies
+
+Python callers place public unsigned contract arguments in `action["preflight"]["runtimeArgs"]`. The response may include `result["contractArgumentPoliciesContext"]` with the exact contract, entry point, matching rule, evaluated names, violations, and canonical fingerprint. Never place private keys, signatures, wallet approvals, raw signed transactions, or secret application data in runtime arguments.

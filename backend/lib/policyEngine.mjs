@@ -11,6 +11,7 @@ import { evaluateX402PaymentControls } from "./x402PaymentControls.mjs";
 import { evaluateTokenPermissionControls } from "./tokenPermissionControls.mjs";
 import { evaluatePrivilegedActionControls } from "./privilegedActionControls.mjs";
 import { evaluateContractUpgradeSafety } from "./contractUpgradeSafety.mjs";
+import { evaluateContractArgumentPolicies } from "./contractArgumentPolicies.mjs";
 import { evaluateEmergencyControls } from "./emergencyControls.mjs";
 
 function isSameDay(a, b) {
@@ -102,6 +103,7 @@ function withStructuredResult({
   tokenPermissionControlsContext = null,
   privilegedActionControlsContext = null,
   contractUpgradeSafetyContext = null,
+  contractArgumentPoliciesContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -130,6 +132,7 @@ function withStructuredResult({
     tokenPermissionControlsContext,
     privilegedActionControlsContext,
     contractUpgradeSafetyContext,
+    contractArgumentPoliciesContext,
     emergencyControlsContext,
   };
 }
@@ -334,6 +337,12 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...contractUpgradeSafetyResult.findings);
   score += contractUpgradeSafetyResult.scoreDelta;
 
+  const contractArgumentPoliciesResult = evaluateContractArgumentPolicies({ request, policy });
+  checksPassed.push(...contractArgumentPoliciesResult.checksPassed);
+  checksFailed.push(...contractArgumentPoliciesResult.checksFailed);
+  moduleFindings.push(...contractArgumentPoliciesResult.findings);
+  score += contractArgumentPoliciesResult.scoreDelta;
+
   const threatIntelligenceResult = evaluateThreatIntelligence({ request, policy, snapshot: threatIntelligence });
   checksPassed.push(...threatIntelligenceResult.checksPassed);
   checksFailed.push(...threatIntelligenceResult.checksFailed);
@@ -364,8 +373,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -404,6 +413,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     tokenPermissionControlsContext: tokenPermissionControlsResult.context,
     privilegedActionControlsContext: privilegedActionControlsResult.context,
     contractUpgradeSafetyContext: contractUpgradeSafetyResult.context,
+    contractArgumentPoliciesContext: contractArgumentPoliciesResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }

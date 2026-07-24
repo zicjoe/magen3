@@ -74,6 +74,17 @@ test("security coverage reaches 100 only when every configured protection check 
         contractUpgradeRequireCodeHash: true,
         contractUpgradeApprovedAdministrators: ["01" + "3".repeat(64)],
         contractUpgradeUnknownImplementationAction: "Review",
+        contractArgumentControlsEnabled: true,
+        contractArgumentMode: "Review",
+        contractArgumentUnknownRuleAction: "Review",
+        contractArgumentUnknownArgumentAction: "Block",
+        contractArgumentRules: [{
+          contract: "contract-package-hash-example",
+          entryPoint: "transfer",
+          requiredArgs: ["recipient"],
+          allowedArgs: ["recipient"],
+          argumentTypes: { recipient: "address" },
+        }],
         emergencyControlsEnabled: true,
         automaticPauseEnabled: false,
         emergencyAutomaticPauseAction: "Blocked",
@@ -100,6 +111,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." },
         { module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." },
         { module: "Contract Upgrade Safety", status: "pass", severity: "info", rule: "Upgrade target binding", message: "Upgrade target is bound." },
+        { module: "Contract Argument Policies", status: "pass", severity: "info", rule: "Configured contract argument rule", message: "Matched exact contract argument rule." },
         { module: "Emergency Circuit Breaker", status: "pass", severity: "info", rule: "Active emergency pause", message: "No active emergency pause applies." },
       ],
     }],
@@ -281,6 +293,49 @@ test("Contract Upgrade Safety coverage requires deterministic configuration and 
   assert.equal(configuredOnly.checks.find((item) => item.id === "contract-upgrade-safety").passed, false);
   const observed = securityModel.calculateSecurityCoverage(agent, policy, [{ timestamp, moduleFindings: [{ module: "Contract Upgrade Safety", status: "pass", severity: "info", rule: "Upgrade target binding", message: "Bound upgrade." }] }]);
   assert.equal(observed.checks.find((item) => item.id === "contract-upgrade-safety").passed, true);
+});
+
+
+
+test("Contract Argument Policies coverage requires an exact configured rule and an observed pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", executionCapabilities: ["dApp Interactions"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp };
+  const policy = {
+    status: "Active",
+    structuredRules: {
+      contractArgumentControlsEnabled: true,
+      contractArgumentMode: "Review",
+      contractArgumentUnknownRuleAction: "Review",
+      contractArgumentUnknownArgumentAction: "Block",
+      contractArgumentRules: [{
+        contract: "contract-package-hash-example",
+        entryPoint: "transfer",
+        requiredArgs: ["recipient"],
+        allowedArgs: ["recipient", "amount"],
+        argumentTypes: { recipient: "address", amount: "integer" },
+      }],
+    },
+  };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "contract-argument-policies").passed, false);
+
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp,
+    moduleFindings: [{ module: "Contract Argument Policies", status: "pass", severity: "info", rule: "Configured contract argument rule", message: "Matched exact rule." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "contract-argument-policies").passed, true);
+});
+
+test("Integration Health surfaces Contract Argument Policy violations", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Contract Argument Policies", status: "fail", severity: "high", rule: "Blocked address argument", message: "Recipient is blocked." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "Contract Argument Policies" && check.status === "attention"));
+  assert.notEqual(health.overall, "Healthy");
 });
 
 test("Emergency Controls coverage requires configuration and a Gateway pause-state evaluation", () => {

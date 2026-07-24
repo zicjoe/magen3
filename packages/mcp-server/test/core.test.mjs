@@ -65,6 +65,22 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.contractUpgradeSafety, /implementation/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractUpgrade.requestedImplementation, /proposed/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractUpgrade.executeAfter, /delay/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.preflight.runtimeArgs, /runtime-argument/i);
+});
+
+
+
+test("intent schema exposes the Contract Argument Policies boundary", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Contract Argument Policies evaluate public unsigned runtimeArgs/i);
+  assert.match(result.content[0].text, /secret application data/i);
 });
 
 test("reportX402Settlement delegates a bound settlement update", async () => {

@@ -203,3 +203,7 @@ Treat both `Blocked` and `Review Required` as a hard stop. Do not retry with ano
 ## Contract Upgrade Safety
 
 For proxy or implementation changes, pass unsigned `action.contractUpgrade` metadata with the current and requested implementation, optional code hashes, upgrade administrator, network, and any configured `executeAfter` time. The response may include `contractUpgradeSafetyContext` with the exact parameter fingerprint, policy mode, delay, and required approval quorum. Never include administrator private keys, signatures, or raw signed transactions.
+
+## Contract Argument Policies
+
+Put public unsigned contract arguments in `action.preflight.runtimeArgs`. When the active policy enables Contract Argument Policies, Magen3 matches the exact contract and entry point, then enforces required/allowed names, type rules, numeric ranges, address allowlists or blocklists, boolean restrictions, and enum values. The response may include `contractArgumentPoliciesContext` with the matching rule ID and canonical parameter fingerprint. Never place private keys, signatures, wallet approvals, raw signed transactions, or secret application data in `runtimeArgs`.

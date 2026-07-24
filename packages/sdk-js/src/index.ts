@@ -585,6 +585,19 @@ export interface Magen3ContractUpgradeSafetyContext {
   };
 }
 
+export interface Magen3ContractArgumentPoliciesContext {
+  target?: string;
+  entryPoint?: string;
+  ruleId?: string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  parameterFingerprint?: string;
+  evaluatedArguments?: string[];
+  requiredArguments?: string[];
+  allowedArguments?: string[];
+  violations?: Array<{ rule?: string; message?: string }>;
+  approvalBindingNote?: string;
+}
+
 export interface Magen3X402SettlementUpdate {
   auditLogId: string;
   status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
@@ -739,6 +752,8 @@ export interface Magen3DecisionResult {
   privilegedActionControlsContext?: Magen3PrivilegedActionControlsContext;
   /** Current/proposed implementation, code-hash, administrator, delay, fingerprint, and exact approval evidence. */
   contractUpgradeSafetyContext?: Magen3ContractUpgradeSafetyContext;
+  /** Exact contract/entry-point rule, runtime-argument checks, violations, and canonical argument fingerprint. */
+  contractArgumentPoliciesContext?: Magen3ContractArgumentPoliciesContext;
 }
 
 export interface Magen3IntentResponse {

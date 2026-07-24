@@ -641,3 +641,62 @@ test("preserves organizational approval tier, group, escalation, and execution-w
   assert.equal(response.approval.executionWindowStatus, "delay");
   assert.deepEqual(response.approval.responses[0].memberGroupIds, ["treasury"]);
 });
+
+test("preserves public runtime arguments and Contract Argument Policies response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: {
+          decision: "Allowed",
+          risk: "Low",
+          riskScore: 9,
+          reason: "runtime arguments satisfy the configured rule",
+          recommendedAction: "continue",
+          contractArgumentPoliciesContext: {
+            target: `contract-package-hash-${"a".repeat(64)}`,
+            entryPoint: "transfer",
+            ruleId: "transfer-rule",
+            argumentFingerprint: "c".repeat(64),
+            evaluatedArguments: ["recipient", "amount"],
+            requiredArguments: ["recipient", "amount"],
+            allowedArguments: ["recipient", "amount"],
+            violations: [],
+          },
+        },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: {
+      type: "Contract Interaction",
+      target: `contract-package-hash-${"a".repeat(64)}`,
+      targetType: "Trusted Contract",
+      contractIdentifierType: "Package Hash",
+      entryPoint: "transfer",
+      chainName: "casper-test",
+      preflight: {
+        runtimeArgs: {
+          recipient: `01${"2".repeat(64)}`,
+          amount: "25",
+        },
+      },
+    },
+  });
+
+  assert.equal(captured.action.preflight.runtimeArgs.amount, "25");
+  assert.equal(captured.action.preflight.runtimeArgs.recipient, `01${"2".repeat(64)}`);
+  assert.equal(response.result.contractArgumentPoliciesContext.entryPoint, "transfer");
+  assert.equal(response.result.contractArgumentPoliciesContext.violations.length, 0);
+});

@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, **Approval Escalation & Organizational Quorum**, and **Contract Upgrade Safety** complete and Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Contract Argument Policies**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 deterministic permission and approval safety is now complete: **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, **Approval Escalation & Organizational Quorum**, **Contract Upgrade Safety**, and **Contract Argument Policies** are Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone begins Phase 2: **Agent Instruction Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -973,6 +973,7 @@ scripts/casper/              Contract and proof tooling
 - [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
 - [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md)
 - [`docs/TOKEN_PERMISSION_CONTROLS.md`](docs/TOKEN_PERMISSION_CONTROLS.md)
+- [`docs/CONTRACT_ARGUMENT_POLICIES.md`](docs/CONTRACT_ARGUMENT_POLICIES.md)
 - [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 - [`docs/CASPER_DEPLOYMENT_PLAYBOOK.md`](docs/CASPER_DEPLOYMENT_PLAYBOOK.md)
 
@@ -984,3 +985,8 @@ MIT. See [`LICENSE`](LICENSE).
 ## Contract Upgrade Safety
 
 Contract Upgrade Safety is Live under Agent Shield → Contract & Permission Safety. It binds the current and proposed implementation, optional code hashes, authorized upgrade administrator, configured delay, exact parameter fingerprint, and Human Approval quorum before wallet signing. See `docs/CONTRACT_UPGRADE_SAFETY.md`.
+
+
+## Contract Argument Policies
+
+Contract Argument Policies is Live under Agent Shield → Contract & Permission Safety. It matches the exact contract and entry point, then enforces required and allowed argument names, value types, numeric ranges, address allowlists/blocklists, boolean restrictions, and enum values before wallet signing. Magen3 returns a canonical runtime-argument fingerprint, structured findings, and exact Human Approval binding evidence. See `docs/CONTRACT_ARGUMENT_POLICIES.md`.

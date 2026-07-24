@@ -64,6 +64,8 @@ export const PROTECTION_MODULES = [
       { id: "entry-point-controls", name: "Entry-point and package-version controls", status: "Live" },
       { id: "privileged-actions", name: "Privileged contract actions", status: "Live" },
       { id: "token-permissions", name: "Token approvals and permits", status: "Live" },
+      { id: "contract-arguments", name: "Contract argument policies", status: "Live" },
+      { id: "contract-upgrades", name: "Contract upgrade safety", status: "Live" },
     ],
   },
   {

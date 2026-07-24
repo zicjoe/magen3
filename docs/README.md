@@ -37,3 +37,4 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Approval Escalation & Organizational Quorum](./APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md) — deterministic tiers, named role groups, timed escalation, delays, and signing windows.
 
 - [Contract Upgrade Safety](./CONTRACT_UPGRADE_SAFETY.md)
+- [Contract Argument Policies](./CONTRACT_ARGUMENT_POLICIES.md) — exact contract/entry-point runtime-argument rules, types, ranges, address policies, fingerprints, and Human Approval binding.

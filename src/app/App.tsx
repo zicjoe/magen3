@@ -577,6 +577,17 @@ interface DecisionResult {
     approvalRequired?: boolean;
     requiredApprovalCount?: number;
   };
+  contractArgumentPoliciesContext?: {
+    target?: string;
+    entryPoint?: string;
+    ruleId?: string;
+    mode?: string;
+    parameterFingerprint?: string;
+    evaluatedArguments?: string[];
+    requiredArguments?: string[];
+    allowedArguments?: string[];
+    violations?: Array<{ rule?: string; message?: string }>;
+  };
   bridgeControlsContext?: {
     status?: string;
     mode?: string;
@@ -1474,6 +1485,30 @@ function parseJsonObjectField(value: string, label = "Value"): Record<string, un
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must be a JSON object.`);
   return parsed as Record<string, unknown>;
+}
+
+function parseContractArgumentRules(value: string): unknown[] {
+  const rules = parseJsonArrayField(value, "Contract Argument Rules");
+  if (rules.length > 100) throw new Error("Contract Argument Rules may contain at most 100 rules.");
+  const pairs = new Set<string>();
+  rules.forEach((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Contract Argument Rules item ${index + 1} must be an object.`);
+    const rule = item as Record<string, unknown>;
+    const contract = String(rule.contract || rule.target || rule.contractIdentifier || "").trim();
+    const entryPoint = String(rule.entryPoint || rule.entry_point || rule.method || "").trim();
+    if (!contract || !entryPoint) throw new Error(`Contract Argument Rules item ${index + 1} needs contract and entryPoint.`);
+    const key = `${contract.toLowerCase()}::${entryPoint}`;
+    if (pairs.has(key)) throw new Error(`Contract Argument Rules contains more than one rule for ${entryPoint} on ${contract}.`);
+    pairs.add(key);
+    for (const field of ["requiredArgs", "allowedArgs"] as const) {
+      if (rule[field] !== undefined && !Array.isArray(rule[field])) throw new Error(`Contract Argument Rules item ${index + 1} ${field} must be an array.`);
+    }
+    for (const field of ["argumentTypes", "numericLimits", "addressRules", "booleanRules", "enumRules"] as const) {
+      const candidate = rule[field];
+      if (candidate !== undefined && (!candidate || typeof candidate !== "object" || Array.isArray(candidate))) throw new Error(`Contract Argument Rules item ${index + 1} ${field} must be an object.`);
+    }
+  });
+  return rules;
 }
 
 function parseOrganizationalApprovalFields(values: Record<string, unknown>) {
@@ -2832,6 +2867,11 @@ function AgentRegistrationWizard({
           contractUpgradeRequireAdministrator: typeof sourceRules.contractUpgradeRequireAdministrator === "boolean" ? sourceRules.contractUpgradeRequireAdministrator : true,
           contractUpgradeApprovedAdministrators: Array.isArray(sourceRules.contractUpgradeApprovedAdministrators) ? sourceRules.contractUpgradeApprovedAdministrators : [],
           contractUpgradeUnknownImplementationAction: typeof sourceRules.contractUpgradeUnknownImplementationAction === "string" ? sourceRules.contractUpgradeUnknownImplementationAction : "Review",
+          contractArgumentControlsEnabled: sourceRules.contractArgumentControlsEnabled === true,
+          contractArgumentMode: typeof sourceRules.contractArgumentMode === "string" ? sourceRules.contractArgumentMode : "Review",
+          contractArgumentUnknownRuleAction: typeof sourceRules.contractArgumentUnknownRuleAction === "string" ? sourceRules.contractArgumentUnknownRuleAction : "Review",
+          contractArgumentUnknownArgumentAction: typeof sourceRules.contractArgumentUnknownArgumentAction === "string" ? sourceRules.contractArgumentUnknownArgumentAction : "Block",
+          contractArgumentRules: Array.isArray(sourceRules.contractArgumentRules) ? sourceRules.contractArgumentRules : [],
           x402ControlsEnabled: typeof sourceRules.x402ControlsEnabled === "boolean" ? sourceRules.x402ControlsEnabled : capabilities.some((item) => ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"].includes(item)),
           x402ControlMode: typeof sourceRules.x402ControlMode === "string" ? sourceRules.x402ControlMode : "Review",
           x402UnavailableAction: typeof sourceRules.x402UnavailableAction === "string" ? sourceRules.x402UnavailableAction : "Review",
@@ -2896,7 +2936,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4295,6 +4335,44 @@ function ContractUpgradePolicyFields({
   );
 }
 
+function ContractArgumentPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Contract & Permission Safety · Contract Arguments</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Apply deterministic rules to the exact runtime arguments used by a specific contract and entry point before wallet signing.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.contractArgumentControlsEnabled ?? "")} onChange={(value) => onChange({ contractArgumentControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.contractArgumentMode ?? "")} onChange={(value) => onChange({ contractArgumentMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="No Matching Rule" value={String(values.contractArgumentUnknownRuleAction ?? "")} onChange={(value) => onChange({ contractArgumentUnknownRuleAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Unknown Argument" value={String(values.contractArgumentUnknownArgumentAction ?? "")} onChange={(value) => onChange({ contractArgumentUnknownArgumentAction: value })} options={["Warn", "Review", "Block"]} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Exact contract and entry-point rules</summary>
+        <div className="mt-3">
+          <TextareaField
+            label="Contract Argument Rules (JSON array)"
+            value={String(values.contractArgumentRules ?? "[]")}
+            onChange={(value) => onChange({ contractArgumentRules: value })}
+            placeholder={'[{"id":"transfer-safe","contract":"contract-...","entryPoint":"transfer","requiredArgs":["recipient","amount"],"allowedArgs":["recipient","amount"],"argumentTypes":{"recipient":"address","amount":"integer"},"numericLimits":{"amount":{"min":1,"max":100}},"addressRules":{"recipient":{"allowed":["01..."]}}}]'}
+          />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Rules support required and allowed names, argumentTypes, numericLimits, addressRules, booleanRules, enumRules, and per-rule unknownArgumentAction. The complete runtimeArgs object is fingerprinted and remains covered by exact Human Approval binding.</p>
+    </div>
+  );
+}
+
 function X402PolicyFields({
   values,
   onChange,
@@ -4523,6 +4601,11 @@ function PoliciesPage({
     contractUpgradeRequireAdministrator: "Yes",
     contractUpgradeApprovedAdministrators: "",
     contractUpgradeUnknownImplementationAction: "Review",
+    contractArgumentControlsEnabled: "No",
+    contractArgumentMode: "Review",
+    contractArgumentUnknownRuleAction: "Review",
+    contractArgumentUnknownArgumentAction: "Block",
+    contractArgumentRules: "[]",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4701,6 +4784,11 @@ function PoliciesPage({
     contractUpgradeRequireAdministrator: "Yes",
     contractUpgradeApprovedAdministrators: "",
     contractUpgradeUnknownImplementationAction: "Review",
+    contractArgumentControlsEnabled: "No",
+    contractArgumentMode: "Review",
+    contractArgumentUnknownRuleAction: "Review",
+    contractArgumentUnknownArgumentAction: "Block",
+    contractArgumentRules: "[]",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4753,8 +4841,10 @@ function PoliciesPage({
     if (!form.name.trim() || !form.agentId) return;
     setPolicyFormError("");
     let organizationalFields: ReturnType<typeof parseOrganizationalApprovalFields>;
+    let contractArgumentRules: unknown[];
     try {
       organizationalFields = parseOrganizationalApprovalFields(form);
+      contractArgumentRules = parseContractArgumentRules(form.contractArgumentRules);
     } catch (error) {
       setPolicyFormError(error instanceof Error ? error.message : "The organizational approval configuration is invalid.");
       return;
@@ -4888,6 +4978,11 @@ function PoliciesPage({
         contractUpgradeRequireAdministrator: form.contractUpgradeRequireAdministrator !== "No",
         contractUpgradeApprovedAdministrators: form.contractUpgradeApprovedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
         contractUpgradeUnknownImplementationAction: form.contractUpgradeUnknownImplementationAction,
+        contractArgumentControlsEnabled: form.contractArgumentControlsEnabled === "Yes",
+        contractArgumentMode: form.contractArgumentMode,
+        contractArgumentUnknownRuleAction: form.contractArgumentUnknownRuleAction,
+        contractArgumentUnknownArgumentAction: form.contractArgumentUnknownArgumentAction,
+        contractArgumentRules,
         x402ControlsEnabled: form.x402ControlsEnabled !== "No",
         x402ControlMode: form.x402ControlMode,
         x402UnavailableAction: form.x402UnavailableAction,
@@ -5055,6 +5150,11 @@ function PoliciesPage({
     contractUpgradeRequireAdministrator: "Yes",
     contractUpgradeApprovedAdministrators: "",
     contractUpgradeUnknownImplementationAction: "Review",
+    contractArgumentControlsEnabled: "No",
+    contractArgumentMode: "Review",
+    contractArgumentUnknownRuleAction: "Review",
+    contractArgumentUnknownArgumentAction: "Block",
+    contractArgumentRules: "[]",
     x402ControlsEnabled: "Yes",
       x402ControlMode: "Review",
       x402UnavailableAction: "Review",
@@ -5227,6 +5327,11 @@ function PoliciesPage({
       contractUpgradeRequireAdministrator: policy.structuredRules?.contractUpgradeRequireAdministrator === false ? "No" : "Yes",
       contractUpgradeApprovedAdministrators: Array.isArray(policy.structuredRules?.contractUpgradeApprovedAdministrators) ? policy.structuredRules.contractUpgradeApprovedAdministrators.join("\n") : "",
       contractUpgradeUnknownImplementationAction: typeof policy.structuredRules?.contractUpgradeUnknownImplementationAction === "string" ? policy.structuredRules.contractUpgradeUnknownImplementationAction : "Review",
+      contractArgumentControlsEnabled: policy.structuredRules?.contractArgumentControlsEnabled === true ? "Yes" : "No",
+      contractArgumentMode: typeof policy.structuredRules?.contractArgumentMode === "string" ? policy.structuredRules.contractArgumentMode : "Review",
+      contractArgumentUnknownRuleAction: typeof policy.structuredRules?.contractArgumentUnknownRuleAction === "string" ? policy.structuredRules.contractArgumentUnknownRuleAction : "Review",
+      contractArgumentUnknownArgumentAction: typeof policy.structuredRules?.contractArgumentUnknownArgumentAction === "string" ? policy.structuredRules.contractArgumentUnknownArgumentAction : "Block",
+      contractArgumentRules: JSON.stringify(Array.isArray(policy.structuredRules?.contractArgumentRules) ? policy.structuredRules.contractArgumentRules : [], null, 2),
       x402ControlsEnabled: policy.structuredRules?.x402ControlsEnabled === false ? "No" : "Yes",
       x402ControlMode: typeof policy.structuredRules?.x402ControlMode === "string" ? policy.structuredRules.x402ControlMode : "Observe",
       x402UnavailableAction: typeof policy.structuredRules?.x402UnavailableAction === "string" ? policy.structuredRules.x402UnavailableAction : "Warn",
@@ -5280,8 +5385,10 @@ function PoliciesPage({
     if (!editingPolicy || !editForm.name.trim()) return;
     setPolicyFormError("");
     let organizationalFields: ReturnType<typeof parseOrganizationalApprovalFields>;
+    let contractArgumentRules: unknown[];
     try {
       organizationalFields = parseOrganizationalApprovalFields(editForm);
+      contractArgumentRules = parseContractArgumentRules(editForm.contractArgumentRules);
     } catch (error) {
       setPolicyFormError(error instanceof Error ? error.message : "The organizational approval configuration is invalid.");
       return;
@@ -5415,6 +5522,11 @@ function PoliciesPage({
         contractUpgradeRequireAdministrator: editForm.contractUpgradeRequireAdministrator !== "No",
         contractUpgradeApprovedAdministrators: editForm.contractUpgradeApprovedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
         contractUpgradeUnknownImplementationAction: editForm.contractUpgradeUnknownImplementationAction,
+        contractArgumentControlsEnabled: editForm.contractArgumentControlsEnabled === "Yes",
+        contractArgumentMode: editForm.contractArgumentMode,
+        contractArgumentUnknownRuleAction: editForm.contractArgumentUnknownRuleAction,
+        contractArgumentUnknownArgumentAction: editForm.contractArgumentUnknownArgumentAction,
+        contractArgumentRules,
         x402ControlsEnabled: editForm.x402ControlsEnabled !== "No",
         x402ControlMode: editForm.x402ControlMode,
         x402UnavailableAction: editForm.x402UnavailableAction,
@@ -5736,6 +5848,7 @@ function PoliciesPage({
             <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <PrivilegedActionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ContractUpgradePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <ContractArgumentPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
@@ -6024,6 +6137,7 @@ function PoliciesPage({
                 <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <PrivilegedActionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ContractUpgradePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <ContractArgumentPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
@@ -7831,6 +7945,46 @@ function firstConfiguredWallet(policy?: Policy) {
   return policy?.trustedContracts.find((target) => /^(?:01[0-9a-f]{64}|02[0-9a-f]{66}|account-hash-[0-9a-f]{64})$/i.test(target));
 }
 
+function firstConfiguredContractArgumentRule(policy?: Policy) {
+  const rules = policy?.structuredRules?.contractArgumentRules;
+  if (!Array.isArray(rules)) return null;
+  const rule = rules.find((item) => item && typeof item === "object" && !Array.isArray(item)) as Record<string, unknown> | undefined;
+  return rule || null;
+}
+
+function playgroundArgsFromRule(rule: Record<string, unknown> | null, walletAddress: string) {
+  if (!rule) return { recipient: walletAddress || PLAYGROUND_DEMO_RECIPIENT, amount: "10", mode: "safe" };
+  const required = Array.isArray(rule.requiredArgs) ? rule.requiredArgs.map(String) : [];
+  const types = rule.argumentTypes && typeof rule.argumentTypes === "object" && !Array.isArray(rule.argumentTypes) ? rule.argumentTypes as Record<string, unknown> : {};
+  const numeric = rule.numericLimits && typeof rule.numericLimits === "object" && !Array.isArray(rule.numericLimits) ? rule.numericLimits as Record<string, unknown> : {};
+  const addresses = rule.addressRules && typeof rule.addressRules === "object" && !Array.isArray(rule.addressRules) ? rule.addressRules as Record<string, unknown> : {};
+  const booleans = rule.booleanRules && typeof rule.booleanRules === "object" && !Array.isArray(rule.booleanRules) ? rule.booleanRules as Record<string, unknown> : {};
+  const enums = rule.enumRules && typeof rule.enumRules === "object" && !Array.isArray(rule.enumRules) ? rule.enumRules as Record<string, unknown> : {};
+  const names = [...new Set([...required, ...Object.keys(types), ...Object.keys(numeric), ...Object.keys(addresses), ...Object.keys(booleans), ...Object.keys(enums)])];
+  const args: Record<string, unknown> = {};
+  names.forEach((name) => {
+    const addressRule = addresses[name] && typeof addresses[name] === "object" && !Array.isArray(addresses[name]) ? addresses[name] as Record<string, unknown> : {};
+    const allowedAddresses = Array.isArray(addressRule.allowed) ? addressRule.allowed : Array.isArray(addressRule.allowlist) ? addressRule.allowlist : [];
+    const enumRule = enums[name];
+    const enumValues = Array.isArray(enumRule) ? enumRule : enumRule && typeof enumRule === "object" && !Array.isArray(enumRule) && Array.isArray((enumRule as Record<string, unknown>).allowed) ? (enumRule as Record<string, unknown>).allowed as unknown[] : [];
+    const booleanRule = booleans[name] && typeof booleans[name] === "object" && !Array.isArray(booleans[name]) ? booleans[name] as Record<string, unknown> : {};
+    const booleanValues = Array.isArray(booleanRule.allowed) ? booleanRule.allowed.filter((value) => typeof value === "boolean") : [];
+    const numericRule = numeric[name] && typeof numeric[name] === "object" && !Array.isArray(numeric[name]) ? numeric[name] as Record<string, unknown> : {};
+    const type = String(types[name] || "").toLowerCase();
+    if (allowedAddresses.length > 0) args[name] = String(allowedAddresses[0]);
+    else if (["address", "account", "contract", "recipient"].includes(type)) args[name] = walletAddress || PLAYGROUND_DEMO_RECIPIENT;
+    else if (enumValues.length > 0) args[name] = enumValues[0];
+    else if (booleanValues.length > 0) args[name] = booleanValues[0];
+    else if (["boolean", "bool"].includes(type)) args[name] = false;
+    else if (["array", "list", "tuple"].includes(type)) args[name] = [];
+    else if (["object", "map"].includes(type)) args[name] = {};
+    else if (numericRule.min !== undefined) args[name] = String(numericRule.min);
+    else if (["number", "decimal", "float", "integer", "int", "u8", "u32", "u64", "u128", "u256", "u512"].includes(type)) args[name] = "1";
+    else args[name] = "sample";
+  });
+  return args;
+}
+
 function contractIdentifierTypeFor(target: string) {
   return /^(?:contract-package-|contract-package-hash-|package-)/i.test(target) ? "Package Hash" : "Contract Hash";
 }
@@ -8068,6 +8222,30 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
         entryPoint: "call",
         chainName: "casper-test",
         preflight: playgroundPreflight({ runtimeArgs: { amount: "0" } }),
+      },
+    };
+  },
+  "Contract arguments — matching rule": (agent, walletAddress, policy) => {
+    const rule = firstConfiguredContractArgumentRule(policy);
+    const target = String(rule?.contract || rule?.target || firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT);
+    const entryPoint = String(rule?.entryPoint || rule?.entry_point || "transfer");
+    return {
+      source: "Magen3 Intent Playground",
+      agentId: agent.id,
+      walletAddress,
+      executionWalletAddress: walletAddress,
+      goal: "Evaluate exact runtime arguments against the active contract and entry-point rule",
+      reason: rule ? "This example is generated from the first configured Contract Argument Policy rule." : "Configure a contractArgumentRules entry in Policies, then reload this example for a rule-matched request.",
+      action: {
+        type: "Contract Interaction",
+        amount: 0,
+        asset: "CSPR",
+        target,
+        targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
+        contractIdentifierType: contractIdentifierTypeFor(target),
+        entryPoint,
+        chainName: "casper-test",
+        preflight: playgroundPreflight({ runtimeArgs: playgroundArgsFromRule(rule, walletAddress) }),
       },
     };
   },

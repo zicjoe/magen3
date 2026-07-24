@@ -132,3 +132,7 @@ Pause activation and resume are owner-wallet administrative operations exposed t
 ## Organizational approval boundary
 
 MCP can poll and display the resolved approval tier, named role progress, escalation history, next escalation, execution delay, signing window, and `mayProceedToSigning`. It cannot become an approver, submit a reviewer response, request a reviewer-signature challenge, activate backups early, lower quorum, shorten a delay, or extend an expired window. During `Pending`, `Configuration Required`, execution delay, or expired-window states, the agent must remain stopped.
+
+## Contract Argument Policies
+
+The MCP intent schema accepts public unsigned `action.preflight.runtimeArgs`. Magen3, not the model or MCP client, resolves the exact contract-and-entry-point rule and final deterministic decision. MCP can surface the returned rule ID, findings, violations, and argument fingerprint, but it cannot override policy, approve Human Approval, or sign. Never send secret application data or wallet signing material in runtime arguments. See `CONTRACT_ARGUMENT_POLICIES.md`.

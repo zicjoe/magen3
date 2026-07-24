@@ -224,6 +224,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
       emergencyCircuitBreakerBoundary: "An active Emergency Circuit Breaker pause overrides ordinary authorization. Stop on Blocked or Review Required, surface the exact pause evidence, and never attempt retries or alternate tools to bypass it.",
       privilegedActionControlsBoundary: "Privileged Action Controls classify supported unsigned administrative intent metadata and bind protected parameters to policy and Human Approval. Never send administrator private keys, signatures, raw signed transactions, mnemonics, or wallet secrets.",
       contractUpgradeSafetyBoundary: "Contract Upgrade Safety evaluates unsigned current/proposed implementation metadata, code hashes, administrator evidence, delays, and exact approval binding. Never send upgrade signatures, private keys, or raw signed transactions.",
+      contractArgumentPoliciesBoundary: "Contract Argument Policies evaluate public unsigned runtimeArgs against exact contract and entry-point rules. Never send private keys, signatures, wallet approvals, raw signed transactions, or secret application data in runtimeArgs.",
         signingBoundary: "This server evaluates intent only. It never accesses wallet secrets or signs transactions.",
       });
     },

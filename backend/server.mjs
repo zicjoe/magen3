@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.8.0",
+        version: "1.9.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -219,6 +219,16 @@ const server = createServer(async (req, res) => {
             unknownImplementation: "structuredRules.contractUpgradeUnknownImplementationAction: Warn | Review | Block"
           },
           securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
+        },
+        contractArgumentControls: {
+          status: "live",
+          statusEndpoint: "GET /api/contract-argument-controls/status",
+          exactContractAndEntryPointBinding: true,
+          requiredAndAllowedArguments: true,
+          typeAndNumericRules: true,
+          addressBooleanAndEnumRules: true,
+          exactParameterFingerprinting: true,
+          approvalBinding: true
         },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
@@ -353,6 +363,37 @@ const server = createServer(async (req, res) => {
           exactParameterFingerprinting: true,
           humanApprovalAndQuorum: true,
           securityBoundary: "Magen3 evaluates unsigned upgrade metadata before wallet signing. It never accepts private keys, administrator signatures, or raw signed upgrade transactions through the Agent Gateway."
+        }
+      });
+    }
+
+
+    if (route === "GET /api/contract-argument-controls/status") {
+      return send(res, 200, {
+        ok: true,
+        contractArgumentControls: {
+          status: "live",
+          protectionArea: "Contract & Permission Safety",
+          control: "Contract Arguments",
+          exactContractAndEntryPointBinding: true,
+          requiredArguments: true,
+          allowedArguments: true,
+          argumentTypeValidation: true,
+          numericRanges: true,
+          addressAllowlistsAndBlocklists: true,
+          booleanRestrictions: true,
+          enumRestrictions: true,
+          unknownArgumentPolicy: true,
+          exactParameterFingerprinting: true,
+          humanApprovalBinding: true,
+          policyFields: {
+            enabled: "structuredRules.contractArgumentControlsEnabled",
+            mode: "structuredRules.contractArgumentMode: Observe | Review | Enforce",
+            unknownRule: "structuredRules.contractArgumentUnknownRuleAction: Warn | Review | Block",
+            unknownArgument: "structuredRules.contractArgumentUnknownArgumentAction: Warn | Review | Block",
+            rules: "structuredRules.contractArgumentRules"
+          },
+          securityBoundary: "Magen3 evaluates public unsigned runtime arguments before wallet signing. It never accepts private keys, signatures, wallet approvals, or raw signed transactions through this control."
         }
       });
     }
@@ -975,6 +1016,7 @@ const server = createServer(async (req, res) => {
           tokenPermissionControlsContext: "Classification, owner, token, spender, bounded amount, ratio, deadline, nonce, chain, fingerprint, replay state, batch, NFT operator, and policy-limit evidence",
           privilegedActionControlsContext: "Classification source, target, protected parameters, administrator or implementation policy, fingerprint, review requirement, and action-specific quorum evidence",
           contractUpgradeSafetyContext: "Current/proposed implementation, code hashes, administrator authorization, upgrade delay, exact fingerprint, and approval quorum evidence",
+          contractArgumentPoliciesContext: "Exact contract and entry point, matching rule, evaluated arguments, deterministic violations, and canonical runtime-argument fingerprint",
           emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
           emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
           emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],
