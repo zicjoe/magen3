@@ -538,6 +538,34 @@ interface DecisionResult {
     replayWindowSeconds?: number;
     maxRetryAttempts?: number;
   };
+  instructionIntegrityContext?: {
+    enabled?: boolean;
+    mode?: string;
+    metadataSupplied?: boolean;
+    requiresGoal?: boolean;
+    goalId?: string;
+    originalUserGoalHash?: string;
+    initiatedBy?: string;
+    intentSource?: string;
+    toolName?: string;
+    toolServer?: string;
+    sourceDomains?: string[];
+    externalContentUsed?: boolean;
+    userConfirmed?: boolean;
+    sourceTrustLevel?: string;
+    parameterChangeReason?: string;
+    originalParameterHash?: string;
+    suppliedCurrentParameterHash?: string;
+    currentParameterHash?: string;
+    computedCurrentParameterHash?: string;
+    parametersChanged?: boolean;
+    originalPermissionScopes?: string[];
+    currentPermissionScopes?: string[];
+    addedPermissionScopes?: string[];
+    selfAuthorizingPayment?: boolean;
+    violations?: Array<{ rule?: string; message?: string }>;
+    limitation?: string;
+  };
   tokenPermissionControlsContext?: {
     permissionType?: string;
     owner?: string;
@@ -2793,6 +2821,15 @@ function AgentRegistrationWizard({
           emergencyPauseOnThreatMatch: typeof sourceRules.emergencyPauseOnThreatMatch === "boolean" ? sourceRules.emergencyPauseOnThreatMatch : true,
           emergencyPauseOnOracleDisagreement: typeof sourceRules.emergencyPauseOnOracleDisagreement === "boolean" ? sourceRules.emergencyPauseOnOracleDisagreement : true,
           emergencyPauseOnPrivilegedActionFailure: typeof sourceRules.emergencyPauseOnPrivilegedActionFailure === "boolean" ? sourceRules.emergencyPauseOnPrivilegedActionFailure : true,
+          instructionIntegrityEnabled: typeof sourceRules.instructionIntegrityEnabled === "boolean" ? sourceRules.instructionIntegrityEnabled : true,
+          instructionIntegrityMode: typeof sourceRules.instructionIntegrityMode === "string" ? sourceRules.instructionIntegrityMode : "Review",
+          requireGoalBindingForActions: Array.isArray(sourceRules.requireGoalBindingForActions) ? sourceRules.requireGoalBindingForActions : ["Transfer", "Swap", "Stake", "Bridge", "x402 Payment", "DAO Treasury Payment", "Contract Interaction", "Deposit to Vault"],
+          requireUserConfirmationForExternalContent: typeof sourceRules.requireUserConfirmationForExternalContent === "boolean" ? sourceRules.requireUserConfirmationForExternalContent : true,
+          allowedSourceDomains: Array.isArray(sourceRules.allowedSourceDomains) ? sourceRules.allowedSourceDomains : [],
+          blockedSourceDomains: Array.isArray(sourceRules.blockedSourceDomains) ? sourceRules.blockedSourceDomains : [],
+          externalContentHighRiskAction: typeof sourceRules.externalContentHighRiskAction === "string" ? sourceRules.externalContentHighRiskAction : "Review",
+          allowParameterChangesAfterGoal: typeof sourceRules.allowParameterChangesAfterGoal === "boolean" ? sourceRules.allowParameterChangesAfterGoal : false,
+          requireParameterChangeReason: typeof sourceRules.requireParameterChangeReason === "boolean" ? sourceRules.requireParameterChangeReason : true,
           lifecycleControlsEnabled: typeof sourceRules.lifecycleControlsEnabled === "boolean" ? sourceRules.lifecycleControlsEnabled : true,
           lifecycleControlMode: typeof sourceRules.lifecycleControlMode === "string" ? sourceRules.lifecycleControlMode : "Enforce",
           lifecycleUnavailableAction: typeof sourceRules.lifecycleUnavailableAction === "string" ? sourceRules.lifecycleUnavailableAction : "Warn",
@@ -2936,7 +2973,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4216,6 +4253,38 @@ function ExecutionIntegrityPolicyFields({
   );
 }
 
+function InstructionIntegrityPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Agent Trust & Access · Instruction Integrity</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind sensitive execution to a stable user goal, trusted source provenance, exact protected parameters, and contained tool permissions before wallet signing.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.instructionIntegrityEnabled ?? "")} onChange={(value) => onChange({ instructionIntegrityEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.instructionIntegrityMode ?? "")} onChange={(value) => onChange({ instructionIntegrityMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="External High-Risk Action" value={String(values.externalContentHighRiskAction ?? "")} onChange={(value) => onChange({ externalContentHighRiskAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require External Confirmation" value={String(values.requireUserConfirmationForExternalContent ?? "")} onChange={(value) => onChange({ requireUserConfirmationForExternalContent: value })} options={["Yes", "No"]} />
+        <SelectField label="Allow Parameter Changes" value={String(values.allowParameterChangesAfterGoal ?? "")} onChange={(value) => onChange({ allowParameterChangesAfterGoal: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Change Reason" value={String(values.requireParameterChangeReason ?? "")} onChange={(value) => onChange({ requireParameterChangeReason: value })} options={["Yes", "No"]} />
+        <TextareaField label="Goal-Bound Actions (one per line)" value={String(values.requireGoalBindingForActions ?? "")} onChange={(value) => onChange({ requireGoalBindingForActions: value })} />
+        <TextareaField label="Allowed Source Domains" value={String(values.allowedSourceDomains ?? "")} onChange={(value) => onChange({ allowedSourceDomains: value })} />
+        <TextareaField label="Blocked Source Domains" value={String(values.blockedSourceDomains ?? "")} onChange={(value) => onChange({ blockedSourceDomains: value })} />
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">The Gateway evaluates supplied provenance and deterministic hashes. This does not claim to detect every prompt-injection or semantic-manipulation attack, and private prompt contents are not required.</p>
+    </div>
+  );
+}
+
 function TokenPermissionPolicyFields({
   values,
   onChange,
@@ -4527,7 +4596,17 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    instructionIntegrityEnabled: "Yes",
+    instructionIntegrityMode: "Review",
+    requireGoalBindingForActions: "Transfer\nSwap\nStake\nBridge\nx402 Payment\nDAO Treasury Payment\nContract Interaction\nDeposit to Vault",
+    requireUserConfirmationForExternalContent: "Yes",
+    allowedSourceDomains: "",
+    blockedSourceDomains: "",
+    externalContentHighRiskAction: "Review",
+    allowParameterChangesAfterGoal: "No",
+    requireParameterChangeReason: "Yes",
     lifecycleControlsEnabled: "Yes",
+
     lifecycleControlMode: "Enforce",
     lifecycleUnavailableAction: "Warn",
     lifecycleRequireIntentId: "Yes",
@@ -4710,7 +4789,17 @@ function PoliciesPage({
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
+    instructionIntegrityEnabled: "Yes",
+    instructionIntegrityMode: "Review",
+    requireGoalBindingForActions: "Transfer\nSwap\nStake\nBridge\nx402 Payment\nDAO Treasury Payment\nContract Interaction\nDeposit to Vault",
+    requireUserConfirmationForExternalContent: "Yes",
+    allowedSourceDomains: "",
+    blockedSourceDomains: "",
+    externalContentHighRiskAction: "Review",
+    allowParameterChangesAfterGoal: "No",
+    requireParameterChangeReason: "Yes",
     lifecycleControlsEnabled: "Yes",
+
     lifecycleControlMode: "Enforce",
     lifecycleUnavailableAction: "Warn",
     lifecycleRequireIntentId: "Yes",
@@ -4904,6 +4993,15 @@ function PoliciesPage({
         approvalEmergencyGroupIds: organizationalFields.emergencyGroupIds,
         approvalExecutionDelaySeconds: Math.max(0, Number(form.approvalExecutionDelaySeconds) || 0),
         approvalExecutionWindowSeconds: Math.max(0, Number(form.approvalExecutionWindowSeconds) || 0),
+        instructionIntegrityEnabled: form.instructionIntegrityEnabled !== "No",
+        instructionIntegrityMode: form.instructionIntegrityMode,
+        requireGoalBindingForActions: form.requireGoalBindingForActions.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireUserConfirmationForExternalContent: form.requireUserConfirmationForExternalContent !== "No",
+        allowedSourceDomains: form.allowedSourceDomains.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        blockedSourceDomains: form.blockedSourceDomains.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        externalContentHighRiskAction: form.externalContentHighRiskAction,
+        allowParameterChangesAfterGoal: form.allowParameterChangesAfterGoal === "Yes",
+        requireParameterChangeReason: form.requireParameterChangeReason !== "No",
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -5076,7 +5174,17 @@ function PoliciesPage({
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
-      lifecycleControlsEnabled: "Yes",
+      instructionIntegrityEnabled: "Yes",
+    instructionIntegrityMode: "Review",
+    requireGoalBindingForActions: "Transfer\nSwap\nStake\nBridge\nx402 Payment\nDAO Treasury Payment\nContract Interaction\nDeposit to Vault",
+    requireUserConfirmationForExternalContent: "Yes",
+    allowedSourceDomains: "",
+    blockedSourceDomains: "",
+    externalContentHighRiskAction: "Review",
+    allowParameterChangesAfterGoal: "No",
+    requireParameterChangeReason: "Yes",
+    lifecycleControlsEnabled: "Yes",
+
       lifecycleControlMode: "Enforce",
       lifecycleUnavailableAction: "Warn",
       lifecycleRequireIntentId: "Yes",
@@ -5253,6 +5361,15 @@ function PoliciesPage({
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
+      instructionIntegrityEnabled: policy.structuredRules?.instructionIntegrityEnabled === true ? "Yes" : "No",
+      instructionIntegrityMode: String(policy.structuredRules?.instructionIntegrityMode || "Review"),
+      requireGoalBindingForActions: Array.isArray(policy.structuredRules?.requireGoalBindingForActions) ? policy.structuredRules.requireGoalBindingForActions.join("\n") : "Transfer\nSwap\nStake\nBridge\nx402 Payment\nDAO Treasury Payment\nContract Interaction\nDeposit to Vault",
+      requireUserConfirmationForExternalContent: policy.structuredRules?.requireUserConfirmationForExternalContent === false ? "No" : "Yes",
+      allowedSourceDomains: Array.isArray(policy.structuredRules?.allowedSourceDomains) ? policy.structuredRules.allowedSourceDomains.join("\n") : "",
+      blockedSourceDomains: Array.isArray(policy.structuredRules?.blockedSourceDomains) ? policy.structuredRules.blockedSourceDomains.join("\n") : "",
+      externalContentHighRiskAction: String(policy.structuredRules?.externalContentHighRiskAction || "Review"),
+      allowParameterChangesAfterGoal: policy.structuredRules?.allowParameterChangesAfterGoal === true ? "Yes" : "No",
+      requireParameterChangeReason: policy.structuredRules?.requireParameterChangeReason === false ? "No" : "Yes",
       lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
       lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
       lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
@@ -5448,6 +5565,15 @@ function PoliciesPage({
         approvalEmergencyGroupIds: organizationalFields.emergencyGroupIds,
         approvalExecutionDelaySeconds: Math.max(0, Number(editForm.approvalExecutionDelaySeconds) || 0),
         approvalExecutionWindowSeconds: Math.max(0, Number(editForm.approvalExecutionWindowSeconds) || 0),
+        instructionIntegrityEnabled: editForm.instructionIntegrityEnabled !== "No",
+        instructionIntegrityMode: editForm.instructionIntegrityMode,
+        requireGoalBindingForActions: editForm.requireGoalBindingForActions.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireUserConfirmationForExternalContent: editForm.requireUserConfirmationForExternalContent !== "No",
+        allowedSourceDomains: editForm.allowedSourceDomains.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        blockedSourceDomains: editForm.blockedSourceDomains.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        externalContentHighRiskAction: editForm.externalContentHighRiskAction,
+        allowParameterChangesAfterGoal: editForm.allowParameterChangesAfterGoal === "Yes",
+        requireParameterChangeReason: editForm.requireParameterChangeReason !== "No",
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -5842,6 +5968,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+            <InstructionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -6131,6 +6258,7 @@ function PoliciesPage({
                 <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
               </div>
             </div>
+                <InstructionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -8046,6 +8174,49 @@ function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
 }
 
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
+  "Instruction integrity — trusted goal": (agent, walletAddress, policy) => {
+    const approvedWallet = firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT;
+    return {
+      source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+      goal: "Execute a goal-bound transfer from a trusted user instruction",
+      reason: "Demonstrate stable goal binding, trusted provenance, and unchanged protected execution parameters.",
+      action: {
+        type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet, targetType: "Wallet Address",
+        instructionIntegrity: {
+          goalId: `goal:trusted-transfer-${Date.now()}`, originalUserGoalHash: "1".repeat(64), initiatedBy: "user", intentSource: "user",
+          sourceDomains: [], externalContentUsed: false, userConfirmed: true, sourceTrustLevel: "trusted",
+          originalPermissionScopes: ["wallet:transfer"], currentPermissionScopes: ["wallet:transfer"],
+        },
+        preflight: playgroundPreflight(),
+      },
+    };
+  },
+  "Instruction integrity — webpage changed destination": (agent, walletAddress) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Detect an external webpage changing the protected transfer destination",
+    reason: "The original parameter hash intentionally differs and no independent user confirmation is supplied.",
+    action: {
+      type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_DEMO_UNAPPROVED_RECIPIENT, targetType: "Wallet Address",
+      instructionIntegrity: { goalId: "goal:web-destination-change", originalUserGoalHash: "2".repeat(64), initiatedBy: "external-content", intentSource: "webpage", sourceDomains: ["untrusted.example"], externalContentUsed: true, userConfirmed: false, sourceTrustLevel: "untrusted", originalParameterHash: "3".repeat(64), parameterChangeReason: "The webpage supplied a different destination." },
+      preflight: playgroundPreflight(),
+    },
+  }),
+  "Instruction integrity — tool expanded scope": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Prevent a tool result from expanding its own approved permission scope",
+    reason: "The current tool scopes intentionally add treasury execution beyond the original wallet-read scope.",
+    action: {
+      type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address",
+      instructionIntegrity: { goalId: "goal:tool-scope-expansion", originalUserGoalHash: "4".repeat(64), initiatedBy: "tool", intentSource: "tool-output", toolName: "treasury-helper", toolServer: "approved-mcp", sourceDomains: [], externalContentUsed: false, userConfirmed: false, sourceTrustLevel: "trusted", originalPermissionScopes: ["wallet:read"], currentPermissionScopes: ["wallet:read", "treasury:execute"] },
+      preflight: playgroundPreflight(),
+    },
+  }),
+  "Instruction integrity — missing goal binding": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Confirm sensitive execution without stable goal evidence requires review",
+    reason: "Provenance is supplied, but goalId and originalUserGoalHash are intentionally omitted.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", instructionIntegrity: { initiatedBy: "user", intentSource: "user", sourceDomains: [], externalContentUsed: false, userConfirmed: true, sourceTrustLevel: "trusted" }, preflight: playgroundPreflight() },
+  }),
   "Fresh lifecycle-bound transfer": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy);
     return {
@@ -9150,6 +9321,7 @@ function SettingsPage({
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["Emergency Controls Status", `${api.baseUrl}/api/emergency-controls/status`],
+    ["Instruction Integrity Status", `${api.baseUrl}/api/instruction-integrity/status`],
     ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],

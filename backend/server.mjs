@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.9.0",
+        version: "2.0.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -190,6 +190,7 @@ const server = createServer(async (req, res) => {
         emergencyControls: { status: "live", scopedEnforcement: true, automaticTriggers: true, expiry: true, authorizedResume: true, approvalGatedResume: true },
         tokenPermissionControls: { status: "live", classification: true, spenderPolicy: true, boundedAuthority: true, permitReplayProtection: true },
         privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
+        instructionIntegrity: { status: "live", goalBinding: true, sourceProvenance: true, parameterBinding: true, externalContentConfirmation: true, permissionScopeContainment: true },
 
         contractUpgradeControls: {
           status: "Live",
@@ -321,6 +322,38 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/emergency-controls/status") {
       const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
       return send(res, 200, { ok: true, emergencyControls: await store.emergencyControlsStatus(walletAddress) });
+    }
+
+    if (route === "GET /api/instruction-integrity/status") {
+      return send(res, 200, {
+        ok: true,
+        instructionIntegrity: {
+          status: "live",
+          protectionArea: "Agent Trust & Access",
+          control: "Instruction Integrity",
+          stableGoalBinding: true,
+          originalUserGoalHash: true,
+          deterministicProtectedParameterFingerprint: true,
+          sourceDomainPolicy: true,
+          externalContentConfirmation: true,
+          blockedSourceEnforcement: true,
+          x402SelfAuthorizationPrevention: true,
+          toolPermissionScopeContainment: true,
+          policyFields: {
+            enabled: "structuredRules.instructionIntegrityEnabled",
+            mode: "structuredRules.instructionIntegrityMode: Observe | Review | Enforce",
+            goalActions: "structuredRules.requireGoalBindingForActions",
+            externalConfirmation: "structuredRules.requireUserConfirmationForExternalContent",
+            allowedDomains: "structuredRules.allowedSourceDomains",
+            blockedDomains: "structuredRules.blockedSourceDomains",
+            highRiskAction: "structuredRules.externalContentHighRiskAction: Warn | Review | Block",
+            parameterChanges: "structuredRules.allowParameterChangesAfterGoal",
+            changeReason: "structuredRules.requireParameterChangeReason"
+          },
+          limitation: "Magen3 verifies supplied provenance and exact deterministic bindings. It does not claim to detect every prompt-injection, social-engineering, or semantic-manipulation attack.",
+          securityBoundary: "Only unsigned provenance metadata and hashes are accepted. Private keys, wallet signatures, raw signed transactions, and secret prompt contents are not required."
+        }
+      });
     }
 
     if (route === "GET /api/token-permission-controls/status") {
@@ -488,7 +521,7 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
+          liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
           foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
@@ -541,6 +574,23 @@ const server = createServer(async (req, res) => {
             entryPoint: "Required for contract-call actions",
             contractVersion: "Optional positive integer for Package Hash calls",
             chainName: process.env.CASPER_CHAIN_NAME || "casper-test",
+            instructionIntegrity: {
+              goalId: "Stable identifier for the originating user goal",
+              originalUserGoalHash: "SHA-256 hash of the original user goal; do not send private prompt contents",
+              initiatedBy: "user | agent | tool | external-content | system",
+              intentSource: "user | webpage | email | document | tool-output | system",
+              toolName: "Optional approved tool name",
+              toolServer: "Optional tool or MCP server identifier",
+              sourceDomains: ["trusted.example"],
+              externalContentUsed: false,
+              userConfirmed: true,
+              sourceTrustLevel: "trusted | verified | untrusted | unknown",
+              parameterChangeReason: "Required when protected parameters changed and policy permits changes",
+              originalParameterHash: "SHA-256 fingerprint captured at original goal binding",
+              currentParameterHash: "Optional client-computed SHA-256 fingerprint; server recomputes and verifies it",
+              originalPermissionScopes: ["read"],
+              currentPermissionScopes: ["read"]
+            },
             preflight: {
               paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
               gasPriceTolerance: "Optional positive integer for Casper 2.x transaction construction",
@@ -1017,6 +1067,7 @@ const server = createServer(async (req, res) => {
           privilegedActionControlsContext: "Classification source, target, protected parameters, administrator or implementation policy, fingerprint, review requirement, and action-specific quorum evidence",
           contractUpgradeSafetyContext: "Current/proposed implementation, code hashes, administrator authorization, upgrade delay, exact fingerprint, and approval quorum evidence",
           contractArgumentPoliciesContext: "Exact contract and entry point, matching rule, evaluated arguments, deterministic violations, and canonical runtime-argument fingerprint",
+          instructionIntegrityContext: "Goal binding, source provenance, protected-parameter fingerprints, external-content confirmation, permission scopes, deterministic violations, and explicit control limitations",
           emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
           emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
           emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],

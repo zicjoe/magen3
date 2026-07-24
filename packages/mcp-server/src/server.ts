@@ -46,6 +46,23 @@ const actionSchema = z.object({
     sourceConfirmations: z.number().int().nonnegative().optional(),
     destinationConfirmations: z.number().int().nonnegative().optional(),
   }).optional(),
+  instructionIntegrity: z.object({
+    goalId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/).optional(),
+    originalUserGoalHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    initiatedBy: z.string().min(1).max(128).optional(),
+    intentSource: z.string().min(1).max(128).optional(),
+    toolName: z.string().min(1).max(128).optional(),
+    toolServer: z.string().min(1).max(256).optional(),
+    sourceDomains: z.array(z.string().min(1).max(253)).max(32).optional(),
+    externalContentUsed: z.boolean().optional(),
+    userConfirmed: z.boolean().optional(),
+    sourceTrustLevel: z.string().min(1).max(64).optional(),
+    parameterChangeReason: z.string().min(1).max(500).optional(),
+    originalParameterHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    currentParameterHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    originalPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
+    currentPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
+  }).strict().optional(),
   tokenPermission: z.object({
     permissionType: z.enum([
       "Fungible Token Approval", "Allowance Increase", "Allowance Decrease", "Allowance Reset",
@@ -202,7 +219,7 @@ export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
     { name: "magen3-execution-firewall", version: "0.4.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Emergency Circuit Breaker, Token Permission Controls, Privileged Action Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Agent Instruction Integrity, Emergency Circuit Breaker, Token Permission Controls, Privileged Action Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

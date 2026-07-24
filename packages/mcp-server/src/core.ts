@@ -12,6 +12,7 @@ export interface Magen3McpConfig {
 export type ToolTextResult = CallToolResult;
 
 export const INTENT_SCHEMA_DESCRIPTION = {
+  instructionIntegrity: "For sensitive or externally influenced execution, include action.instructionIntegrity with a stable goal ID, original goal hash, source provenance, protected-parameter hashes, confirmation state, and tool permission scopes. Magen3 validates these deterministically; it does not claim to detect every prompt-injection attack.",
   emergencyCircuitBreaker: "Magen3 evaluates active scoped pause state before authorization and again before execution confirmation. A Blocked or Review Required pause must never be bypassed. Pause creation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP execution tool.",
   executionIntegrity: "For exact-once authorization, include action.lifecycle with a unique intent ID, idempotency key, creation time, expiry, optional sequence, retry/replacement reference, and optional client fingerprint. Magen3 always computes its own canonical fingerprint.",
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
@@ -60,6 +61,23 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       quoteExpiresAt: "ISO-8601 route expiry time",
       sourceConfirmations: "Optional source confirmation requirement",
       destinationConfirmations: "Optional destination confirmation requirement",
+    },
+    instructionIntegrity: {
+      goalId: "Stable identifier for the original human or application goal",
+      originalUserGoalHash: "SHA-256 hash of the original goal text or canonical goal object",
+      initiatedBy: "Originator category such as user, scheduler, service, or tool",
+      intentSource: "Source category such as user, webpage, email, document, tool-output, or scheduler",
+      toolName: "Optional tool name",
+      toolServer: "Optional MCP or tool-server identifier",
+      sourceDomains: "Normalized domains whose content influenced the intent",
+      externalContentUsed: "Whether external content contributed to the current parameters",
+      userConfirmed: "Whether the user explicitly confirmed the externally derived execution context",
+      sourceTrustLevel: "trusted, review, untrusted, unknown, or another documented adapter label",
+      parameterChangeReason: "Reason protected parameters changed after the original goal",
+      originalParameterHash: "Optional SHA-256 fingerprint of original protected parameters",
+      currentParameterHash: "Optional adapter-computed SHA-256 fingerprint; Magen3 independently computes its own",
+      originalPermissionScopes: "Permission scopes approved when the goal was established",
+      currentPermissionScopes: "Permission scopes requested by the current tool execution",
     },
     tokenPermission: {
       permissionType: "Explicit supported authority classification; omit tokenPermission for generic contract calls",
@@ -212,6 +230,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         ok: true,
         schema: INTENT_SCHEMA_DESCRIPTION,
         decisions: ["Allowed", "Blocked", "Review Required"],
+        instructionIntegrityBoundary: "Instruction Integrity verifies adapter-supplied provenance, stable goal binding, source-domain policy, protected-parameter fingerprints, user confirmation, and tool-scope containment. It does not read private prompts, authorize external content, or claim to detect every prompt-injection attack.",
         threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",

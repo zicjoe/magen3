@@ -207,3 +207,32 @@ For proxy or implementation changes, pass unsigned `action.contractUpgrade` meta
 ## Contract Argument Policies
 
 Put public unsigned contract arguments in `action.preflight.runtimeArgs`. When the active policy enables Contract Argument Policies, Magen3 matches the exact contract and entry point, then enforces required/allowed names, type rules, numeric ranges, address allowlists or blocklists, boolean restrictions, and enum values. The response may include `contractArgumentPoliciesContext` with the matching rule ID and canonical parameter fingerprint. Never place private keys, signatures, wallet approvals, raw signed transactions, or secret application data in `runtimeArgs`.
+
+## Agent Instruction Integrity
+
+For sensitive or externally influenced execution, include minimal deterministic provenance under `action.instructionIntegrity`:
+
+```ts
+await magen3.checkIntent({
+  executionWalletAddress,
+  action: {
+    type: "Transfer",
+    amount: 5,
+    target: recipient,
+    instructionIntegrity: {
+      goalId: "goal:transfer-001",
+      originalUserGoalHash: sha256(originalGoal),
+      initiatedBy: "user",
+      intentSource: "user",
+      sourceDomains: [],
+      externalContentUsed: false,
+      userConfirmed: true,
+      sourceTrustLevel: "trusted",
+      originalPermissionScopes: ["wallet:transfer"],
+      currentPermissionScopes: ["wallet:transfer"],
+    },
+  },
+});
+```
+
+Submit hashes and minimal source labels only. Do not include private prompts, raw emails/documents, API keys, wallet secrets, or signatures. Magen3 verifies supplied provenance and exact parameter bindings; it does not claim to detect every prompt-injection attack.

@@ -37,6 +37,15 @@ test("security coverage reaches 100 only when every configured protection check 
         lifecycleRequireCreatedAt: true,
         lifecycleRequireExpiry: true,
         lifecyclePreventDuplicateFingerprint: true,
+        instructionIntegrityEnabled: true,
+        instructionIntegrityMode: "Review",
+        requireGoalBindingForActions: ["Transfer", "Swap", "Contract Interaction"],
+        requireUserConfirmationForExternalContent: true,
+        allowedSourceDomains: ["trusted.example"],
+        blockedSourceDomains: ["blocked.example"],
+        externalContentHighRiskAction: "Review",
+        allowParameterChangesAfterGoal: false,
+        requireParameterChangeReason: true,
         approvalWorkflowEnabled: true,
         approvalRequiredCount: 1,
         approvalAllowOwnerFallback: true,
@@ -97,6 +106,7 @@ test("security coverage reaches 100 only when every configured protection check 
       timestamp,
       decisionProofStatus: "recorded",
       moduleFindings: [
+        { module: "Agent Instruction Integrity", status: "pass", severity: "info", rule: "Stable goal binding", message: "Goal-bound provenance passed." },
         { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
         { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
@@ -460,4 +470,37 @@ test("Integration Health exposes pending and failed organizational approval stat
   );
   assert.ok(failed.checks.some((check) => check.label === "Organizational approval quorum" && check.status === "attention"));
   assert.notEqual(failed.overall, "Healthy");
+});
+
+
+test("Instruction Integrity coverage requires deterministic configuration and an observed goal-bound pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", executionCapabilities: ["Wallet Management"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp };
+  const policy = {
+    status: "Active",
+    structuredRules: {
+      instructionIntegrityEnabled: true, instructionIntegrityMode: "Review",
+      requireGoalBindingForActions: ["Transfer"], requireUserConfirmationForExternalContent: true,
+      allowedSourceDomains: ["trusted.example"], blockedSourceDomains: ["blocked.example"],
+      externalContentHighRiskAction: "Review", allowParameterChangesAfterGoal: false, requireParameterChangeReason: true,
+    },
+  };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "instruction-integrity").passed, false);
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp, moduleFindings: [{ module: "Agent Instruction Integrity", status: "pass", severity: "info", rule: "Stable goal binding", message: "Goal binding passed." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "instruction-integrity").passed, true);
+});
+
+test("Integration Health surfaces Instruction Integrity violations", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Agent Instruction Integrity", status: "fail", severity: "critical", rule: "Blocked instruction source", message: "Blocked source." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "Instruction Integrity" && check.status === "attention"));
+  assert.notEqual(health.overall, "Healthy");
 });

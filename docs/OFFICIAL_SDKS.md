@@ -151,3 +151,8 @@ Agent SDKs do not create or resume pauses. Those are owner-wallet administrative
 ## Contract Argument Policies
 
 Both official SDKs pass public unsigned contract parameters through `action.preflight.runtimeArgs`. The response may expose `contractArgumentPoliciesContext` with the exact matching rule, parameter fingerprint, evaluated names, and violations. SDK clients must not place private keys, signatures, raw signed transactions, wallet approvals, or secret application data in runtime arguments. See `CONTRACT_ARGUMENT_POLICIES.md`.
+
+
+## Agent Instruction Integrity
+
+Both official SDKs pass `action.instructionIntegrity` through the existing intent envelope. Use stable goal and SHA-256 evidence from a trusted adapter. The SDKs do not generate provenance automatically and do not make prompt-injection claims.

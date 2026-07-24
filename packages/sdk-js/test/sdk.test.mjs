@@ -700,3 +700,45 @@ test("preserves public runtime arguments and Contract Argument Policies response
   assert.equal(response.result.contractArgumentPoliciesContext.entryPoint, "transfer");
   assert.equal(response.result.contractArgumentPoliciesContext.violations.length, 0);
 });
+
+test("preserves Agent Instruction Integrity metadata and response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: {
+          decision: "Allowed", risk: "Low", riskScore: 6, reason: "goal binding passed", recommendedAction: "continue",
+          instructionIntegrityContext: {
+            metadataSupplied: true, enabled: true, mode: "Review", goalId: "goal:transfer-001", intentSource: "user",
+            externalContentUsed: false, userConfirmed: true, currentParameterHash: "c".repeat(64), parametersChanged: false,
+            originalPermissionScopes: ["wallet:transfer"], currentPermissionScopes: ["wallet:transfer"], violations: [],
+          },
+        },
+        gatewayRequest: {}, auditLog: {}, nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: {
+      type: "Transfer", amount: 5, target: `01${"2".repeat(64)}`,
+      instructionIntegrity: {
+        goalId: "goal:transfer-001", originalUserGoalHash: "a".repeat(64), initiatedBy: "user", intentSource: "user",
+        sourceDomains: [], externalContentUsed: false, userConfirmed: true, sourceTrustLevel: "trusted",
+        originalPermissionScopes: ["wallet:transfer"], currentPermissionScopes: ["wallet:transfer"],
+      },
+    },
+  });
+
+  assert.equal(captured.action.instructionIntegrity.goalId, "goal:transfer-001");
+  assert.deepEqual(captured.action.instructionIntegrity.currentPermissionScopes, ["wallet:transfer"]);
+  assert.equal(response.result.instructionIntegrityContext.parametersChanged, false);
+  assert.deepEqual(response.result.instructionIntegrityContext.violations, []);
+});

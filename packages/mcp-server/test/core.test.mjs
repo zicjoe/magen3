@@ -225,3 +225,17 @@ test("getApproval names missing organizational roles while pending", async () =>
   assert.match(result.content[0].text, /Security: 1 remaining/i);
   assert.match(result.content[0].text, /Do not sign/i);
 });
+
+test("intent schema exposes the Agent Instruction Integrity security boundary", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.instructionIntegrity, /stable goal ID/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.instructionIntegrity.originalUserGoalHash, /SHA-256/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.instructionIntegrity.currentPermissionScopes, /current tool execution/i);
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); }, getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Instruction Integrity verifies adapter-supplied provenance/i);
+  assert.match(result.content[0].text, /does not.*detect every prompt-injection attack/i);
+});

@@ -99,10 +99,10 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 
 | Protection area | Live controls | Foundation controls | Planned controls |
 | --- | --- | --- | --- |
-| Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
-| Policy & Approval Controls | Deterministic policy enforcement; review thresholds; Emergency Circuit Breaker | Human approval and quorum | Cryptographic reviewer signatures; organizational approval escalation |
+| Agent Trust & Access | Agent authentication; credential rotation and revocation; Agent Instruction Integrity | — | Tool and MCP integrity; delegation and session permissions |
+| Policy & Approval Controls | Deterministic policy enforcement; review thresholds; Emergency Circuit Breaker; Approval Escalation & Organizational Quorum | Human approval and quorum; Cryptographic reviewer signatures | — |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; contract argument policies |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
 | Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is now complete: **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, **Approval Escalation & Organizational Quorum**, **Contract Upgrade Safety**, and **Contract Argument Policies** are Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone begins Phase 2: **Agent Instruction Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 has started: **Agent Instruction Integrity** is now Live alongside Token Approval & Permit Safety, Privileged Contract Action Classification, Emergency Circuit Breaker, Approval Escalation & Organizational Quorum, Contract Upgrade Safety, and Contract Argument Policies. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Tool & MCP Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -990,3 +990,8 @@ Contract Upgrade Safety is Live under Agent Shield → Contract & Permission Saf
 ## Contract Argument Policies
 
 Contract Argument Policies is Live under Agent Shield → Contract & Permission Safety. It matches the exact contract and entry point, then enforces required and allowed argument names, value types, numeric ranges, address allowlists/blocklists, boolean restrictions, and enum values before wallet signing. Magen3 returns a canonical runtime-argument fingerprint, structured findings, and exact Human Approval binding evidence. See `docs/CONTRACT_ARGUMENT_POLICIES.md`.
+
+
+## Agent Instruction Integrity
+
+Agent Instruction Integrity is Live under Agent Shield → Agent Trust & Access. Sensitive actions may include `action.instructionIntegrity` with a stable goal ID, original user-goal hash, source provenance, confirmation state, protected-parameter hashes, and original/current tool permission scopes. Magen3 deterministically checks goal binding, source-domain policy, parameter changes, external-content confirmation, x402 self-authorization, and tool scope expansion before signing. It stores hashes and minimal provenance evidence—not private prompts or document contents—and does not claim to detect every prompt-injection attack. See `docs/AGENT_INSTRUCTION_INTEGRITY.md`.

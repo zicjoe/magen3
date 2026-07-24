@@ -25,7 +25,7 @@ export const PROTECTION_MODULES = [
     controls: [
       { id: "agent-authentication", name: "Agent authentication", status: "Live" },
       { id: "credential-lifecycle", name: "Credential rotation and revocation", status: "Live" },
-      { id: "instruction-provenance", name: "Instruction provenance", status: "Planned" },
+      { id: "instruction-integrity", name: "Instruction Integrity", status: "Live" },
       { id: "tool-mcp-integrity", name: "Tool and MCP integrity", status: "Planned" },
       { id: "delegation-session-keys", name: "Delegation and session permissions", status: "Planned" },
     ],

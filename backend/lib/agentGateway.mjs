@@ -233,6 +233,17 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.lifecycle && typeof body.lifecycle === "object"
         ? body.lifecycle
         : {};
+  const instructionIntegrity = action.instructionIntegrity && typeof action.instructionIntegrity === "object"
+    ? action.instructionIntegrity
+    : action.instruction_integrity && typeof action.instruction_integrity === "object"
+      ? action.instruction_integrity
+      : action.provenance && typeof action.provenance === "object"
+        ? action.provenance
+        : body.instructionIntegrity && typeof body.instructionIntegrity === "object"
+          ? body.instructionIntegrity
+          : body.provenance && typeof body.provenance === "object"
+            ? body.provenance
+            : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -393,6 +404,22 @@ export function normalizeAgentGatewayIntent(body = {}) {
     contractUpgradeRequestedAt: cleanString(contractUpgrade.requestedAt || contractUpgrade.requested_at || "", ""),
     contractUpgradeExecuteAfter: cleanString(contractUpgrade.executeAfter || contractUpgrade.execute_after || "", ""),
     contractUpgradeNetwork: cleanString(contractUpgrade.network || contractUpgrade.chainName || contractUpgrade.chain_name || action.chainName || body.chainName || "", ""),
+    instructionIntegrityMetadataSupplied: Object.keys(instructionIntegrity).length > 0,
+    instructionGoalId: cleanString(instructionIntegrity.goalId || instructionIntegrity.goal_id || body.goalId || body.goal_id || "", ""),
+    instructionOriginalUserGoalHash: cleanString(instructionIntegrity.originalUserGoalHash || instructionIntegrity.original_user_goal_hash || instructionIntegrity.goalHash || instructionIntegrity.goal_hash || "", ""),
+    instructionInitiatedBy: cleanString(instructionIntegrity.initiatedBy || instructionIntegrity.initiated_by || "", ""),
+    instructionIntentSource: cleanString(instructionIntegrity.intentSource || instructionIntegrity.intent_source || instructionIntegrity.source || "", ""),
+    instructionToolName: cleanString(instructionIntegrity.toolName || instructionIntegrity.tool_name || "", ""),
+    instructionToolServer: cleanString(instructionIntegrity.toolServer || instructionIntegrity.tool_server || instructionIntegrity.mcpServer || instructionIntegrity.mcp_server || "", ""),
+    instructionSourceDomains: Array.isArray(instructionIntegrity.sourceDomains || instructionIntegrity.source_domains) ? (instructionIntegrity.sourceDomains || instructionIntegrity.source_domains).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
+    instructionExternalContentUsed: Boolean(instructionIntegrity.externalContentUsed === true || instructionIntegrity.external_content_used === true || String(instructionIntegrity.externalContentUsed || instructionIntegrity.external_content_used || "").toLowerCase() === "true"),
+    instructionUserConfirmed: Boolean(instructionIntegrity.userConfirmed === true || instructionIntegrity.user_confirmed === true || String(instructionIntegrity.userConfirmed || instructionIntegrity.user_confirmed || "").toLowerCase() === "true"),
+    instructionSourceTrustLevel: cleanString(instructionIntegrity.sourceTrustLevel || instructionIntegrity.source_trust_level || "", ""),
+    instructionParameterChangeReason: cleanString(instructionIntegrity.parameterChangeReason || instructionIntegrity.parameter_change_reason || "", ""),
+    instructionOriginalParameterHash: cleanString(instructionIntegrity.originalParameterHash || instructionIntegrity.original_parameter_hash || "", ""),
+    instructionCurrentParameterHash: cleanString(instructionIntegrity.currentParameterHash || instructionIntegrity.current_parameter_hash || "", ""),
+    instructionOriginalPermissionScopes: Array.isArray(instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes) ? (instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
+    instructionCurrentPermissionScopes: Array.isArray(instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes) ? (instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

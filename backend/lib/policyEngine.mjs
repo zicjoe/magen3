@@ -13,6 +13,7 @@ import { evaluatePrivilegedActionControls } from "./privilegedActionControls.mjs
 import { evaluateContractUpgradeSafety } from "./contractUpgradeSafety.mjs";
 import { evaluateContractArgumentPolicies } from "./contractArgumentPolicies.mjs";
 import { evaluateEmergencyControls } from "./emergencyControls.mjs";
+import { evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -104,6 +105,7 @@ function withStructuredResult({
   privilegedActionControlsContext = null,
   contractUpgradeSafetyContext = null,
   contractArgumentPoliciesContext = null,
+  instructionIntegrityContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -133,6 +135,7 @@ function withStructuredResult({
     privilegedActionControlsContext,
     contractUpgradeSafetyContext,
     contractArgumentPoliciesContext,
+    instructionIntegrityContext,
     emergencyControlsContext,
   };
 }
@@ -264,6 +267,33 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     });
   }
 
+  const instructionIntegrityResult = evaluateInstructionIntegrity({ request, policy });
+  checksPassed.push(...instructionIntegrityResult.checksPassed);
+  checksFailed.push(...instructionIntegrityResult.checksFailed);
+  moduleFindings.push(...instructionIntegrityResult.findings);
+  if (instructionIntegrityResult.hardBlock || instructionIntegrityResult.needsReview) {
+    const decision = instructionIntegrityResult.hardBlock ? "Blocked" : "Review Required";
+    return withStructuredResult({
+      decision,
+      risk: instructionIntegrityResult.hardBlock ? "Critical" : "High",
+      riskScore: instructionIntegrityResult.hardBlock ? 96 : 74,
+      checksPassed,
+      checksFailed,
+      reason: instructionIntegrityResult.hardBlock
+        ? "The request failed deterministic instruction provenance, goal binding, source, parameter, or permission-scope integrity checks."
+        : "The request requires authorized review because its instruction provenance or protected-parameter binding is incomplete or high risk.",
+      recommendedAction: instructionIntegrityResult.hardBlock
+        ? "Do not execute. Reconstruct the intent from a trusted source and bind it to a stable user goal before retrying."
+        : "Pause execution and obtain exact-bound human approval or resubmit complete trusted provenance metadata.",
+      moduleFindings,
+      timestamp,
+      agent,
+      policy,
+      instructionIntegrityContext: instructionIntegrityResult.context,
+      emergencyControlsContext: emergencyControlsResult.context,
+    });
+  }
+
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
@@ -373,8 +403,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -414,6 +444,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     privilegedActionControlsContext: privilegedActionControlsResult.context,
     contractUpgradeSafetyContext: contractUpgradeSafetyResult.context,
     contractArgumentPoliciesContext: contractArgumentPoliciesResult.context,
+    instructionIntegrityContext: instructionIntegrityResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }

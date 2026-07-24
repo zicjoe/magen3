@@ -128,7 +128,7 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
     controls: [
       { id: "agent-authentication", name: "Agent authentication", description: "Agent ID, API-key hash, active status, and ownership checks.", status: "Live", configurable: true },
       { id: "credential-lifecycle", name: "Credential rotation and revocation", description: "One-time key issuance, rotation, preview, and revocation controls.", status: "Live", configurable: true },
-      { id: "instruction-provenance", name: "Instruction provenance", description: "Bind high-risk execution to an originating user goal and trusted source context.", status: "Planned", configurable: true },
+      { id: "instruction-integrity", name: "Instruction Integrity", description: "Bind high-risk execution to a stable user goal, trusted provenance, exact protected parameters, and contained tool permissions.", status: "Live", configurable: true },
       { id: "tool-mcp-integrity", name: "Tool and MCP integrity", description: "Approved server, tool manifest, schema hash, version, and permission-scope checks.", status: "Planned", configurable: true },
       { id: "delegation-session-keys", name: "Delegation and session permissions", description: "Validate temporary, scoped, revocable wallet authority before use.", status: "Planned", configurable: true },
     ],
@@ -341,6 +341,24 @@ export function calculateSecurityCoverage(
       finding.module === "Execution Integrity" &&
       finding.rule === "Intent ID replay prevention" &&
       finding.status === "pass"));
+  const instructionIntegrityEnabled = policy?.structuredRules?.instructionIntegrityEnabled === true;
+  const instructionIntegrityMode = typeof policy?.structuredRules?.instructionIntegrityMode === "string"
+    ? policy.structuredRules.instructionIntegrityMode
+    : "";
+  const instructionGoalActions = Array.isArray(policy?.structuredRules?.requireGoalBindingForActions)
+    ? policy.structuredRules.requireGoalBindingForActions as string[]
+    : [];
+  const instructionIntegrityConfigured = instructionIntegrityEnabled &&
+    ["Observe", "Review", "Enforce"].includes(instructionIntegrityMode) &&
+    instructionGoalActions.length > 0 &&
+    ["Warn", "Review", "Block"].includes(String(policy?.structuredRules?.externalContentHighRiskAction || "")) &&
+    Array.isArray(policy?.structuredRules?.allowedSourceDomains) &&
+    Array.isArray(policy?.structuredRules?.blockedSourceDomains);
+  const instructionIntegrityOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Agent Instruction Integrity" &&
+      ["Valid instruction provenance", "Stable goal binding", "Protected parameter binding"].includes(finding.rule) &&
+      finding.status === "pass"));
   const threatIntelligenceMode = typeof policy?.structuredRules?.threatIntelligenceMode === "string"
     ? policy.structuredRules.threatIntelligenceMode
     : "";
@@ -534,6 +552,7 @@ export function calculateSecurityCoverage(
     { id: "gateway-activity", label: "Recent live protection activity", weight: 3, passed: recentGateway && requiredProtectionObserved, detail: recentGateway && requiredProtectionObserved ? `${contractRelevant ? "Contract Validation" : "Wallet Validation"} was evaluated on ${new Date(lastIntent).toLocaleString()}.` : lastIntent ? `A recent intent exists, but no ${contractRelevant ? "Contract Validation" : "Wallet Validation"} finding is visible yet.` : "No gateway request has been received.", recommendation: `Send a valid ${contractRelevant ? "contract" : "wallet"} intent through the Intent Playground to verify live protection.`, page: "intent-playground" },
     { id: "execution-preflight", label: "Execution preflight observed", weight: 5, passed: !executionPreflightRelevant || executionPreflightObserved, detail: !executionPreflightRelevant ? "Not required by the selected capabilities." : executionPreflightObserved ? "Deterministic transaction-construction preflight has been observed. Full stateful simulation remains unavailable." : "No successful Execution Simulation preflight finding is visible yet.", recommendation: "Send an intent with preflight payment, gas, TTL, timestamp, and action-specific bounds through the Intent Playground.", page: "intent-playground" },
     { id: "lifecycle-replay", label: "Lifecycle and replay controls", weight: 6, passed: lifecycleConfigured && lifecycleOperational, detail: lifecycleConfigured ? lifecycleOperational ? `${lifecycleMode} mode is configured and a fresh unique intent ID has passed replay checks.` : `${lifecycleMode} mode is configured, but no successful lifecycle-bound request is visible yet.` : "Intent IDs, idempotency keys, creation time, expiry, and duplicate fingerprint prevention are not fully enabled.", recommendation: lifecycleConfigured ? "Submit the Fresh lifecycle-bound transfer example through the Intent Playground." : "Enable Lifecycle & Replay controls and require unique IDs, idempotency keys, creation time, expiry, and duplicate detection.", page: lifecycleConfigured ? "intent-playground" : "policies" },
+    { id: "instruction-integrity", label: "Instruction Integrity configured", weight: 5, passed: instructionIntegrityConfigured && instructionIntegrityOperational, detail: instructionIntegrityConfigured ? instructionIntegrityOperational ? `${instructionIntegrityMode} mode is configured and a goal-bound provenance check has passed.` : `${instructionIntegrityMode} mode is configured, but no complete Instruction Integrity pass is visible yet.` : "Instruction Integrity needs an explicit mode, goal-bound action list, source-domain policy, and external-content handling.", recommendation: instructionIntegrityConfigured ? "Submit a trusted goal-bound intent through the Intent Playground." : "Enable Instruction Integrity and configure goal binding, source domains, external-content confirmation, parameter-change rules, and high-risk handling.", page: instructionIntegrityConfigured ? "intent-playground" : "policies" },
     { id: "threat-intelligence", label: "Threat intelligence operational", weight: 5, passed: threatIntelligenceConfigured && threatIntelligenceOperational, detail: threatIntelligenceConfigured ? threatIntelligenceOperational ? `${threatIntelligenceMode} mode is configured and a fresh feed check has been observed.` : `${threatIntelligenceMode} mode is configured, but no fresh feed pass is visible yet.` : "Threat Intelligence policy mode is not configured for this policy.", recommendation: threatIntelligenceConfigured ? "Configure a fresh threat feed and submit a wallet or contract intent to verify screening." : "Choose Observe, Review, or Enforce behavior in the policy Threat Intelligence controls.", page: threatIntelligenceConfigured ? "intent-playground" : "policies" },
     { id: "oracle-validation", label: "Oracle validation operational", weight: 5, passed: !oracleRelevant || (oracleConfigured && oracleOperational), detail: !oracleRelevant ? "Not required by the selected capabilities." : oracleConfigured ? oracleOperational ? `${oracleMode} mode is configured and a fresh oracle feed check has been observed.` : `${oracleMode} mode is configured, but no fresh oracle validation pass is visible yet.` : "Oracle Validation policy mode is not configured for this policy.", recommendation: oracleConfigured ? "Configure a fresh oracle feed and submit a priced Swap example through the Intent Playground." : "Configure Oracle Validation limits in the active policy.", page: oracleConfigured ? "intent-playground" : "policies" },
     { id: "bridge-controls", label: "Bridge controls configured", weight: 5, passed: !bridgeRelevant || (bridgeConfigured && bridgeOperational), detail: !bridgeRelevant ? "Not required by the selected capabilities." : bridgeConfigured ? bridgeOperational ? `${bridgeMode} mode is configured and a complete bridge route has been evaluated.` : `${bridgeMode} mode is configured, but no complete Bridge Controls pass is visible yet.` : "Bridge provider, chain, and asset allowlists are not fully configured.", recommendation: bridgeConfigured ? "Submit a complete Bridge example through the Intent Playground to verify route controls." : "Configure approved bridge providers, chains, assets, fees, quote age, and finality requirements in the policy.", page: bridgeConfigured ? "intent-playground" : "policies" },
@@ -563,6 +582,11 @@ export function deriveIntegrationHealth(
 ) {
   const latest = logs[0];
   const proofState = latest?.decisionProofStatus || "not observed";
+  const instructionFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Agent Instruction Integrity") || [];
+  const instructionFailed = instructionFindings.some((finding) => finding.status === "fail");
+  const instructionWarned = instructionFindings.some((finding) => finding.status === "warning" || finding.status === "unavailable");
+  const instructionPassed = instructionFindings.some((finding) => finding.status === "pass");
+  const instructionHealth = instructionFindings.length === 0 ? "unknown" : instructionFailed || instructionWarned ? "attention" : instructionPassed ? "healthy" : "unknown";
   const walletFindings = latest?.moduleFindings?.filter((finding) => finding.module === "Wallet Validation") || [];
   const walletFailed = walletFindings.some((finding) => finding.status === "fail");
   const walletWarned = walletFindings.some((finding) => finding.status === "warning" || finding.status === "unavailable");
@@ -659,6 +683,7 @@ export function deriveIntegrationHealth(
     { label: "Emergency Circuit Breaker", status: emergencyHealth, detail: activeEmergencyPauses.length > 0 ? `${activeEmergencyPauses.length} active emergency pause${activeEmergencyPauses.length === 1 ? "" : "s"} require attention.` : emergencyFailed || emergencyWarned ? "The latest request was stopped or escalated by Emergency Controls." : emergencyPassed ? "The Gateway evaluated pause state and no active pause applied." : "No Emergency Circuit Breaker evaluation is visible yet." },
     { label: "Last received intent", status: agent.lastIntentAt || latest ? "observed" : "unknown", detail: agent.lastIntentAt || latest?.timestamp || "No intent received." },
     { label: "Last decision", status: latest ? "observed" : "unknown", detail: latest?.decision || "No decision recorded." },
+    { label: "Instruction Integrity", status: instructionHealth, detail: instructionFindings.length === 0 ? "No Instruction Integrity finding is available for the latest request." : instructionFailed ? "The latest request failed provenance, goal binding, source-domain, protected-parameter, self-authorization, or permission-scope checks." : instructionWarned ? "The latest request requires review because provenance or confirmation is incomplete or high risk." : "The latest request passed its applicable deterministic provenance and goal-binding checks." },
     { label: "Wallet Validation", status: walletHealth, detail: walletFindings.length === 0 ? "No Wallet Validation finding is available yet." : walletFailed ? "The latest request failed one or more wallet checks." : walletWarned ? "The latest request needs attention before execution." : "The latest request passed the evaluated wallet checks." },
     { label: "Contract Validation", status: contractHealth, detail: contractFindings.length === 0 ? "No Contract Validation finding is available for the latest request." : contractFailed ? "The latest request failed one or more contract checks." : contractWarned ? "The latest contract request needs attention before execution." : "The latest request passed the evaluated contract checks." },
     { label: "Execution preflight", status: simulationHealth, detail: simulationFindings.length === 0 ? "No Execution Simulation finding is available for the latest request." : simulationFailed ? "The latest request failed deterministic transaction-construction preflight." : simulationPassed ? "Deterministic preflight was evaluated. Full stateful speculative execution remains unavailable." : "Full stateful simulation is unavailable and no preflight pass was recorded." },

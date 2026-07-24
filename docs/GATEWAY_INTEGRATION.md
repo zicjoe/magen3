@@ -320,3 +320,8 @@ For exact contract and entry-point enforcement, include public unsigned values i
 External agents must stop on Blocked, pause on Review Required, and request wallet signing only when `result.decision === "Allowed"` and `executionApproved === true`. Changing a protected runtime argument after Human Approval changes both the argument fingerprint and the exact-intent approval binding.
 
 See `CONTRACT_ARGUMENT_POLICIES.md` for policy examples and the security boundary.
+
+
+## Agent Instruction Integrity
+
+External agent adapters should capture a stable goal ID and original goal hash before consuming untrusted content. Submit only minimal provenance and protected-parameter hashes. When external content changes amount, destination, asset, contract, network, action, or runtime arguments, provide a reason and independent user confirmation according to policy.

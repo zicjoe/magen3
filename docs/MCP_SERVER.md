@@ -136,3 +136,8 @@ MCP can poll and display the resolved approval tier, named role progress, escala
 ## Contract Argument Policies
 
 The MCP intent schema accepts public unsigned `action.preflight.runtimeArgs`. Magen3, not the model or MCP client, resolves the exact contract-and-entry-point rule and final deterministic decision. MCP can surface the returned rule ID, findings, violations, and argument fingerprint, but it cannot override policy, approve Human Approval, or sign. Never send secret application data or wallet signing material in runtime arguments. See `CONTRACT_ARGUMENT_POLICIES.md`.
+
+
+## Agent Instruction Integrity
+
+The MCP intent schema supports `action.instructionIntegrity`. MCP may submit goal hashes, source labels, confirmation state, and permission scopes, but it cannot treat tool output as self-authorization or expand its own scope. Never include private prompts, tool credentials, or wallet secrets.

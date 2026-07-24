@@ -701,3 +701,8 @@ For a direct contract call, submit public unsigned runtime arguments under `acti
 The result may include `contractArgumentPoliciesContext` with the matching rule ID, evaluated arguments, violations, and canonical `parameterFingerprint`. Human Approval binds the complete normalized intent, including `runtimeArgs`.
 
 Do not submit private keys, mnemonics, wallet signatures, raw signed transactions, wallet approvals, provider credentials, or secret application data. See `CONTRACT_ARGUMENT_POLICIES.md`.
+
+
+## Agent Instruction Integrity
+
+Submit minimal provenance under `action.instructionIntegrity`. Supported fields include `goalId`, `originalUserGoalHash`, `initiatedBy`, `intentSource`, `toolName`, `toolServer`, `sourceDomains`, `externalContentUsed`, `userConfirmed`, `sourceTrustLevel`, `parameterChangeReason`, `originalParameterHash`, `currentParameterHash`, `originalPermissionScopes`, and `currentPermissionScopes`. The response may include `instructionIntegrityContext`. Never send private prompts, email/document bodies, credentials, signatures, or wallet secrets.

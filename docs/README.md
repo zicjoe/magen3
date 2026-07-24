@@ -8,6 +8,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `AGENT_GATEWAY_API.md` — current gateway authentication and request/response contract.
 - `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
+- `AGENT_INSTRUCTION_INTEGRITY.md` — deterministic goal binding, source provenance, protected-parameter fingerprints, external-content confirmation, permission-scope containment, audit evidence, and limitations.
 - `EXECUTION_INTEGRITY.md` — lifecycle metadata, canonical intent fingerprints, replay prevention, idempotency, expiry, sequence, retry/replacement rules, policy controls, and compatibility.
 - `TOKEN_PERMISSION_CONTROLS.md` — deterministic approval and permit classification, spender and amount policy, expiry, fingerprint replay prevention, Human Approval binding, SDK/MCP schema, and security boundary.
 - `HUMAN_APPROVAL_WORKFLOW.md` — exact-intent Review Required approvals, quorum, expiry, separation of duties, agent polling, audit evidence, and current security boundary.

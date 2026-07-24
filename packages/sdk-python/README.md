@@ -191,3 +191,7 @@ Python callers may include unsigned `action["contractUpgrade"]` metadata contain
 ## Contract Argument Policies
 
 Python callers place public unsigned contract arguments in `action["preflight"]["runtimeArgs"]`. The response may include `result["contractArgumentPoliciesContext"]` with the exact contract, entry point, matching rule, evaluated names, violations, and canonical fingerprint. Never place private keys, signatures, wallet approvals, raw signed transactions, or secret application data in runtime arguments.
+
+## Agent Instruction Integrity
+
+Pass minimal provenance under `action["instructionIntegrity"]` for sensitive or externally influenced execution. Include a stable `goalId`, SHA-256 `originalUserGoalHash`, source labels, confirmation state, and original/current permission scopes. Do not send private prompts, raw documents, credentials, wallet secrets, or signatures. The SDK preserves this metadata and the Gateway returns `instructionIntegrityContext`; Magen3 does not claim to detect every prompt-injection attack.

@@ -80,10 +80,10 @@ Agent Shield groups related security controls into eight broad protection areas.
 
 | Protection area | Live | Foundation Available | Planned |
 | --- | --- | --- | --- |
-| Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
-| Policy & Approval Controls | Policy enforcement; review thresholds; Emergency Circuit Breaker | Human approval and quorum | Cryptographic reviewer signatures; approval escalation |
+| Agent Trust & Access | Authentication; credential lifecycle; Agent Instruction Integrity | — | Tool/MCP integrity; delegation/session permissions |
+| Policy & Approval Controls | Policy enforcement; review thresholds; Emergency Circuit Breaker; Approval Escalation & Organizational Quorum | Human approval and quorum; Cryptographic reviewer signatures | — |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification | — | Contract upgrades; argument policies |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
 | Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
@@ -555,4 +555,9 @@ Contract Argument Policies is Live under Contract & Permission Safety. An enable
 
 The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
 
-Phase 1 deterministic permission and approval safety is complete. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Phase 2: Agent Instruction Integrity.
+Phase 1 deterministic permission and approval safety is complete. Agent Instruction Integrity is now the first Live Phase 2 control. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Tool & MCP Integrity.
+
+
+## Agent Instruction Integrity
+
+Agent Instruction Integrity is Live under Agent Trust & Access. The Gateway evaluates stable goal binding, minimal source provenance, source-domain policy, protected-parameter fingerprints, user confirmation for external-content changes, x402 self-authorization, and tool permission-scope expansion. The control is deterministic and uses no language model for authorization. It verifies supplied adapter evidence and does not claim to detect every prompt-injection attack. See `AGENT_INSTRUCTION_INTEGRITY.md`.

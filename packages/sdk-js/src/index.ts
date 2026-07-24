@@ -138,6 +138,33 @@ export interface Magen3X402Payment {
   settlementTxHash?: string;
 }
 
+export interface Magen3InstructionIntegrityMetadata {
+  /** Stable identifier for the original human or application goal. */
+  goalId?: string;
+  /** SHA-256 hash of the original user goal text or canonical goal object. */
+  originalUserGoalHash?: string;
+  /** Originator category such as user, scheduler, service, or tool. */
+  initiatedBy?: string;
+  /** Source category such as user, webpage, email, document, tool_output, or scheduler. */
+  intentSource?: string;
+  toolName?: string;
+  toolServer?: string;
+  /** Normalized source domains that influenced the intent. */
+  sourceDomains?: string[];
+  externalContentUsed?: boolean;
+  userConfirmed?: boolean;
+  sourceTrustLevel?: "trusted" | "review" | "untrusted" | string;
+  parameterChangeReason?: string;
+  /** Optional adapter-computed SHA-256 fingerprint of original protected parameters. */
+  originalParameterHash?: string;
+  /** Optional adapter-computed SHA-256 fingerprint of current protected parameters. Magen3 computes its own. */
+  currentParameterHash?: string;
+  /** Permission scopes present when the goal was established. */
+  originalPermissionScopes?: string[];
+  /** Permission scopes requested by the current tool execution. */
+  currentPermissionScopes?: string[];
+}
+
 export interface Magen3TokenPermissionBatchItem {
   tokenContract?: string;
   spender?: string;
@@ -255,6 +282,8 @@ export interface Magen3Action {
   compliance?: Magen3ComplianceEvidence;
   /** x402 payment requirements evaluated before PAYMENT-SIGNATURE creation. Never include signatures or signed payment payloads. */
   x402?: Magen3X402Payment;
+  /** Deterministic goal, provenance, source-domain, parameter-binding, and tool-scope evidence. Never include private prompts, credentials, or unredacted document contents. */
+  instructionIntegrity?: Magen3InstructionIntegrityMetadata;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
@@ -499,6 +528,33 @@ export interface Magen3EmergencyControlsContext {
   pause?: Magen3EmergencyPause;
 }
 
+export interface Magen3InstructionIntegrityContext {
+  metadataSupplied?: boolean;
+  enabled?: boolean;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  goalId?: string;
+  originalUserGoalHash?: string;
+  initiatedBy?: string;
+  intentSource?: string;
+  toolName?: string;
+  toolServer?: string;
+  sourceDomains?: string[];
+  externalContentUsed?: boolean;
+  userConfirmed?: boolean;
+  sourceTrustLevel?: string;
+  parameterChangeReason?: string;
+  originalParameterHash?: string;
+  currentParameterHash?: string;
+  computedCurrentParameterHash?: string;
+  parametersChanged?: boolean;
+  originalPermissionScopes?: string[];
+  currentPermissionScopes?: string[];
+  addedPermissionScopes?: string[];
+  selfAuthorizingPayment?: boolean;
+  violations?: Array<{ rule?: string; message?: string }>;
+  limitation?: string;
+}
+
 export interface Magen3TokenPermissionControlsContext {
   permissionType?: string;
   owner?: string;
@@ -732,6 +788,8 @@ export interface Magen3DecisionResult {
   suggestedResolution?: string;
   moduleFindings?: Magen3ModuleFinding[];
   pipelineStages?: Magen3PipelineStage[];
+  /** Deterministic goal binding, source provenance, protected-parameter binding, confirmation, and tool-scope evidence. */
+  instructionIntegrityContext?: Magen3InstructionIntegrityContext;
   /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
   emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */

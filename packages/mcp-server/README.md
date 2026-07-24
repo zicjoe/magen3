@@ -110,3 +110,7 @@ For proxy or implementation changes, the MCP intent schema accepts unsigned `act
 ## Contract Argument Policies
 
 The MCP tool submits public unsigned `action.preflight.runtimeArgs` only. Magen3 may evaluate them against an exact contract and entry-point policy and return `contractArgumentPoliciesContext`. MCP cannot change the active argument rule or approve a violation. Never include private keys, signatures, wallet approvals, raw signed transactions, or secret application data in runtime arguments.
+
+## Agent Instruction Integrity
+
+The intent schema accepts `action.instructionIntegrity` with a stable goal ID, original goal hash, source provenance, external-content confirmation, protected-parameter hashes, and original/current permission scopes. Tool output cannot authorize its own payment or expand its own scope. Send only hashes and minimal labels—never private prompts, tool credentials, document contents, or wallet secrets. This control verifies supplied deterministic evidence and does not claim universal prompt-injection detection.

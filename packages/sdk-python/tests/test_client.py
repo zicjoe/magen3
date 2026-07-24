@@ -360,5 +360,38 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result["emergencyPause"]["id"], "EPAUSE-1")
 
 
+    def test_instruction_integrity_metadata_and_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {
+                "ok": True, "executionApproved": True,
+                "result": {
+                    "decision": "Allowed",
+                    "instructionIntegrityContext": {
+                        "metadataSupplied": True, "goalId": "goal:transfer-001",
+                        "intentSource": "user", "externalContentUsed": False,
+                        "currentParameterHash": "c" * 64, "parametersChanged": False, "violations": [],
+                    },
+                },
+            }
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "01" + "1" * 64,
+            "action": {
+                "type": "Transfer", "amount": 5, "target": "01" + "2" * 64,
+                "instructionIntegrity": {
+                    "goalId": "goal:transfer-001", "originalUserGoalHash": "a" * 64,
+                    "initiatedBy": "user", "intentSource": "user", "sourceDomains": [],
+                    "externalContentUsed": False, "userConfirmed": True, "sourceTrustLevel": "trusted",
+                    "originalPermissionScopes": ["wallet:transfer"],
+                    "currentPermissionScopes": ["wallet:transfer"],
+                },
+            },
+        })
+        self.assertEqual(captured["payload"]["action"]["instructionIntegrity"]["goalId"], "goal:transfer-001")
+        self.assertEqual(result["result"]["instructionIntegrityContext"]["violations"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
