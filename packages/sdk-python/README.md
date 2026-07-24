@@ -59,6 +59,10 @@ Threat Intelligence findings and the sanitized `threatIntelligenceContext` are r
 
 The SDK never signs or broadcasts blockchain transactions.
 
+## Token Approval & Permit Safety
+
+Python callers may include an `action["tokenPermission"]` dictionary with the exact network, token contract, owner, spender, bounded amount, intended transaction amount, deadline, nonce, identifier, and optional batch items. Inspect the final decision, structured findings, and `tokenPermissionControlsContext`. Never submit a raw permit signature or signed permit payload; only an optional 32-byte signature hash may be used for replay detection. The Foundation control does not independently query live allowance state or certify token safety.
+
 ## Human approval polling
 
 A `Review Required` decision is not execution authorization. Poll the exact-bound request by approval ID or audit ID:

@@ -265,10 +265,11 @@ function pass(state, rule, message, evidence = {}) {
   state.checksPassed.push(message);
 }
 
-function previousX402Records(auditLogs = [], request = {}) {
-  const now = Date.now();
-  const hourStart = now - 60 * 60 * 1000;
-  const day = new Date();
+function previousX402Records(auditLogs = [], request = {}, now = new Date()) {
+  const nowDate = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+  const nowMs = nowDate.getTime();
+  const hourStart = nowMs - 60 * 60 * 1000;
+  const day = new Date(nowDate);
   day.setHours(0, 0, 0, 0);
   const month = new Date(day.getFullYear(), day.getMonth(), 1);
   const records = auditLogs.filter((log) => log.agentId === request.agentId && log.action === "x402 Payment");
@@ -348,7 +349,7 @@ export function evaluateX402PaymentControls({ request = {}, policy = {}, auditLo
   const settlementStatus = normalizeSettlementStatus(request.x402SettlementStatus);
   const settlementAttempt = safeInteger(request.x402SettlementAttempt, 0, { min: 0, max: 10_000 });
   const recipient = classifyX402Recipient(payTo, network);
-  const stats = previousX402Records(auditLogs, request);
+  const stats = previousX402Records(auditLogs, request, now);
   const duplicateRecords = previousFingerprintRecords(stats.records, computedFingerprint);
 
   if (!version || !scheme || !resource.raw || !merchantDomain || !payTo || !network || !asset || !amountAtomic || (!validUntilRaw && !maxTimeoutSeconds)) {

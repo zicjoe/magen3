@@ -98,6 +98,43 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["lifecycle"]["sequence"], 3)
 
 
+    def test_token_permission_metadata_passes_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": False, "result": {"decision": "Review Required"}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.check_intent({
+            "executionWalletAddress": "0x1111111111111111111111111111111111111111",
+            "action": {
+                "type": "Permit Authorization",
+                "amount": 10,
+                "target": "0x2222222222222222222222222222222222222222",
+                "targetType": "Token Contract",
+                "tokenPermission": {
+                    "kind": "Permit Authorization",
+                    "standard": "ERC-20 Permit",
+                    "network": "eip155:84532",
+                    "chainId": "84532",
+                    "tokenContract": "0x2222222222222222222222222222222222222222",
+                    "owner": "0x1111111111111111111111111111111111111111",
+                    "spender": "0x3333333333333333333333333333333333333333",
+                    "approvalAmount": 10,
+                    "intendedTransactionAmount": 10,
+                    "deadline": "2026-07-23T12:30:00.000Z",
+                    "nonce": "7",
+                    "permitIdentifier": "permit:python-7",
+                    "permitSignatureHash": "a" * 64,
+                    "oneTime": True
+                }
+            }
+        })
+        permission = captured["payload"]["action"]["tokenPermission"]
+        self.assertEqual(permission["network"], "eip155:84532")
+        self.assertEqual(permission["permitSignatureHash"], "a" * 64)
+        self.assertNotIn("signature", permission)
+        self.assertNotIn("signedPermit", permission)
+
     def test_get_approval(self):
         captured = {}
         def transport(method, url, headers, data, timeout):

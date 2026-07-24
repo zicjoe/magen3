@@ -55,6 +55,10 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.executionIntegrity, /idempotency/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.lifecycle.intentId, /unique/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.lifecycle.retryOf, /audit ID/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.tokenPermissionControls, /spender/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.tokenPermission.network, /chain/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.tokenPermission.permitSignatureHash, /raw signatures/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.tokenPermission.batch, /nested batches/i);
 });
 
 test("reportX402Settlement delegates a bound settlement update", async () => {

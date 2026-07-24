@@ -1,298 +1,145 @@
-# Magen3 Human Approval & Quorum — Implementation Report
-
-## Release objective
+# Magen3 Token Approval & Permit Safety — Implementation Report
+
+## Release
 
-This release adds Human Approval & Quorum inside the existing **Policy & Approval Controls** protection area. It does not introduce another top-level product or sidebar page.
+- **Release version:** 1.3.0
+- **Control:** Token Approval & Permit Safety
+- **Product placement:** Agent Shield → Contract & Permission Safety → Token Permissions
+- **Reported status:** Foundation Available
+- **Database migration:** None required for this release
+
+## What changed
 
-A deterministic `Review Required` decision can now create an exact-bound approval request. The original decision remains `Review Required`; a completed, unexpired approval permits only progression to the existing human-controlled wallet-signing boundary.
+This release adds a deterministic, provider-agnostic, chain-aware token-authority evaluator without changing the current Magen3 navigation or replacing any existing protection area. It preserves the Casper-first path while isolating EVM-specific approval and permit handling to intents that explicitly declare EVM token-permission metadata.
 
-## Product status
-
-**Human Approval & Quorum: Foundation Available**
-
-It is not labeled Live because the current Magen3/Casper Wallet integration associates reviewer responses with the connected Casper public-key address but does not require a separate cryptographic message signature from the reviewer.
-
-## Implemented workflow
+Supported explicit action classifications:
 
-```text
-External agent submits intent
-→ Agent Shield authenticates and evaluates it
-→ Decision is Review Required
-→ Audit record is stored
-→ Magen3 computes an exact-intent SHA-256 binding
-→ Approval request enters Pending or Configuration Required
-→ Eligible wallets approve or reject
-→ Required distinct quorum completes before expiry
-→ Agent polls the request with its existing API key
-→ Exact unchanged request may proceed to wallet signing
-→ Real execution hash can be attached after submission
-```
+- Token Approval
+- Allowance Increase
+- Allowance Decrease
+- Allowance Reset
+- Permit Authorization
+- NFT Operator Approval
+- Batch Approval
+- Delegated Spender Permission
 
-## Deterministic controls
+Generic contract calls are not guessed to be approvals.
 
-- SHA-256 binding over audit ID, agent, action, amount, target, target type, execution wallet, active policy, and original intent
-- Single-approver and quorum modes
-- One to ten required approvals
-- Explicit eligible approver wallet list
-- Optional owner-wallet fallback
-- Approval expiry from five minutes to seven days
-- Optional separation of requester and approver
-- Required rejection comments
-- Distinct approver counting
-- Duplicate-response prevention
-- Unauthorized-reviewer rejection
-- Immediate finality after one authorized rejection
-- Expiry after approval when execution has not yet occurred
-- Execution-hash rejection until the approval is completed and current
-- Parameter-change invalidation through the exact binding hash
+## Backend
 
-## Workflow states
+### New evaluator
 
-- `Configuration Required`
-- `Pending`
-- `Approved`
-- `Rejected`
-- `Expired`
+`backend/lib/tokenPermissionControls.mjs` implements:
 
-## UI changes
+- Token, owner, spender, intended-spender, action-target, and network binding
+- Casper and EVM structural validation
+- Approved and blocked spender checks
+- Existing trusted and blocked contract reuse
+- Positive, maximum, and unlimited amount handling
+- Approval-to-transaction ratio
+- Deadline, expiry, and maximum lifetime
+- One-time, reusable, and allowance-reset behavior
+- Permit nonce, identifier, chain ID, and optional signature-hash checks
+- Canonical SHA-256 token-permission fingerprint
+- Audit-backed replay and changed-parameter detection
+- NFT operator approval policy
+- Batch enablement, maximum size, item validation, spender policy, unlimited items, aggregate amount, and multiple-spender risk
+- Structured findings, deterministic score impact, final decision integration, and sanitized context
 
-### Policies
+### Gateway and policy integration
 
-A **Human Approval Queue** now appears above policy management. It shows:
+The Gateway now normalizes a bounded `action.tokenPermission` object, including bounded nested batch items. Raw permit signatures, signed permit payloads, wallet approvals, private keys, mnemonics, and raw signed transactions are rejected before persistence.
 
-- Request state
-- Action, amount, and destination
-- Active policy and deterministic reason
-- Approval quorum progress
-- Expiration
-- Exact-intent binding hash
-- Previous reviewer responses
-- Approve and Reject controls
-- Eligibility and already-responded states
+The policy engine invokes the evaluator only when explicit token-permission metadata or a supported approval action is present. Legacy policies remain compatible unless `tokenPermissionControlsEnabled` is explicitly enabled.
 
-Policy create and edit forms now support:
+### Existing control cooperation
 
-- Enable Approval Workflow
-- Single or Quorum mode
-- Required approval count
-- Approval expiry
-- Owner-wallet fallback
-- Separation of duties
-- Mandatory rejection comments
-- Authorized approver wallets
+- **Contract Validation:** validates Casper token contracts and skips only the Casper-specific evaluator for explicitly EVM-bound token permissions.
+- **Wallet Validation:** retains Casper signing-key validation by default and accepts an EVM execution wallet only for explicit EVM token-permission intents.
+- **Execution Integrity:** includes `tokenPermission` in the protected canonical intent and reuses audit history for replay evidence.
+- **Human Approval & Quorum:** binds the full normalized token-permission object through the existing original-intent approval hash.
+- **Audit stores:** persist normalized unsigned metadata, computed fingerprint, and optional signature hash in existing JSON fields.
 
-### Dashboard
+### API surfaces
 
-The Platform Status area now shows the number of requests waiting in the approval queue. When action is required, a direct link opens Policies → Human Approval Queue.
+- `GET /api/token-permission-controls/status`
+- Token-permission action, target, request, policy, response-context, boundary, and decision rules in `GET /api/agent-gateway/spec`
+- Token Permission Controls status in `/api/health` and `/api/public-config`
 
-### Intent Playground
+## Policy fields enforced
 
-A `Review Required` result displays:
+- `tokenPermissionControlsEnabled`
+- `tokenPermissionMode`
+- `tokenPermissionUnknownSpenderAction`
+- `tokenPermissionUnlimitedApprovalAction`
+- `tokenPermissionMaxApprovalAmount`
+- `tokenPermissionMaxApprovalToTransactionRatio`
+- `tokenPermissionMaxLifetimeSeconds`
+- `tokenPermissionRequireExpiry`
+- `tokenPermissionRequireAllowanceReset`
+- `tokenPermissionApprovedSpenders`
+- `tokenPermissionBlockedSpenders`
+- `tokenPermissionAllowNftOperatorApproval`
+- `tokenPermissionAllowBatchApproval`
+- `tokenPermissionRequireChainBinding`
+- `tokenPermissionRequireNonce`
+- `tokenPermissionMaximumBatchSize`
 
-- Approval request ID
-- Current state
-- Quorum progress
-- Expiration
-- Binding hash
-- Clear instruction not to sign yet
-- Link to the reviewer queue
+No decorative policy field was added without backend enforcement.
 
-New approval records are placed into frontend state immediately and are also refreshed through the existing six-second wallet-scoped bootstrap polling.
+## Frontend
 
-### Audit Logs
+The existing interface was extended in place:
 
-Audit detail now displays:
+- Protection Modules shows Token Approval & Permit Safety inside Contract & Permission Safety → Token Permissions.
+- Agent registration recommends the control for Trading, Wallet Management, Treasury Operations, dApp Interactions, and Enterprise Automation.
+- Policy create/edit forms use progressive disclosure for essential and advanced token-permission settings.
+- Agent Details shows control status, mode, spender lists, limits, recent findings, and recent decisions.
+- Intent Playground includes bounded, unlimited, unknown-spender, blocked-spender, expired-permit, replay, NFT-operator, and batch examples.
+- Audit details show sanitized token authority, amount, ratio, lifetime, binding, replay, policy, rule, remediation, and human-approval evidence.
+- Dashboard alerts appear only when relevant; no permanent card clutter was added.
 
-- Approval request ID
-- State
-- Required and received approvals
-- Expiration and resolution
-- Exact binding hash
-- Human-approval Security Pipeline stage
-- Execution state after approval, rejection, or expiry
+## SDK and MCP
 
-## Backend API
+- TypeScript SDK request and response types include token-permission metadata and sanitized evaluator context.
+- Python SDK forwards the same JSON-compatible metadata without signing behavior.
+- MCP schema and intent instructions include explicit token-permission fields and security boundaries.
+- Raw signatures and signed permit payloads remain outside all SDK and MCP schemas.
 
-### Agent polling
+## Documentation
 
-```http
-GET /api/agent-gateway/approvals/:approvalOrAuditId?agentId=MAG-AGENT-...
-x-magen3-agent-key: AGENT_API_KEY
-```
+Added:
 
-The approval ID or related audit ID may be used. The agent can read status but cannot approve through this route.
+- `docs/TOKEN_APPROVAL_PERMIT_SAFETY.md`
 
-### Reviewer queue
+Updated the README, platform documentation, Gateway API, integration guide, official SDK guide, MCP guide, and package READMEs.
 
-```http
-GET /api/approvals?walletAddress=CASPER_PUBLIC_KEY
-```
+## Honest security boundary
 
-### Reviewer response
+The control remains **Foundation Available**, not Live, because this release does not:
 
-```http
-POST /api/approvals/:approvalId/respond
-Content-Type: application/json
+- Query current on-chain allowance state
+- Decode arbitrary contract calldata
+- Fetch or certify token symbol, decimals, or implementation metadata
+- Verify a raw permit signature cryptographically
+- Prove that a structurally valid contract implements the declared token standard
+- Sign, broadcast, or settle an approval transaction
 
-{
-  "walletAddress": "CASPER_APPROVER_PUBLIC_KEY",
-  "response": "Approve",
-  "comment": "Reviewed exact target and amount"
-}
-```
+Magen3 evaluates declared unsigned metadata and optional hashes before the separate wallet-signing boundary.
 
-### Operational status
+## Database and deployment
 
-```http
-GET /api/approval-workflow/status
-GET /api/approval-workflow/status?walletAddress=CASPER_PUBLIC_KEY
-```
+No additive migration is needed. Existing structured-policy JSON stores the policy extension, and existing audit JSON stores normalized intent and evaluator evidence. The Human Approval & Quorum migration from the prior release remains required where it has not already been applied.
 
-## SDK and MCP updates
+Railway and Vercel configuration files remain unchanged. After deployment, verify:
 
-### TypeScript SDK
+- `/api/health`
+- `/api/token-permission-controls/status`
+- `/api/agent-gateway/spec`
+- Intent Playground token-permission examples
+- Policy create/edit persistence
+- Agent Details and Audit evidence
 
-```ts
-const { approval } = await client.getApproval(approvalOrAuditId);
-if (!approval.mayProceedToSigning) return;
-```
+## Test coverage
 
-### Python SDK
-
-```python
-approval = client.get_approval(approval_or_audit_id)["approval"]
-if not approval.get("mayProceedToSigning"):
-    return
-```
-
-### MCP
-
-New tool:
-
-```text
-magen3_get_approval
-```
-
-Its guidance is fail-closed: Pending, Configuration Required, Rejected, and Expired all mean **do not sign or broadcast**.
-
-## Database migration
-
-This release includes additive PostgreSQL changes.
-
-### `action_reviews`
-
-Added workflow ownership, audit binding, quorum, approver, response, expiry, resolution, rejection, and context fields.
-
-### `audit_logs`
-
-Added approval request ID, status, binding hash, quorum counts, expiry, and resolution timestamps.
-
-### Deployment behavior
-
-`createPostgresStore()` continues to call `runMigrations()` before serving PostgreSQL-backed requests, so Railway applies the additive migration during backend startup.
-
-The user's current records are demo data, so a backup is not required for their chosen workflow. The migration is still written to preserve existing rows with defaults.
-
-Manual command if needed:
-
-```bash
-pnpm db:migrate
-```
-
-## Backward compatibility
-
-Preserved:
-
-- Existing agent IDs
-- Existing API-key hashes and headers
-- Existing Gateway endpoint and request envelope
-- Existing policies and audits
-- Existing three decision states
-- Casper contract hash and proof relayer
-- Wallet signing boundary
-- YieldBot and Codex integrations
-- x402 authorization and settlement flow
-- TypeScript and Python SDK authentication
-- MCP authentication
-- Railway and Vercel configuration
-
-Legacy policies do not create approval requests unless `approvalWorkflowEnabled` is explicitly true.
-
-## Verification completed
-
-- **171/171 backend and security-model tests passed**
-- **8 focused Human Approval & Quorum unit tests passed**
-- **2 approval Gateway integration tests passed**
-- **11/11 TypeScript SDK tests passed**
-- **7/7 Python SDK tests passed**
-- **6/6 MCP core tests passed**
-- All backend and script `.mjs` files passed Node syntax checking
-- **57 TypeScript/TSX files** passed syntax transpilation
-- Changed frontend files passed focused semantic TypeScript checking with temporary dependency declarations
-- Running memory-mode HTTP smoke test verified:
-  - Review Required
-  - approval creation
-  - reviewer queue
-  - execution rejection before quorum
-  - reviewer approval
-  - authenticated agent polling
-  - progression to signing boundary
-  - execution-hash persistence
-  - operational-status counts
-
-## Checks not completed in this environment
-
-- Full dependency-backed root typecheck and Vite production build
-- Full MCP protocol startup using installed external packages
-- Live PostgreSQL migration against Railway
-- Live Casper Wallet browser interaction
-- Cryptographic reviewer signature, because it is not implemented in this Foundation release
-- Live Casper Testnet transaction and relayer confirmation
-- Production Vercel-to-Railway CORS check
-
-The package registry returned HTTP 503 when Corepack attempted to retrieve pnpm 10.14.0. Run the complete verification locally before pushing:
-
-```powershell
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test
-pnpm sdk:test
-pnpm mcp:test
-pnpm build
-```
-
-## Major files changed
-
-- `backend/lib/approvalWorkflow.mjs`
-- `backend/lib/approvalWorkflow.test.mjs`
-- `backend/lib/approvalWorkflow.gateway.integration.test.mjs`
-- `backend/store/memoryStore.mjs`
-- `backend/store/postgresStore.mjs`
-- `backend/db/schema.mjs`
-- `backend/db/migrate.mjs`
-- `backend/server.mjs`
-- `src/app/App.tsx`
-- `src/app/lib/api.ts`
-- `src/app/lib/securityModel.ts`
-- `packages/sdk-js/src/index.ts`
-- `packages/sdk-python/src/magen3/client.py`
-- `packages/mcp-server/src/core.ts`
-- `packages/mcp-server/src/server.ts`
-- `docs/HUMAN_APPROVAL_WORKFLOW.md`
-- `docs/AGENT_GATEWAY_API.md`
-- `docs/MAGEN3_PLATFORM.md`
-- `docs/OFFICIAL_SDKS.md`
-- `docs/MCP_SERVER.md`
-- `README.md`
-
-## Security limitation and next hardening step
-
-The current application identifies a reviewer using the connected wallet public key, but the approval response itself is not backed by a separate cryptographic wallet signature. The UI and API report this limitation explicitly, and the control remains Foundation Available.
-
-The next hardening milestone should add a cryptographic approval attestation or an onchain approval proof bound to the exact approval hash. Until that is implemented and independently tested, this workflow should be used as a controlled testnet/product foundation rather than represented as a cryptographically signed enterprise approval system.
-
-## Suggested commit
-
-```text
-feat(policy-controls): add exact-bound human approval and quorum workflow
-```
+The release includes focused evaluator, Gateway normalization, policy-engine integration, wallet/contract interoperability, SDK, MCP, replay, and backward-compatibility tests. See the final delivery response for the exact executed test counts and any environment-limited checks.

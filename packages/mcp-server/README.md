@@ -35,6 +35,10 @@ node packages/mcp-server/dist/server.js
 See `docs/MCP_SERVER.md` for Codex setup and testing.
 
 
+## Token Approval & Permit Safety
+
+The intent tools accept explicit unsigned `action.tokenPermission` metadata for token approvals, allowance changes/reset, permits, NFT operators, batches, and delegated spenders. Use the final Magen3 decision and structured findings. Never send a raw permit signature or signed permit payload; the schema accepts only an optional 32-byte signature hash for replay detection. This control is Foundation Available and does not query live allowances or certify a token contract.
+
 ## Human Approval & Quorum
 
 When an intent returns `Review Required`, stop execution and call `magen3_get_approval` with the approval ID or audit ID after a human resolves the request in Magen3. Continue only when `mayProceedToSigning` is true. The MCP server cannot approve a request or impersonate a reviewer.

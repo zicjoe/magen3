@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.2.0",
+        version: "1.3.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -188,6 +188,7 @@ const server = createServer(async (req, res) => {
         executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
         approvalWorkflow: { status: "foundation-available", exactIntentBinding: true, quorum: true, expiry: true, rejection: true },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
+        tokenPermissionControls: { status: "foundation-available", chainFamilies: ["Casper", "EVM"], replayProtection: true, rawPermitSignaturesAccepted: false },
         timestamp: new Date().toISOString(),
       });
     }
@@ -283,6 +284,24 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (route === "GET /api/token-permission-controls/status") {
+      return send(res, 200, {
+        ok: true,
+        tokenPermissionControls: {
+          status: "foundation-available",
+          protectionArea: "Contract & Permission Safety",
+          control: "Token Approval & Permit Safety",
+          supportedChainFamilies: ["Casper", "EVM"],
+          supportedClassifications: ["Token Approval", "Allowance Increase", "Allowance Decrease", "Allowance Reset", "Permit Authorization", "NFT Operator Approval", "Batch Approval", "Delegated Spender Permission"],
+          deterministicBinding: true,
+          replayProtection: true,
+          rawPermitSignaturesAccepted: false,
+          onChainAllowanceQueries: false,
+          securityBoundary: "Magen3 evaluates explicitly declared unsigned permission metadata and optional hashes. It does not receive raw permit signatures or independently certify token safety or current on-chain allowance state."
+        }
+      });
+    }
+
 
     if (route === "GET /api/public-config") {
       const casper = getCasperStatus();
@@ -302,7 +321,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Policy Enforcement", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
-          foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
+          foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls", "Token Approval & Permit Safety"],
         },
         threatIntelligence,
         oracleValidation,
@@ -343,11 +362,11 @@ const server = createServer(async (req, res) => {
           goal: "Transfer funds to an approved wallet safely",
           reason: "User strategy asks for a policy-checked transfer",
           action: {
-            type: "Transfer | Swap | Deposit to Vault | Contract Interaction | Bridge | x402 Payment",
+            type: "Transfer | Swap | Deposit to Vault | Contract Interaction | Bridge | x402 Payment | Token Approval | Allowance Increase | Allowance Decrease | Allowance Reset | Permit Authorization | NFT Operator Approval | Batch Approval | Delegated Spender Permission",
             amount: 5,
             asset: "CSPR",
             target: "Casper wallet identifier, Contract Hash, or Package Hash",
-            targetType: "Wallet Address | Trusted Contract | Unknown Contract | Bridge Contract",
+            targetType: "Wallet Address | Trusted Contract | Unknown Contract | Bridge Contract | Token Contract",
             contractIdentifierType: "Contract Hash | Package Hash (required for ambiguous hash- identifiers)",
             entryPoint: "Required for contract-call actions",
             contractVersion: "Optional positive integer for Package Hash calls",
@@ -418,6 +437,31 @@ const server = createServer(async (req, res) => {
               riskRating: "Low | Medium | High | Critical",
               originatorVaspId: "Optional opaque VASP identifier",
               beneficiaryVaspId: "Optional opaque VASP identifier"
+            },
+            tokenPermission: {
+              kind: "Token Approval | Allowance Increase | Allowance Decrease | Allowance Reset | Permit Authorization | NFT Operator Approval | Batch Approval | Delegated Spender Permission",
+              standard: "Optional token standard such as CEP-18, ERC-20, ERC-721, ERC-1155, or EIP-2612",
+              network: "Required chain binding when policy requires it, for example casper-test or eip155:84532",
+              chainId: "Optional chain identifier supplied by the adapter",
+              tokenContract: "Exact token Contract Hash, Package Hash, or EVM contract address",
+              tokenIdentifierType: "Contract Hash | Package Hash for Casper identifiers",
+              owner: "Exact token owner and execution wallet",
+              spender: "Exact wallet or contract receiving authority",
+              intendedSpender: "Optional independently resolved protocol spender for substitution protection",
+              approvalAmount: "Display-unit approval amount; use an explicit unlimited flag for maximum authority",
+              approvalAmountAtomic: "Optional unsigned integer string for exact atomic authority",
+              intendedTransactionAmount: "Amount the approval is intended to support",
+              unlimited: "Explicit boolean maximum-authority flag",
+              deadline: "Optional ISO-8601 or Unix expiry; required for permits",
+              nonce: "Permit nonce when required by policy",
+              permitIdentifier: "Unique opaque permit or permission identifier",
+              permitSignatureHash: "Optional 32-byte hash only; raw signatures are rejected",
+              permitFingerprint: "Optional client SHA-256 fingerprint checked against Magen3 canonical binding",
+              oneTime: "Whether authority is one-time",
+              reusable: "Whether authority is reusable",
+              resetAfterUse: "Whether allowance will be reset after execution",
+              operatorApprovalForAll: "Explicit NFT operator-for-all authority",
+              batch: "Optional bounded array of permission items; nested batches are not accepted"
             }
 
           }
@@ -669,6 +713,44 @@ const server = createServer(async (req, res) => {
           securityBoundary: "The Gateway rejects PAYMENT-SIGNATURE values, signed payment payloads, wallet approvals, private keys, and mnemonics. The x402 adapter signs only after an Allowed decision.",
           decisionRule: "Exact-scheme payment requirements can pass, require review, or block deterministically. upto and batch-settlement remain outside the supported foundation unless explicitly authorized and tested."
         },
+        tokenPermissionControls: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/token-permission-controls/status",
+          protectionArea: "Contract & Permission Safety → Token Permissions",
+          purpose: "Prevent excessive, substituted, long-lived, malformed, or replayed token authority before signing or execution while leaving non-token Casper integrations unchanged.",
+          explicitClassificationRule: "The control runs only when action.tokenPermission metadata is supplied or the action uses a supported token-permission type. A generic contract call is never guessed to be an approval.",
+          deterministicChecks: [
+            "Token-permission classification and supported action type",
+            "Casper or EVM network, token-contract, owner, spender, and intended-spender binding",
+            "Approved and blocked spender and contract policy",
+            "Positive, maximum, unlimited, ratio, and batch-aggregate amounts",
+            "Expiry, maximum lifetime, one-time, reusable, and post-use reset behavior",
+            "Permit nonce, identifier, optional signature hash, and canonical SHA-256 fingerprint",
+            "Reused signature hashes, fingerprints, identifiers with changed parameters, and prior audit replay",
+            "NFT operator-for-all authority, batch enablement, and maximum batch size",
+            "Exact Human Approval binding because normalized permission metadata is part of originalIntent"
+          ],
+          policyFields: {
+            enabled: "structuredRules.tokenPermissionControlsEnabled",
+            mode: "structuredRules.tokenPermissionMode: Observe | Review | Enforce",
+            unknownSpenderAction: "structuredRules.tokenPermissionUnknownSpenderAction: Warn | Review | Block",
+            unlimitedApprovalAction: "structuredRules.tokenPermissionUnlimitedApprovalAction: Warn | Review | Block",
+            maximumApprovalAmount: "structuredRules.tokenPermissionMaxApprovalAmount",
+            maximumApprovalRatio: "structuredRules.tokenPermissionMaxApprovalToTransactionRatio",
+            maximumLifetime: "structuredRules.tokenPermissionMaxLifetimeSeconds",
+            requireExpiry: "structuredRules.tokenPermissionRequireExpiry",
+            requireAllowanceReset: "structuredRules.tokenPermissionRequireAllowanceReset",
+            approvedSpenders: "structuredRules.tokenPermissionApprovedSpenders",
+            blockedSpenders: "structuredRules.tokenPermissionBlockedSpenders",
+            allowNftOperatorApproval: "structuredRules.tokenPermissionAllowNftOperatorApproval",
+            allowBatchApproval: "structuredRules.tokenPermissionAllowBatchApproval",
+            requireChainBinding: "structuredRules.tokenPermissionRequireChainBinding",
+            requireNonce: "structuredRules.tokenPermissionRequireNonce",
+            maximumBatchSize: "structuredRules.tokenPermissionMaximumBatchSize"
+          },
+          securityBoundary: "Raw permit signatures, signed permit payloads, transaction approvals, private keys, and mnemonics are rejected. Structurally valid token addresses are not claimed safe, and this foundation does not query live allowance state or certify token behavior.",
+          decisionRule: "Hard identity, binding, expiry, replay, blocked-spender, and malformed-data violations block. Configured amount, unknown-spender, lifetime, NFT, batch, and reset rules warn, require review, or block according to the active policy."
+        },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean",
@@ -684,6 +766,7 @@ const server = createServer(async (req, res) => {
           executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
           approval: "For Review Required decisions, the exact bound intent can expose a wallet-scoped approval request, quorum, expiry, responses, and whether signing may proceed",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
+          tokenPermissionControlsContext: "Sanitized token, owner, spender, amount, ratio, unlimited, expiry, nonce, chain binding, canonical fingerprint, replay counts, batch, reset, and Human Approval binding evidence",
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",

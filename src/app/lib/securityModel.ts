@@ -161,12 +161,12 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
     id: "contract-permission-safety",
     name: "Contract & Permission Safety",
     description: "Validates the contract being called and the authority an agent exercises or grants through it.",
-    capabilities: ["Trading", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
+    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
     controls: [
       { id: "contract-identity", name: "Contract identity and allowlists", description: "Contract Hash, Package Hash, chain, target type, approved and blocked contract controls.", status: "Live", configurable: true },
       { id: "entry-point-controls", name: "Entry-point and package-version controls", description: "Entry-point structure, optional allowlists, and package-version semantics.", status: "Live", configurable: true },
       { id: "privileged-actions", name: "Privileged contract actions", description: "Classify upgrade, ownership, admin, mint, pause, role, and treasury-sensitive calls.", status: "Planned", configurable: true },
-      { id: "token-permissions", name: "Token approvals and permits", description: "Unlimited allowance, spender, permit deadline, nonce, scope, and post-use reset checks.", status: "Planned", configurable: true },
+      { id: "token-permissions", name: "Token Approval & Permit Safety", description: "Provider-agnostic, chain-aware spender, amount, lifetime, nonce, binding, batch, NFT-operator, and replay controls without accepting raw permit signatures.", status: "Foundation Available", configurable: true },
     ],
   }),
   protectionArea({
@@ -407,6 +407,26 @@ export function calculateSecurityCoverage(
       finding.module === "Compliance Controls" &&
       ["Compliance feed availability", "Sanctions screening result"].includes(finding.rule) &&
       finding.status === "pass"));
+  const tokenPermissionEnabled = policy?.structuredRules?.tokenPermissionControlsEnabled === true;
+  const tokenPermissionObserved = logs.some((log) =>
+    log.moduleFindings?.some((finding) => finding.module === "Token Approval & Permit Safety"));
+  // Token Permissions are recommended for wallet and contract-capable agents, but remain optional
+  // until enabled or an explicit token-permission intent is observed. Generic contract calls are not inferred.
+  const tokenPermissionRelevant = tokenPermissionEnabled || tokenPermissionObserved;
+  const tokenPermissionMode = typeof policy?.structuredRules?.tokenPermissionMode === "string"
+    ? policy.structuredRules.tokenPermissionMode
+    : "";
+  const tokenPermissionConfigured = tokenPermissionEnabled && ["Observe", "Review", "Enforce"].includes(tokenPermissionMode) &&
+    Array.isArray(policy?.structuredRules?.tokenPermissionApprovedSpenders) &&
+    Array.isArray(policy?.structuredRules?.tokenPermissionBlockedSpenders) &&
+    Number(policy?.structuredRules?.tokenPermissionMaxApprovalAmount) >= 0 &&
+    Number(policy?.structuredRules?.tokenPermissionMaxApprovalToTransactionRatio) >= 0 &&
+    Number(policy?.structuredRules?.tokenPermissionMaxLifetimeSeconds) > 0;
+  const tokenPermissionOperational = logs.some((log) =>
+    log.moduleFindings?.some((finding) =>
+      finding.module === "Token Approval & Permit Safety" &&
+      finding.rule === "Canonical token permission fingerprint" &&
+      finding.status === "pass"));
   const approvalEnabled = policy?.structuredRules?.approvalWorkflowEnabled === true;
   const approvalApprovers = Array.isArray(policy?.structuredRules?.approvalApproverWallets) ? policy.structuredRules.approvalApproverWallets as string[] : [];
   const approvalOwnerFallback = policy?.structuredRules?.approvalAllowOwnerFallback !== false;
@@ -431,6 +451,7 @@ export function calculateSecurityCoverage(
     { id: "oracle-validation", label: "Oracle validation operational", weight: 5, passed: !oracleRelevant || (oracleConfigured && oracleOperational), detail: !oracleRelevant ? "Not required by the selected capabilities." : oracleConfigured ? oracleOperational ? `${oracleMode} mode is configured and a fresh oracle feed check has been observed.` : `${oracleMode} mode is configured, but no fresh oracle validation pass is visible yet.` : "Oracle Validation policy mode is not configured for this policy.", recommendation: oracleConfigured ? "Configure a fresh oracle feed and submit a priced Swap example through the Intent Playground." : "Configure Oracle Validation limits in the active policy.", page: oracleConfigured ? "intent-playground" : "policies" },
     { id: "bridge-controls", label: "Bridge controls configured", weight: 5, passed: !bridgeRelevant || (bridgeConfigured && bridgeOperational), detail: !bridgeRelevant ? "Not required by the selected capabilities." : bridgeConfigured ? bridgeOperational ? `${bridgeMode} mode is configured and a complete bridge route has been evaluated.` : `${bridgeMode} mode is configured, but no complete Bridge Controls pass is visible yet.` : "Bridge provider, chain, and asset allowlists are not fully configured.", recommendation: bridgeConfigured ? "Submit a complete Bridge example through the Intent Playground to verify route controls." : "Configure approved bridge providers, chains, assets, fees, quote age, and finality requirements in the policy.", page: bridgeConfigured ? "intent-playground" : "policies" },
     { id: "x402-payment-controls", label: "x402 payment controls configured", weight: 5, passed: !x402Relevant || (x402Configured && x402Operational), detail: !x402Relevant ? "Not required by the selected capabilities." : x402Configured ? x402Operational ? `${x402Mode} mode is configured and a bound x402 authorization has been evaluated.` : `${x402Mode} mode is configured, but no successful x402 authorization is visible yet.` : "x402 merchant, network, scheme, and payment limits are not fully configured.", recommendation: x402Configured ? "Submit an approved x402 Payment example through the Intent Playground and reconcile its settlement." : "Enable x402 Payment Controls and configure exact-scheme merchants, recipients, networks, assets, facilitators, and payment limits.", page: x402Configured ? "intent-playground" : "policies" },
+    { id: "token-permission-controls", label: "Token permission controls configured", weight: 5, passed: !tokenPermissionRelevant || (tokenPermissionConfigured && tokenPermissionOperational), detail: !tokenPermissionRelevant ? "Optional until Token Permissions are enabled or an explicit approval intent is observed." : tokenPermissionConfigured ? tokenPermissionOperational ? `${tokenPermissionMode} mode is configured and a canonical token-permission binding has been evaluated.` : `${tokenPermissionMode} mode is configured, but no successful token-permission fingerprint is visible yet.` : "Token spender, amount, ratio, lifetime, and replay controls are not fully configured.", recommendation: tokenPermissionConfigured ? "Submit a bounded token approval example through the Intent Playground." : "Enable Token Permissions and configure approved/blocked spenders, unlimited-approval behavior, amount, ratio, and lifetime limits.", page: tokenPermissionConfigured ? "intent-playground" : "policies" },
     { id: "compliance-controls", label: "Compliance controls configured", weight: 5, passed: !complianceRelevant || (complianceConfigured && complianceOperational), detail: !complianceRelevant ? "Not required by the selected capabilities." : complianceConfigured ? complianceOperational ? `${complianceMode} mode is configured and current compliance screening evidence has been observed.` : `${complianceMode} mode is configured, but no current screening or configured-feed pass is visible yet.` : "Compliance Controls are not fully configured for this treasury or enterprise agent.", recommendation: complianceConfigured ? "Submit a complete compliance-evidence example through the Intent Playground." : "Configure required actions, attestation evidence, jurisdiction controls, screening behavior, and accepted providers in the policy.", page: complianceConfigured ? "intent-playground" : "policies" },
     { id: "casper-proof", label: "Casper proof recording observed", weight: 5, passed: proofRecorded, detail: proofRecorded ? "At least one decision proof is recorded." : "No recorded decision proof is visible for this agent yet.", recommendation: "Run a gateway test and verify the Casper proof service.", page: "audit-log" },
     { id: "agent-state", label: "Agent configuration complete", weight: 3, passed: agent.status === "Active" && agent.onboardingStatus !== "draft", detail: agent.status === "Active" ? "Agent is active and available to the gateway." : "Agent is not active.", recommendation: "Complete onboarding and ensure the agent is active.", page: "connected-agents" },

@@ -3,6 +3,7 @@ import { classifyX402Recipient } from "./x402PaymentControls.mjs";
 const ED25519_PUBLIC_KEY = /^01[0-9a-f]{64}$/i;
 const SECP256K1_PUBLIC_KEY = /^02[0-9a-f]{66}$/i;
 const ACCOUNT_HASH = /^account-hash-[0-9a-f]{64}$/i;
+const EVM_ADDRESS = /^0x[0-9a-f]{40}$/i;
 
 export const WALLET_DESTINATION_ACTIONS = new Set(["Transfer"]);
 
@@ -72,6 +73,23 @@ export function isWalletDestinationIntent(request = {}) {
   return request.targetType === "Wallet Address" || WALLET_DESTINATION_ACTIONS.has(request.actionType);
 }
 
+function isExplicitEvmTokenPermission(request = {}) {
+  const permission = request.tokenPermission && typeof request.tokenPermission === "object" ? request.tokenPermission : null;
+  const network = clean(permission?.network || "").toLowerCase();
+  return Boolean(permission && (network.startsWith("eip155:") || ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "avalanche", "linea", "scroll", "zksync"].some((hint) => network.includes(hint))));
+}
+
+function classifyExplicitEvmExecutionWallet(value) {
+  const raw = clean(value);
+  return {
+    value: raw,
+    normalized: raw.toLowerCase(),
+    valid: EVM_ADDRESS.test(raw),
+    kind: EVM_ADDRESS.test(raw) ? "evm-address" : raw ? "invalid-evm-address" : "missing",
+    label: "EVM address",
+  };
+}
+
 export function normalizeTrustedTargets(policy = {}) {
   return (Array.isArray(policy.trustedContracts) ? policy.trustedContracts : [])
     .map((target) => clean(target).toLowerCase())
@@ -107,9 +125,12 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   const executionWalletAddress = clean(request.executionWalletAddress || request.walletAddress);
   const ownerWalletAddress = clean(request.agentOwnerWalletAddress || request.ownerWalletAddress);
   const x402Payment = request.actionType === "x402 Payment";
+  const evmTokenPermission = isExplicitEvmTokenPermission(request);
   const executionWallet = x402Payment
     ? classifyX402Recipient(executionWalletAddress, request.x402Network)
-    : classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
+    : evmTokenPermission
+      ? classifyExplicitEvmExecutionWallet(executionWalletAddress)
+      : classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
   const executionWalletLabel = x402Payment
     ? executionWallet.family === "evm" ? "EVM payment address" : executionWallet.family === "solana" ? "Solana payment address" : "network payment address"
     : executionWallet.label;
@@ -127,7 +148,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   const relaxedMode = policy.riskMode === "Aggressive";
 
   if (!executionWalletAddress) {
-    const message = x402Payment ? "x402 payment wallet address is missing." : "Execution wallet public key is missing.";
+    const message = x402Payment ? "x402 payment wallet address is missing." : evmTokenPermission ? "EVM token owner address is missing." : "Execution wallet public key is missing.";
     checksFailed.push(message);
     scoreDelta += 45;
     hardBlock = true;
@@ -136,15 +157,19 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       severity: "critical",
       rule: "Execution wallet required",
       message,
-      evidence: { executionWalletAddress: "", requiredFormat: x402Payment ? "Public payment-wallet address matching the selected CAIP-2 network" : "Casper Ed25519 or Secp256k1 public key" },
+      evidence: { executionWalletAddress: "", requiredFormat: x402Payment ? "Public payment-wallet address matching the selected CAIP-2 network" : evmTokenPermission ? "EVM address matching the explicit token-permission network" : "Casper Ed25519 or Secp256k1 public key" },
       remediation: x402Payment
         ? "Provide the public address of the wallet that will create PAYMENT-SIGNATURE. Never provide its private key or signed payment payload."
-        : "Provide the public key of the wallet that would sign the real transaction. Never provide a private key.",
+        : evmTokenPermission
+          ? "Provide the public EVM address of the token owner. Never provide a private key or signed permit payload."
+          : "Provide the public key of the wallet that would sign the real transaction. Never provide a private key.",
     }));
   } else if (!executionWallet.valid) {
     const message = x402Payment
       ? "Execution wallet does not match the selected x402 payment network."
-      : "Execution wallet is not a valid Casper signing public key.";
+      : evmTokenPermission
+        ? "Execution wallet is not a valid EVM address for the explicit token-permission network."
+        : "Execution wallet is not a valid Casper signing public key.";
     checksFailed.push(message);
     scoreDelta += 45;
     hardBlock = true;
@@ -158,12 +183,16 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
         detectedFormat: executionWallet.kind,
         expected: x402Payment
           ? "An EVM address for eip155 networks or a Solana base58 address for solana networks"
-          : "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
-        network: x402Payment ? request.x402Network || "" : "casper",
+          : evmTokenPermission
+            ? "A 20-byte 0x-prefixed EVM address"
+            : "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
+        network: x402Payment ? request.x402Network || "" : evmTokenPermission ? request.tokenPermission?.network || "" : "casper",
       },
       remediation: x402Payment
         ? "Use the public address of the wallet registered for the selected x402 network."
-        : "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
+        : evmTokenPermission
+          ? "Submit the exact public EVM address that owns and will authorize the token permission."
+          : "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
     }));
   } else {
     const message = `Execution wallet uses a valid ${executionWalletLabel} format.`;
@@ -172,7 +201,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       status: "pass",
       rule: "Valid execution wallet format",
       message,
-      evidence: { executionWalletAddress, format: executionWallet.kind, network: x402Payment ? request.x402Network || "" : "casper" },
+      evidence: { executionWalletAddress, format: executionWallet.kind, network: x402Payment ? request.x402Network || "" : evmTokenPermission ? request.tokenPermission?.network || "" : "casper" },
     }));
   }
 

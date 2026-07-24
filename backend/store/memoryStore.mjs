@@ -561,6 +561,7 @@ export function createMemoryStore() {
         x402SettlementStatus: intent.x402SettlementStatus,
         x402SettlementAttempt: intent.x402SettlementAttempt,
         x402SettlementTxHash: intent.x402SettlementTxHash,
+        tokenPermission: intent.tokenPermission,
         lifecycleIntentId: intent.lifecycleIntentId,
         lifecycleIdempotencyKey: intent.lifecycleIdempotencyKey,
         lifecycleSequence: intent.lifecycleSequence,
@@ -708,6 +709,13 @@ export function createMemoryStore() {
               originatorVaspId: intent.complianceOriginatorVaspId,
               beneficiaryVaspId: intent.complianceBeneficiaryVaspId,
             },
+            tokenPermission: intent.tokenPermission ? {
+              ...intent.tokenPermission,
+              fingerprint: result.tokenPermissionControlsContext?.fingerprint || intent.tokenPermission.permitFingerprint || "",
+              clientFingerprint: intent.tokenPermission.permitFingerprint || "",
+              // Only hashes are persisted; raw signed permit payloads are rejected at the Gateway boundary.
+              permitSignatureHash: intent.tokenPermission.permitSignatureHash || "",
+            } : null,
             x402: {
               version: intent.x402Version,
               scheme: intent.x402Scheme,

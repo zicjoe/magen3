@@ -1,6 +1,6 @@
 {
   "name": "@magen3/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official TypeScript SDK for the Magen3 Agent Gateway API.",
   "type": "module",
   "main": "./dist/index.js",

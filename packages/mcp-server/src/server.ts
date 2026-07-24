@@ -13,6 +13,47 @@ const complianceAttestationSchema = z.object({
   expiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
 }).strict();
 
+const tokenPermissionFields = {
+  kind: z.enum([
+    "Token Approval",
+    "Allowance Increase",
+    "Allowance Decrease",
+    "Allowance Reset",
+    "Permit Authorization",
+    "NFT Operator Approval",
+    "Batch Approval",
+    "Delegated Spender Permission",
+  ]).or(z.string().min(1)),
+  standard: z.string().min(1).max(64).optional(),
+  network: z.string().min(1).max(96),
+  chainId: z.union([z.string().min(1).max(64), z.number().int().nonnegative()]).optional(),
+  tokenContract: z.string().min(1).max(256),
+  tokenIdentifierType: z.enum(["Contract Hash", "Package Hash"]).or(z.string().min(1)).optional(),
+  owner: z.string().min(1).max(256),
+  spender: z.string().min(1).max(256),
+  spenderIdentifierType: z.enum(["Contract Hash", "Package Hash"]).or(z.string().min(1)).optional(),
+  intendedSpender: z.string().min(1).max(256).optional(),
+  approvalAmount: z.union([z.number().finite().nonnegative(), z.string().min(1).max(128)]).optional(),
+  approvalAmountAtomic: z.string().regex(/^\d+$/).optional(),
+  intendedTransactionAmount: z.number().finite().nonnegative().optional(),
+  unlimited: z.boolean().optional(),
+  deadline: z.union([z.string().min(1).max(96), z.number().positive()]).optional(),
+  nonce: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/).optional(),
+  permitIdentifier: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/).optional(),
+  permitSignatureHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+  permitFingerprint: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+  reusable: z.boolean().optional(),
+  oneTime: z.boolean().optional(),
+  resetAfterUse: z.boolean().optional(),
+  operatorApprovalForAll: z.boolean().optional(),
+};
+
+const tokenPermissionBatchItemSchema = z.object(tokenPermissionFields).strict();
+const tokenPermissionSchema = z.object({
+  ...tokenPermissionFields,
+  batch: z.array(tokenPermissionBatchItemSchema).max(100).optional(),
+}).strict();
+
 const actionSchema = z.object({
   type: z.string().min(1),
   amount: z.number().finite().nonnegative().optional(),
@@ -46,6 +87,7 @@ const actionSchema = z.object({
     sourceConfirmations: z.number().int().nonnegative().optional(),
     destinationConfirmations: z.number().int().nonnegative().optional(),
   }).optional(),
+  tokenPermission: tokenPermissionSchema.optional(),
   x402: z.object({
     version: z.number().int().positive(),
     scheme: z.string().min(1),
@@ -140,8 +182,8 @@ const x402SettlementSchema = z.object({
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
-    { name: "magen3-execution-firewall", version: "0.2.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { name: "magen3-execution-firewall", version: "0.3.0" },
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Execution Integrity lifecycle/replay, Token Approval & Permit Safety, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

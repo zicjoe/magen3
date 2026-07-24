@@ -5,6 +5,7 @@ import {
   classifyCasperWalletIdentifier,
   exactWalletIdentifierMatch,
   isWalletDestinationIntent,
+  evaluateWalletValidation,
 } from "./walletValidation.mjs";
 
 const ED25519 = `01${"a".repeat(64)}`;
@@ -44,4 +45,29 @@ test("treats Transfer as wallet-destination validation even when targetType is w
   assert.equal(isWalletDestinationIntent({ actionType: "Transfer", targetType: "Trusted Contract" }), true);
   assert.equal(isWalletDestinationIntent({ actionType: "Swap", targetType: "Wallet Address" }), true);
   assert.equal(isWalletDestinationIntent({ actionType: "Swap", targetType: "Trusted Contract" }), false);
+});
+
+
+test("accepts an EVM execution wallet only for explicit EVM token-permission metadata", () => {
+  const evm = "0x1111111111111111111111111111111111111111";
+  const tokenIntent = evaluateWalletValidation({
+    request: {
+      actionType: "Token Approval",
+      targetType: "Token Contract",
+      executionWalletAddress: evm,
+      tokenPermission: { network: "eip155:1" },
+    },
+    policy: {},
+  });
+  const genericIntent = evaluateWalletValidation({
+    request: {
+      actionType: "Contract Interaction",
+      targetType: "Unknown Contract",
+      executionWalletAddress: evm,
+    },
+    policy: {},
+  });
+  assert.equal(tokenIntent.hardBlock, false);
+  assert.ok(tokenIntent.findings.some((item) => item.rule === "Valid execution wallet format" && item.status === "pass"));
+  assert.equal(genericIntent.hardBlock, true);
 });

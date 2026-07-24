@@ -10,6 +10,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
 - `EXECUTION_INTEGRITY.md` — lifecycle metadata, canonical intent fingerprints, replay prevention, idempotency, expiry, sequence, retry/replacement rules, policy controls, and compatibility.
 - `HUMAN_APPROVAL_WORKFLOW.md` — exact-intent Review Required approvals, quorum, expiry, separation of duties, agent polling, audit evidence, and current security boundary.
+- `TOKEN_APPROVAL_PERMIT_SAFETY.md` — explicit token approval and permit metadata, spender and amount policy, lifetime, replay and binding checks, SDK schema, audit evidence, and Foundation security boundary.
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
 - `ORACLE_VALIDATION.md` — price-intent fields, multi-source feed schema, policy limits, freshness, operational status, and security boundary.
 - `BRIDGE_CONTROLS.md` — route metadata, provider and chain policy, fees, quote freshness, destination formats, and confirmation boundaries.

@@ -31,6 +31,21 @@ const ACTION_ALIASES = {
   "x402 payment": "x402 Payment",
   "http payment": "x402 Payment",
   "api payment": "x402 Payment",
+  "token approval": "Token Approval",
+  "fungible token approval": "Token Approval",
+  "approve token": "Token Approval",
+  "allowance increase": "Allowance Increase",
+  "increase allowance": "Allowance Increase",
+  "allowance decrease": "Allowance Decrease",
+  "decrease allowance": "Allowance Decrease",
+  "allowance reset": "Allowance Reset",
+  "reset allowance": "Allowance Reset",
+  permit: "Permit Authorization",
+  "permit authorization": "Permit Authorization",
+  "nft operator approval": "NFT Operator Approval",
+  "operator approval": "NFT Operator Approval",
+  "batch approval": "Batch Approval",
+  "delegated spender permission": "Delegated Spender Permission",
 };
 
 const TARGET_TYPE_ALIASES = {
@@ -54,6 +69,8 @@ const TARGET_TYPE_ALIASES = {
   merchant: "x402 Merchant",
   "x402 merchant": "x402 Merchant",
   "paid resource": "x402 Merchant",
+  token: "Token Contract",
+  "token contract": "Token Contract",
 };
 
 function cleanString(value, fallback = "") {
@@ -88,6 +105,8 @@ function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
     "privatekey", "private_key", "secretkey", "secret_key", "mnemonic",
     "signeddeploy", "signedtransaction", "rawsigneddeploy", "rawsignedtransaction",
     "paymentsignature", "payment_signature", "paymentpayload", "payment_payload", "signedpayment", "signed_payment",
+    "permitsignature", "permit_signature", "signedpermit", "signed_permit", "permitpayload", "permit_payload",
+    "rawpermit", "raw_permit", "rawsignedpermit", "raw_signed_permit",
   ]);
   const signedPayloadFields = new Set([
     "seed", "approval", "approvals", "signature", "signatures",
@@ -127,6 +146,42 @@ function normalizeRuntimeArgs(value) {
     throw err;
   }
   return Object.fromEntries(Object.entries(value).slice(0, 100));
+}
+
+function normalizeTokenPermissionItem(value, { allowBatch = true } = {}) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    const err = new Error("action.tokenPermission must be an object when supplied");
+    err.status = 400;
+    throw err;
+  }
+  const batchRaw = allowBatch && Array.isArray(value.batch) ? value.batch.slice(0, 100) : [];
+  return {
+    kind: cleanString(value.kind || value.type || value.permissionType || value.permission_type, ""),
+    standard: cleanString(value.standard || value.tokenStandard || value.token_standard, ""),
+    network: cleanString(value.network || value.networkId || value.network_id || value.chain || value.chainName || value.chain_name, ""),
+    chainId: cleanString(value.chainId || value.chain_id, ""),
+    tokenContract: cleanString(value.tokenContract || value.token_contract || value.contract || value.token, ""),
+    tokenIdentifierType: cleanString(value.tokenIdentifierType || value.token_identifier_type || value.contractIdentifierType || value.contract_identifier_type, ""),
+    owner: cleanString(value.owner || value.tokenOwner || value.token_owner, ""),
+    spender: cleanString(value.spender || value.operator || value.delegate, ""),
+    spenderIdentifierType: cleanString(value.spenderIdentifierType || value.spender_identifier_type, ""),
+    intendedSpender: cleanString(value.intendedSpender || value.intended_spender || value.protocolSpender || value.protocol_spender, ""),
+    approvalAmount: value.approvalAmount ?? value.approval_amount ?? value.allowance ?? value.amount ?? null,
+    approvalAmountAtomic: cleanString(value.approvalAmountAtomic ?? value.approval_amount_atomic ?? value.amountAtomic ?? value.amount_atomic, ""),
+    intendedTransactionAmount: optionalNumber(value.intendedTransactionAmount ?? value.intended_transaction_amount ?? value.transactionAmount ?? value.transaction_amount, "tokenPermission.intendedTransactionAmount", { min: 0 }),
+    unlimited: value.unlimited === true,
+    deadline: cleanString(value.deadline || value.expiresAt || value.expires_at || value.expiration, ""),
+    nonce: cleanString(value.nonce, ""),
+    permitIdentifier: cleanString(value.permitIdentifier || value.permit_identifier || value.permitId || value.permit_id || value.permissionId || value.permission_id, ""),
+    permitSignatureHash: cleanString(value.permitSignatureHash || value.permit_signature_hash || value.signatureHash || value.signature_hash, ""),
+    permitFingerprint: cleanString(value.permitFingerprint || value.permit_fingerprint || value.fingerprint, ""),
+    reusable: value.reusable === true,
+    oneTime: value.oneTime === true || value.one_time === true,
+    resetAfterUse: value.resetAfterUse === true || value.reset_after_use === true,
+    operatorApprovalForAll: value.operatorApprovalForAll === true || value.operator_approval_for_all === true || value.approvalForAll === true || value.approval_for_all === true,
+    batch: batchRaw.map((item) => normalizeTokenPermissionItem(item, { allowBatch: false })).filter(Boolean),
+  };
 }
 
 function requireField(value, name) {
@@ -194,6 +249,10 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.lifecycle && typeof body.lifecycle === "object"
         ? body.lifecycle
         : {};
+  const tokenPermission = normalizeTokenPermissionItem(
+    action.tokenPermission ?? action.tokenPermissions ?? action.token_permission ?? action.token_permissions ??
+    action.permit ?? body.tokenPermission ?? body.token_permission
+  );
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -309,6 +368,7 @@ export function normalizeAgentGatewayIntent(body = {}) {
     x402SettlementStatus: cleanString(x402.settlementStatus || x402.settlement_status || x402.settlement?.status || "not_submitted", "not_submitted"),
     x402SettlementAttempt: optionalNumber(x402.settlementAttempt ?? x402.settlement_attempt ?? x402.settlement?.attempt, "x402SettlementAttempt", { integer: true, min: 0 }),
     x402SettlementTxHash: cleanString(x402.settlementTxHash || x402.settlement_tx_hash || x402.settlement?.transactionHash || x402.settlement?.transaction_hash || "", ""),
+    tokenPermission,
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

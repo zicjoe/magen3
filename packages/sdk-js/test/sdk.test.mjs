@@ -414,3 +414,55 @@ test("polls an exact-bound human approval by approval or audit ID", async () => 
   assert.equal(response.approval.reviewStatus, "Approved");
   assert.equal(response.approval.mayProceedToSigning, true);
 });
+
+test("preserves explicit unsigned token-permission metadata without adding signature material", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: false,
+        result: { decision: "Review Required", risk: "High", riskScore: 55, reason: "new spender", recommendedAction: "review" },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "review",
+      }), { status: 201 });
+    },
+  });
+
+  await client.checkIntent({
+    executionWalletAddress: "0x1111111111111111111111111111111111111111",
+    action: {
+      type: "Permit Authorization",
+      amount: 10,
+      target: "0x2222222222222222222222222222222222222222",
+      targetType: "Token Contract",
+      tokenPermission: {
+        kind: "Permit Authorization",
+        standard: "ERC-20 Permit",
+        network: "eip155:84532",
+        chainId: "84532",
+        tokenContract: "0x2222222222222222222222222222222222222222",
+        owner: "0x1111111111111111111111111111111111111111",
+        spender: "0x3333333333333333333333333333333333333333",
+        approvalAmount: 10,
+        intendedTransactionAmount: 10,
+        deadline: "2026-07-23T12:30:00.000Z",
+        nonce: "7",
+        permitIdentifier: "permit:sdk-7",
+        permitSignatureHash: "a".repeat(64),
+        oneTime: true,
+      },
+    },
+  });
+
+  assert.equal(captured.action.tokenPermission.kind, "Permit Authorization");
+  assert.equal(captured.action.tokenPermission.chainId, "84532");
+  assert.equal(captured.action.tokenPermission.permitSignatureHash, "a".repeat(64));
+  assert.equal("signature" in captured.action.tokenPermission, false);
+  assert.equal("signedPermit" in captured.action.tokenPermission, false);
+});
