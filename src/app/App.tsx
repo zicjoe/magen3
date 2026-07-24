@@ -257,7 +257,7 @@ interface EmergencyPause {
   triggerRule?: string;
   reason: string;
   triggerEvidence?: Record<string, unknown>;
-  status: "Active" | "Resumed" | "Expired" | string;
+  status: "Active" | "Resumed" | "Expired";
   active?: boolean;
   createdByWallet?: string;
   createdAt: string;
@@ -879,7 +879,7 @@ function RiskBadge({ risk }: { risk: Risk }) {
 function StatusBadge({
   status,
 }: {
-  status: "Available" | "Live" | "Foundation Available" | "Preview" | "Planned" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused" | "Revoked";
+  status: "Available" | "Live" | "Foundation Available" | "Preview" | "Planned" | "Coming Soon" | "Active" | "Inactive" | "Policy Active" | "No Policy" | "Paused" | "Attention" | "Resumed" | "Expired" | "Revoked";
 }) {
   const map: Record<string, string> = {
     Available: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
@@ -893,6 +893,9 @@ function StatusBadge({
     Inactive: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20",
     "No Policy": "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20",
     Paused: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20",
+    Attention: "bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30",
+    Resumed: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30",
+    Expired: "bg-[#94A3B8]/10 text-[#94A3B8] border-[#94A3B8]/20",
     Revoked: "bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/30",
   };
   return (
