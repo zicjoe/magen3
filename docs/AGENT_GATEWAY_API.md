@@ -475,7 +475,19 @@ The wallet-scoped application reads:
 GET /api/approvals?walletAddress=CASPER_OWNER_OR_APPROVER_PUBLIC_KEY
 ```
 
-An eligible reviewer responds through:
+For a signature-enabled policy, an eligible reviewer first requests a one-time challenge:
+
+```http
+POST /api/approvals/APR-.../challenge
+Content-Type: application/json
+
+{
+  "walletAddress": "CASPER_APPROVER_PUBLIC_KEY",
+  "response": "Approve"
+}
+```
+
+Casper Wallet signs the returned exact `challenge.message`, then the reviewer responds through:
 
 ```http
 POST /api/approvals/APR-.../respond
@@ -484,7 +496,9 @@ Content-Type: application/json
 {
   "walletAddress": "CASPER_APPROVER_PUBLIC_KEY",
   "response": "Approve",
-  "comment": "Reviewed exact recipient and amount"
+  "comment": "Reviewed exact recipient and amount",
+  "challengeId": "APC-...",
+  "signatureHex": "CASPER_WALLET_MESSAGE_SIGNATURE"
 }
 ```
 
@@ -492,7 +506,7 @@ Content-Type: application/json
 
 ### Current maturity boundary
 
-Human Approval & Quorum is **Foundation Available**. The current workflow identifies an approver by the connected wallet address and records the exact-bound response, but it does not yet require a separate cryptographic message signature from that approver. It therefore must not be described as a cryptographically signed approval system.
+Cryptographic Reviewer Signatures is **Foundation Available**. Backend verification, one-time challenge persistence, replay protection, UI signing, audit evidence, and SDK/MCP response support are implemented. Signature-enabled policies count only verified Ed25519 or Secp256k1 responses toward quorum. The control is not marked Live until a deployed browser flow with the real Casper Wallet extension is verified end to end.
 
 ## Owner Wallet and Execution Wallet
 
@@ -636,7 +650,7 @@ Example direct resume:
 }
 ```
 
-When the pause requires approval, the resume request creates an exact-bound Human Approval record. The pause remains active until the configured quorum resolves the request. Human Approval remains **Foundation Available** because reviewer responses are not yet separately cryptographically signed.
+When the pause requires approval, the resume request creates an exact-bound Human Approval record. The pause remains active until the configured quorum resolves the request. Human Approval remains **Foundation Available** pending deployed Casper Wallet browser verification. When the policy enables reviewer signatures, only cryptographically verified responses count toward resume quorum.
 
 Supported scopes are `Platform`, `All Execution`, `Agent`, `Capability`, `Action`, `Policy`, `Trading`, `Contract`, `Bridge`, and `x402`. Automatic pause triggers are opt-in policy behavior. See `EMERGENCY_CIRCUIT_BREAKER.md` for fields, thresholds, audit evidence, expiry, and the current wallet-scoped administrative boundary.
 

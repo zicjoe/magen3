@@ -56,6 +56,7 @@ import {
   disconnectCasperWallet,
   restoreCasperWalletConnection,
   isCasperWalletInstalled,
+  signCasperWalletMessage,
 } from "./lib/casperWallet";
 
 // ──────────────────────────────────────────────────────────
@@ -211,6 +212,16 @@ interface ApprovalResponseRecord {
   response: "Approved" | "Rejected";
   comment?: string;
   timestamp: string;
+  signatureRequired?: boolean;
+  signatureVerified?: boolean;
+  signatureVerifiedAt?: string;
+  signatureChallengeId?: string;
+  signatureChallengeHash?: string;
+  signatureNonceHash?: string;
+  signatureHash?: string;
+  signatureAlgorithm?: string;
+  signatureDomain?: string;
+  signatureChainName?: string;
 }
 
 interface ApprovalRequest {
@@ -233,6 +244,11 @@ interface ApprovalRequest {
   bindingHash: string;
   requiredApprovals: number;
   approvalsReceived: number;
+  verifiedApprovalsReceived?: number;
+  verifiedResponses?: number;
+  signatureRequired?: boolean;
+  signatureDomain?: string;
+  signatureChainName?: string;
   remainingApprovals: number;
   approverWallets: string[];
   responses: ApprovalResponseRecord[];
@@ -2700,6 +2716,11 @@ function AgentRegistrationWizard({
           approvalSeparationOfDuties: typeof sourceRules.approvalSeparationOfDuties === "boolean" ? sourceRules.approvalSeparationOfDuties : false,
           approvalRequireRejectComment: typeof sourceRules.approvalRequireRejectComment === "boolean" ? sourceRules.approvalRequireRejectComment : true,
           approvalApproverWallets: Array.isArray(sourceRules.approvalApproverWallets) ? sourceRules.approvalApproverWallets : [],
+          requireCryptographicReviewerSignature: typeof sourceRules.requireCryptographicReviewerSignature === "boolean" ? sourceRules.requireCryptographicReviewerSignature : true,
+          approvalSignatureLifetimeSeconds: typeof sourceRules.approvalSignatureLifetimeSeconds === "number" ? sourceRules.approvalSignatureLifetimeSeconds : 300,
+          requireReviewerChainBinding: typeof sourceRules.requireReviewerChainBinding === "boolean" ? sourceRules.requireReviewerChainBinding : true,
+          requireApprovalDomainSeparation: typeof sourceRules.requireApprovalDomainSeparation === "boolean" ? sourceRules.requireApprovalDomainSeparation : true,
+          approvalSignatureChainName: typeof sourceRules.approvalSignatureChainName === "string" ? sourceRules.approvalSignatureChainName : "casper-test",
           complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
           complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
           complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
@@ -2717,7 +2738,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -3809,11 +3830,16 @@ function ApprovalPolicyFields({
         <SelectField label="Owner Wallet Fallback" value={String(values.approvalAllowOwnerFallback ?? "")} onChange={(value) => onChange({ approvalAllowOwnerFallback: value })} options={["Yes", "No"]} />
         <SelectField label="Separation of Duties" value={String(values.approvalSeparationOfDuties ?? "")} onChange={(value) => onChange({ approvalSeparationOfDuties: value })} options={["Yes", "No"]} />
         <SelectField label="Require Rejection Comment" value={String(values.approvalRequireRejectComment ?? "")} onChange={(value) => onChange({ approvalRequireRejectComment: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Casper Wallet Signature" value={String(values.requireCryptographicReviewerSignature ?? "Yes")} onChange={(value) => onChange({ requireCryptographicReviewerSignature: value })} options={["Yes", "No"]} />
+        <InputField label="Signature Lifetime (sec)" value={String(values.approvalSignatureLifetimeSeconds ?? "300")} onChange={(value) => onChange({ approvalSignatureLifetimeSeconds: value })} type="number" />
+        <SelectField label="Require Chain Binding" value={String(values.requireReviewerChainBinding ?? "Yes")} onChange={(value) => onChange({ requireReviewerChainBinding: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Domain Separation" value={String(values.requireApprovalDomainSeparation ?? "Yes")} onChange={(value) => onChange({ requireApprovalDomainSeparation: value })} options={["Yes", "No"]} />
+        <InputField label="Reviewer Chain Name" value={String(values.approvalSignatureChainName ?? "casper-test")} onChange={(value) => onChange({ approvalSignatureChainName: value })} />
         <div className="md:col-span-2">
           <TextareaField label="Authorized Approver Wallets (one per line)" value={String(values.approvalApproverWallets ?? "")} onChange={(value) => onChange({ approvalApproverWallets: value })} />
         </div>
       </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Current approval responses are scoped to connected Casper wallet addresses. Cryptographic approver signatures are intentionally listed as future hardening rather than claimed as implemented.</p>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">When enabled, Magen3 issues a one-time, exact-bound challenge and Casper Wallet signs the response. Only verified signatures count toward quorum. Signature hashes and verification evidence are stored; private keys and raw transaction signatures never enter Magen3.</p>
     </div>
   );
 }
@@ -4126,6 +4152,11 @@ function PoliciesPage({
     approvalSeparationOfDuties: "No",
     approvalRequireRejectComment: "Yes",
     approvalApproverWallets: "",
+    requireCryptographicReviewerSignature: "Yes",
+    approvalSignatureLifetimeSeconds: "300",
+    requireReviewerChainBinding: "Yes",
+    requireApprovalDomainSeparation: "Yes",
+    approvalSignatureChainName: "casper-test",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -4279,6 +4310,11 @@ function PoliciesPage({
     approvalSeparationOfDuties: "No",
     approvalRequireRejectComment: "Yes",
     approvalApproverWallets: "",
+    requireCryptographicReviewerSignature: "Yes",
+    approvalSignatureLifetimeSeconds: "300",
+    requireReviewerChainBinding: "Yes",
+    requireApprovalDomainSeparation: "Yes",
+    approvalSignatureChainName: "casper-test",
     trustedContracts: "",
     blockedContracts: "",
     allowedEntryPoints: "",
@@ -4437,6 +4473,11 @@ function PoliciesPage({
         approvalSeparationOfDuties: form.approvalSeparationOfDuties === "Yes",
         approvalRequireRejectComment: form.approvalRequireRejectComment !== "No",
         approvalApproverWallets: form.approvalApproverWallets.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireCryptographicReviewerSignature: form.requireCryptographicReviewerSignature !== "No",
+        approvalSignatureLifetimeSeconds: Math.max(30, Math.min(1800, Number(form.approvalSignatureLifetimeSeconds) || 300)),
+        requireReviewerChainBinding: form.requireReviewerChainBinding !== "No",
+        requireApprovalDomainSeparation: form.requireApprovalDomainSeparation !== "No",
+        approvalSignatureChainName: form.approvalSignatureChainName.trim() || "casper-test",
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -4577,6 +4618,11 @@ function PoliciesPage({
       approvalSeparationOfDuties: "No",
       approvalRequireRejectComment: "Yes",
       approvalApproverWallets: "",
+    requireCryptographicReviewerSignature: "Yes",
+    approvalSignatureLifetimeSeconds: "300",
+    requireReviewerChainBinding: "Yes",
+    requireApprovalDomainSeparation: "Yes",
+    approvalSignatureChainName: "casper-test",
       trustedContracts: "",
       blockedContracts: "",
       allowedEntryPoints: "",
@@ -4724,6 +4770,11 @@ function PoliciesPage({
       approvalSeparationOfDuties: policy.structuredRules?.approvalSeparationOfDuties === true ? "Yes" : "No",
       approvalRequireRejectComment: policy.structuredRules?.approvalRequireRejectComment === false ? "No" : "Yes",
       approvalApproverWallets: Array.isArray(policy.structuredRules?.approvalApproverWallets) ? (policy.structuredRules.approvalApproverWallets as string[]).join("\n") : "",
+      requireCryptographicReviewerSignature: policy.structuredRules?.requireCryptographicReviewerSignature === true ? "Yes" : "No",
+      approvalSignatureLifetimeSeconds: String(typeof policy.structuredRules?.approvalSignatureLifetimeSeconds === "number" ? policy.structuredRules.approvalSignatureLifetimeSeconds : 300),
+      requireReviewerChainBinding: policy.structuredRules?.requireReviewerChainBinding === false ? "No" : "Yes",
+      requireApprovalDomainSeparation: policy.structuredRules?.requireApprovalDomainSeparation === false ? "No" : "Yes",
+      approvalSignatureChainName: String(policy.structuredRules?.approvalSignatureChainName || "casper-test"),
       trustedContracts: policy.trustedContracts.join("\n"),
       blockedContracts: Array.isArray(policy.structuredRules?.blockedContracts) ? (policy.structuredRules?.blockedContracts as string[]).join("\n") : "",
       allowedEntryPoints: Array.isArray(policy.structuredRules?.allowedEntryPoints) ? (policy.structuredRules?.allowedEntryPoints as string[]).join("\n") : "",
@@ -4883,6 +4934,11 @@ function PoliciesPage({
         approvalSeparationOfDuties: editForm.approvalSeparationOfDuties === "Yes",
         approvalRequireRejectComment: editForm.approvalRequireRejectComment !== "No",
         approvalApproverWallets: editForm.approvalApproverWallets.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireCryptographicReviewerSignature: editForm.requireCryptographicReviewerSignature !== "No",
+        approvalSignatureLifetimeSeconds: Math.max(30, Math.min(1800, Number(editForm.approvalSignatureLifetimeSeconds) || 300)),
+        requireReviewerChainBinding: editForm.requireReviewerChainBinding !== "No",
+        requireApprovalDomainSeparation: editForm.requireApprovalDomainSeparation !== "No",
+        approvalSignatureChainName: editForm.approvalSignatureChainName.trim() || "casper-test",
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -4995,10 +5051,15 @@ function PoliciesPage({
   }, [editForm, editingPolicy, onUpdatePolicy]);
 
   const submitApprovalResponse = useCallback(async (approval: ApprovalRequest, response: "Approve" | "Reject") => {
+    const comment = approvalComments[approval.id] || "";
+    if (response === "Reject" && approval.reviewContext?.requireRejectComment !== false && !comment.trim()) {
+      setApprovalError("A rejection comment is required by the active policy before signing.");
+      return;
+    }
     setApprovalBusy(approval.id);
     setApprovalError("");
     try {
-      await onRespondApproval(approval.id, response, approvalComments[approval.id] || "");
+      await onRespondApproval(approval.id, response, comment);
       setApprovalComments((current) => ({ ...current, [approval.id]: "" }));
     } catch (error) {
       setApprovalError(error instanceof Error ? error.message : "Unable to update the approval request.");
@@ -5028,7 +5089,7 @@ function PoliciesPage({
               <h2 className={SECTION_TITLE}>Human Approval Queue</h2>
               <StatusBadge status="Foundation Available" />
             </div>
-            <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked from execution until the configured wallet quorum approves the exact binding hash. Rejection, expiry, or parameter changes prevent signing.</p>
+            <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked until the configured wallet quorum approves the exact binding hash. Signature-enabled policies require each reviewer to sign a one-time Casper Wallet challenge before the response counts.</p>
           </div>
           <div className="flex gap-2 text-xs">
             <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span>
@@ -5053,7 +5114,8 @@ function PoliciesPage({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`text-sm font-semibold ${statusTone}`}>{approval.reviewStatus}</span>
-                      <span className="text-xs text-[#64748B]">{approval.approvalsReceived}/{approval.requiredApprovals} approvals</span>
+                      <span className="text-xs text-[#64748B]">{approval.approvalsReceived}/{approval.requiredApprovals} {approval.signatureRequired ? "verified approvals" : "approvals"}</span>
+                      {approval.signatureRequired && <span className="rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-2 py-0.5 text-[10px] text-[#22D3EE]">Casper signature required</span>}
                       <span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{approval.actionType}</span>
                     </div>
                     <div className="mt-2 text-sm text-[#F8FAFC]">{approval.amount} · {approval.target || "No target"}</div>
@@ -5069,8 +5131,8 @@ function PoliciesPage({
                       <>
                         <textarea className={`${INPUT_CLS} min-h-20 resize-none text-xs`} value={approvalComments[approval.id] || ""} onChange={(event) => setApprovalComments((current) => ({ ...current, [approval.id]: event.target.value }))} placeholder="Optional approval note; required for rejection" />
                         <div className="mt-2 grid grid-cols-2 gap-2">
-                          <Btn variant="primary" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Approve")}><CheckCircle size={14} /> Approve</Btn>
-                          <Btn variant="danger" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Reject")}><XCircle size={14} /> Reject</Btn>
+                          <Btn variant="primary" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Approve")}><CheckCircle size={14} /> {approval.signatureRequired ? "Sign & Approve" : "Approve"}</Btn>
+                          <Btn variant="danger" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Reject")}><XCircle size={14} /> {approval.signatureRequired ? "Sign & Reject" : "Reject"}</Btn>
                         </div>
                       </>
                     ) : (
@@ -5084,7 +5146,7 @@ function PoliciesPage({
                   <div className="mt-3 border-t border-[#1E293B] pt-3">
                     <div className="text-[10px] uppercase tracking-wider text-[#64748B]">Responses</div>
                     <div className="mt-2 space-y-1">
-                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span><span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span></div>)}
+                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span>{response.signatureVerified && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Verified {response.signatureAlgorithm || "signature"}</span>}<span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span>{response.signatureHash && <span className="font-mono text-[10px] text-[#64748B]" title={response.signatureHash}>sig {response.signatureHash.slice(0, 12)}…</span>}</div>)}
                     </div>
                   </div>
                 )}
@@ -5975,7 +6037,7 @@ function AuditLogPage({
                     <span className="text-xs uppercase tracking-wider text-[#64748B]">Exact-intent binding hash</span>
                     <div className="mt-1 break-all rounded-lg border border-[#1E293B] bg-[#020617] p-2 font-mono text-xs text-[#A78BFA]">{selected.approvalBindingHash || "Unavailable"}</div>
                   </div>
-                  <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Current approver identity is wallet-address scoped in the connected application session. Cryptographic approver signatures remain a future hardening step and are not claimed as implemented.</p>
+                  <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Signature-enabled policies require a one-time Casper Wallet message signature from each counted reviewer. The backend verifies exact binding, signer, response, nonce, chain, domain, and expiry, while storing hashes rather than raw signatures.</p>
                 </div>
               )}
 
@@ -8962,7 +9024,16 @@ export default function App() {
 
   const onRespondApproval = useCallback(async (id: string, response: "Approve" | "Reject", comment = "") => {
     if (!walletAddress) throw new Error("Connect Casper Wallet before responding to an approval request.");
-    const payload = await api.respondApproval(id, { walletAddress, response, comment });
+    const approval = approvals.find((item) => item.id === id);
+    let signaturePayload: Record<string, unknown> = {};
+    if (approval?.signatureRequired) {
+      const issued = await api.createApprovalChallenge(id, { walletAddress, response });
+      const challenge = issued?.challenge as { id?: string; message?: string } | undefined;
+      if (!challenge?.id || !challenge.message) throw new Error("Magen3 could not create the one-time reviewer signature challenge.");
+      const signatureHex = await signCasperWalletMessage(challenge.message, walletAddress);
+      signaturePayload = { challengeId: challenge.id, signatureHex };
+    }
+    const payload = await api.respondApproval(id, { walletAddress, response, comment, ...signaturePayload });
     if (payload.approval) {
       const updated = payload.approval as ApprovalRequest;
       setApprovals((previous) => previous.map((item) => item.id === updated.id ? updated : item));
@@ -8981,7 +9052,7 @@ export default function App() {
     }
     setApiOnline(true);
     return payload.approval as ApprovalRequest;
-  }, [walletAddress]);
+  }, [approvals, walletAddress]);
 
   const onCreateEmergencyPause = useCallback(async (body: Record<string, unknown>) => {
     if (!walletAddress) throw new Error("Connect Casper Wallet before activating Emergency Controls.");

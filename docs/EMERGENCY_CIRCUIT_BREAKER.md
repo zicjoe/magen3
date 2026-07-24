@@ -111,7 +111,7 @@ When approval-gated resume is enabled:
 - Rejection or expiry does not resume the pause.
 - Reaching quorum marks the pause Resumed and writes a second audit event.
 
-The existing Human Approval limitation still applies: reviewer responses are wallet-scoped in the current application session and are not yet separately cryptographically signed. Cryptographic Reviewer Signatures remain the next roadmap milestone.
+Human Approval can now require one-time Casper Wallet reviewer signatures. The signature implementation remains Foundation Available pending deployed browser verification; emergency-resume quorum counts only verified responses when the active policy enables it.
 
 ## Expiry
 

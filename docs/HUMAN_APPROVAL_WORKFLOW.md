@@ -26,11 +26,13 @@ Implemented today:
 
 Security boundary:
 
-- Approval responses are currently scoped to configured Casper public-key addresses and the connected Magen3 application workflow.
-- Casper Wallet does not provide a generic message-signing flow in the integration used by this project; cryptographic approver attestations remain a future hardening step.
+- Signature-enabled policies require a one-time Casper Wallet message signature from each counted reviewer.
+- Challenges bind the exact approval, response, reviewer, nonce, chain, domain, and expiry.
+- Magen3 verifies Ed25519 and Secp256k1 signatures and stores only hashes plus verification metadata.
+- Legacy policies remain unsigned unless the operator enables the new field.
 - Magen3 never signs or broadcasts the blockchain transaction. A completed workflow permits only the next human-controlled wallet-signing step.
 
-Because of that boundary, the module is not labeled Live yet.
+The control remains Foundation Available until the real deployed browser flow is verified end to end.
 
 ## End-to-end flow
 
@@ -67,7 +69,12 @@ Approval settings live under `structuredRules`:
   "approvalExpiryMinutes": 60,
   "approvalAllowOwnerFallback": true,
   "approvalSeparationOfDuties": true,
-  "approvalRequireRejectComment": true
+  "approvalRequireRejectComment": true,
+  "requireCryptographicReviewerSignature": true,
+  "approvalSignatureLifetimeSeconds": 300,
+  "requireReviewerChainBinding": true,
+  "requireApprovalDomainSeparation": true,
+  "approvalSignatureChainName": "casper-test"
 }
 ```
 
@@ -83,6 +90,11 @@ Approval settings live under `structuredRules`:
 | `approvalAllowOwnerFallback` | Adds the agent-owner wallet when no separate approver list is sufficient. |
 | `approvalSeparationOfDuties` | Prevents the execution wallet from approving its own request. |
 | `approvalRequireRejectComment` | Requires a reason when rejecting. |
+| `requireCryptographicReviewerSignature` | Requires a verified Casper Wallet message signature before a response counts. |
+| `approvalSignatureLifetimeSeconds` | One-time challenge lifetime from 30 to 1800 seconds. |
+| `requireReviewerChainBinding` | Binds the signed challenge to the configured Casper chain. |
+| `requireApprovalDomainSeparation` | Binds signatures to `magen3.approval-response.v1`. |
+| `approvalSignatureChainName` | Expected Casper chain name, such as `casper-test`. |
 
 For Treasury Operations and Enterprise Automation, the registration wizard recommends Quorum mode. Other starter policies default to a single approval while remaining editable.
 
@@ -176,7 +188,7 @@ The queue shows:
 - Previous responses
 - Approve or Reject controls
 
-The connected wallet must match a configured approver. Duplicate responses are rejected. A rejection comment is enforced when the policy requires one.
+The connected wallet must match a configured approver. For signature-enabled requests, Magen3 creates a one-time challenge, opens Casper Wallet message signing, verifies the signer and exact challenge bytes, then records the response. Duplicate responses and replayed challenges are rejected. A rejection comment is enforced when the policy requires one.
 
 ## Audit evidence
 
@@ -189,6 +201,10 @@ Approval evidence is stored alongside the original audit record:
 - Expiry and resolution timestamps
 - Security Pipeline stage
 - Execution state
+- Signature-required state
+- Reviewer signature verification result and timestamp
+- Signature algorithm and hash
+- Challenge, nonce, domain, and chain hashes/bindings
 
 The original `Review Required` decision is preserved. Approval does not rewrite it to `Allowed`; it records that the exact reviewed request completed its separate human authorization workflow.
 
@@ -213,7 +229,7 @@ With wallet-scoped counts:
 GET /api/approval-workflow/status?walletAddress=CASPER_PUBLIC_KEY
 ```
 
-The endpoint reports pending, approved, rejected, and expired requests and repeats the current cryptographic-signature limitation.
+The endpoint reports pending, approved, rejected, expired, signature-enabled, and verified-response counts plus the cryptographic security boundary.
 
 ## Recommended production posture
 
@@ -221,6 +237,6 @@ The endpoint reports pending, approved, rejected, and expired requests and repea
 - Enable separation of duties when the execution wallet must not self-approve.
 - Use short approval windows for high-risk actions.
 - Require rejection comments.
-- Never treat an approval as a wallet signature.
+- Treat reviewer message signing and execution transaction signing as separate security boundaries.
 - Re-run Magen3 when any protected parameter changes.
-- Keep the workflow in Foundation status until cryptographic approver attestations are added and independently tested.
+- Keep the workflow in Foundation status until the deployed Casper Wallet signing flow is independently verified end to end.

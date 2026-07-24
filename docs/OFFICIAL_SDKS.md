@@ -93,7 +93,7 @@ if decision["result"]["decision"] == "Review Required" and approval_request:
         return
 ```
 
-Approval is bound to the exact agent, action, amount, target, execution wallet, policy, and original intent. Changing those parameters requires a new Gateway decision. The current Foundation workflow records wallet-address-scoped reviewer responses but does not claim a separate cryptographic approval signature.
+Approval is bound to the exact agent, action, amount, target, execution wallet, policy, and original intent. Changing those parameters requires a new Gateway decision. For signature-enabled policies, only backend-verified Casper Ed25519 or Secp256k1 responses count toward quorum. SDK and MCP clients receive sanitized fields such as `signatureRequired`, `verifiedApprovalsReceived`, verification algorithm, challenge hash, signature hash, domain, chain, and verification time; they never receive the raw reviewer signature or create approval challenges. Human Approval & Quorum remains Foundation Available until the deployed Casper Wallet browser flow is verified end to end.
 
 ## Threat Intelligence response types
 

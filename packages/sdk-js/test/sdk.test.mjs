@@ -401,6 +401,12 @@ test("polls an exact-bound human approval by approval or audit ID", async () => 
           bindingHash: "a".repeat(64),
           requiredApprovals: 1,
           approvalsReceived: 1,
+          verifiedApprovalsReceived: 1,
+          verifiedResponses: 1,
+          signatureRequired: true,
+          signatureDomain: "magen3.approval-response.v1",
+          signatureChainName: "casper-test",
+          responses: [{ walletAddress: "01abc", response: "Approved", timestamp: "2026-07-23T11:00:00.000Z", signatureVerified: true, signatureAlgorithm: "Ed25519", signatureHash: "b".repeat(64) }],
           remainingApprovals: 0,
           expiresAt: "2026-07-23T12:00:00.000Z",
           mayProceedToSigning: true,
@@ -413,6 +419,10 @@ test("polls an exact-bound human approval by approval or audit ID", async () => 
   assert.match(capturedUrl, /\/api\/agent-gateway\/approvals\/AUDIT-1\?agentId=MAG-1$/);
   assert.equal(response.approval.reviewStatus, "Approved");
   assert.equal(response.approval.mayProceedToSigning, true);
+  assert.equal(response.approval.signatureRequired, true);
+  assert.equal(response.approval.verifiedApprovalsReceived, 1);
+  assert.equal(response.approval.responses?.[0]?.signatureVerified, true);
+  assert.equal(response.approval.responses?.[0]?.signatureAlgorithm, "Ed25519");
 });
 
 test("preserves unsigned Token Permission metadata without permit signatures", async () => {

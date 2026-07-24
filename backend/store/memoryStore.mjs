@@ -9,7 +9,8 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
-import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalExecutionAuthorized, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 
@@ -65,6 +66,7 @@ export function createMemoryStore() {
   let actionReviews = [];
   let gatewayRequests = [];
   let emergencyPauses = [];
+  let approvalSignatureChallenges = [];
 
   function publicAgent(agent, extra = {}) {
     if (!agent) return agent;
@@ -154,7 +156,8 @@ export function createMemoryStore() {
 
   function syncAuditApproval(review) {
     if (!review?.auditLogId) return;
-    const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
+    const approvalsReceived = approvalVerifiedCount(review);
+    const signatureFinding = approvalSignatureFinding(review);
     const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
     auditLogs = auditLogs.map((log) => log.id === review.auditLogId ? {
       ...log,
@@ -165,6 +168,7 @@ export function createMemoryStore() {
       approvalReceivedCount: approvalsReceived,
       approvalExpiresAt: review.expiresAt || "",
       approvalResolvedAt: review.resolvedAt || "",
+      moduleFindings: signatureFinding ? [...(log.moduleFindings || []).filter((finding) => finding?.rule !== "Cryptographic reviewer signature"), signatureFinding] : (log.moduleFindings || []),
       executionStatus: emergencyResume
         ? "not_required"
         : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : log.executionStatus,
@@ -1091,6 +1095,35 @@ export function createMemoryStore() {
       return { approvals: scopedApprovals(requireWalletAddress(walletAddress)) };
     },
 
+    async createApprovalChallenge(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.reviewerWallet || body.approverWalletAddress);
+      const index = actionReviews.findIndex((review) => review.id === id);
+      if (index < 0) {
+        const err = new Error("Approval request not found");
+        err.status = 404;
+        throw err;
+      }
+      const review = refreshApproval(actionReviews[index]);
+      const now = new Date();
+      approvalSignatureChallenges = approvalSignatureChallenges.map((challenge) => {
+        const refreshed = expireApprovalSignatureChallenge(challenge, now);
+        if (refreshed.status === "Pending"
+          && refreshed.approvalRequestId === id
+          && String(refreshed.reviewerWallet || "").toLowerCase() === walletAddress.toLowerCase()) {
+          return { ...refreshed, status: "Superseded", verificationError: "A newer one-time challenge was issued.", updatedAt: now.toISOString() };
+        }
+        return refreshed;
+      });
+      const challenge = createApprovalSignatureChallenge({
+        review,
+        input: { ...body, walletAddress },
+        now,
+        chainName: String(review.reviewContext?.approvalSignatureChainName || "").trim(),
+      });
+      approvalSignatureChallenges = [{ ...challenge, createdAt: now.toISOString(), updatedAt: now.toISOString() }, ...approvalSignatureChallenges];
+      return { challenge: approvalSignatureChallengePublicSummary(challenge), approval: approvalPublicSummary(review) };
+    },
+
     async respondApproval(id, body = {}) {
       const walletAddress = requireWalletAddress(body.walletAddress || body.approverWalletAddress);
       const index = actionReviews.findIndex((review) => review.id === id);
@@ -1099,7 +1132,25 @@ export function createMemoryStore() {
         err.status = 404;
         throw err;
       }
-      const updated = respondToApproval(actionReviews[index], { ...body, walletAddress });
+      const currentReview = refreshApproval(actionReviews[index]);
+      let signatureVerification = null;
+      if (currentReview.reviewContext?.requireCryptographicReviewerSignature === true) {
+        const challengeId = String(body.challengeId || body.signatureChallengeId || "").trim();
+        const challengeIndex = approvalSignatureChallenges.findIndex((challenge) => challenge.id === challengeId);
+        if (challengeIndex < 0) {
+          const err = new Error("A valid one-time approval signature challenge is required.");
+          err.status = 400;
+          throw err;
+        }
+        const verified = verifyApprovalSignatureChallenge({
+          challenge: approvalSignatureChallenges[challengeIndex],
+          review: currentReview,
+          input: { ...body, walletAddress },
+        });
+        approvalSignatureChallenges = approvalSignatureChallenges.map((challenge) => challenge.id === challengeId ? { ...verified.challenge, updatedAt: verified.verification.verifiedAt } : challenge);
+        signatureVerification = verified.verification;
+      }
+      const updated = respondToApproval(currentReview, { ...body, walletAddress, signatureVerification });
       actionReviews = actionReviews.map((review) => review.id === id ? updated : review);
       let resumedPause = null;
       let resumeAuditLog = null;
@@ -1152,7 +1203,12 @@ export function createMemoryStore() {
         approved: approvals.filter((item) => item.reviewStatus === "Approved").length,
         rejected: approvals.filter((item) => item.reviewStatus === "Rejected").length,
         expired: approvals.filter((item) => item.reviewStatus === "Expired").length,
-        securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step.",
+        signatureEnabledRequests: approvals.filter((item) => item.signatureRequired === true).length,
+        verifiedResponses: approvals.reduce((total, item) => total + Number(item.verifiedResponses || 0), 0),
+        cryptographicReviewerSignatures: "foundation_available",
+        signatureAlgorithms: ["Ed25519", "Secp256k1"],
+        challengeReplayProtection: true,
+        securityBoundary: "Signature-enabled policies require a one-time Casper Wallet message signature bound to the exact approval, response, reviewer, nonce, chain, domain, and expiry. Magen3 stores signature hashes and verification metadata, not private keys or raw transaction signatures.",
       };
     },
 

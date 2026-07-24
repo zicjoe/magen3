@@ -125,6 +125,13 @@ export const api = {
     return request<any>(`/api/approvals?walletAddress=${encodeURIComponent(walletAddress)}`);
   },
 
+  createApprovalChallenge(id: string, body: Record<string, unknown>) {
+    return request<any>(`/api/approvals/${encodeURIComponent(id)}/challenge`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
   respondApproval(id: string, body: Record<string, unknown>) {
     return request<any>(`/api/approvals/${encodeURIComponent(id)}/respond`, {
       method: "POST",

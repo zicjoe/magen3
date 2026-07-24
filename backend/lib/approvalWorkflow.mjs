@@ -68,6 +68,11 @@ export function normalizeApprovalPolicy(policy = {}, ownerWalletAddress = "") {
     separationOfDuties: boolRule(rules.approvalSeparationOfDuties, false),
     requireRejectComment: boolRule(rules.approvalRequireRejectComment, true),
     allowOwnerFallback,
+    requireCryptographicReviewerSignature: boolRule(rules.requireCryptographicReviewerSignature, false),
+    approvalSignatureLifetimeSeconds: boundedInteger(rules.approvalSignatureLifetimeSeconds, 300, 30, 1800),
+    requireReviewerChainBinding: boolRule(rules.requireReviewerChainBinding, true),
+    requireApprovalDomainSeparation: boolRule(rules.requireApprovalDomainSeparation, true),
+    approvalSignatureChainName: clean(rules.approvalSignatureChainName || process.env.CASPER_NETWORK_NAME || "casper-test"),
   };
 }
 
@@ -121,6 +126,11 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
       mode: config.mode,
       separationOfDuties: config.separationOfDuties,
       requireRejectComment: config.requireRejectComment,
+      requireCryptographicReviewerSignature: config.requireCryptographicReviewerSignature,
+      approvalSignatureLifetimeSeconds: config.approvalSignatureLifetimeSeconds,
+      requireReviewerChainBinding: config.requireReviewerChainBinding,
+      requireApprovalDomainSeparation: config.requireApprovalDomainSeparation,
+      approvalSignatureChainName: config.approvalSignatureChainName,
       capabilityContext: Array.isArray(auditLog.capabilityContext) ? auditLog.capabilityContext : [],
       triggeredRule: clean(auditLog.triggeredRule),
       suggestedResolution: clean(auditLog.suggestedResolution),
@@ -191,14 +201,36 @@ export function respondToApproval(review, input = {}, now = new Date()) {
     error.status = 400;
     throw error;
   }
+  const signatureRequired = current.reviewContext?.requireCryptographicReviewerSignature === true;
+  const signatureVerification = input.signatureVerification && typeof input.signatureVerification === "object" ? input.signatureVerification : {};
+  if (signatureRequired && signatureVerification.verified !== true) {
+    const error = new Error("A verified Casper Wallet reviewer signature is required by the active policy.");
+    error.status = 403;
+    throw error;
+  }
+  if (signatureRequired && normalizeWallet(signatureVerification.reviewerWallet) !== normalizedWallet) {
+    const error = new Error("Verified reviewer signer does not match the responding wallet.");
+    error.status = 403;
+    throw error;
+  }
   const timestamp = (now instanceof Date ? now : new Date(now)).toISOString();
   const responses = [...(current.responses || []), {
     walletAddress,
     response: isReject ? "Rejected" : "Approved",
     comment,
     timestamp,
+    signatureRequired,
+    signatureVerified: signatureRequired ? true : signatureVerification.verified === true,
+    signatureVerifiedAt: clean(signatureVerification.verifiedAt),
+    signatureChallengeId: clean(signatureVerification.challengeId),
+    signatureChallengeHash: clean(signatureVerification.challengeHash),
+    signatureNonceHash: clean(signatureVerification.nonceHash),
+    signatureHash: clean(signatureVerification.signatureHash),
+    signatureAlgorithm: clean(signatureVerification.signatureAlgorithm),
+    signatureDomain: clean(signatureVerification.domain),
+    signatureChainName: clean(signatureVerification.chainName),
   }];
-  const approvalsReceived = responses.filter((response) => response.response === "Approved").length;
+  const approvalsReceived = responses.filter((response) => response.response === "Approved" && (!signatureRequired || response.signatureVerified === true)).length;
   const reviewStatus = isReject ? "Rejected" : approvalsReceived >= Number(current.requiredApprovals || 1) ? "Approved" : "Pending";
   return {
     ...current,
@@ -210,19 +242,77 @@ export function respondToApproval(review, input = {}, now = new Date()) {
   };
 }
 
+export function approvalVerifiedCount(review) {
+  const signatureRequired = review?.reviewContext?.requireCryptographicReviewerSignature === true;
+  return (review?.responses || []).filter((response) => response.response === "Approved" && (!signatureRequired || response.signatureVerified === true)).length;
+}
+
 export function approvalExecutionAuthorized(review, now = new Date()) {
   const current = expireApproval(review, now);
-  return Boolean(current && current.reviewStatus === "Approved" && new Date(current.expiresAt).getTime() >= (now instanceof Date ? now : new Date(now)).getTime());
+  const enoughVerifiedApprovals = approvalVerifiedCount(current) >= Number(current?.requiredApprovals || 1);
+  return Boolean(current && current.reviewStatus === "Approved" && enoughVerifiedApprovals && new Date(current.expiresAt).getTime() >= (now instanceof Date ? now : new Date(now)).getTime());
 }
 
 export function approvalPublicSummary(review, now = new Date()) {
   const current = expireApproval(review, now);
   if (!current) return null;
-  const approvalsReceived = (current.responses || []).filter((response) => response.response === "Approved").length;
+  const approvalsReceived = approvalVerifiedCount(current);
+  const signatureRequired = current.reviewContext?.requireCryptographicReviewerSignature === true;
+  const verifiedResponses = (current.responses || []).filter((response) => response.signatureVerified === true).length;
   return {
     ...current,
     approvalsReceived,
+    verifiedApprovalsReceived: approvalsReceived,
+    verifiedResponses,
+    signatureRequired,
+    signatureDomain: current.reviewContext?.requireApprovalDomainSeparation === false ? "" : "magen3.approval-response.v1",
+    signatureChainName: current.reviewContext?.requireReviewerChainBinding === false ? "" : clean(current.reviewContext?.approvalSignatureChainName || process.env.CASPER_NETWORK_NAME || "casper-test"),
     remainingApprovals: Math.max(0, Number(current.requiredApprovals || 1) - approvalsReceived),
     mayProceedToSigning: approvalExecutionAuthorized(current, now),
+  };
+}
+
+
+export function approvalSignatureFinding(review) {
+  if (!review) return null;
+  const required = review.reviewContext?.requireCryptographicReviewerSignature === true;
+  const responses = (review.responses || []).map((response) => ({
+    reviewerWallet: response.walletAddress,
+    response: response.response,
+    signatureVerified: response.signatureVerified === true,
+    signatureVerifiedAt: response.signatureVerifiedAt || "",
+    signatureChallengeId: response.signatureChallengeId || "",
+    signatureChallengeHash: response.signatureChallengeHash || "",
+    signatureNonceHash: response.signatureNonceHash || "",
+    signatureHash: response.signatureHash || "",
+    signatureAlgorithm: response.signatureAlgorithm || "",
+    domain: response.signatureDomain || "",
+    chainName: response.signatureChainName || "",
+  }));
+  const verified = responses.filter((response) => response.signatureVerified).length;
+  return {
+    module: "Policy & Approval Controls",
+    control: "Cryptographic Reviewer Signatures",
+    status: required ? (verified > 0 ? "pass" : "warning") : "skipped",
+    severity: required ? (verified > 0 ? "low" : "medium") : "info",
+    rule: "Cryptographic reviewer signature",
+    message: required
+      ? verified > 0
+        ? `${verified} Casper Wallet reviewer signature${verified === 1 ? " was" : "s were"} verified for the exact approval binding.`
+        : "The active policy requires a Casper Wallet reviewer signature before any response counts toward quorum."
+      : "The legacy or explicitly configured policy does not require separate reviewer message signatures.",
+    evidence: {
+      approvalRequestId: review.id,
+      approvalBindingHash: review.bindingHash,
+      required,
+      requiredApprovals: Number(review.requiredApprovals || 1),
+      verifiedApprovals: approvalVerifiedCount(review),
+      domain: required && review.reviewContext?.requireApprovalDomainSeparation !== false ? "magen3.approval-response.v1" : "",
+      chainName: required && review.reviewContext?.requireReviewerChainBinding !== false ? clean(review.reviewContext?.approvalSignatureChainName || process.env.CASPER_NETWORK_NAME || "casper-test") : "",
+      responses,
+    },
+    remediation: required
+      ? "Open the Human Approval Queue, connect an authorized Casper Wallet account, and sign the one-time challenge before it expires."
+      : "Enable Require Cryptographic Reviewer Signature on the policy to harden future approval responses.",
   };
 }

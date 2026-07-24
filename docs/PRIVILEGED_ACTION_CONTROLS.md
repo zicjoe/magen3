@@ -141,7 +141,7 @@ When a supported action requires review, Magen3 reuses the existing Human Approv
 5. Magen3 never silently lowers quorum when too few approvers are configured; the request becomes `Configuration Required`.
 6. Changing the implementation, recipient, role, amount, contract, method, network, or requested value requires a fresh decision and approval binding.
 
-Current reviewer responses remain wallet-scoped rather than separately cryptographically signed, so Human Approval & Quorum remains **Foundation Available** even though Privileged Action Controls enforcement is Live.
+Human Approval can now require one-time Casper Wallet reviewer signatures. The signature implementation remains **Foundation Available** pending deployed browser verification, while Privileged Action Controls enforcement remains Live.
 
 ## Structured findings and audit evidence
 

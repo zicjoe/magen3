@@ -203,7 +203,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
-        approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized wallet-scoped reviewers respond through the Magen3 application. Approval does not sign or broadcast the transaction.",
+        approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized reviewers respond through the Magen3 application. Signature-enabled policies require one-time Casper Wallet message signatures; MCP never receives or submits those signatures. Approval does not sign or broadcast the transaction.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         tokenPermissionControlsBoundary: "Token Permission Controls evaluate explicit unsigned authority metadata only. Never send permit signatures, wallet signatures, raw signed approvals, private keys, mnemonics, or wallet secrets to Magen3.",
       emergencyCircuitBreakerBoundary: "An active Emergency Circuit Breaker pause overrides ordinary authorization. Stop on Blocked or Review Required, surface the exact pause evidence, and never attempt retries or alternate tools to bypass it.",
@@ -223,7 +223,9 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         return text({
           ...response,
           mcpGuidance: response.approval.mayProceedToSigning
-            ? "The exact bound Review Required intent has completed its approval workflow and may continue to human-controlled wallet signing before expiry."
+            ? response.approval.signatureRequired
+              ? "The exact-bound request has completed its cryptographically verified reviewer quorum and may continue to human-controlled wallet signing before expiry."
+              : "The exact bound Review Required intent has completed its approval workflow and may continue to human-controlled wallet signing before expiry."
             : response.approval.reviewStatus === "Pending"
               ? "Approval is still pending. Do not sign or execute the intent."
               : `Approval is ${String(response.approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`,

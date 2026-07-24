@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.5.0",
+        version: "1.6.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -258,8 +258,13 @@ const server = createServer(async (req, res) => {
             expiry: true,
             rejection: true,
             agentPolling: true,
-            cryptographicApproverSignatures: false,
-            securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step."
+            cryptographicApproverSignatures: "foundation-available",
+            challengeEndpoint: "POST /api/approvals/:approvalId/challenge",
+            signatureAlgorithms: ["Ed25519", "Secp256k1"],
+            challengeReplayProtection: true,
+            exactResponseBinding: true,
+            domainSeparation: "magen3.approval-response.v1",
+            securityBoundary: "When enabled by policy, Magen3 verifies a one-time Casper Wallet message signature bound to the exact approval, reviewer, response, chain, nonce, and expiry. Magen3 stores a signature hash and verification evidence, not private keys or transaction signatures."
           }
         });
       }
@@ -564,6 +569,7 @@ const server = createServer(async (req, res) => {
           statusEndpoint: "GET /api/approval-workflow/status",
           agentPollingEndpoint: "GET /api/agent-gateway/approvals/:approvalOrAuditId?agentId=YOUR_AGENT_ID",
           reviewerQueueEndpoint: "GET /api/approvals?walletAddress=CASPER_PUBLIC_KEY",
+          reviewerChallengeEndpoint: "POST /api/approvals/:approvalId/challenge",
           reviewerResponseEndpoint: "POST /api/approvals/:approvalId/respond",
           purpose: "Turn configured Review Required decisions into exact-intent single or quorum approval workflows before wallet signing.",
           deterministicChecks: [
@@ -574,7 +580,8 @@ const server = createServer(async (req, res) => {
             "Duplicate response prevention",
             "Optional separation of requester and approver",
             "Required rejection comments",
-            "Execution confirmation rejection before completed unexpired approval"
+            "Execution confirmation rejection before completed unexpired approval",
+            "Optional one-time Casper Wallet reviewer signature verification with nonce, expiry, exact-response binding, chain binding, and domain separation"
           ],
           policyFields: {
             enabled: "structuredRules.approvalWorkflowEnabled",
@@ -584,9 +591,14 @@ const server = createServer(async (req, res) => {
             expiry: "structuredRules.approvalExpiryMinutes",
             ownerFallback: "structuredRules.approvalAllowOwnerFallback",
             separationOfDuties: "structuredRules.approvalSeparationOfDuties",
-            rejectionComment: "structuredRules.approvalRequireRejectComment"
+            rejectionComment: "structuredRules.approvalRequireRejectComment",
+            requireSignature: "structuredRules.requireCryptographicReviewerSignature",
+            signatureLifetimeSeconds: "structuredRules.approvalSignatureLifetimeSeconds: 30-1800",
+            reviewerChainBinding: "structuredRules.requireReviewerChainBinding",
+            approvalDomainSeparation: "structuredRules.requireApprovalDomainSeparation",
+            signatureChainName: "structuredRules.approvalSignatureChainName"
           },
-          securityBoundary: "The current reviewer response is associated with the connected wallet address but is not separately cryptographically signed. It permits only progression to the existing human-controlled wallet signing boundary and is not represented as Live."
+          securityBoundary: "Signature-enabled policies require an authorized Casper Wallet account to sign a one-time message bound to the exact approval, reviewer, response, nonce, chain, domain, and expiry. Magen3 verifies Ed25519 or Secp256k1 and stores only signature hashes plus verification evidence. Approval permits progression only to the existing human-controlled wallet signing boundary and remains Foundation Available until deployed browser verification is completed."
         },
         oracleValidation: {
           status: "Foundation Available",
@@ -933,6 +945,13 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/approvals") {
       const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
       return send(res, 200, await store.listApprovals(walletAddress));
+    }
+
+
+    const approvalChallengeMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/challenge$/);
+    if (req.method === "POST" && approvalChallengeMatch) {
+      const body = await readJson(req);
+      return send(res, 201, await store.createApprovalChallenge(approvalChallengeMatch[1], body));
     }
 
     const approvalResponseMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/respond$/);

@@ -1,8 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { shieldModules } from "../data/seed.mjs";
 import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
-import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, auditLogsTable, emergencyPausesTable, policiesTable } from "../db/schema.mjs";
+import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, approvalSignatureChallengesTable, auditLogsTable, emergencyPausesTable, policiesTable } from "../db/schema.mjs";
 import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
@@ -13,7 +13,8 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
-import { approvalExecutionAuthorized, approvalPublicSummary, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalExecutionAuthorized, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
+import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 
@@ -161,6 +162,35 @@ function normalizeReview(row) {
     reviewContext: row.reviewContext && typeof row.reviewContext === "object" ? row.reviewContext : {},
     updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : toDate(row.createdAt).toISOString(),
     createdAt: toDate(row.createdAt).toISOString(),
+  };
+}
+
+
+function normalizeApprovalSignatureChallenge(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    approvalRequestId: row.approvalRequestId,
+    auditLogId: row.auditLogId || "",
+    agentId: row.agentId || "",
+    approvalBindingHash: row.approvalBindingHash || "",
+    response: row.response,
+    reviewerWallet: row.reviewerWallet,
+    nonce: row.nonce,
+    issuedAt: toDate(row.issuedAt).toISOString(),
+    expiresAt: toDate(row.expiresAt).toISOString(),
+    domain: row.domain,
+    chainName: row.chainName || "",
+    message: row.message,
+    challengeHash: row.challengeHash,
+    status: row.status || "Pending",
+    usedAt: row.usedAt ? toDate(row.usedAt).toISOString() : "",
+    signatureHash: row.signatureHash || "",
+    signatureAlgorithm: row.signatureAlgorithm || "",
+    signatureVerified: row.signatureVerified === true,
+    verificationError: row.verificationError || "",
+    createdAt: row.createdAt ? toDate(row.createdAt).toISOString() : "",
+    updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : "",
   };
 }
 
@@ -325,7 +355,8 @@ async function persistAuditApproval(review) {
   const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, review.auditLogId));
   const current = rows[0];
   if (!current) return null;
-  const approvalsReceived = (review.responses || []).filter((response) => response.response === "Approved").length;
+  const approvalsReceived = approvalVerifiedCount(review);
+  const signatureFinding = approvalSignatureFinding(review);
   const emergencyResume = review.reviewContext?.kind === "emergency-pause-resume";
   const executionStatus = emergencyResume ? "not_required" : review.reviewStatus === "Approved" ? "review_approved_pending_signature" : review.reviewStatus === "Rejected" ? "review_rejected_not_submitted" : review.reviewStatus === "Expired" ? "review_expired_not_submitted" : current.executionStatus;
   const executionNote = emergencyResume
@@ -339,6 +370,7 @@ async function persistAuditApproval(review) {
     approvalReceivedCount: approvalsReceived,
     approvalExpiresAt: review.expiresAt ? new Date(review.expiresAt) : null,
     approvalResolvedAt: review.resolvedAt ? new Date(review.resolvedAt) : null,
+    moduleFindings: signatureFinding ? [...(current.moduleFindings || []).filter((finding) => finding?.rule !== "Cryptographic reviewer signature"), signatureFinding] : (current.moduleFindings || []),
     executionStatus,
     executionNote,
     pipelineStages: updatePipelineStage(current.pipelineStages, "human-approval", review.reviewStatus === "Approved" ? "completed" : ["Rejected", "Expired"].includes(review.reviewStatus) ? "failed" : "pending", review.updatedAt || new Date().toISOString(), emergencyResume ? (review.reviewStatus === "Approved" ? "Emergency resume quorum completed" : review.reviewStatus === "Rejected" ? "Emergency resume rejected" : review.reviewStatus === "Expired" ? "Emergency resume approval expired" : "Emergency resume approval pending") : (review.reviewStatus === "Approved" ? "Human approval quorum completed" : review.reviewStatus === "Rejected" ? "Human approval rejected" : review.reviewStatus === "Expired" ? "Human approval expired" : "Human approval pending")),
@@ -1547,6 +1579,62 @@ export async function createPostgresStore() {
       return { approvals: await listApprovals(requireWalletAddress(walletAddress)) };
     },
 
+    async createApprovalChallenge(id, body = {}) {
+      const walletAddress = requireWalletAddress(body.walletAddress || body.reviewerWallet || body.approverWalletAddress);
+      const reviewRows = await db.select().from(actionReviewsTable).where(eq(actionReviewsTable.id, id));
+      if (!reviewRows[0]) {
+        const err = new Error("Approval request not found");
+        err.status = 404;
+        throw err;
+      }
+      const review = await refreshReview(normalizeReview(reviewRows[0]));
+      const now = new Date();
+      const existing = await db.select().from(approvalSignatureChallengesTable).where(and(
+        eq(approvalSignatureChallengesTable.approvalRequestId, id),
+        eq(approvalSignatureChallengesTable.reviewerWallet, walletAddress),
+        eq(approvalSignatureChallengesTable.status, "Pending"),
+      ));
+      for (const row of existing) {
+        const refreshed = expireApprovalSignatureChallenge(normalizeApprovalSignatureChallenge(row), now);
+        await db.update(approvalSignatureChallengesTable).set({
+          status: refreshed.status === "Pending" ? "Superseded" : refreshed.status,
+          verificationError: refreshed.status === "Pending" ? "A newer one-time challenge was issued." : refreshed.verificationError,
+          updatedAt: now,
+        }).where(eq(approvalSignatureChallengesTable.id, row.id));
+      }
+      const challenge = createApprovalSignatureChallenge({
+        review,
+        input: { ...body, walletAddress },
+        now,
+        chainName: String(review.reviewContext?.approvalSignatureChainName || "").trim(),
+      });
+      const [stored] = await db.insert(approvalSignatureChallengesTable).values({
+        id: challenge.id,
+        approvalRequestId: challenge.approvalRequestId,
+        auditLogId: challenge.auditLogId,
+        agentId: challenge.agentId,
+        approvalBindingHash: challenge.approvalBindingHash,
+        response: challenge.response,
+        reviewerWallet: challenge.reviewerWallet,
+        nonce: challenge.nonce,
+        issuedAt: new Date(challenge.issuedAt),
+        expiresAt: new Date(challenge.expiresAt),
+        domain: challenge.domain,
+        chainName: challenge.chainName,
+        message: challenge.message,
+        challengeHash: challenge.challengeHash,
+        status: challenge.status,
+        usedAt: null,
+        signatureHash: "",
+        signatureAlgorithm: "",
+        signatureVerified: false,
+        verificationError: "",
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+      return { challenge: approvalSignatureChallengePublicSummary(normalizeApprovalSignatureChallenge(stored)), approval: approvalPublicSummary(review) };
+    },
+
     async respondApproval(id, body = {}) {
       const walletAddress = requireWalletAddress(body.walletAddress || body.approverWalletAddress);
       const rows = await db.select().from(actionReviewsTable).where(eq(actionReviewsTable.id, id));
@@ -1555,7 +1643,44 @@ export async function createPostgresStore() {
         err.status = 404;
         throw err;
       }
-      const updated = respondToApproval(normalizeReview(rows[0]), { ...body, walletAddress });
+      const currentReview = await refreshReview(normalizeReview(rows[0]));
+      let signatureVerification = null;
+      let verifiedChallenge = null;
+      if (currentReview.reviewContext?.requireCryptographicReviewerSignature === true) {
+        const challengeId = String(body.challengeId || body.signatureChallengeId || "").trim();
+        const challengeRows = challengeId ? await db.select().from(approvalSignatureChallengesTable).where(eq(approvalSignatureChallengesTable.id, challengeId)) : [];
+        if (!challengeRows[0]) {
+          const err = new Error("A valid one-time approval signature challenge is required.");
+          err.status = 400;
+          throw err;
+        }
+        verifiedChallenge = verifyApprovalSignatureChallenge({
+          challenge: normalizeApprovalSignatureChallenge(challengeRows[0]),
+          review: currentReview,
+          input: { ...body, walletAddress },
+        });
+        signatureVerification = verifiedChallenge.verification;
+      }
+      const updated = respondToApproval(currentReview, { ...body, walletAddress, signatureVerification });
+      if (verifiedChallenge) {
+        const [claimed] = await db.update(approvalSignatureChallengesTable).set({
+          status: "Used",
+          usedAt: new Date(verifiedChallenge.challenge.usedAt),
+          signatureHash: verifiedChallenge.challenge.signatureHash,
+          signatureAlgorithm: verifiedChallenge.challenge.signatureAlgorithm,
+          signatureVerified: true,
+          verificationError: "",
+          updatedAt: new Date(verifiedChallenge.challenge.usedAt),
+        }).where(and(
+          eq(approvalSignatureChallengesTable.id, verifiedChallenge.challenge.id),
+          eq(approvalSignatureChallengesTable.status, "Pending"),
+        )).returning();
+        if (!claimed) {
+          const err = new Error("Approval signature challenge was already used or superseded.");
+          err.status = 409;
+          throw err;
+        }
+      }
       const approval = await persistReview(updated);
       let resumedPause = null;
       let resumeAuditLog = null;
@@ -1626,7 +1751,12 @@ export async function createPostgresStore() {
         approved: approvals.filter((item) => item.reviewStatus === "Approved").length,
         rejected: approvals.filter((item) => item.reviewStatus === "Rejected").length,
         expired: approvals.filter((item) => item.reviewStatus === "Expired").length,
-        securityBoundary: "Approval responses are wallet-scoped in the current application session. Cryptographic approver signatures remain a future hardening step.",
+        signatureEnabledRequests: approvals.filter((item) => item.signatureRequired === true).length,
+        verifiedResponses: approvals.reduce((total, item) => total + Number(item.verifiedResponses || 0), 0),
+        cryptographicReviewerSignatures: "foundation_available",
+        signatureAlgorithms: ["Ed25519", "Secp256k1"],
+        challengeReplayProtection: true,
+        securityBoundary: "Signature-enabled policies require a one-time Casper Wallet message signature bound to the exact approval, response, reviewer, nonce, chain, domain, and expiry. Magen3 stores signature hashes and verification metadata, not private keys or raw transaction signatures.",
       };
     },
 

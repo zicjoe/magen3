@@ -71,6 +71,32 @@ export const actionReviewsTable = pgTable("action_reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+
+export const approvalSignatureChallengesTable = pgTable("approval_signature_challenges", {
+  id: text("id").primaryKey(),
+  approvalRequestId: text("approval_request_id").notNull(),
+  auditLogId: text("audit_log_id").notNull().default(""),
+  agentId: text("agent_id").notNull().default(""),
+  approvalBindingHash: text("approval_binding_hash").notNull(),
+  response: text("response").notNull(),
+  reviewerWallet: text("reviewer_wallet").notNull(),
+  nonce: text("nonce").notNull(),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  domain: text("domain").notNull(),
+  chainName: text("chain_name").notNull().default(""),
+  message: text("message").notNull(),
+  challengeHash: text("challenge_hash").notNull(),
+  status: text("status").notNull().default("Pending"),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  signatureHash: text("signature_hash").notNull().default(""),
+  signatureAlgorithm: text("signature_algorithm").notNull().default(""),
+  signatureVerified: boolean("signature_verified").notNull().default(false),
+  verificationError: text("verification_error").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const auditLogsTable = pgTable("audit_logs", {
   id: text("id").primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),

@@ -11,6 +11,7 @@ type CasperWalletProviderInstance = {
   isConnected?: () => Promise<boolean>;
   disconnectFromSite?: () => Promise<boolean>;
   sign?: (deployJson: string, publicKey: string) => Promise<unknown>;
+  signMessage?: (message: string, publicKey: string) => Promise<{ cancelled?: boolean; signatureHex?: string; signature?: Uint8Array }>;
 };
 
 type CasperWalletProviderConstructor = (options?: {
@@ -85,4 +86,21 @@ export async function disconnectCasperWallet() {
   if (provider.disconnectFromSite) {
     await provider.disconnectFromSite();
   }
+}
+
+
+export async function signCasperWalletMessage(message: string, expectedPublicKey: string): Promise<string> {
+  const provider = getCasperWalletProvider();
+  if (!provider.signMessage) {
+    throw new Error("This Casper Wallet version does not support message signing. Update the extension and try again.");
+  }
+  const activePublicKey = await provider.getActivePublicKey();
+  if (!activePublicKey || activePublicKey.toLowerCase() !== expectedPublicKey.toLowerCase()) {
+    throw new Error("The active Casper Wallet account does not match the authorized reviewer wallet.");
+  }
+  const response = await provider.signMessage(message, activePublicKey);
+  if (response?.cancelled) throw new Error("Reviewer signature was cancelled in Casper Wallet.");
+  const signatureHex = String(response?.signatureHex || "").replace(/^0x/i, "").trim();
+  if (!signatureHex) throw new Error("Casper Wallet did not return a reviewer message signature.");
+  return signatureHex;
 }

@@ -240,7 +240,7 @@ Policies can configure:
 
 The workflow states are `Pending`, `Approved`, `Rejected`, `Expired`, and `Configuration Required`. One authorized rejection ends the request. Duplicate responses, unauthorized approvers, execution-wallet self-approval under separation of duties, and execution after expiry are rejected. Changing a protected intent parameter changes the binding hash and requires a new decision.
 
-Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. An approved request permits progression only to the existing human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The current Foundation workflow identifies reviewers by the connected wallet address but does not yet require a separate cryptographic approval signature, so it is not marked Live. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md).
+Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. Signature-enabled policies issue a one-time domain-separated and chain-bound challenge that the authorized Casper Wallet account signs before its response counts toward quorum. Magen3 verifies Ed25519 and Secp256k1 signatures, prevents challenge replay, and stores signature hashes plus verification evidence rather than raw signatures. An approved request still permits progression only to the separate human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The control remains Foundation Available until the deployed browser flow is verified end to end. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md) and [`docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`](docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md).
 
 ### Threat Intelligence foundation
 
@@ -847,7 +847,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, and **Emergency Circuit Breaker** complete and Live. Magen3 is not finished. The next recommended milestone is **Cryptographic Reviewer Signatures**, followed by organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, and **Emergency Circuit Breaker** complete and Live. **Cryptographic Reviewer Signatures** is implemented as Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Approval Escalation & Organizational Quorum**, followed by contract-upgrade safety and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 

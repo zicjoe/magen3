@@ -199,6 +199,12 @@ class ClientTests(unittest.TestCase):
                     "bindingHash": "a" * 64,
                     "requiredApprovals": 1,
                     "approvalsReceived": 1,
+                    "verifiedApprovalsReceived": 1,
+                    "verifiedResponses": 1,
+                    "signatureRequired": True,
+                    "signatureDomain": "magen3.approval-response.v1",
+                    "signatureChainName": "casper-test",
+                    "responses": [{"walletAddress": "01abc", "response": "Approved", "timestamp": "2026-07-23T11:00:00.000Z", "signatureVerified": True, "signatureAlgorithm": "Ed25519", "signatureHash": "b" * 64}],
                     "remainingApprovals": 0,
                     "expiresAt": "2026-07-23T12:00:00.000Z",
                     "mayProceedToSigning": True,
@@ -210,6 +216,9 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(captured["url"].endswith("/api/agent-gateway/approvals/AUDIT-1?agentId=MAG-1"))
         self.assertIsNone(captured["data"])
         self.assertTrue(result["approval"]["mayProceedToSigning"])
+        self.assertTrue(result["approval"]["signatureRequired"])
+        self.assertEqual(result["approval"]["verifiedApprovalsReceived"], 1)
+        self.assertTrue(result["approval"]["responses"][0]["signatureVerified"])
 
     def test_x402_authorization_and_settlement_reporting(self):
         captured = []

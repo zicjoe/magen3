@@ -560,6 +560,16 @@ export interface Magen3ApprovalResponseRecord {
   response: "Approved" | "Rejected" | string;
   comment?: string;
   timestamp: string;
+  signatureRequired?: boolean;
+  signatureVerified?: boolean;
+  signatureVerifiedAt?: string;
+  signatureChallengeId?: string;
+  signatureChallengeHash?: string;
+  signatureNonceHash?: string;
+  signatureHash?: string;
+  signatureAlgorithm?: "Ed25519" | "Secp256k1" | string;
+  signatureDomain?: string;
+  signatureChainName?: string;
 }
 
 export interface Magen3ApprovalRequest {
@@ -580,6 +590,11 @@ export interface Magen3ApprovalRequest {
   bindingHash: string;
   requiredApprovals: number;
   approvalsReceived: number;
+  verifiedApprovalsReceived?: number;
+  verifiedResponses?: number;
+  signatureRequired?: boolean;
+  signatureDomain?: string;
+  signatureChainName?: string;
   remainingApprovals: number;
   approverWallets?: string[];
   responses?: Magen3ApprovalResponseRecord[];

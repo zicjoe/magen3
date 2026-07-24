@@ -37,7 +37,7 @@ See `docs/MCP_SERVER.md` for Codex setup and testing.
 
 ## Human Approval & Quorum
 
-When an intent returns `Review Required`, stop execution and call `magen3_get_approval` with the approval ID or audit ID after a human resolves the request in Magen3. Continue only when `mayProceedToSigning` is true. The MCP server cannot approve a request or impersonate a reviewer.
+When an intent returns `Review Required`, stop execution and call `magen3_get_approval` with the approval ID or audit ID after a human resolves the request in Magen3. Continue only when `mayProceedToSigning` is true. Signature-enabled requests expose `signatureRequired`, verified response counts, and sanitized verification evidence; only verified Casper Ed25519 or Secp256k1 responses count toward quorum. The MCP server cannot create challenges, receive reviewer signatures, approve a request, or impersonate a reviewer.
 
 ## Contract intents
 

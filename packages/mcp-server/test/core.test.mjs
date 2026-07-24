@@ -107,6 +107,8 @@ test("getApproval polls the exact-bound review workflow and gives fail-closed gu
           bindingHash: "a".repeat(64),
           requiredApprovals: 2,
           approvalsReceived: 1,
+          verifiedApprovalsReceived: 1,
+          signatureRequired: true,
           remainingApprovals: 1,
           expiresAt: "2026-07-23T12:00:00.000Z",
           mayProceedToSigning: false,
@@ -120,4 +122,24 @@ test("getApproval polls the exact-bound review workflow and gives fail-closed gu
   assert.equal(result.isError, undefined);
   assert.match(result.content[0].text, /still pending/i);
   assert.match(result.content[0].text, /Do not sign/i);
+});
+
+
+test("getApproval surfaces cryptographically verified quorum guidance", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => ({
+      ok: true,
+      approval: {
+        id: "APR-SIGNED", auditLogId: "AUD-SIGNED", agentId: "MAG-1", actionType: "Transfer", amount: 30, target: "01def",
+        decision: "Review Required", reviewStatus: "Approved", bindingHash: "a".repeat(64), requiredApprovals: 1, approvalsReceived: 1,
+        verifiedApprovalsReceived: 1, signatureRequired: true, remainingApprovals: 0, expiresAt: "2026-07-23T12:00:00.000Z", mayProceedToSigning: true,
+      },
+    }),
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getApproval({ approvalOrAuditId: "AUD-SIGNED" });
+  assert.match(result.content[0].text, /cryptographically verified reviewer quorum/i);
 });

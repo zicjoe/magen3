@@ -68,7 +68,7 @@ const { approval } = await magen3.getApproval(decision.approval.id);
 if (!approval.mayProceedToSigning) return;
 ```
 
-The path accepts the approval ID or related audit ID. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require the agent to remain stopped. Human Approval & Quorum is Foundation Available; the SDK can read the workflow but cannot approve, access a reviewer wallet, sign, or broadcast.
+The path accepts the approval ID or related audit ID. `Pending`, `Configuration Required`, `Rejected`, and `Expired` all require the agent to remain stopped. For signature-enabled policies, the response exposes `signatureRequired`, `verifiedApprovalsReceived`, and sanitized verified-response evidence. Only verified Casper Ed25519 or Secp256k1 reviewer responses count toward quorum. Human Approval & Quorum remains Foundation Available pending deployed browser verification. The agent SDK can read the workflow but cannot create approval challenges, approve, access a reviewer wallet, sign, or broadcast.
 
 ## Oracle Validation
 

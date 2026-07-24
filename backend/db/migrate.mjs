@@ -133,6 +133,34 @@ export async function runMigrations() {
     );
   `);
 
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS approval_signature_challenges (
+      id TEXT PRIMARY KEY,
+      approval_request_id TEXT NOT NULL,
+      audit_log_id TEXT NOT NULL DEFAULT '',
+      agent_id TEXT NOT NULL DEFAULT '',
+      approval_binding_hash TEXT NOT NULL,
+      response TEXT NOT NULL,
+      reviewer_wallet TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      domain TEXT NOT NULL,
+      chain_name TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      challenge_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      used_at TIMESTAMPTZ,
+      signature_hash TEXT NOT NULL DEFAULT '',
+      signature_algorithm TEXT NOT NULL DEFAULT '',
+      signature_verified BOOLEAN NOT NULL DEFAULT FALSE,
+      verification_error TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
@@ -325,6 +353,11 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_wallet_address ON agent_gateway_requests(wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_execution_wallet_address ON agent_gateway_requests(execution_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_requests_received_at ON agent_gateway_requests(received_at DESC);`);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_approval_signature_challenges_request ON approval_signature_challenges(approval_request_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_approval_signature_challenges_reviewer ON approval_signature_challenges(reviewer_wallet);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_approval_signature_challenges_status ON approval_signature_challenges(status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_approval_signature_challenges_expires ON approval_signature_challenges(expires_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_owner_wallet ON emergency_pauses(owner_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_agent_id ON emergency_pauses(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_policy_id ON emergency_pauses(policy_id);`);
