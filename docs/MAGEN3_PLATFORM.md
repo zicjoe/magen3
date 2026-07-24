@@ -83,13 +83,13 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Agent Trust & Access | Authentication; credential lifecycle | — | Instruction provenance; Tool/MCP integrity; delegation/session permissions |
 | Policy & Approval Controls | Policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | Token Approval & Permit Safety | Privileged actions |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety | — | Privileged actions; contract upgrades; argument policies |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
 | Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
 | Threat & Compliance | — | Threat screening; compliance evidence | Managed provider adapters |
 
-The Security Pipeline retains evaluator-level evidence. Findings still identify Wallet Validation, Contract Validation, Token Approval & Permit Safety, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and other exact evaluators. An unavailable control never silently returns pass.
+The Security Pipeline retains evaluator-level evidence. Findings still identify Wallet Validation, Contract Validation, Token Permission Controls, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, Compliance Controls, and other exact evaluators. An unavailable control never silently returns pass.
 
 ### Execution Integrity decision model
 
@@ -104,14 +104,6 @@ Human Approval & Quorum is a Foundation Available control inside Policy & Approv
 The workflow supports single or quorum approval, explicit approver wallets, optional owner fallback, expiry, separation of duties, mandatory rejection comments, duplicate-response prevention, and one-rejection resolution. Agents poll the workflow with their existing API key but cannot approve themselves through the agent endpoint. Reviewers use the wallet-scoped queue under Policies.
 
 An Approved request does not sign or broadcast. It permits the exact unchanged intent to progress to the existing human-controlled wallet-signing boundary before expiry. The current reviewer response is associated with the connected wallet address but is not separately cryptographically signed, so the control remains Foundation Available. See `HUMAN_APPROVAL_WORKFLOW.md`.
-
-### Token Approval & Permit Safety foundation
-
-Token Approval & Permit Safety is a Foundation Available control inside Contract & Permission Safety → Token Permissions. It runs only for explicitly classified approval/permit actions or intents containing `action.tokenPermission`; it does not infer authority from a generic contract call.
-
-It checks network-aware token, owner, spender and target identity; approved and blocked spenders; bounded and unlimited amounts; approval-to-transaction ratio; deadline and maximum lifetime; permit nonce and chain binding; canonical fingerprint and replay history; NFT operator authority; batch size, item integrity and aggregate amount; and exact binding after Human Approval. Raw signatures and signed permit payloads are rejected before persistence. EVM fields are isolated to explicit EVM token-permission intents and do not alter the Casper default path.
-
-The control remains Foundation Available because it does not query live allowance state, certify token metadata or standards, decode arbitrary calldata, or verify a permit signature cryptographically. See `TOKEN_APPROVAL_PERMIT_SAFETY.md`.
 
 ### Wallet Validation decision model
 
@@ -154,6 +146,15 @@ Structural validation does not claim that a contract is audited, verified, or sa
 
 References: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
 
+
+### Token Permission Controls decision model
+
+Token Permission Controls is Live inside Contract & Permission Safety. It activates only for explicit `action.tokenPermission` metadata and supports fungible approvals, allowance changes and resets, permits, NFT operator approval, batch approval, and delegated spender permission.
+
+The control validates owner, token, spender, approved and blocked spender policy, amount, ratio, unlimited authority, chain binding, nonce, expiry, lifetime, reusable authority, NFT operator policy, batch size, and allowance-reset expectations. It stores a canonical SHA-256 fingerprint in the audit trail and blocks exact permit replay or changed protected parameters under a previously used permit ID or token-scoped nonce.
+
+Generic contract calls remain backward compatible. Raw permit signatures, wallet signatures, and signed authority payloads are rejected by the Gateway. See `TOKEN_PERMISSION_CONTROLS.md`.
+
 ### Execution Simulation foundation
 
 Execution Simulation evaluates deterministic preflight metadata before wallet signing. Supported checks include payment amount in motes, gas-price tolerance, TTL, timestamp freshness, optional transaction-hash structure, swap slippage structure, quote-bound consistency, and contract runtime-argument structure.
@@ -187,10 +188,10 @@ Enforced policy fields:
 - Daily spending limit
 - Human-review threshold
 - Human Approval & Quorum: workflow enablement, mode, approvers, required count, expiry, separation of duties, and rejection-comment requirement
-- Token Permissions: enablement, mode, spender allow/block lists, unlimited-approval action, amount, ratio, lifetime, expiry/reset, chain/nonce, NFT, and batch limits
 - Trusted contract or destination list
 - Blocked contracts through `structuredRules.blockedContracts`
 - Optional allowed contract entry points through `structuredRules.allowedEntryPoints`
+- Token Permission mode, spender lists, amount and ratio limits, permit expiry/nonce/chain binding, NFT/batch authority, and allowance-reset requirements
 - Blocked action types
 - Risk mode
 - Threat Intelligence mode, confidence, and unavailable-feed behavior

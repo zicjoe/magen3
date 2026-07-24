@@ -57,33 +57,6 @@ test("approval binding is stable and changes when protected intent parameters ch
   assert.match(first, /^[a-f0-9]{64}$/);
 });
 
-test("approval binding changes when a token-permission spender changes", () => {
-  const tokenPermission = {
-    kind: "Token Approval",
-    network: "casper-test",
-    tokenContract: `contract-hash-${"1".repeat(64)}`,
-    tokenIdentifierType: "Contract Hash",
-    owner: `01${"a".repeat(64)}`,
-    spender: `contract-hash-${"2".repeat(64)}`,
-    approvalAmount: 10,
-    intendedTransactionAmount: 10,
-    deadline: "2026-07-23T11:00:00.000Z",
-  };
-  const first = computeApprovalBindingHash(audit({
-    action: "Token Approval",
-    target: tokenPermission.tokenContract,
-    targetType: "Token Contract",
-    originalIntent: { action: { type: "Token Approval", tokenPermission } },
-  }));
-  const changed = computeApprovalBindingHash(audit({
-    action: "Token Approval",
-    target: tokenPermission.tokenContract,
-    targetType: "Token Contract",
-    originalIntent: { action: { type: "Token Approval", tokenPermission: { ...tokenPermission, spender: `contract-hash-${"3".repeat(64)}` } } },
-  }));
-  assert.notEqual(first, changed);
-});
-
 test("quorum requires distinct eligible wallets and authorizes only after completion", () => {
   const request = createApprovalRequest({ auditLog: audit(), policy: policy(), ownerWalletAddress: OWNER, now: new Date("2026-07-23T10:00:00Z") });
   assert.equal(request.reviewStatus, "Pending");

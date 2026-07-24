@@ -95,12 +95,6 @@ if decision["result"]["decision"] == "Review Required" and approval_request:
 
 Approval is bound to the exact agent, action, amount, target, execution wallet, policy, and original intent. Changing those parameters requires a new Gateway decision. The current Foundation workflow records wallet-address-scoped reviewer responses but does not claim a separate cryptographic approval signature.
 
-## Token Approval & Permit Safety request and response types
-
-The TypeScript SDK accepts `action.tokenPermission` and exposes `tokenPermissionControlsContext`; Python callers use the same JSON object as a dictionary. Supported explicit kinds include token approval, allowance changes/reset, permit authorization, NFT operator approval, batch approval, and delegated spender permission.
-
-Submit unsigned metadata only: network, token contract, owner, spender, amount, intended amount, deadline, nonce, identifier, one-time/reusable/reset flags, and bounded batch items. Never send raw signatures or signed permit payloads. An optional 32-byte signature hash can be used for replay detection. The final decision remains authoritative; a Foundation pass does not prove current on-chain allowance state or token safety. See `TOKEN_APPROVAL_PERMIT_SAFETY.md`.
-
 ## Threat Intelligence response types
 
 The TypeScript result exposes `threatIntelligenceContext` with sanitized feed status, source type/name, freshness timestamps, indicator count, policy mode, confidence threshold, checked identities, and matched indicator summaries. Provider credentials are not part of the SDK response. Python callers receive the same JSON object as a dictionary.
@@ -137,3 +131,6 @@ CASPER_TARGET=recipient-or-contract
 ```
 
 Never commit the API key. Run the examples only on Casper Testnet.
+
+Token permissions use the typed `Magen3TokenPermission` object at `action.tokenPermission`. The response exposes `tokenPermissionControlsContext` with normalized authority metadata, the canonical fingerprint, and replay state. Never include permit signatures or raw signed authority payloads.
+

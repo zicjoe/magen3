@@ -58,12 +58,12 @@ export const PROTECTION_MODULES = [
     id: "contract-permission-safety",
     name: "Contract & Permission Safety",
     status: "Live",
-    capabilities: ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
+    capabilities: ["Trading", "Treasury Operations", "dApp Interactions", "Enterprise Automation"],
     controls: [
       { id: "contract-identity", name: "Contract identity and allowlists", status: "Live" },
       { id: "entry-point-controls", name: "Entry-point and package-version controls", status: "Live" },
       { id: "privileged-actions", name: "Privileged contract actions", status: "Planned" },
-      { id: "token-permissions", name: "Token Approval & Permit Safety", status: "Foundation Available" },
+      { id: "token-permissions", name: "Token approvals and permits", status: "Live" },
     ],
   },
   {

@@ -265,11 +265,11 @@ function pass(state, rule, message, evidence = {}) {
   state.checksPassed.push(message);
 }
 
-function previousX402Records(auditLogs = [], request = {}, now = new Date()) {
-  const nowDate = now instanceof Date ? new Date(now.getTime()) : new Date(now);
-  const nowMs = nowDate.getTime();
-  const hourStart = nowMs - 60 * 60 * 1000;
-  const day = new Date(nowDate);
+function previousX402Records(auditLogs = [], request = {}, evaluationTime = new Date()) {
+  const now = evaluationTime instanceof Date ? evaluationTime.getTime() : Date.parse(evaluationTime);
+  const safeNow = Number.isFinite(now) ? now : Date.now();
+  const hourStart = safeNow - 60 * 60 * 1000;
+  const day = new Date(safeNow);
   day.setHours(0, 0, 0, 0);
   const month = new Date(day.getFullYear(), day.getMonth(), 1);
   const records = auditLogs.filter((log) => log.agentId === request.agentId && log.action === "x402 Payment");

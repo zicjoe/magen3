@@ -59,39 +59,6 @@ Use `requireAllowed()` when the caller must stop automatically for `Blocked` and
 
 The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, `suggestedResolution`, and sanitized `threatIntelligenceContext`, so integrations can render deterministic preflight and exact-match intelligence guidance without parsing free-form text. Threat Intelligence remains Foundation Available and requires an operator-configured fresh feed.
 
-## Token Approval & Permit Safety
-
-```ts
-const decision = await magen3.checkIntent({
-  executionWalletAddress: "0x1111111111111111111111111111111111111111",
-  targetChain: "eip155:1",
-  action: {
-    type: "Permit Authorization",
-    amount: 100,
-    asset: "USDC",
-    target: "0x2222222222222222222222222222222222222222",
-    targetType: "Token Contract",
-    tokenPermission: {
-      kind: "Permit Authorization",
-      standard: "ERC-20",
-      network: "eip155:1",
-      chainId: "1",
-      tokenContract: "0x2222222222222222222222222222222222222222",
-      owner: "0x1111111111111111111111111111111111111111",
-      spender: "0x3333333333333333333333333333333333333333",
-      approvalAmount: 100,
-      intendedTransactionAmount: 100,
-      deadline: new Date(Date.now() + 30 * 60_000).toISOString(),
-      nonce: "7",
-      permitIdentifier: "permit-001",
-      oneTime: true,
-    },
-  },
-});
-```
-
-Inspect the final decision, structured findings, and `tokenPermissionControlsContext`. Never submit a raw permit signature or signed permit payload; an optional 32-byte signature hash is the maximum signing-related evidence accepted. Foundation Available does not mean Magen3 has queried the current on-chain allowance or certified the token contract.
-
 ## Human approval polling
 
 A `Review Required` result is not permission to sign. When `decision.approval` is present, stop execution and poll the exact-bound request:
@@ -216,3 +183,7 @@ await magen3.reportX402Settlement({
 ```
 
 The SDK never accepts or transmits `PAYMENT-SIGNATURE` through the intent API. x402 Payment Controls is Foundation Available and does not certify merchant content or facilitator availability.
+
+## Token approvals and permits
+
+Use `action.tokenPermission` only for explicit approval, permit, NFT operator, batch, or delegated spender authority. The SDK exposes `Magen3TokenPermission` and the response can include `tokenPermissionControlsContext`. Never include permit signatures, wallet signatures, private keys, or raw signed authority payloads.

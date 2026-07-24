@@ -95,8 +95,8 @@ function withStructuredResult({
   bridgeControlsContext = null,
   complianceControlsContext = null,
   x402PaymentControlsContext = null,
-  tokenPermissionControlsContext = null,
   executionIntegrityContext = null,
+  tokenPermissionControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
   return {
@@ -120,8 +120,8 @@ function withStructuredResult({
     bridgeControlsContext,
     complianceControlsContext,
     x402PaymentControlsContext,
-    tokenPermissionControlsContext,
     executionIntegrityContext,
+    tokenPermissionControlsContext,
   };
 }
 
@@ -282,6 +282,12 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...executionIntegrityResult.findings);
   score += executionIntegrityResult.scoreDelta;
 
+  const tokenPermissionControlsResult = evaluateTokenPermissionControls({ request, policy, auditLogs });
+  checksPassed.push(...tokenPermissionControlsResult.checksPassed);
+  checksFailed.push(...tokenPermissionControlsResult.checksFailed);
+  moduleFindings.push(...tokenPermissionControlsResult.findings);
+  score += tokenPermissionControlsResult.scoreDelta;
+
   const threatIntelligenceResult = evaluateThreatIntelligence({ request, policy, snapshot: threatIntelligence });
   checksPassed.push(...threatIntelligenceResult.checksPassed);
   checksFailed.push(...threatIntelligenceResult.checksFailed);
@@ -312,14 +318,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const tokenPermissionControlsResult = evaluateTokenPermissionControls({ request, policy, auditLogs });
-  checksPassed.push(...tokenPermissionControlsResult.checksPassed);
-  checksFailed.push(...tokenPermissionControlsResult.checksFailed);
-  moduleFindings.push(...tokenPermissionControlsResult.findings);
-  score += tokenPermissionControlsResult.scoreDelta;
-
-  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock || tokenPermissionControlsResult.hardBlock;
-  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview || tokenPermissionControlsResult.needsReview);
+  const hardBlock = isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -354,7 +354,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, threatInt
     bridgeControlsContext: bridgeControlsResult.context,
     complianceControlsContext: complianceControlsResult.context,
     x402PaymentControlsContext: x402PaymentControlsResult.context,
-    tokenPermissionControlsContext: tokenPermissionControlsResult.context,
     executionIntegrityContext: executionIntegrityResult.context,
+    tokenPermissionControlsContext: tokenPermissionControlsResult.context,
   });
 }

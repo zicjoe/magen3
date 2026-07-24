@@ -99,14 +99,6 @@ type ActionType =
   | "Oracle Data Update"
   | "Bridge"
   | "x402 Payment"
-  | "Token Approval"
-  | "Allowance Increase"
-  | "Allowance Decrease"
-  | "Allowance Reset"
-  | "Permit Authorization"
-  | "NFT Operator Approval"
-  | "Batch Approval"
-  | "Delegated Spender Permission"
   | "Policy Activation";
 type TargetType =
   | "Trusted Contract"
@@ -116,7 +108,6 @@ type TargetType =
   | "RWA Registry"
   | "Oracle Feed"
   | "Bridge Contract"
-  | "Token Contract"
   | "x402 Merchant";
 
 interface Agent {
@@ -398,41 +389,6 @@ interface DecisionResult {
     matchedIndicators?: Array<Record<string, unknown>>;
     matchedJurisdictions?: Array<Record<string, unknown>>;
   };
-  tokenPermissionControlsContext?: {
-    status?: string;
-    availability?: string;
-    enabled?: boolean;
-    mode?: string;
-    kind?: string;
-    standard?: string;
-    network?: string;
-    networkFamily?: string;
-    chainId?: string;
-    tokenContract?: string;
-    tokenContractKind?: string;
-    owner?: string;
-    spender?: string;
-    intendedSpender?: string;
-    approvalAmount?: number | null;
-    intendedTransactionAmount?: number | null;
-    approvalRatio?: number | null;
-    unlimited?: boolean;
-    deadline?: string;
-    lifetimeSeconds?: number | null;
-    nonce?: string;
-    permitIdentifier?: string;
-    permitSignatureHash?: string;
-    fingerprint?: string;
-    clientFingerprint?: string;
-    batchSize?: number;
-    resetAfterUse?: boolean;
-    oneTime?: boolean;
-    reusable?: boolean;
-    previousFingerprintCount?: number;
-    previousSignatureHashCount?: number;
-    humanApprovalBinding?: string;
-    securityBoundary?: string;
-  };
   x402PaymentControlsContext?: {
     status?: string;
     mode?: string;
@@ -631,13 +587,6 @@ function auditX402Settlement(log: AuditLog) {
   return settlement && typeof settlement === "object" && !Array.isArray(settlement)
     ? settlement as Record<string, unknown>
     : record;
-}
-
-function auditTokenPermission(log: AuditLog) {
-  const permission = auditAction(log).tokenPermission;
-  return permission && typeof permission === "object" && !Array.isArray(permission)
-    ? permission as Record<string, unknown>
-    : null;
 }
 
 function executionProofStatus(status = "", txHash = "") {
@@ -1832,10 +1781,6 @@ function DashboardPage({
   const x402FoundationAvailable = x402PaymentControlsStatus.status === "foundation-available";
   const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
   const pendingApprovals = approvals.filter((approval) => approval.reviewStatus === "Pending" || approval.reviewStatus === "Configuration Required");
-  const tokenPermissionAlertRules = new Set(["Unlimited token approval", "Unlimited batch approval", "Unknown spender", "Unknown batch spender", "Multiple batch spenders", "Maximum token permission lifetime", "Long-lived reusable authority", "Permit replay", "Reused permit signature", "Changed permit parameters"]);
-  const tokenPermissionAlerts = auditLogs.flatMap((log) => (log.moduleFindings || []).filter((finding) => finding.module === "Token Approval & Permit Safety" && ["fail", "warning"].includes(finding.status) && tokenPermissionAlertRules.has(finding.rule)).map((finding) => ({ log, finding }))).slice(0, 4);
-  const tokenPermissionRelevantCapabilities = new Set<ExecutionCapability>(["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation"]);
-  const agentsWithTokenPermissionsDisabled = agents.filter((agent) => normalizeCapabilities(agent.executionCapabilities, agent.type).some((capability) => tokenPermissionRelevantCapabilities.has(capability)) && getActivePolicy(policies, agent.id)?.structuredRules?.tokenPermissionControlsEnabled !== true);
   const complianceFeedOperational = complianceControlsStatus.status === "available";
   const complianceFeedLabel = complianceFeedOperational
     ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
@@ -1918,15 +1863,6 @@ function DashboardPage({
             <span><span className="font-semibold">Human approval required:</span> {pendingApprovals.length} exact-bound request{pendingApprovals.length === 1 ? " is" : "s are"} waiting in Policy & Approval Controls.</span>
             <ArrowRight size={15} className="mt-0.5 shrink-0" />
           </button>
-        )}
-        {(tokenPermissionAlerts.length > 0 || agentsWithTokenPermissionsDisabled.length > 0) && (
-          <div className="mt-3 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs text-[#FCD34D]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><span className="font-semibold">Token permission attention:</span> {tokenPermissionAlerts.length > 0 ? `${tokenPermissionAlerts.length} recent high-signal approval or permit finding${tokenPermissionAlerts.length === 1 ? "" : "s"}.` : "No recent token-permission finding."} {agentsWithTokenPermissionsDisabled.length > 0 ? `${agentsWithTokenPermissionsDisabled.length} relevant agent${agentsWithTokenPermissionsDisabled.length === 1 ? " has" : "s have"} Token Permissions disabled.` : ""}</div>
-              <button type="button" onClick={() => onNavigate(tokenPermissionAlerts.length > 0 ? "audit-log" : "policies")} className="inline-flex items-center gap-1 font-semibold text-[#F8FAFC] hover:text-[#22D3EE]">Review <ArrowRight size={13} /></button>
-            </div>
-            {tokenPermissionAlerts.length > 0 && <div className="mt-2 space-y-1 text-[#FDE68A]">{tokenPermissionAlerts.slice(0, 3).map(({ log, finding }) => <div key={`${log.id}-${finding.rule}`}>{log.agentName}: {finding.rule} · {log.decision}</div>)}</div>}
-          </div>
         )}
       </div>
 
@@ -2412,6 +2348,22 @@ function AgentRegistrationWizard({
           bridgeRequireQuoteExpiry: typeof sourceRules.bridgeRequireQuoteExpiry === "boolean" ? sourceRules.bridgeRequireQuoteExpiry : true,
           bridgeMinSourceConfirmations: typeof sourceRules.bridgeMinSourceConfirmations === "number" ? sourceRules.bridgeMinSourceConfirmations : 2,
           bridgeMinDestinationConfirmations: typeof sourceRules.bridgeMinDestinationConfirmations === "number" ? sourceRules.bridgeMinDestinationConfirmations : 12,
+          tokenPermissionControlsEnabled: typeof sourceRules.tokenPermissionControlsEnabled === "boolean" ? sourceRules.tokenPermissionControlsEnabled : capabilities.some((item) => ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation"].includes(item)),
+          tokenPermissionMode: typeof sourceRules.tokenPermissionMode === "string" ? sourceRules.tokenPermissionMode : "Review",
+          tokenPermissionUnknownSpenderAction: typeof sourceRules.tokenPermissionUnknownSpenderAction === "string" ? sourceRules.tokenPermissionUnknownSpenderAction : "Review",
+          tokenPermissionUnlimitedApprovalAction: typeof sourceRules.tokenPermissionUnlimitedApprovalAction === "string" ? sourceRules.tokenPermissionUnlimitedApprovalAction : "Review",
+          tokenPermissionMaxApprovalAmount: typeof sourceRules.tokenPermissionMaxApprovalAmount === "number" ? sourceRules.tokenPermissionMaxApprovalAmount : 0,
+          tokenPermissionMaxApprovalToTransactionRatio: typeof sourceRules.tokenPermissionMaxApprovalToTransactionRatio === "number" ? sourceRules.tokenPermissionMaxApprovalToTransactionRatio : 2,
+          tokenPermissionMaxLifetimeSeconds: typeof sourceRules.tokenPermissionMaxLifetimeSeconds === "number" ? sourceRules.tokenPermissionMaxLifetimeSeconds : 3600,
+          tokenPermissionRequireExpiry: typeof sourceRules.tokenPermissionRequireExpiry === "boolean" ? sourceRules.tokenPermissionRequireExpiry : true,
+          tokenPermissionRequireAllowanceReset: typeof sourceRules.tokenPermissionRequireAllowanceReset === "boolean" ? sourceRules.tokenPermissionRequireAllowanceReset : false,
+          tokenPermissionApprovedSpenders: Array.isArray(sourceRules.tokenPermissionApprovedSpenders) ? sourceRules.tokenPermissionApprovedSpenders : [],
+          tokenPermissionBlockedSpenders: Array.isArray(sourceRules.tokenPermissionBlockedSpenders) ? sourceRules.tokenPermissionBlockedSpenders : [],
+          tokenPermissionAllowNftOperatorApproval: typeof sourceRules.tokenPermissionAllowNftOperatorApproval === "boolean" ? sourceRules.tokenPermissionAllowNftOperatorApproval : false,
+          tokenPermissionAllowBatchApproval: typeof sourceRules.tokenPermissionAllowBatchApproval === "boolean" ? sourceRules.tokenPermissionAllowBatchApproval : false,
+          tokenPermissionRequireChainBinding: typeof sourceRules.tokenPermissionRequireChainBinding === "boolean" ? sourceRules.tokenPermissionRequireChainBinding : true,
+          tokenPermissionRequireNonce: typeof sourceRules.tokenPermissionRequireNonce === "boolean" ? sourceRules.tokenPermissionRequireNonce : true,
+          tokenPermissionMaximumBatchSize: typeof sourceRules.tokenPermissionMaximumBatchSize === "number" ? sourceRules.tokenPermissionMaximumBatchSize : 10,
           x402ControlsEnabled: typeof sourceRules.x402ControlsEnabled === "boolean" ? sourceRules.x402ControlsEnabled : capabilities.some((item) => ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"].includes(item)),
           x402ControlMode: typeof sourceRules.x402ControlMode === "string" ? sourceRules.x402ControlMode : "Review",
           x402UnavailableAction: typeof sourceRules.x402UnavailableAction === "string" ? sourceRules.x402UnavailableAction : "Review",
@@ -2446,22 +2398,6 @@ function AgentRegistrationWizard({
           approvalSeparationOfDuties: typeof sourceRules.approvalSeparationOfDuties === "boolean" ? sourceRules.approvalSeparationOfDuties : false,
           approvalRequireRejectComment: typeof sourceRules.approvalRequireRejectComment === "boolean" ? sourceRules.approvalRequireRejectComment : true,
           approvalApproverWallets: Array.isArray(sourceRules.approvalApproverWallets) ? sourceRules.approvalApproverWallets : [],
-          tokenPermissionControlsEnabled: typeof sourceRules.tokenPermissionControlsEnabled === "boolean" ? sourceRules.tokenPermissionControlsEnabled : capabilities.some((item) => ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation"].includes(item)),
-          tokenPermissionMode: typeof sourceRules.tokenPermissionMode === "string" ? sourceRules.tokenPermissionMode : "Review",
-          tokenPermissionUnknownSpenderAction: typeof sourceRules.tokenPermissionUnknownSpenderAction === "string" ? sourceRules.tokenPermissionUnknownSpenderAction : "Review",
-          tokenPermissionUnlimitedApprovalAction: typeof sourceRules.tokenPermissionUnlimitedApprovalAction === "string" ? sourceRules.tokenPermissionUnlimitedApprovalAction : "Block",
-          tokenPermissionMaxApprovalAmount: typeof sourceRules.tokenPermissionMaxApprovalAmount === "number" ? sourceRules.tokenPermissionMaxApprovalAmount : Number(policyValues.maxTransaction) || 100,
-          tokenPermissionMaxApprovalToTransactionRatio: typeof sourceRules.tokenPermissionMaxApprovalToTransactionRatio === "number" ? sourceRules.tokenPermissionMaxApprovalToTransactionRatio : 1.25,
-          tokenPermissionMaxLifetimeSeconds: typeof sourceRules.tokenPermissionMaxLifetimeSeconds === "number" ? sourceRules.tokenPermissionMaxLifetimeSeconds : 3600,
-          tokenPermissionRequireExpiry: typeof sourceRules.tokenPermissionRequireExpiry === "boolean" ? sourceRules.tokenPermissionRequireExpiry : true,
-          tokenPermissionRequireAllowanceReset: typeof sourceRules.tokenPermissionRequireAllowanceReset === "boolean" ? sourceRules.tokenPermissionRequireAllowanceReset : true,
-          tokenPermissionApprovedSpenders: Array.isArray(sourceRules.tokenPermissionApprovedSpenders) ? sourceRules.tokenPermissionApprovedSpenders : [],
-          tokenPermissionBlockedSpenders: Array.isArray(sourceRules.tokenPermissionBlockedSpenders) ? sourceRules.tokenPermissionBlockedSpenders : [],
-          tokenPermissionAllowNftOperatorApproval: typeof sourceRules.tokenPermissionAllowNftOperatorApproval === "boolean" ? sourceRules.tokenPermissionAllowNftOperatorApproval : false,
-          tokenPermissionAllowBatchApproval: typeof sourceRules.tokenPermissionAllowBatchApproval === "boolean" ? sourceRules.tokenPermissionAllowBatchApproval : false,
-          tokenPermissionRequireChainBinding: typeof sourceRules.tokenPermissionRequireChainBinding === "boolean" ? sourceRules.tokenPermissionRequireChainBinding : true,
-          tokenPermissionRequireNonce: typeof sourceRules.tokenPermissionRequireNonce === "boolean" ? sourceRules.tokenPermissionRequireNonce : true,
-          tokenPermissionMaximumBatchSize: typeof sourceRules.tokenPermissionMaximumBatchSize === "number" ? sourceRules.tokenPermissionMaximumBatchSize : 10,
           complianceControlsEnabled: typeof sourceRules.complianceControlsEnabled === "boolean" ? sourceRules.complianceControlsEnabled : capabilities.some((item) => ["Treasury Operations", "Enterprise Automation"].includes(item)),
           complianceControlMode: typeof sourceRules.complianceControlMode === "string" ? sourceRules.complianceControlMode : "Review",
           complianceUnavailableAction: typeof sourceRules.complianceUnavailableAction === "string" ? sourceRules.complianceUnavailableAction : "Review",
@@ -2479,7 +2415,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -2632,13 +2568,6 @@ function AgentRegistrationWizard({
                   <div key={module.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
                     <div className="flex items-start justify-between gap-3"><div className="font-semibold text-[#F8FAFC]">{module.name}</div><StatusBadge status={module.status} /></div>
                     <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{module.description}</p>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {module.controls.filter((control) => control.status !== "Planned").map((control) => (
-                        <span key={control.id} className="inline-flex items-center gap-1.5 rounded-full border border-[#1E293B] bg-[#050B14] px-2.5 py-1 text-[10px] text-[#CBD5E1]">
-                          {control.name}<StatusBadge status={control.status} />
-                        </span>
-                      ))}
-                    </div>
                     <div className="mt-3 text-[11px] text-[#64748B]">{module.configurable ? "Configuration available through policy fields." : "No live configuration is exposed yet."}</div>
                   </div>
                 ))}
@@ -2696,7 +2625,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Token Approval & Permit Safety is recommended for agents that can trade, manage wallets or treasuries, interact with dApps, or automate enterprise execution; its provider-agnostic Foundation rules start in Review mode with bounded amounts, short lifetimes, spender policy, and replay binding. Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls Foundation rules are also added in Review mode. External feeds, current non-sensitive compliance evidence, and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and legal compliance guarantees are not represented as Live.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls Foundation rules are added in Review mode. External feeds, current non-sensitive compliance evidence, and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and legal compliance guarantees are not represented as Live.
                   </div>
                 </>
               )}
@@ -2978,16 +2907,9 @@ ${snippet}
     }
   }, [onRevokeAgent]);
 
-  const allAgentAuditLogs = selectedAgent
-    ? auditLogs.filter((log) => log.agentId === selectedAgent.id)
+  const agentAuditLogs = selectedAgent
+    ? auditLogs.filter((log) => log.agentId === selectedAgent.id).slice(0, 5)
     : [];
-  const agentAuditLogs = allAgentAuditLogs.slice(0, 5);
-  const tokenPermissionRules = selectedPolicy?.structuredRules || {};
-  const tokenPermissionEnabled = tokenPermissionRules.tokenPermissionControlsEnabled === true;
-  const tokenPermissionApprovedSpenders = Array.isArray(tokenPermissionRules.tokenPermissionApprovedSpenders) ? tokenPermissionRules.tokenPermissionApprovedSpenders.map(String).filter(Boolean) : [];
-  const tokenPermissionBlockedSpenders = Array.isArray(tokenPermissionRules.tokenPermissionBlockedSpenders) ? tokenPermissionRules.tokenPermissionBlockedSpenders.map(String).filter(Boolean) : [];
-  const tokenPermissionLogs = allAgentAuditLogs.filter((log) => Boolean(auditTokenPermission(log)) || log.moduleFindings?.some((finding) => finding.module === "Token Approval & Permit Safety"));
-  const recentTokenPermissionFindings = tokenPermissionLogs.flatMap((log) => (log.moduleFindings || []).filter((finding) => finding.module === "Token Approval & Permit Safety").map((finding) => ({ log, finding }))).slice(0, 4);
   const scopedAgentIds = new Set(agents.map((agent) => agent.id));
   const scopedAuditLogs = auditLogs.filter((log) => scopedAgentIds.has(log.agentId));
   const today = new Date();
@@ -3509,55 +3431,6 @@ ${snippet}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm font-semibold text-[#F8FAFC]">Token Permission Controls</h3>
-                            <StatusBadge status="Foundation Available" />
-                            <StatusBadge status={tokenPermissionEnabled ? "Active" : "Inactive"} />
-                          </div>
-                          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">
-                            Explicit token approval and permit metadata is checked for spender identity, bounded authority, lifetime, exact binding, and replay before execution. Raw permit signatures are never accepted.
-                          </p>
-                        </div>
-                        <Btn variant="secondary" size="sm" onClick={() => onNavigate("policies")}>Configure Policy</Btn>
-                      </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4 text-xs">
-                        {[
-                          ["Policy mode", String(tokenPermissionRules.tokenPermissionMode || "Not configured")],
-                          ["Unlimited approvals", String(tokenPermissionRules.tokenPermissionUnlimitedApprovalAction || "Not configured")],
-                          ["Maximum amount", String(tokenPermissionRules.tokenPermissionMaxApprovalAmount ?? "Not configured")],
-                          ["Maximum ratio", String(tokenPermissionRules.tokenPermissionMaxApprovalToTransactionRatio ?? "Not configured")],
-                          ["Maximum lifetime", tokenPermissionRules.tokenPermissionMaxLifetimeSeconds ? `${String(tokenPermissionRules.tokenPermissionMaxLifetimeSeconds)} seconds` : "Not configured"],
-                          ["Approved spenders", String(tokenPermissionApprovedSpenders.length)],
-                          ["Blocked spenders", String(tokenPermissionBlockedSpenders.length)],
-                          ["Recent decisions", String(tokenPermissionLogs.length)],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-lg border border-[#1E293B] bg-[#050B14] p-2.5">
-                            <div className="text-[#64748B]">{label}</div><div className="mt-1 break-all font-semibold text-[#F8FAFC]">{value}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {(tokenPermissionApprovedSpenders.length > 0 || tokenPermissionBlockedSpenders.length > 0) && (
-                        <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs">
-                          <div className="rounded-lg border border-[#22C55E]/20 bg-[#22C55E]/5 p-3"><div className="font-semibold text-[#BBF7D0]">Approved spenders</div><div className="mt-2 space-y-1 font-mono text-[#94A3B8]">{tokenPermissionApprovedSpenders.slice(0, 4).map((spender) => <div key={spender} className="break-all">{spender}</div>)}</div></div>
-                          <div className="rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/5 p-3"><div className="font-semibold text-[#FCA5A5]">Blocked spenders</div><div className="mt-2 space-y-1 font-mono text-[#94A3B8]">{tokenPermissionBlockedSpenders.slice(0, 4).map((spender) => <div key={spender} className="break-all">{spender}</div>)}</div></div>
-                        </div>
-                      )}
-                      {recentTokenPermissionFindings.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          <div className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Recent token-permission findings</div>
-                          {recentTokenPermissionFindings.map(({ log, finding }, index) => (
-                            <div key={`${log.id}-${finding.rule}-${index}`} className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3 text-xs">
-                              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold text-[#F8FAFC]">{finding.rule}</span><DecisionBadge decision={log.decision} /></div>
-                              <div className="mt-1 text-[#94A3B8]">{finding.message}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
                     <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -3673,6 +3546,50 @@ function ExecutionIntegrityPolicyFields({
   );
 }
 
+function TokenPermissionPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Contract & Permission Safety · Token Permissions</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Constrain approvals, permits, NFT operators, batch authority, and delegated spenders before signing. Permit identity and protected parameters are fingerprinted for replay prevention.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.tokenPermissionControlsEnabled ?? "")} onChange={(value) => onChange({ tokenPermissionControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.tokenPermissionMode ?? "")} onChange={(value) => onChange({ tokenPermissionMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Unknown Spender" value={String(values.tokenPermissionUnknownSpenderAction ?? "")} onChange={(value) => onChange({ tokenPermissionUnknownSpenderAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Unlimited Approval" value={String(values.tokenPermissionUnlimitedApprovalAction ?? "")} onChange={(value) => onChange({ tokenPermissionUnlimitedApprovalAction: value })} options={["Warn", "Review", "Block"]} />
+        <InputField label="Maximum Approval Amount" value={String(values.tokenPermissionMaxApprovalAmount ?? "")} onChange={(value) => onChange({ tokenPermissionMaxApprovalAmount: value })} type="number" />
+        <InputField label="Max Approval / Transaction Ratio" value={String(values.tokenPermissionMaxApprovalToTransactionRatio ?? "")} onChange={(value) => onChange({ tokenPermissionMaxApprovalToTransactionRatio: value })} type="number" />
+        <TextareaField label="Approved Spenders (one per line)" value={String(values.tokenPermissionApprovedSpenders ?? "")} onChange={(value) => onChange({ tokenPermissionApprovedSpenders: value })} />
+        <TextareaField label="Blocked Spenders (one per line)" value={String(values.tokenPermissionBlockedSpenders ?? "")} onChange={(value) => onChange({ tokenPermissionBlockedSpenders: value })} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Advanced permit, NFT, batch, and reset controls</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <InputField label="Maximum Permit Lifetime (sec)" value={String(values.tokenPermissionMaxLifetimeSeconds ?? "")} onChange={(value) => onChange({ tokenPermissionMaxLifetimeSeconds: value })} type="number" />
+          <SelectField label="Require Permit Expiry" value={String(values.tokenPermissionRequireExpiry ?? "")} onChange={(value) => onChange({ tokenPermissionRequireExpiry: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Permit Nonce" value={String(values.tokenPermissionRequireNonce ?? "")} onChange={(value) => onChange({ tokenPermissionRequireNonce: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Chain Binding" value={String(values.tokenPermissionRequireChainBinding ?? "")} onChange={(value) => onChange({ tokenPermissionRequireChainBinding: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Allowance Reset" value={String(values.tokenPermissionRequireAllowanceReset ?? "")} onChange={(value) => onChange({ tokenPermissionRequireAllowanceReset: value })} options={["Yes", "No"]} />
+          <SelectField label="Allow NFT Operator Approval" value={String(values.tokenPermissionAllowNftOperatorApproval ?? "")} onChange={(value) => onChange({ tokenPermissionAllowNftOperatorApproval: value })} options={["Yes", "No"]} />
+          <SelectField label="Allow Batch Approval" value={String(values.tokenPermissionAllowBatchApproval ?? "")} onChange={(value) => onChange({ tokenPermissionAllowBatchApproval: value })} options={["Yes", "No"]} />
+          <InputField label="Maximum Batch Size" value={String(values.tokenPermissionMaximumBatchSize ?? "")} onChange={(value) => onChange({ tokenPermissionMaximumBatchSize: value })} type="number" />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Only explicit token-permission metadata activates this control. Generic contract calls remain compatible. Never send permit signatures or wallet secrets to the Gateway.</p>
+    </div>
+  );
+}
+
 function X402PolicyFields({
   values,
   onChange,
@@ -3718,50 +3635,6 @@ function X402PolicyFields({
         <InputField label="Maximum Settlement Attempts" value={String(values.x402MaxSettlementAttempts ?? "")} onChange={(value) => onChange({ x402MaxSettlementAttempts: value })} type="number" />
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">The exact scheme is supported first. Magen3 never receives PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals.</p>
-    </div>
-  );
-}
-
-function TokenPermissionPolicyFields({
-  values,
-  onChange,
-}: {
-  values: Record<string, unknown>;
-  onChange: (patch: Record<string, string>) => void;
-}) {
-  return (
-    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-[#F8FAFC]">Contract & Permission Safety · Token Permissions</div>
-          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bound token authority to the exact chain, token, owner, spender, amount, lifetime, nonce, and canonical fingerprint. Generic contract calls are never guessed to be approvals.</p>
-        </div>
-        <StatusBadge status="Foundation Available" />
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <SelectField label="Enable Controls" value={String(values.tokenPermissionControlsEnabled ?? "")} onChange={(value) => onChange({ tokenPermissionControlsEnabled: value })} options={["Yes", "No"]} />
-        <SelectField label="Policy Mode" value={String(values.tokenPermissionMode ?? "")} onChange={(value) => onChange({ tokenPermissionMode: value })} options={["Observe", "Review", "Enforce"]} />
-        <SelectField label="Unknown Spender" value={String(values.tokenPermissionUnknownSpenderAction ?? "")} onChange={(value) => onChange({ tokenPermissionUnknownSpenderAction: value })} options={["Warn", "Review", "Block"]} />
-        <SelectField label="Unlimited Approval" value={String(values.tokenPermissionUnlimitedApprovalAction ?? "")} onChange={(value) => onChange({ tokenPermissionUnlimitedApprovalAction: value })} options={["Warn", "Review", "Block"]} />
-        <InputField label="Maximum Approval Amount" value={String(values.tokenPermissionMaxApprovalAmount ?? "")} onChange={(value) => onChange({ tokenPermissionMaxApprovalAmount: value })} type="number" />
-        <InputField label="Maximum Approval Ratio" value={String(values.tokenPermissionMaxApprovalToTransactionRatio ?? "")} onChange={(value) => onChange({ tokenPermissionMaxApprovalToTransactionRatio: value })} type="number" />
-        <InputField label="Maximum Lifetime (sec)" value={String(values.tokenPermissionMaxLifetimeSeconds ?? "")} onChange={(value) => onChange({ tokenPermissionMaxLifetimeSeconds: value })} type="number" />
-        <TextareaField label="Approved Spenders (one per line)" value={String(values.tokenPermissionApprovedSpenders ?? "")} onChange={(value) => onChange({ tokenPermissionApprovedSpenders: value })} />
-        <TextareaField label="Blocked Spenders (one per line)" value={String(values.tokenPermissionBlockedSpenders ?? "")} onChange={(value) => onChange({ tokenPermissionBlockedSpenders: value })} />
-      </div>
-      <details className="mt-4 rounded-lg border border-[#334155] bg-[#020617]/30 p-3">
-        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Advanced permit, NFT, and batch controls</summary>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <SelectField label="Require Expiry" value={String(values.tokenPermissionRequireExpiry ?? "")} onChange={(value) => onChange({ tokenPermissionRequireExpiry: value })} options={["Yes", "No"]} />
-          <SelectField label="Require Allowance Reset" value={String(values.tokenPermissionRequireAllowanceReset ?? "")} onChange={(value) => onChange({ tokenPermissionRequireAllowanceReset: value })} options={["Yes", "No"]} />
-          <SelectField label="Allow NFT Operator Approval" value={String(values.tokenPermissionAllowNftOperatorApproval ?? "")} onChange={(value) => onChange({ tokenPermissionAllowNftOperatorApproval: value })} options={["Yes", "No"]} />
-          <SelectField label="Allow Batch Approval" value={String(values.tokenPermissionAllowBatchApproval ?? "")} onChange={(value) => onChange({ tokenPermissionAllowBatchApproval: value })} options={["Yes", "No"]} />
-          <SelectField label="Require Chain Binding" value={String(values.tokenPermissionRequireChainBinding ?? "")} onChange={(value) => onChange({ tokenPermissionRequireChainBinding: value })} options={["Yes", "No"]} />
-          <SelectField label="Require Permit Nonce" value={String(values.tokenPermissionRequireNonce ?? "")} onChange={(value) => onChange({ tokenPermissionRequireNonce: value })} options={["Yes", "No"]} />
-          <InputField label="Maximum Batch Size" value={String(values.tokenPermissionMaximumBatchSize ?? "")} onChange={(value) => onChange({ tokenPermissionMaximumBatchSize: value })} type="number" />
-        </div>
-      </details>
-      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Raw permit signatures and signed payloads are rejected. This foundation evaluates declared metadata and audit replay state; it does not query current on-chain allowances or certify token safety.</p>
     </div>
   );
 }
@@ -3879,6 +3752,22 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    tokenPermissionControlsEnabled: "Yes",
+    tokenPermissionMode: "Review",
+    tokenPermissionUnknownSpenderAction: "Review",
+    tokenPermissionUnlimitedApprovalAction: "Review",
+    tokenPermissionMaxApprovalAmount: "0",
+    tokenPermissionMaxApprovalToTransactionRatio: "2",
+    tokenPermissionMaxLifetimeSeconds: "3600",
+    tokenPermissionRequireExpiry: "Yes",
+    tokenPermissionRequireAllowanceReset: "No",
+    tokenPermissionApprovedSpenders: "",
+    tokenPermissionBlockedSpenders: "",
+    tokenPermissionAllowNftOperatorApproval: "No",
+    tokenPermissionAllowBatchApproval: "No",
+    tokenPermissionRequireChainBinding: "Yes",
+    tokenPermissionRequireNonce: "Yes",
+    tokenPermissionMaximumBatchSize: "10",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -3905,22 +3794,6 @@ function PoliciesPage({
     x402RequireClientFingerprint: "No",
     x402PreventAmbiguousRetry: "Yes",
     x402MaxSettlementAttempts: "1",
-    tokenPermissionControlsEnabled: "Yes",
-    tokenPermissionMode: "Review",
-    tokenPermissionUnknownSpenderAction: "Review",
-    tokenPermissionUnlimitedApprovalAction: "Block",
-    tokenPermissionMaxApprovalAmount: "100",
-    tokenPermissionMaxApprovalToTransactionRatio: "1.25",
-    tokenPermissionMaxLifetimeSeconds: "3600",
-    tokenPermissionRequireExpiry: "Yes",
-    tokenPermissionRequireAllowanceReset: "Yes",
-    tokenPermissionApprovedSpenders: "",
-    tokenPermissionBlockedSpenders: "",
-    tokenPermissionAllowNftOperatorApproval: "No",
-    tokenPermissionAllowBatchApproval: "No",
-    tokenPermissionRequireChainBinding: "Yes",
-    tokenPermissionRequireNonce: "Yes",
-    tokenPermissionMaximumBatchSize: "10",
     complianceControlsEnabled: "Yes",
     complianceControlMode: "Review",
     complianceUnavailableAction: "Review",
@@ -4006,6 +3879,22 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    tokenPermissionControlsEnabled: "Yes",
+    tokenPermissionMode: "Review",
+    tokenPermissionUnknownSpenderAction: "Review",
+    tokenPermissionUnlimitedApprovalAction: "Review",
+    tokenPermissionMaxApprovalAmount: "0",
+    tokenPermissionMaxApprovalToTransactionRatio: "2",
+    tokenPermissionMaxLifetimeSeconds: "3600",
+    tokenPermissionRequireExpiry: "Yes",
+    tokenPermissionRequireAllowanceReset: "No",
+    tokenPermissionApprovedSpenders: "",
+    tokenPermissionBlockedSpenders: "",
+    tokenPermissionAllowNftOperatorApproval: "No",
+    tokenPermissionAllowBatchApproval: "No",
+    tokenPermissionRequireChainBinding: "Yes",
+    tokenPermissionRequireNonce: "Yes",
+    tokenPermissionMaximumBatchSize: "10",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4032,22 +3921,6 @@ function PoliciesPage({
     x402RequireClientFingerprint: "No",
     x402PreventAmbiguousRetry: "Yes",
     x402MaxSettlementAttempts: "1",
-    tokenPermissionControlsEnabled: "Yes",
-    tokenPermissionMode: "Review",
-    tokenPermissionUnknownSpenderAction: "Review",
-    tokenPermissionUnlimitedApprovalAction: "Block",
-    tokenPermissionMaxApprovalAmount: "100",
-    tokenPermissionMaxApprovalToTransactionRatio: "1.25",
-    tokenPermissionMaxLifetimeSeconds: "3600",
-    tokenPermissionRequireExpiry: "Yes",
-    tokenPermissionRequireAllowanceReset: "Yes",
-    tokenPermissionApprovedSpenders: "",
-    tokenPermissionBlockedSpenders: "",
-    tokenPermissionAllowNftOperatorApproval: "No",
-    tokenPermissionAllowBatchApproval: "No",
-    tokenPermissionRequireChainBinding: "Yes",
-    tokenPermissionRequireNonce: "Yes",
-    tokenPermissionMaximumBatchSize: "10",
     complianceControlsEnabled: "Yes",
     complianceControlMode: "Review",
     complianceUnavailableAction: "Review",
@@ -4135,6 +4008,22 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: form.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(form.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(form.bridgeMinDestinationConfirmations) || 0),
+        tokenPermissionControlsEnabled: form.tokenPermissionControlsEnabled !== "No",
+        tokenPermissionMode: form.tokenPermissionMode,
+        tokenPermissionUnknownSpenderAction: form.tokenPermissionUnknownSpenderAction,
+        tokenPermissionUnlimitedApprovalAction: form.tokenPermissionUnlimitedApprovalAction,
+        tokenPermissionMaxApprovalAmount: Math.max(0, Number(form.tokenPermissionMaxApprovalAmount) || 0),
+        tokenPermissionMaxApprovalToTransactionRatio: Math.max(0, Number(form.tokenPermissionMaxApprovalToTransactionRatio) || 2),
+        tokenPermissionMaxLifetimeSeconds: Math.max(0, Number(form.tokenPermissionMaxLifetimeSeconds) || 3600),
+        tokenPermissionRequireExpiry: form.tokenPermissionRequireExpiry !== "No",
+        tokenPermissionRequireAllowanceReset: form.tokenPermissionRequireAllowanceReset === "Yes",
+        tokenPermissionApprovedSpenders: form.tokenPermissionApprovedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
+        tokenPermissionBlockedSpenders: form.tokenPermissionBlockedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
+        tokenPermissionAllowNftOperatorApproval: form.tokenPermissionAllowNftOperatorApproval === "Yes",
+        tokenPermissionAllowBatchApproval: form.tokenPermissionAllowBatchApproval === "Yes",
+        tokenPermissionRequireChainBinding: form.tokenPermissionRequireChainBinding !== "No",
+        tokenPermissionRequireNonce: form.tokenPermissionRequireNonce !== "No",
+        tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(form.tokenPermissionMaximumBatchSize) || 10)),
         x402ControlsEnabled: form.x402ControlsEnabled !== "No",
         x402ControlMode: form.x402ControlMode,
         x402UnavailableAction: form.x402UnavailableAction,
@@ -4161,22 +4050,6 @@ function PoliciesPage({
         x402RequireClientFingerprint: form.x402RequireClientFingerprint === "Yes",
         x402PreventAmbiguousRetry: form.x402PreventAmbiguousRetry !== "No",
         x402MaxSettlementAttempts: Math.max(1, Number(form.x402MaxSettlementAttempts) || 1),
-        tokenPermissionControlsEnabled: form.tokenPermissionControlsEnabled !== "No",
-        tokenPermissionMode: form.tokenPermissionMode,
-        tokenPermissionUnknownSpenderAction: form.tokenPermissionUnknownSpenderAction,
-        tokenPermissionUnlimitedApprovalAction: form.tokenPermissionUnlimitedApprovalAction,
-        tokenPermissionMaxApprovalAmount: Math.max(0, Number(form.tokenPermissionMaxApprovalAmount) || 0),
-        tokenPermissionMaxApprovalToTransactionRatio: Math.max(0, Number(form.tokenPermissionMaxApprovalToTransactionRatio) || 0),
-        tokenPermissionMaxLifetimeSeconds: Math.max(1, Number(form.tokenPermissionMaxLifetimeSeconds) || 3600),
-        tokenPermissionRequireExpiry: form.tokenPermissionRequireExpiry !== "No",
-        tokenPermissionRequireAllowanceReset: form.tokenPermissionRequireAllowanceReset !== "No",
-        tokenPermissionApprovedSpenders: form.tokenPermissionApprovedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
-        tokenPermissionBlockedSpenders: form.tokenPermissionBlockedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
-        tokenPermissionAllowNftOperatorApproval: form.tokenPermissionAllowNftOperatorApproval === "Yes",
-        tokenPermissionAllowBatchApproval: form.tokenPermissionAllowBatchApproval === "Yes",
-        tokenPermissionRequireChainBinding: form.tokenPermissionRequireChainBinding !== "No",
-        tokenPermissionRequireNonce: form.tokenPermissionRequireNonce !== "No",
-        tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(form.tokenPermissionMaximumBatchSize) || 10)),
         complianceControlsEnabled: form.complianceControlsEnabled !== "No",
         complianceControlMode: form.complianceControlMode,
         complianceUnavailableAction: form.complianceUnavailableAction,
@@ -4252,7 +4125,23 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: "Yes",
       bridgeMinSourceConfirmations: "2",
       bridgeMinDestinationConfirmations: "12",
-      x402ControlsEnabled: "Yes",
+      tokenPermissionControlsEnabled: "Yes",
+    tokenPermissionMode: "Review",
+    tokenPermissionUnknownSpenderAction: "Review",
+    tokenPermissionUnlimitedApprovalAction: "Review",
+    tokenPermissionMaxApprovalAmount: "0",
+    tokenPermissionMaxApprovalToTransactionRatio: "2",
+    tokenPermissionMaxLifetimeSeconds: "3600",
+    tokenPermissionRequireExpiry: "Yes",
+    tokenPermissionRequireAllowanceReset: "No",
+    tokenPermissionApprovedSpenders: "",
+    tokenPermissionBlockedSpenders: "",
+    tokenPermissionAllowNftOperatorApproval: "No",
+    tokenPermissionAllowBatchApproval: "No",
+    tokenPermissionRequireChainBinding: "Yes",
+    tokenPermissionRequireNonce: "Yes",
+    tokenPermissionMaximumBatchSize: "10",
+    x402ControlsEnabled: "Yes",
       x402ControlMode: "Review",
       x402UnavailableAction: "Review",
       x402AllowedVersions: "2",
@@ -4278,23 +4167,7 @@ function PoliciesPage({
       x402RequireClientFingerprint: "No",
       x402PreventAmbiguousRetry: "Yes",
       x402MaxSettlementAttempts: "1",
-      tokenPermissionControlsEnabled: "Yes",
-    tokenPermissionMode: "Review",
-    tokenPermissionUnknownSpenderAction: "Review",
-    tokenPermissionUnlimitedApprovalAction: "Block",
-    tokenPermissionMaxApprovalAmount: "100",
-    tokenPermissionMaxApprovalToTransactionRatio: "1.25",
-    tokenPermissionMaxLifetimeSeconds: "3600",
-    tokenPermissionRequireExpiry: "Yes",
-    tokenPermissionRequireAllowanceReset: "Yes",
-    tokenPermissionApprovedSpenders: "",
-    tokenPermissionBlockedSpenders: "",
-    tokenPermissionAllowNftOperatorApproval: "No",
-    tokenPermissionAllowBatchApproval: "No",
-    tokenPermissionRequireChainBinding: "Yes",
-    tokenPermissionRequireNonce: "Yes",
-    tokenPermissionMaximumBatchSize: "10",
-    complianceControlsEnabled: "Yes",
+      complianceControlsEnabled: "Yes",
       complianceControlMode: "Review",
       complianceUnavailableAction: "Review",
       complianceRequiredActions: "Transfer\nDAO Treasury Payment\nBridge",
@@ -4373,6 +4246,22 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: policy.structuredRules?.bridgeRequireQuoteExpiry === false ? "No" : "Yes",
       bridgeMinSourceConfirmations: String(typeof policy.structuredRules?.bridgeMinSourceConfirmations === "number" ? policy.structuredRules.bridgeMinSourceConfirmations : 2),
       bridgeMinDestinationConfirmations: String(typeof policy.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policy.structuredRules.bridgeMinDestinationConfirmations : 12),
+      tokenPermissionControlsEnabled: policy.structuredRules?.tokenPermissionControlsEnabled === false ? "No" : "Yes",
+      tokenPermissionMode: typeof policy.structuredRules?.tokenPermissionMode === "string" ? policy.structuredRules.tokenPermissionMode : "Review",
+      tokenPermissionUnknownSpenderAction: typeof policy.structuredRules?.tokenPermissionUnknownSpenderAction === "string" ? policy.structuredRules.tokenPermissionUnknownSpenderAction : "Review",
+      tokenPermissionUnlimitedApprovalAction: typeof policy.structuredRules?.tokenPermissionUnlimitedApprovalAction === "string" ? policy.structuredRules.tokenPermissionUnlimitedApprovalAction : "Review",
+      tokenPermissionMaxApprovalAmount: String(typeof policy.structuredRules?.tokenPermissionMaxApprovalAmount === "number" ? policy.structuredRules.tokenPermissionMaxApprovalAmount : 0),
+      tokenPermissionMaxApprovalToTransactionRatio: String(typeof policy.structuredRules?.tokenPermissionMaxApprovalToTransactionRatio === "number" ? policy.structuredRules.tokenPermissionMaxApprovalToTransactionRatio : 2),
+      tokenPermissionMaxLifetimeSeconds: String(typeof policy.structuredRules?.tokenPermissionMaxLifetimeSeconds === "number" ? policy.structuredRules.tokenPermissionMaxLifetimeSeconds : 3600),
+      tokenPermissionRequireExpiry: policy.structuredRules?.tokenPermissionRequireExpiry === false ? "No" : "Yes",
+      tokenPermissionRequireAllowanceReset: policy.structuredRules?.tokenPermissionRequireAllowanceReset === true ? "Yes" : "No",
+      tokenPermissionApprovedSpenders: Array.isArray(policy.structuredRules?.tokenPermissionApprovedSpenders) ? (policy.structuredRules.tokenPermissionApprovedSpenders as string[]).join("\n") : "",
+      tokenPermissionBlockedSpenders: Array.isArray(policy.structuredRules?.tokenPermissionBlockedSpenders) ? (policy.structuredRules.tokenPermissionBlockedSpenders as string[]).join("\n") : "",
+      tokenPermissionAllowNftOperatorApproval: policy.structuredRules?.tokenPermissionAllowNftOperatorApproval === true ? "Yes" : "No",
+      tokenPermissionAllowBatchApproval: policy.structuredRules?.tokenPermissionAllowBatchApproval === true ? "Yes" : "No",
+      tokenPermissionRequireChainBinding: policy.structuredRules?.tokenPermissionRequireChainBinding === false ? "No" : "Yes",
+      tokenPermissionRequireNonce: policy.structuredRules?.tokenPermissionRequireNonce === false ? "No" : "Yes",
+      tokenPermissionMaximumBatchSize: String(typeof policy.structuredRules?.tokenPermissionMaximumBatchSize === "number" ? policy.structuredRules.tokenPermissionMaximumBatchSize : 10),
       x402ControlsEnabled: policy.structuredRules?.x402ControlsEnabled === false ? "No" : "Yes",
       x402ControlMode: typeof policy.structuredRules?.x402ControlMode === "string" ? policy.structuredRules.x402ControlMode : "Observe",
       x402UnavailableAction: typeof policy.structuredRules?.x402UnavailableAction === "string" ? policy.structuredRules.x402UnavailableAction : "Warn",
@@ -4399,22 +4288,6 @@ function PoliciesPage({
       x402RequireClientFingerprint: policy.structuredRules?.x402RequireClientFingerprint === true ? "Yes" : "No",
       x402PreventAmbiguousRetry: policy.structuredRules?.x402PreventAmbiguousRetry === false ? "No" : "Yes",
       x402MaxSettlementAttempts: String(typeof policy.structuredRules?.x402MaxSettlementAttempts === "number" ? policy.structuredRules.x402MaxSettlementAttempts : 1),
-      tokenPermissionControlsEnabled: policy.structuredRules?.tokenPermissionControlsEnabled === true ? "Yes" : "No",
-      tokenPermissionMode: typeof policy.structuredRules?.tokenPermissionMode === "string" ? policy.structuredRules.tokenPermissionMode : "Observe",
-      tokenPermissionUnknownSpenderAction: typeof policy.structuredRules?.tokenPermissionUnknownSpenderAction === "string" ? policy.structuredRules.tokenPermissionUnknownSpenderAction : "Review",
-      tokenPermissionUnlimitedApprovalAction: typeof policy.structuredRules?.tokenPermissionUnlimitedApprovalAction === "string" ? policy.structuredRules.tokenPermissionUnlimitedApprovalAction : "Review",
-      tokenPermissionMaxApprovalAmount: String(typeof policy.structuredRules?.tokenPermissionMaxApprovalAmount === "number" ? policy.structuredRules.tokenPermissionMaxApprovalAmount : 0),
-      tokenPermissionMaxApprovalToTransactionRatio: String(typeof policy.structuredRules?.tokenPermissionMaxApprovalToTransactionRatio === "number" ? policy.structuredRules.tokenPermissionMaxApprovalToTransactionRatio : 0),
-      tokenPermissionMaxLifetimeSeconds: String(typeof policy.structuredRules?.tokenPermissionMaxLifetimeSeconds === "number" ? policy.structuredRules.tokenPermissionMaxLifetimeSeconds : 3600),
-      tokenPermissionRequireExpiry: policy.structuredRules?.tokenPermissionRequireExpiry === true ? "Yes" : "No",
-      tokenPermissionRequireAllowanceReset: policy.structuredRules?.tokenPermissionRequireAllowanceReset === true ? "Yes" : "No",
-      tokenPermissionApprovedSpenders: Array.isArray(policy.structuredRules?.tokenPermissionApprovedSpenders) ? (policy.structuredRules.tokenPermissionApprovedSpenders as string[]).join("\n") : "",
-      tokenPermissionBlockedSpenders: Array.isArray(policy.structuredRules?.tokenPermissionBlockedSpenders) ? (policy.structuredRules.tokenPermissionBlockedSpenders as string[]).join("\n") : "",
-      tokenPermissionAllowNftOperatorApproval: policy.structuredRules?.tokenPermissionAllowNftOperatorApproval === true ? "Yes" : "No",
-      tokenPermissionAllowBatchApproval: policy.structuredRules?.tokenPermissionAllowBatchApproval === true ? "Yes" : "No",
-      tokenPermissionRequireChainBinding: policy.structuredRules?.tokenPermissionRequireChainBinding === false ? "No" : "Yes",
-      tokenPermissionRequireNonce: policy.structuredRules?.tokenPermissionRequireNonce === false ? "No" : "Yes",
-      tokenPermissionMaximumBatchSize: String(typeof policy.structuredRules?.tokenPermissionMaximumBatchSize === "number" ? policy.structuredRules.tokenPermissionMaximumBatchSize : 10),
       complianceControlsEnabled: policy.structuredRules?.complianceControlsEnabled === false ? "No" : "Yes",
       complianceControlMode: typeof policy.structuredRules?.complianceControlMode === "string" ? policy.structuredRules.complianceControlMode : "Observe",
       complianceUnavailableAction: typeof policy.structuredRules?.complianceUnavailableAction === "string" ? policy.structuredRules.complianceUnavailableAction : "Warn",
@@ -4503,6 +4376,22 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: editForm.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(editForm.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(editForm.bridgeMinDestinationConfirmations) || 0),
+        tokenPermissionControlsEnabled: editForm.tokenPermissionControlsEnabled !== "No",
+        tokenPermissionMode: editForm.tokenPermissionMode,
+        tokenPermissionUnknownSpenderAction: editForm.tokenPermissionUnknownSpenderAction,
+        tokenPermissionUnlimitedApprovalAction: editForm.tokenPermissionUnlimitedApprovalAction,
+        tokenPermissionMaxApprovalAmount: Math.max(0, Number(editForm.tokenPermissionMaxApprovalAmount) || 0),
+        tokenPermissionMaxApprovalToTransactionRatio: Math.max(0, Number(editForm.tokenPermissionMaxApprovalToTransactionRatio) || 2),
+        tokenPermissionMaxLifetimeSeconds: Math.max(0, Number(editForm.tokenPermissionMaxLifetimeSeconds) || 3600),
+        tokenPermissionRequireExpiry: editForm.tokenPermissionRequireExpiry !== "No",
+        tokenPermissionRequireAllowanceReset: editForm.tokenPermissionRequireAllowanceReset === "Yes",
+        tokenPermissionApprovedSpenders: editForm.tokenPermissionApprovedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
+        tokenPermissionBlockedSpenders: editForm.tokenPermissionBlockedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
+        tokenPermissionAllowNftOperatorApproval: editForm.tokenPermissionAllowNftOperatorApproval === "Yes",
+        tokenPermissionAllowBatchApproval: editForm.tokenPermissionAllowBatchApproval === "Yes",
+        tokenPermissionRequireChainBinding: editForm.tokenPermissionRequireChainBinding !== "No",
+        tokenPermissionRequireNonce: editForm.tokenPermissionRequireNonce !== "No",
+        tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(editForm.tokenPermissionMaximumBatchSize) || 10)),
         x402ControlsEnabled: editForm.x402ControlsEnabled !== "No",
         x402ControlMode: editForm.x402ControlMode,
         x402UnavailableAction: editForm.x402UnavailableAction,
@@ -4529,22 +4418,6 @@ function PoliciesPage({
         x402RequireClientFingerprint: editForm.x402RequireClientFingerprint === "Yes",
         x402PreventAmbiguousRetry: editForm.x402PreventAmbiguousRetry !== "No",
         x402MaxSettlementAttempts: Math.max(1, Number(editForm.x402MaxSettlementAttempts) || 1),
-        tokenPermissionControlsEnabled: editForm.tokenPermissionControlsEnabled !== "No",
-        tokenPermissionMode: editForm.tokenPermissionMode,
-        tokenPermissionUnknownSpenderAction: editForm.tokenPermissionUnknownSpenderAction,
-        tokenPermissionUnlimitedApprovalAction: editForm.tokenPermissionUnlimitedApprovalAction,
-        tokenPermissionMaxApprovalAmount: Math.max(0, Number(editForm.tokenPermissionMaxApprovalAmount) || 0),
-        tokenPermissionMaxApprovalToTransactionRatio: Math.max(0, Number(editForm.tokenPermissionMaxApprovalToTransactionRatio) || 0),
-        tokenPermissionMaxLifetimeSeconds: Math.max(1, Number(editForm.tokenPermissionMaxLifetimeSeconds) || 3600),
-        tokenPermissionRequireExpiry: editForm.tokenPermissionRequireExpiry !== "No",
-        tokenPermissionRequireAllowanceReset: editForm.tokenPermissionRequireAllowanceReset !== "No",
-        tokenPermissionApprovedSpenders: editForm.tokenPermissionApprovedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
-        tokenPermissionBlockedSpenders: editForm.tokenPermissionBlockedSpenders.split("\n").map((item) => item.trim()).filter(Boolean),
-        tokenPermissionAllowNftOperatorApproval: editForm.tokenPermissionAllowNftOperatorApproval === "Yes",
-        tokenPermissionAllowBatchApproval: editForm.tokenPermissionAllowBatchApproval === "Yes",
-        tokenPermissionRequireChainBinding: editForm.tokenPermissionRequireChainBinding !== "No",
-        tokenPermissionRequireNonce: editForm.tokenPermissionRequireNonce !== "No",
-        tokenPermissionMaximumBatchSize: Math.max(1, Math.min(100, Number(editForm.tokenPermissionMaximumBatchSize) || 10)),
         complianceControlsEnabled: editForm.complianceControlsEnabled !== "No",
         complianceControlMode: editForm.complianceControlMode,
         complianceUnavailableAction: editForm.complianceUnavailableAction,
@@ -4806,8 +4679,8 @@ function PoliciesPage({
             </div>
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
               label="Risk Mode"
@@ -5077,8 +4950,8 @@ function PoliciesPage({
             </div>
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
                   label="Risk Mode"
@@ -5538,55 +5411,6 @@ function AuditLogPage({
                   <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Current approver identity is wallet-address scoped in the connected application session. Cryptographic approver signatures remain a future hardening step and are not claimed as implemented.</p>
                 </div>
               )}
-
-              {(() => {
-                const permission = auditTokenPermission(selected);
-                if (!permission) return null;
-                const tokenFindings = (selected.moduleFindings || []).filter((finding) => finding.module === "Token Approval & Permit Safety");
-                const replayFinding = tokenFindings.find((finding) => ["Permit replay", "Reused permit signature", "Changed permit parameters", "Reused permission identifier"].includes(finding.rule));
-                const approvalAmount = permission.approvalAmount ?? permission.approvalAmountAtomic ?? "Not supplied";
-                const intendedAmount = permission.intendedTransactionAmount ?? selected.amount ?? "Not supplied";
-                const numericApproval = Number(permission.approvalAmount);
-                const numericIntended = Number(permission.intendedTransactionAmount ?? selected.amount);
-                const approvalRatio = Number.isFinite(numericApproval) && Number.isFinite(numericIntended) && numericIntended > 0 ? numericApproval / numericIntended : null;
-                const batch = Array.isArray(permission.batch) ? permission.batch : [];
-                return (
-                  <div className="rounded-xl border border-[#22D3EE]/25 bg-[#22D3EE]/5 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div><div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Token Approval & Permit Safety</div><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Sanitized approval metadata and deterministic binding evidence. Raw permit signatures and signed payloads are not accepted or displayed.</p></div>
-                      <StatusBadge status="Foundation Available" />
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
-                      {[
-                        ["Token contract", permission.tokenContract || selected.target],
-                        ["Token standard", permission.standard || "Unknown / not trusted"],
-                        ["Owner", permission.owner || selected.executionWalletAddress || selected.walletAddress],
-                        ["Spender", permission.spender || "Not supplied"],
-                        ["Approval amount", approvalAmount],
-                        ["Intended amount", intendedAmount],
-                        ["Approval ratio", approvalRatio === null ? "Unavailable" : approvalRatio.toFixed(4)],
-                        ["Unlimited approval", permission.unlimited === true || ["unlimited", "max", "maximum"].includes(String(permission.approvalAmount || "").toLowerCase()) ? "Yes" : "No"],
-                        ["Permit nonce", permission.nonce || "Not supplied"],
-                        ["Deadline", permission.deadline || "Not supplied"],
-                        ["Chain binding", `${String(permission.network || "Not supplied")}${permission.chainId ? ` · chainId ${String(permission.chainId)}` : ""}`],
-                        ["Token-contract binding", String(permission.tokenContract || "") === selected.target ? "Exact match" : "See findings"],
-                        ["Replay result", replayFinding ? `${replayFinding.status}: ${replayFinding.rule}` : "No replay rule triggered"],
-                        ["Batch size", String(batch.length)],
-                        ["Active policy", selected.policyUsed],
-                        ["Final decision", selected.decision],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3"><div className="uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all font-mono text-[#F8FAFC]">{String(value)}</div></div>
-                      ))}
-                    </div>
-                    <div className="mt-3 rounded-lg border border-[#1E293B] bg-[#050B14] p-3 text-xs">
-                      <div className="uppercase tracking-wider text-[#64748B]">Triggered rule and remediation</div>
-                      <div className="mt-1 font-semibold text-[#F8FAFC]">{selected.triggeredRule || tokenFindings.find((finding) => ["fail", "warning"].includes(finding.status))?.rule || "No adverse token-permission rule"}</div>
-                      <div className="mt-1 leading-relaxed text-[#94A3B8]">{selected.suggestedResolution || tokenFindings.find((finding) => ["fail", "warning"].includes(finding.status))?.remediation || "Proceed only with the exact displayed token, owner, spender, amount, network, and deadline."}</div>
-                    </div>
-                    {(selected.approvalBindingHash || selected.approvalRequestId) && <div className="mt-3 rounded-lg border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-3 text-xs"><div className="uppercase tracking-wider text-[#A78BFA]">Human approval binding</div><div className="mt-1 break-all font-mono text-[#F8FAFC]">{selected.approvalBindingHash || "Approval request exists; binding hash unavailable."}</div></div>}
-                  </div>
-                );
-              })()}
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Execution Capabilities</div>
@@ -6851,60 +6675,27 @@ const PLAYGROUND_X402_RECIPIENT = `0x${"1".repeat(40)}`;
 const PLAYGROUND_X402_PAYER = `0x${"2".repeat(40)}`;
 const PLAYGROUND_X402_PAYMENT_REQUIRED_HASH = "b".repeat(64);
 const PLAYGROUND_TOKEN_SPENDER = `01${"9".repeat(64)}`;
-const PLAYGROUND_TOKEN_UNKNOWN_SPENDER = `02${"a".repeat(66)}`;
-const PLAYGROUND_TOKEN_BLOCKED_SPENDER = `01${"b".repeat(64)}`;
-const PLAYGROUND_EVM_TOKEN = `0x${"4".repeat(40)}`;
-const PLAYGROUND_EVM_OWNER = `0x${"5".repeat(40)}`;
-const PLAYGROUND_EVM_SPENDER = `0x${"6".repeat(40)}`;
+const PLAYGROUND_BLOCKED_TOKEN_SPENDER = `01${"a".repeat(64)}`;
 
 function firstStringRule(policy: Policy | undefined, key: string, fallback: string) {
   const value = policy?.structuredRules?.[key];
   return Array.isArray(value) && typeof value[0] === "string" && value[0].trim() ? value[0].trim() : fallback;
 }
 
-function firstRuleMatching(policy: Policy | undefined, key: string, pattern: RegExp, fallback: string) {
-  const value = policy?.structuredRules?.[key];
-  if (!Array.isArray(value)) return fallback;
-  const match = value.find((item) => typeof item === "string" && pattern.test(item.trim()));
-  return typeof match === "string" ? match.trim() : fallback;
-}
-
-function playgroundCasperTokenPermission(policy: Policy | undefined, walletAddress: string, overrides: Record<string, unknown> = {}) {
+function playgroundTokenPermission(policy: Policy | undefined, walletAddress: string, overrides: Record<string, unknown> = {}) {
   const tokenContract = firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT;
-  const owner = /^(?:01[0-9a-f]{64}|02[0-9a-f]{66})$/i.test(walletAddress) ? walletAddress : PLAYGROUND_DEMO_EXECUTION_WALLET;
   return {
-    kind: "Token Approval",
-    standard: "CEP-18-compatible",
-    network: "casper-test",
+    permissionType: "Fungible Token Approval",
+    owner: walletAddress || PLAYGROUND_DEMO_EXECUTION_WALLET,
     tokenContract,
-    tokenIdentifierType: contractIdentifierTypeFor(tokenContract),
-    owner,
-    spender: firstRuleMatching(policy, "tokenPermissionApprovedSpenders", /^(?:01[0-9a-f]{64}|02[0-9a-f]{66}|account-hash-[0-9a-f]{64}|(?:contract|contract-package|package)(?:-hash)?-[0-9a-f]{64})$/i, PLAYGROUND_TOKEN_SPENDER),
+    tokenStandard: "CEP-18",
+    spender: firstStringRule(policy, "tokenPermissionApprovedSpenders", PLAYGROUND_TOKEN_SPENDER),
     approvalAmount: 10,
     intendedTransactionAmount: 10,
-    deadline: new Date(Date.now() + 30 * 60_000).toISOString(),
-    oneTime: true,
-    resetAfterUse: true,
-    ...overrides,
-  };
-}
-
-function playgroundEvmPermit(overrides: Record<string, unknown> = {}) {
-  return {
-    kind: "Permit Authorization",
-    standard: "ERC-20 Permit",
-    network: "eip155:84532",
-    chainId: "84532",
-    tokenContract: PLAYGROUND_EVM_TOKEN,
-    owner: PLAYGROUND_EVM_OWNER,
-    spender: PLAYGROUND_EVM_SPENDER,
-    approvalAmount: 10,
-    intendedTransactionAmount: 10,
-    deadline: new Date(Date.now() + 20 * 60_000).toISOString(),
-    nonce: "1",
-    permitIdentifier: "playground-permit-1",
-    permitSignatureHash: "e".repeat(64),
-    oneTime: true,
+    unlimited: false,
+    network: "casper-test",
+    approvedProtocol: "playground-router",
+    allowanceResetExpected: false,
     ...overrides,
   };
 }
@@ -7233,6 +7024,34 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
       chainName: "casper",
     },
   }),
+  "Bounded token approval": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress);
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Grant one bounded token allowance to an approved spender", reason: "Evaluate token identity, spender policy, amount, and approval-to-transaction ratio before signing.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "approve", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "Unlimited token approval": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { approvalAmount: undefined, unlimited: true });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm unlimited token authority cannot silently pass", reason: "The authority is intentionally unlimited and follows the active Warn, Review, or Block policy action.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "approve", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "Unknown token spender": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { spender: PLAYGROUND_BLOCKED_TOKEN_SPENDER });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm an unapproved spender requires review or is blocked", reason: "The exact spender is intentionally outside the active approved-spender list.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "approve", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "Expired token permit": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { permissionType: "Permit Authorization", nonce: "expired-permit-nonce", permitId: "expired-permit", deadline: new Date(Date.now() - 60_000).toISOString() });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm an expired permit is blocked", reason: "The permit deadline is intentionally in the past.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "permit", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "Permit replay (submit twice)": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { permissionType: "Permit Authorization", nonce: "playground-replay-nonce", permitId: "playground-replay-permit", deadline: new Date(Date.now() + 30 * 60_000).toISOString() });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Demonstrate persisted permit replay prevention", reason: "Submit this exact payload twice. The first evaluation may pass; the second is blocked by the stored permit fingerprint.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "permit", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "NFT operator approval": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { permissionType: "NFT Operator Approval", approvalAmount: undefined, intendedTransactionAmount: undefined, operatorForAll: true });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Evaluate reusable NFT operator-for-all authority", reason: "The operator-for-all flag follows the active Token Permission policy.", action: { type: "Contract Interaction", amount: 0, asset: "NFT", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "set_approval_for_all", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
+  "Batch token approval": (agent, walletAddress, policy) => {
+    const permission = playgroundTokenPermission(policy, walletAddress, { permissionType: "Batch Approval", batchItems: [{ tokenContract: firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT, spender: firstStringRule(policy, "tokenPermissionApprovedSpenders", PLAYGROUND_TOKEN_SPENDER), amount: 5 }, { tokenContract: firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT, spender: firstStringRule(policy, "tokenPermissionApprovedSpenders", PLAYGROUND_TOKEN_SPENDER), amount: 5 }] });
+    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Evaluate bounded batch token authority", reason: "Batch enablement and maximum size are enforced by the active policy.", action: { type: "Contract Interaction", amount: 10, asset: "TEST", target: permission.tokenContract, targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract", contractIdentifierType: contractIdentifierTypeFor(String(permission.tokenContract)), entryPoint: "batch_approve", chainName: "casper-test", tokenPermission: permission, preflight: playgroundPreflight() } };
+  },
   "Oracle price within bounds": (agent, walletAddress, policy) => {
     const approvedContract = firstConfiguredContract(policy);
     const target = approvedContract || PLAYGROUND_DEMO_UNAPPROVED_CONTRACT;
@@ -7430,43 +7249,6 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Confirm a rejected required attestation stops execution", reason: "Rejected verification is a deterministic hard block before wallet signing.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: approvedWallet || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: { ...evidence, beneficiaryAttestation: { ...(evidence.beneficiaryAttestation as Record<string, unknown>), status: "Rejected" } } } };
   },
   "Configured compliance feed match": (agent, walletAddress) => ({ source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress, goal: "Screen a synthetic wallet against the included Compliance Controls feed", reason: "Configure backend/data/compliance-controls.example.json and trust the exact test target only when isolating the compliance decision.", action: { type: "Transfer", amount: 5, asset: "CSPR", target: PLAYGROUND_COMPLIANCE_MATCH_TARGET, targetType: "Wallet Address", preflight: playgroundPreflight(), compliance: playgroundComplianceEvidence() } }),
-  "Bounded token approval": (agent, walletAddress, policy) => {
-    const permission = playgroundCasperTokenPermission(policy, walletAddress);
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: permission.owner, executionWalletAddress: permission.owner, goal: "Grant only the token authority required for one intended transaction", reason: "The approval is explicitly classified, bounded, short-lived, owner-bound, spender-bound, and declares a post-use reset.", action: { type: "Token Approval", amount: 10, asset: "TOKEN", target: permission.tokenContract, targetType: "Token Contract", contractIdentifierType: permission.tokenIdentifierType, chainName: "casper-test", entryPoint: "approve", tokenPermission: permission } };
-  },
-  "Unlimited token approval": (agent, walletAddress, policy) => {
-    const permission = playgroundCasperTokenPermission(policy, walletAddress, { unlimited: true, approvalAmount: "unlimited", approvalAmountAtomic: String((2n ** 256n) - 1n), oneTime: false, reusable: true, resetAfterUse: false });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: permission.owner, executionWalletAddress: permission.owner, goal: "Confirm unlimited delegated token authority is warned, reviewed, or blocked by policy", reason: "The example intentionally requests maximum authority rather than the amount needed for the transaction.", action: { type: "Token Approval", amount: 10, asset: "TOKEN", target: permission.tokenContract, targetType: "Token Contract", contractIdentifierType: permission.tokenIdentifierType, chainName: "casper-test", entryPoint: "approve", tokenPermission: permission } };
-  },
-  "Unknown token spender": (agent, walletAddress, policy) => {
-    const permission = playgroundCasperTokenPermission(policy, walletAddress, { spender: PLAYGROUND_TOKEN_UNKNOWN_SPENDER });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: permission.owner, executionWalletAddress: permission.owner, goal: "Require policy handling for a structurally valid but unapproved spender", reason: "The spender is intentionally outside the token-permission approved-spender list.", action: { type: "Token Approval", amount: 10, asset: "TOKEN", target: permission.tokenContract, targetType: "Token Contract", contractIdentifierType: permission.tokenIdentifierType, chainName: "casper-test", entryPoint: "approve", tokenPermission: permission } };
-  },
-  "Blocked token spender": (agent, walletAddress, policy) => {
-    const blockedSpender = firstRuleMatching(policy, "tokenPermissionBlockedSpenders", /^(?:01[0-9a-f]{64}|02[0-9a-f]{66}|account-hash-[0-9a-f]{64}|(?:contract|contract-package|package)(?:-hash)?-[0-9a-f]{64})$/i, PLAYGROUND_TOKEN_BLOCKED_SPENDER);
-    const permission = playgroundCasperTokenPermission(policy, walletAddress, { spender: blockedSpender });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: permission.owner, executionWalletAddress: permission.owner, goal: "Confirm an explicitly blocked token spender cannot reach wallet signing", reason: "For a guaranteed Blocked result, add this exact spender to Token Permissions → Blocked spenders in the active policy.", action: { type: "Token Approval", amount: 10, asset: "TOKEN", target: permission.tokenContract, targetType: "Token Contract", contractIdentifierType: permission.tokenIdentifierType, chainName: "casper-test", entryPoint: "approve", tokenPermission: permission } };
-  },
-  "Expired token permit": (agent) => {
-    const permission = playgroundEvmPermit({ deadline: new Date(Date.now() - 60_000).toISOString(), nonce: "expired-1", permitIdentifier: "playground-expired-permit", permitSignatureHash: "f".repeat(64) });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: PLAYGROUND_EVM_OWNER, executionWalletAddress: PLAYGROUND_EVM_OWNER, goal: "Block an already expired permit before any signed payload is used", reason: "Only unsigned metadata and a hash are submitted; the deadline is intentionally in the past.", action: { type: "Permit Authorization", amount: 10, asset: "TOKEN", target: PLAYGROUND_EVM_TOKEN, targetType: "Token Contract", chainName: "eip155:84532", entryPoint: "permit", tokenPermission: permission } };
-  },
-  "Token permit replay": (agent) => {
-    const permission = playgroundEvmPermit({ nonce: "replay-1", permitIdentifier: "playground-replay-permit", permitSignatureHash: "d".repeat(64) });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: PLAYGROUND_EVM_OWNER, executionWalletAddress: PLAYGROUND_EVM_OWNER, goal: "Block reuse of the same canonical permit fingerprint and signature hash", reason: "Submit this same example twice. The first request records the binding; the second must be blocked as replay.", action: { type: "Permit Authorization", amount: 10, asset: "TOKEN", target: PLAYGROUND_EVM_TOKEN, targetType: "Token Contract", chainName: "eip155:84532", entryPoint: "permit", tokenPermission: permission } };
-  },
-  "NFT operator approval": (agent) => {
-    const permission = playgroundEvmPermit({ kind: "NFT Operator Approval", standard: "ERC-721", approvalAmount: 1, intendedTransactionAmount: 1, nonce: "", permitIdentifier: "playground-nft-operator", permitSignatureHash: "", operatorApprovalForAll: true, reusable: true, oneTime: false });
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: PLAYGROUND_EVM_OWNER, executionWalletAddress: PLAYGROUND_EVM_OWNER, goal: "Require explicit policy handling for operator authority over all NFTs", reason: "The example declares approval-for-all authority rather than token-specific permission.", action: { type: "NFT Operator Approval", amount: 1, asset: "NFT", target: PLAYGROUND_EVM_TOKEN, targetType: "Token Contract", chainName: "eip155:84532", entryPoint: "setApprovalForAll", tokenPermission: permission } };
-  },
-  "Batch token approval": (agent, walletAddress, policy) => {
-    const base = playgroundCasperTokenPermission(policy, walletAddress);
-    const permission = { ...base, kind: "Batch Approval", approvalAmount: 15, intendedTransactionAmount: 15, spender: base.spender, batch: [
-      { network: "casper-test", tokenContract: base.tokenContract, tokenIdentifierType: base.tokenIdentifierType, owner: base.owner, spender: base.spender, approvalAmount: 10 },
-      { network: "casper-test", tokenContract: base.tokenContract, tokenIdentifierType: base.tokenIdentifierType, owner: base.owner, spender: PLAYGROUND_TOKEN_UNKNOWN_SPENDER, approvalAmount: 5 },
-    ] };
-    return { source: "Magen3 Intent Playground", agentId: agent.id, walletAddress: base.owner, executionWalletAddress: base.owner, goal: "Review a batch that delegates bounded authority to multiple spenders", reason: "The example exercises batch-size, per-item identity, spender policy, aggregate amount, and multi-spender findings.", action: { type: "Batch Approval", amount: 15, asset: "TOKEN", target: base.tokenContract, targetType: "Token Contract", contractIdentifierType: base.tokenIdentifierType, chainName: "casper-test", entryPoint: "approve", tokenPermission: permission } };
-  },
   "Approved x402 API payment": (agent, walletAddress, policy) => {
     const payment = playgroundX402Payment(policy);
     return {
@@ -7836,27 +7618,6 @@ function IntentPlaygroundPage({
                     </div>
                   </div>
                 )}
-                {result.result.tokenPermissionControlsContext && (
-                  <div className="mt-3 rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-[11px] uppercase tracking-wider text-[#64748B]">Token Approval & Permit Safety context</div>
-                      <span className="text-xs font-semibold text-[#A78BFA]">{result.result.tokenPermissionControlsContext.status || "foundation-available"}</span>
-                    </div>
-                    <div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-3">
-                      <div>Permission <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.kind || "Not supplied"}</span></div>
-                      <div>Token <span className="block break-all text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.tokenContract || "Not supplied"}</span></div>
-                      <div>Spender <span className="block break-all text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.spender || "Not supplied"}</span></div>
-                      <div>Authority <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.unlimited ? "Unlimited" : result.result.tokenPermissionControlsContext.approvalAmount ?? "—"}</span></div>
-                      <div>Intended amount / ratio <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.intendedTransactionAmount ?? "—"} / {typeof result.result.tokenPermissionControlsContext.approvalRatio === "number" ? result.result.tokenPermissionControlsContext.approvalRatio.toFixed(4) : "—"}</span></div>
-                      <div>Lifetime <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.lifetimeSeconds ?? "—"} sec</span></div>
-                      <div>Network / chain <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.network || "—"} · {result.result.tokenPermissionControlsContext.chainId || "—"}</span></div>
-                      <div>Nonce <span className="block break-all text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.nonce || "Not applicable"}</span></div>
-                      <div>Replay history <span className="block text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.previousFingerprintCount ?? 0} matching fingerprint(s)</span></div>
-                      <div className="sm:col-span-3">Canonical fingerprint <span className="block break-all font-mono text-[#F8FAFC]">{result.result.tokenPermissionControlsContext.fingerprint || "Not computed"}</span></div>
-                    </div>
-                    <div className="mt-2 text-[11px] leading-relaxed text-[#64748B]">Unsigned metadata and optional hashes only. Magen3 does not receive raw permit signatures or independently verify current on-chain allowance state in this Foundation release.</div>
-                  </div>
-                )}
                 {result.result.x402PaymentControlsContext && (
                   <div className="mt-3 rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7965,8 +7726,8 @@ function SettingsPage({
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
-    ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
+    ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],
     ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];

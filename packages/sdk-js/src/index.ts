@@ -138,50 +138,45 @@ export interface Magen3X402Payment {
   settlementTxHash?: string;
 }
 
-
-export type Magen3TokenPermissionKind =
-  | "Token Approval"
-  | "Allowance Increase"
-  | "Allowance Decrease"
-  | "Allowance Reset"
-  | "Permit Authorization"
-  | "NFT Operator Approval"
-  | "Batch Approval"
-  | "Delegated Spender Permission";
+export interface Magen3TokenPermissionBatchItem {
+  tokenContract?: string;
+  spender?: string;
+  amount?: number;
+  tokenId?: string;
+}
 
 export interface Magen3TokenPermission {
-  /** Explicit classification. Generic contract calls are never inferred to be token approvals. */
-  kind: Magen3TokenPermissionKind | string;
-  /** Optional token standard such as CEP-18, ERC-20, ERC-721, ERC-1155, or EIP-2612. */
-  standard?: string;
-  /** Exact Casper or EVM network binding, for example casper-test or eip155:84532. */
-  network: string;
-  chainId?: string;
-  /** Exact token contract identifier. Structural validity does not establish token safety. */
-  tokenContract: string;
-  tokenIdentifierType?: "Contract Hash" | "Package Hash" | string;
+  /** Explicit supported authority classification. Generic contract calls must omit this object. */
+  permissionType:
+    | "Fungible Token Approval"
+    | "Allowance Increase"
+    | "Allowance Decrease"
+    | "Allowance Reset"
+    | "Permit Authorization"
+    | "NFT Operator Approval"
+    | "Batch Approval"
+    | "Delegated Spender Permission"
+    | string;
+  /** Public wallet or account identifier that owns the authority. */
   owner: string;
+  /** Exact token contract identifier on the intended network. */
+  tokenContract: string;
+  tokenStandard?: string;
+  /** Exact spender, operator, router, vault, or delegate receiving authority. */
   spender: string;
-  spenderIdentifierType?: string;
-  /** Optional independently resolved protocol spender used to detect substitution. */
-  intendedSpender?: string;
-  approvalAmount?: number | string;
-  /** Optional unsigned integer string for exact atomic authority. */
-  approvalAmountAtomic?: string;
+  approvalAmount?: number;
   intendedTransactionAmount?: number;
   unlimited?: boolean;
-  deadline?: string | number;
   nonce?: string;
-  permitIdentifier?: string;
-  /** Optional 32-byte hash only. Never submit a raw permit signature. */
-  permitSignatureHash?: string;
-  /** Optional client SHA-256 fingerprint; Magen3 independently computes and verifies its own. */
-  permitFingerprint?: string;
+  permitId?: string;
+  deadline?: string | number;
   reusable?: boolean;
-  oneTime?: boolean;
-  resetAfterUse?: boolean;
-  operatorApprovalForAll?: boolean;
-  batch?: Magen3TokenPermission[];
+  chainId?: string;
+  network?: string;
+  approvedProtocol?: string;
+  operatorForAll?: boolean;
+  batchItems?: Magen3TokenPermissionBatchItem[];
+  allowanceResetExpected?: boolean;
 }
 
 export interface Magen3Action {
@@ -208,7 +203,7 @@ export interface Magen3Action {
   compliance?: Magen3ComplianceEvidence;
   /** x402 payment requirements evaluated before PAYMENT-SIGNATURE creation. Never include signatures or signed payment payloads. */
   x402?: Magen3X402Payment;
-  /** Explicit unsigned token approval or permit metadata. Raw signatures and signed permit payloads are rejected. */
+  /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Exact-once lifecycle metadata evaluated before wallet signing. */
   lifecycle?: Magen3Lifecycle;
@@ -393,42 +388,6 @@ export interface Magen3X402PaymentControlsContext {
   previousFingerprintCount?: number;
 }
 
-
-export interface Magen3TokenPermissionControlsContext {
-  status?: string;
-  availability?: "foundation-available" | string;
-  enabled?: boolean;
-  mode?: "Observe" | "Review" | "Enforce" | string;
-  kind?: string;
-  standard?: string;
-  network?: string;
-  networkFamily?: "casper" | "evm" | "unknown" | string;
-  tokenContract?: string;
-  tokenContractKind?: string;
-  owner?: string;
-  spender?: string;
-  intendedSpender?: string;
-  approvalAmount?: number | null;
-  intendedTransactionAmount?: number | null;
-  approvalRatio?: number | null;
-  unlimited?: boolean;
-  deadline?: string;
-  lifetimeSeconds?: number | null;
-  nonce?: string;
-  permitIdentifier?: string;
-  permitSignatureHash?: string;
-  fingerprint?: string;
-  clientFingerprint?: string;
-  batchSize?: number;
-  resetAfterUse?: boolean;
-  oneTime?: boolean;
-  reusable?: boolean;
-  previousFingerprintCount?: number;
-  previousSignatureHashCount?: number;
-  humanApprovalBinding?: string;
-  securityBoundary?: string;
-}
-
 export interface Magen3ExecutionIntegrityContext {
   status?: string;
   mode?: "Observe" | "Review" | "Enforce" | string;
@@ -450,6 +409,38 @@ export interface Magen3ExecutionIntegrityContext {
   highestSequence?: number;
   replayWindowSeconds?: number;
   maxRetryAttempts?: number;
+}
+
+export interface Magen3TokenPermissionControlsContext {
+  permissionType?: string;
+  owner?: string;
+  tokenContract?: string;
+  tokenStandard?: string;
+  spender?: string;
+  approvalAmount?: number | null;
+  intendedTransactionAmount?: number | null;
+  unlimited?: boolean;
+  nonce?: string;
+  permitId?: string;
+  deadline?: string;
+  reusable?: boolean;
+  chainId?: string;
+  network?: string;
+  approvedProtocol?: string;
+  operatorForAll?: boolean;
+  batchItems?: Magen3TokenPermissionBatchItem[];
+  allowanceResetExpected?: boolean;
+  fingerprint?: string;
+  replayStatus?: "clear" | "replay" | "parameter_mutation" | "not_evaluated" | string;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  policy?: {
+    approvedSpenderCount?: number;
+    blockedSpenderCount?: number;
+    maxApprovalAmount?: number | null;
+    maxApprovalToTransactionRatio?: number | null;
+    maxLifetimeSeconds?: number | null;
+    maximumBatchSize?: number;
+  };
 }
 
 export interface Magen3X402SettlementUpdate {
@@ -525,7 +516,7 @@ export interface Magen3DecisionResult {
   executionIntegrityContext?: Magen3ExecutionIntegrityContext;
   /** Canonical x402 request binding, policy limits, replay state, and settlement context. */
   x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
-  /** Sanitized token-authority identity, amount, lifetime, binding, and replay evidence. */
+  /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
 }
 

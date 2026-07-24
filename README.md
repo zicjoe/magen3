@@ -102,13 +102,13 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Agent Trust & Access | Agent authentication; credential rotation and revocation | — | Instruction provenance; Tool and MCP integrity; delegation and session permissions |
 | Policy & Approval Controls | Deterministic policy enforcement; review thresholds | Human approval and quorum | Emergency circuit breaker |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
-| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions | Token Approval & Permit Safety | Privileged-action classification |
+| Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety | — | Privileged-action classification; contract upgrades; contract argument policies |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
 | Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
 | Threat & Compliance | — | Threat-intelligence screening; non-sensitive compliance evidence | Managed risk-provider adapters |
 
-The Security Pipeline still reports the exact evaluator that produced each finding, such as Wallet Validation, Contract Validation, Token Approval & Permit Safety, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, or Compliance Controls. The grouped UI does not hide technical evidence.
+The Security Pipeline still reports the exact evaluator that produced each finding, such as Wallet Validation, Contract Validation, Token Permission Controls, Execution Integrity, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, or Compliance Controls. The grouped UI does not hide technical evidence.
 
 ### Live Wallet Validation
 
@@ -149,6 +149,15 @@ Contract Validation now runs on every intent that declares a contract-oriented a
 The `Trusted Contract` label is descriptive only. It never grants trust by itself; the exact contract identifier must match the active policy. Structural validation does not prove that a contract is audited, verified, non-upgradeable, or free of malicious logic. Threat Intelligence can add configured exact-match indicators, while bytecode analysis, upgrade-authority analysis, and broader provider coverage remain future work.
 
 Format references: [Calling Contracts](https://docs.casper.network/developers/cli/calling-contracts) and [Contract Hash vs. Package Hash](https://docs.casper.network/next/developers/writing-onchain-code/contract-hash-vs-package-hash).
+
+
+### Live Token Approval & Permit Safety
+
+Token Permission Controls runs only when an adapter explicitly supplies `action.tokenPermission`. It recognizes supported fungible approvals, allowance changes and resets, permit authorization, NFT operator authority, batch approval, and delegated spender permission without misclassifying generic contract calls.
+
+Deterministic checks cover owner, token, wallet/contract spender, execution-wallet and network binding, approved or blocked spenders, bounded amounts, approval-to-transaction ratio, unlimited authority, permit nonce and expiry, maximum lifetime, NFT operator policy, batch item validity and exact aggregate binding, allowance-reset expectations, and Human Approval binding. Magen3 computes and persists a canonical token-permission fingerprint. Exact permit replay and reuse of a permit ID or token-scoped nonce with changed protected parameters are hard blocked.
+
+Policies expose Observe, Review, and Enforce modes plus explicit actions for unknown spenders and unlimited authority. An empty approved-spender list uses the safe default path rather than treating every spender as trusted. Existing policies and integrations remain compatible because requests without token-permission metadata are skipped rather than treated as approvals. The Gateway rejects permit signatures and raw signed authority payloads. For relevant capabilities, Security Coverage checks bounded configuration and observed evidence, while Integration Health reflects actual Token Permission findings. See `docs/TOKEN_PERMISSION_CONTROLS.md`.
 
 ### Execution Simulation foundation
 
@@ -220,21 +229,6 @@ Policies can configure:
 The workflow states are `Pending`, `Approved`, `Rejected`, `Expired`, and `Configuration Required`. One authorized rejection ends the request. Duplicate responses, unauthorized approvers, execution-wallet self-approval under separation of duties, and execution after expiry are rejected. Changing a protected intent parameter changes the binding hash and requires a new decision.
 
 Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. An approved request permits progression only to the existing human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The current Foundation workflow identifies reviewers by the connected wallet address but does not yet require a separate cryptographic approval signature, so it is not marked Live. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md).
-
-### Token Approval & Permit Safety foundation
-
-Token Approval & Permit Safety sits inside **Contract & Permission Safety → Token Permissions**. It evaluates explicit fungible-token approvals, allowance changes and resets, permit authorizations, NFT operator authority, batch approvals, and delegated spender permissions before signing. A generic contract call is never guessed to be an approval without sufficient action or metadata information.
-
-Current deterministic checks include:
-
-- Network-aware token, owner, spender, action-target, and intended-spender binding.
-- Approved and blocked spender policy plus existing trusted and blocked contract policy.
-- Positive and maximum amounts, unlimited approval detection, approval-to-transaction ratio, batch aggregate limits, and maximum batch size.
-- Deadlines, maximum lifetime, expired permits, one-time or reusable authority, and optional allowance-reset requirements.
-- Permit nonce, EIP-155 chain ID, canonical SHA-256 token-permission fingerprint, reused signature-hash detection, replay detection, and changed parameters under a reused permit identifier.
-- Exact Human Approval binding because normalized token-permission metadata is stored inside the protected original intent.
-
-The control is **Foundation Available**, not Live. Magen3 evaluates declared unsigned metadata and optional hashes; it does not receive raw permit signatures, decode arbitrary calldata, query on-chain allowance state, fetch or certify token metadata, or guarantee that a structurally valid contract implements the declared token standard. EVM-specific validation runs only for explicit EVM token-permission intents, so existing Casper integrations remain on the current Casper path. See [`docs/TOKEN_APPROVAL_PERMIT_SAFETY.md`](docs/TOKEN_APPROVAL_PERMIT_SAFETY.md).
 
 ### Threat Intelligence foundation
 
@@ -388,7 +382,7 @@ Supported policy fields are enforced by the current backend:
 - Oracle Validation mode, quote age, maximum deviation, source spread, confidence, source quorum, and unavailable-feed behavior through `structuredRules`
 - Bridge Controls provider, chain, asset, amount, fee, quote, destination, and confirmation boundaries through `structuredRules`
 - Compliance Controls attestation, Travel Rule, jurisdiction, counterparty, screening, risk, provider, freshness, and unavailable-evidence behavior through `structuredRules`
-- Token Permission enablement, mode, spender allow/block lists, unlimited-approval action, amount, ratio, lifetime, expiry/reset, nonce/chain binding, NFT, and batch limits through `structuredRules`
+- Token Permission Controls mode, spender lists, unlimited-approval action, amount and ratio limits, permit lifetime, nonce, chain binding, batch, NFT operator, and allowance-reset requirements through `structuredRules`
 
 Available presets:
 
@@ -519,7 +513,7 @@ The in-app Intent Playground:
 
 - Selects an active registered agent
 - Uses the existing API-key authentication contract
-- Provides editable wallet, contract, token approval/permit, execution-preflight, lifecycle/replay, x402, bridge, oracle, compliance, and human-approval examples
+- Provides editable wallet, contract, execution-preflight, lifecycle/replay, x402, bridge, oracle, compliance, and human-approval examples
 - Validates JSON before submission
 - Displays the real response, decision, risk, findings, explanation, pipeline, audit ID, and any exact-bound approval request
 - Keeps the entered raw key in page state rather than adding it to request JSON or persistent storage
@@ -837,6 +831,11 @@ COMPLIANCE_CONTROLS_REQUEST_TIMEOUT_MS=2500
 
 Feed precedence is inline JSON, then file path, then remote URL. Provider credentials, raw locations, and feed contents are never returned by the public status endpoint. The included feed is synthetic and should be refreshed with `pnpm compliance:refresh-example-feed` immediately before a controlled demo. Confirm `/api/compliance-controls/status` after backend deployment.
 
+
+## Roadmap progress
+
+Phase 1 has started with **Token Approval & Permit Safety complete and Live**. Magen3 is not finished. The next recommended milestone is **Privileged Contract Action Classification**, followed by Emergency Circuit Breaker, cryptographic reviewer signatures, organizational approval escalation, contract-upgrade safety, and contract-argument policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+
 ## Verification
 
 ```bash
@@ -862,7 +861,7 @@ The repository retains the existing Dockerfile and `railway.json`.
 2. Set `DATABASE_URL` and production environment variables.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
-5. Run `pnpm db:migrate` against the production database before relying on the Human Approval & Quorum fields. Token Permission Controls use existing structured-policy and audit JSON fields and require no additional migration.
+5. Run `pnpm db:migrate` against the production database before relying on the Human Approval & Quorum fields.
 6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/token-permission-controls/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
@@ -887,11 +886,11 @@ The existing `vercel.json` remains valid.
 3. Register an agent and select multiple capabilities.
 4. Review recommended protection and starter policy.
 5. Copy one-time credentials.
-6. Submit an Allowed intent in Intent Playground.
-7. Submit a Review Required intent, open Policies → Human Approval Queue, and resolve the exact-bound request.
-8. Poll the approval as the external agent, then show that execution confirmation remains blocked until quorum is complete and unexpired.
-9. Test bounded, unlimited, unknown-spender, blocked-spender, expired-permit, replay, NFT-operator, and batch token-permission examples.
-10. Submit a Blocked intent.
+6. Submit the bounded token-approval example and inspect the Token Permission Controls finding and fingerprint.
+7. Submit the unknown-spender or unlimited-approval example and inspect Review Required or Blocked according to policy.
+8. Submit a Review Required intent, open Policies → Human Approval Queue, and resolve the exact-bound request.
+9. Poll the approval as the external agent, then show that execution confirmation remains blocked until quorum is complete and unexpired.
+10. Submit the permit-replay example twice and show the second request being blocked.
 11. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.
 12. Refresh and configure the synthetic Oracle Validation feed, then submit within-bounds, deviation, and stale-quote examples.
 13. Configure the synthetic Compliance Controls feed and submit complete-evidence, incomplete-Travel-Rule, and exact-match examples.
@@ -923,6 +922,7 @@ The existing `vercel.json` remains valid.
 | No active policy | Complete onboarding or create an active policy for the agent. |
 | Approval stays Configuration Required | Add eligible approver wallets or enable owner-wallet fallback on the active policy. |
 | Agent cannot proceed after Review Required | Poll the approval ID or audit ID; quorum must be Approved and unexpired before execution confirmation is accepted. |
+| Token permission intent is skipped | Include an explicit `action.tokenPermission` object with a supported `permissionType`; generic contract calls are intentionally not classified as approvals. |
 | Approval response rejected | Confirm the connected wallet is an eligible approver, has not already responded, and is not the execution wallet when separation of duties is enabled. |
 | Threat feed unavailable | Configure one feed source, verify JSON structure, and check `/api/threat-intelligence/status`. |
 | Threat feed stale | Publish a current `generatedAt` value or adjust `THREAT_INTELLIGENCE_MAX_AGE_MS` only after reviewing the operational risk. |
@@ -953,6 +953,7 @@ scripts/casper/              Contract and proof tooling
 - [`docs/GATEWAY_INTEGRATION.md`](docs/GATEWAY_INTEGRATION.md)
 - [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
 - [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md)
+- [`docs/TOKEN_PERMISSION_CONTROLS.md`](docs/TOKEN_PERMISSION_CONTROLS.md)
 - [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 - [`docs/CASPER_DEPLOYMENT_PLAYBOOK.md`](docs/CASPER_DEPLOYMENT_PLAYBOOK.md)
 

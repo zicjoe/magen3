@@ -148,10 +148,6 @@ Execution Simulation is Foundation Available. When the execution adapter has pre
 
 Swap adapters may also send `slippageBps`, `expectedOutput`, and `minimumReceived`. Contract adapters may send a JSON `runtimeArgs` summary. Magen3 validates structure and freshness before signing, but full stateful speculative execution remains unavailable. Do not send wallet approvals, transaction-level signatures, raw signed deploys, or wallet secrets. Public contract arguments belong only inside `runtimeArgs`.
 
-## Configure Token Approval & Permit Safety
-
-Token Approval & Permit Safety is Foundation Available. Before signing a token approval or permit, include a supported approval action plus `action.tokenPermission` with the exact network, token contract, owner, spender, bounded amount, intended transaction amount, deadline, and nonce where applicable. For batch approvals, include each bounded item in `tokenPermission.batch`. Never send a raw permit signature or signed permit payload; only an optional 32-byte signature hash may be submitted for replay detection. Continue only from the final Magen3 decision. See `TOKEN_APPROVAL_PERMIT_SAFETY.md`.
-
 ## Configure Threat Intelligence behavior
 
 Threat Intelligence is Foundation Available. The Magen3 operator configures the feed on the backend; the external agent does not send provider credentials or a feed URL in each intent. The active policy controls whether matches are observed, require review, or are enforced, plus the minimum confidence and stale/unavailable-feed behavior.

@@ -60,12 +60,6 @@ Suggested Codex test:
 Submit a harmless intent above the configured review threshold. Show the approval ID and binding hash. Do not sign or broadcast. Poll it with magen3_get_approval only after I resolve it in Magen3.
 ```
 
-## Token-permission test
-
-Ask Codex to submit the bounded token-approval example returned by `magen3_get_intent_schema`, without signing or broadcasting. Repeat with an unlimited approval, unknown spender, blocked spender, expired permit, reused permit fingerprint, NFT operator approval, and batch approval. Codex must report the final decision, token contract, spender, amount, ratio, lifetime, replay result, triggered rule, remediation, and audit ID.
-
-The MCP schema accepts explicit unsigned `action.tokenPermission` metadata and optional hashes only. It never accepts a raw permit signature or signed permit payload. Token Approval & Permit Safety remains Foundation Available because Magen3 does not query live allowances, decode arbitrary calldata, certify token standards, or cryptographically verify permit signatures. See `TOKEN_APPROVAL_PERMIT_SAFETY.md`.
-
 ## Contract-validation test
 
 Ask Codex to submit a harmless contract-call intent without signing or broadcasting it. The action should include the exact contract or package identifier, `entryPoint`, and optional `chainName`. Then repeat with a malformed identifier or missing entry point. Magen3 must return an explained `Blocked` or `Review Required` result and persist the Contract Validation findings in the audit record.
@@ -117,3 +111,6 @@ After real facilitator activity, use `magen3_report_x402_settlement` with the au
 For policy-covered transfers, treasury payments, or Bridge actions, MCP clients may submit only non-sensitive evidence under `action.compliance`: jurisdiction codes, counterparty type, attestation and screening status, provider labels, opaque references, timestamps, optional data hashes, risk rating, and opaque VASP IDs. The MCP schema rejects raw names, identity documents, addresses, contact details, documents, selfies, and biometrics.
 
 Test with the Intent Playground examples or the synthetic record in `backend/data/compliance-controls.example.json` after refreshing it. Codex should report the final decision, triggered Compliance Controls rule, sanitized evidence, remediation, and audit-log identifier without signing or broadcasting anything. A feed no-match or clear screening status is not a guarantee of legal compliance.
+
+The MCP intent schema includes `action.tokenPermission` for explicit unsigned approval and permit metadata. Token Permission Controls findings and context are returned through the normal decision response. The MCP server never receives permit signatures, wallet signatures, private keys, or raw signed authority payloads.
+

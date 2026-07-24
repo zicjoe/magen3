@@ -48,6 +48,15 @@ test("security coverage reaches 100 only when every configured protection check 
         bridgeAllowedSourceChains: ["casper-test"],
         bridgeAllowedDestinationChains: ["ethereum-sepolia"],
         bridgeAllowedAssets: ["CSPR"],
+        tokenPermissionControlsEnabled: true,
+        tokenPermissionMode: "Review",
+        tokenPermissionUnknownSpenderAction: "Review",
+        tokenPermissionUnlimitedApprovalAction: "Block",
+        tokenPermissionMaxApprovalToTransactionRatio: 2,
+        tokenPermissionMaxLifetimeSeconds: 3600,
+        tokenPermissionApprovedSpenders: ["01" + "2".repeat(64)],
+        tokenPermissionBlockedSpenders: [],
+        tokenPermissionMaximumBatchSize: 10,
       },
     },
     [{
@@ -65,6 +74,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle feed availability", message: "Fresh oracle feed available." },
         { module: "Oracle Validation", status: "pass", severity: "info", rule: "Oracle price deviation", message: "Price within policy." },
         { module: "Bridge Controls", status: "pass", severity: "info", rule: "Bridge route metadata", message: "Required bridge route metadata is present." },
+        { module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." },
       ],
     }],
   );
@@ -166,6 +176,33 @@ test("missing or incomplete Bridge Controls never count toward coverage", () => 
   assert.ok(result.recommendations.some((item) => item.id === "bridge-controls"));
 });
 
+test("Token Permission coverage requires deterministic configuration and an observed pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", executionCapabilities: ["Trading"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp };
+  const policy = {
+    status: "Active", maxTransaction: 10, dailyLimit: 20, approvalThreshold: 5, trustedContracts: ["target"],
+    structuredRules: {
+      tokenPermissionControlsEnabled: true,
+      tokenPermissionMode: "Review",
+      tokenPermissionUnknownSpenderAction: "Review",
+      tokenPermissionUnlimitedApprovalAction: "Block",
+      tokenPermissionMaxApprovalToTransactionRatio: 2,
+      tokenPermissionMaxLifetimeSeconds: 3600,
+      tokenPermissionMaximumBatchSize: 10,
+      tokenPermissionApprovedSpenders: ["01" + "2".repeat(64)],
+      tokenPermissionBlockedSpenders: [],
+    },
+  };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "token-permission-controls").passed, false);
+
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp,
+    moduleFindings: [{ module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "token-permission-controls").passed, true);
+});
+
 test("integration health never reports healthy when core services or configuration are missing", () => {
   const degraded = securityModel.deriveIntegrationHealth(
     { status: "Active" },
@@ -189,4 +226,12 @@ test("integration health never reports healthy when core services or configurati
     true,
   );
   assert.equal(healthy.overall, "Healthy");
+
+  const tokenAttention = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Token Permission Controls", status: "fail", severity: "high", rule: "Blocked spender", message: "Blocked spender." }] }],
+    true,
+  );
+  assert.ok(tokenAttention.checks.some((check) => check.label === "Token Permission Controls" && check.status === "attention"));
 });

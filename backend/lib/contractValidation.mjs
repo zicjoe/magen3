@@ -15,14 +15,6 @@ export const CONTRACT_ACTIONS = new Set([
   "RWA Proof Update",
   "Oracle Data Update",
   "Bridge",
-  "Token Approval",
-  "Allowance Increase",
-  "Allowance Decrease",
-  "Allowance Reset",
-  "Permit Authorization",
-  "NFT Operator Approval",
-  "Batch Approval",
-  "Delegated Spender Permission",
 ]);
 
 export const ENTRY_POINT_REQUIRED_ACTIONS = new Set([
@@ -35,7 +27,6 @@ export const CONTRACT_TARGET_TYPES = new Set([
   "RWA Registry",
   "Oracle Feed",
   "Bridge Contract",
-  "Token Contract",
 ]);
 
 const CONTRACT_IDENTIFIER_TYPES = new Map([
@@ -97,7 +88,6 @@ export function expectedTargetTypesForAction(actionType) {
     return ["Trusted Contract", "Unknown Contract"];
   }
   if (actionType === "Bridge") return ["Bridge Contract", "Trusted Contract", "Unknown Contract"];
-  if (["Token Approval", "Allowance Increase", "Allowance Decrease", "Allowance Reset", "Permit Authorization", "NFT Operator Approval", "Batch Approval", "Delegated Spender Permission"].includes(actionType)) return ["Token Contract", "Trusted Contract", "Unknown Contract"];
   if (actionType === "RWA Proof Update") return ["RWA Registry"];
   if (actionType === "Oracle Data Update") return ["Oracle Feed"];
   return [...CONTRACT_TARGET_TYPES];
@@ -239,18 +229,6 @@ export function evaluateContractValidation({ request = {}, policy = {} } = {}) {
   let needsReview = false;
 
   const contractIntent = isContractIntent(request);
-  const tokenPermissionNetwork = String(request.tokenPermission?.network || "").trim().toLowerCase();
-  const explicitEvmTokenPermission = Boolean(request.tokenPermission && (tokenPermissionNetwork.startsWith("eip155:") || ["ethereum", "base", "arbitrum", "optimism", "polygon", "bsc", "avalanche", "linea", "scroll", "zksync"].some((hint) => tokenPermissionNetwork.includes(hint))));
-  if (contractIntent && explicitEvmTokenPermission) {
-    findings.push(finding({
-      status: "skipped",
-      rule: "Chain-specific contract validation",
-      message: "Casper Contract Validation was skipped for an explicitly EVM-bound token permission; Token Approval & Permit Safety validates the EVM token and spender identities instead.",
-      evidence: { actionType: request.actionType || "", targetType: request.targetType || "", network: tokenPermissionNetwork },
-      remediation: "Use a chain adapter with verified contract metadata before treating EVM token identity as more than structurally valid.",
-    }));
-    return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, contractIntent: true, identifier: null, approved: false, blocked: false };
-  }
   if (!contractIntent) {
     return {
       findings,

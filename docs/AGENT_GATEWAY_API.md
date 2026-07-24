@@ -168,44 +168,6 @@ Execution Simulation is **Foundation Available**. It validates supplied construc
 
 Never send private keys, secret keys, seed phrases, wallet approvals, transaction-level signatures, or raw signed transactions to the intent endpoint. Such material is rejected before normalization and is not stored in the audit log. Public contract arguments may be represented only inside `action.preflight.runtimeArgs`.
 
-### Token Approval & Permit Safety evaluation
-
-Token Approval & Permit Safety is **Foundation Available**. Submit only explicit unsigned authority metadata under `action.tokenPermission`:
-
-```json
-{
-  "executionWalletAddress": "0x1111111111111111111111111111111111111111",
-  "targetChain": "eip155:1",
-  "action": {
-    "type": "Permit Authorization",
-    "amount": 100,
-    "asset": "USDC",
-    "target": "0x2222222222222222222222222222222222222222",
-    "targetType": "Token Contract",
-    "tokenPermission": {
-      "kind": "Permit Authorization",
-      "standard": "ERC-20",
-      "network": "eip155:1",
-      "chainId": "1",
-      "tokenContract": "0x2222222222222222222222222222222222222222",
-      "owner": "0x1111111111111111111111111111111111111111",
-      "spender": "0x3333333333333333333333333333333333333333",
-      "intendedSpender": "0x3333333333333333333333333333333333333333",
-      "approvalAmount": 100,
-      "intendedTransactionAmount": 100,
-      "deadline": "2026-07-23T12:30:00.000Z",
-      "nonce": "7",
-      "permitIdentifier": "permit-001",
-      "oneTime": true
-    }
-  }
-}
-```
-
-Supported classifications are `Token Approval`, `Allowance Increase`, `Allowance Decrease`, `Allowance Reset`, `Permit Authorization`, `NFT Operator Approval`, `Batch Approval`, and `Delegated Spender Permission`. The evaluator checks spender policy, amount and ratio limits, unlimited authority, lifetime, nonce and network binding, NFT and batch policy, and audit-backed fingerprint replay. A generic contract call is not classified automatically.
-
-The Gateway rejects raw permit signatures and signed permit payloads. An optional 32-byte `permitSignatureHash` can support replay detection without exposing signature material. Magen3 does not query on-chain allowance state or certify token safety. See [`TOKEN_APPROVAL_PERMIT_SAFETY.md`](TOKEN_APPROVAL_PERMIT_SAFETY.md).
-
 ### Threat Intelligence evaluation
 
 Threat Intelligence is **Foundation Available** and requires an operator-configured feed. The Gateway normalizes the submitted execution wallet and target when they are supported wallet, account-hash, Contract Hash, or Package Hash identifiers, then performs deterministic exact matching. It does not derive related identities or claim that a no-match target is safe.
@@ -583,3 +545,11 @@ GET /api/agent-gateway/spec
 ```
 
 Magen3 does not custody keys or sign blockchain transactions. It controls whether an external agent may proceed to the signing step and records the resulting security evidence.
+
+
+## Token permission metadata
+
+Explicit token approvals, permits, NFT operator authority, batch approval, and delegated spender permissions use `action.tokenPermission`. Generic contract calls should omit this object. Supported fields and policy behavior are documented in `TOKEN_PERMISSION_CONTROLS.md`.
+
+The Gateway accepts unsigned metadata only. `signature`, `signatures`, approvals, raw signed permission payloads, private keys, and mnemonics are rejected.
+

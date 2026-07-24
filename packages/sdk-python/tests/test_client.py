@@ -98,42 +98,48 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["lifecycle"]["sequence"], 3)
 
 
-    def test_token_permission_metadata_passes_through(self):
+    def test_token_permission_metadata_passes_through_without_signatures(self):
         captured = {}
         def transport(method, url, headers, data, timeout):
             captured["payload"] = json.loads(data.decode())
-            return {"ok": True, "executionApproved": False, "result": {"decision": "Review Required"}}
-        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
-        client.check_intent({
-            "executionWalletAddress": "0x1111111111111111111111111111111111111111",
-            "action": {
-                "type": "Permit Authorization",
-                "amount": 10,
-                "target": "0x2222222222222222222222222222222222222222",
-                "targetType": "Token Contract",
-                "tokenPermission": {
-                    "kind": "Permit Authorization",
-                    "standard": "ERC-20 Permit",
-                    "network": "eip155:84532",
-                    "chainId": "84532",
-                    "tokenContract": "0x2222222222222222222222222222222222222222",
-                    "owner": "0x1111111111111111111111111111111111111111",
-                    "spender": "0x3333333333333333333333333333333333333333",
-                    "approvalAmount": 10,
-                    "intendedTransactionAmount": 10,
-                    "deadline": "2026-07-23T12:30:00.000Z",
-                    "nonce": "7",
-                    "permitIdentifier": "permit:python-7",
-                    "permitSignatureHash": "a" * 64,
-                    "oneTime": True
-                }
+            return {
+                "ok": True,
+                "executionApproved": True,
+                "result": {
+                    "decision": "Allowed",
+                    "tokenPermissionControlsContext": {
+                        "classification": "Fungible Token Approval",
+                        "fingerprint": "a" * 64,
+                        "replayStatus": "clear",
+                    },
+                },
             }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "0x0000000000000000000000000000000000000001",
+            "targetChain": "ethereum-sepolia",
+            "action": {
+                "type": "Contract Call",
+                "target": "0x1111111111111111111111111111111111111111",
+                "targetType": "Trusted Contract",
+                "tokenPermission": {
+                    "permissionType": "Fungible Token Approval",
+                    "owner": "0x0000000000000000000000000000000000000001",
+                    "tokenContract": "0x1111111111111111111111111111111111111111",
+                    "spender": "0x2222222222222222222222222222222222222222",
+                    "approvalAmount": 25,
+                    "intendedTransactionAmount": 20,
+                    "unlimited": False,
+                    "network": "ethereum-sepolia",
+                },
+            },
         })
+
         permission = captured["payload"]["action"]["tokenPermission"]
-        self.assertEqual(permission["network"], "eip155:84532")
-        self.assertEqual(permission["permitSignatureHash"], "a" * 64)
+        self.assertEqual(permission["spender"], "0x2222222222222222222222222222222222222222")
         self.assertNotIn("signature", permission)
-        self.assertNotIn("signedPermit", permission)
+        self.assertEqual(result["result"]["tokenPermissionControlsContext"]["replayStatus"], "clear")
 
     def test_get_approval(self):
         captured = {}

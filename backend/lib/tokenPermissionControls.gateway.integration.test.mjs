@@ -10,151 +10,187 @@ const EXECUTION_WALLET = `01${"2".repeat(64)}`;
 const APPROVED_SPENDER = `01${"3".repeat(64)}`;
 const UNKNOWN_SPENDER = `01${"4".repeat(64)}`;
 const BLOCKED_SPENDER = `01${"5".repeat(64)}`;
-const TOKEN_CONTRACT = `hash-${"6".repeat(64)}`;
+const TOKEN_CONTRACT = `contract-${"6".repeat(64)}`;
 
-async function fixture(mode = "Review") {
+async function fixture() {
   const store = createMemoryStore();
   const agent = await store.createAgent({
     name: "Token Permission Integration Agent",
-    type: "DeFi Agent",
-    purpose: "Test bounded token authority before execution",
+    type: "Trading Agent",
+    purpose: "Token Approval and Permit Safety integration test",
     permissionLevel: "Limited Execution",
     walletAddress: OWNER_WALLET,
-    executionCapabilities: ["Trading", "Wallet Management", "Treasury Operations", "dApp Interactions"],
+    executionCapabilities: ["Trading", "Wallet Management", "dApp Interactions"],
   });
   await store.createPolicy({
     name: "Token Permission Integration Policy",
     agentId: agent.id,
     walletAddress: OWNER_WALLET,
-    maxTransaction: 100,
-    dailyLimit: 500,
-    approvalThreshold: 80,
+    maxTransaction: 1000,
+    dailyLimit: 5000,
+    approvalThreshold: 900,
     trustedContracts: [TOKEN_CONTRACT],
     blockedActions: [],
     riskMode: "Balanced",
     structuredRules: {
+      allowedEntryPoints: ["approve", "permit", "set_approval_for_all", "batch_approve"],
       tokenPermissionControlsEnabled: true,
-      tokenPermissionMode: mode,
+      tokenPermissionMode: "Review",
       tokenPermissionUnknownSpenderAction: "Review",
-      tokenPermissionUnlimitedApprovalAction: "Block",
-      tokenPermissionMaxApprovalAmount: 50,
-      tokenPermissionMaxApprovalToTransactionRatio: 1.25,
+      tokenPermissionUnlimitedApprovalAction: "Review",
+      tokenPermissionMaxApprovalAmount: 1000,
+      tokenPermissionMaxApprovalToTransactionRatio: 2,
       tokenPermissionMaxLifetimeSeconds: 3600,
       tokenPermissionRequireExpiry: true,
-      tokenPermissionRequireAllowanceReset: true,
+      tokenPermissionRequireAllowanceReset: false,
       tokenPermissionApprovedSpenders: [APPROVED_SPENDER],
       tokenPermissionBlockedSpenders: [BLOCKED_SPENDER],
       tokenPermissionAllowNftOperatorApproval: false,
-      tokenPermissionAllowBatchApproval: false,
+      tokenPermissionAllowBatchApproval: true,
       tokenPermissionRequireChainBinding: true,
       tokenPermissionRequireNonce: true,
       tokenPermissionMaximumBatchSize: 5,
-      threatIntelligenceMode: "Observe",
-      threatIntelligenceUnavailableAction: "Warn",
-      oracleValidationMode: "Observe",
-      oracleValidationUnavailableAction: "Warn",
+      approvalWorkflowEnabled: true,
+      approvalWorkflowMode: "Single",
+      approvalRequiredCount: 1,
+      approvalApproverWallets: [OWNER_WALLET],
+      approvalAllowOwnerFallback: false,
+      approvalExpiryMinutes: 60,
     },
   });
   return { store, agent };
 }
 
 function intent(agentId, overrides = {}) {
-  const tokenPermission = overrides.tokenPermission || {};
+  const { action: actionOverrides = {}, tokenPermission: permissionOverrides = {}, ...requestOverrides } = overrides;
   return {
-    source: "token-permission-gateway-integration-test",
+    source: "token-permission-integration-test",
     agentId,
     executionWalletAddress: EXECUTION_WALLET,
     action: {
-      type: overrides.type || "Token Approval",
-      amount: 10,
+      type: "Contract Interaction",
+      amount: 100,
       asset: "TEST",
       target: TOKEN_CONTRACT,
-      targetType: "Token Contract",
+      targetType: "Trusted Contract",
       contractIdentifierType: "Contract Hash",
+      entryPoint: "approve",
       chainName: "casper-test",
       tokenPermission: {
-        kind: overrides.type || "Token Approval",
-        standard: "CEP-18",
-        network: "casper-test",
-        tokenContract: TOKEN_CONTRACT,
-        tokenIdentifierType: "Contract Hash",
+        permissionType: "Fungible Token Approval",
         owner: EXECUTION_WALLET,
+        tokenContract: TOKEN_CONTRACT,
+        tokenStandard: "CEP-18",
         spender: APPROVED_SPENDER,
-        intendedSpender: APPROVED_SPENDER,
-        approvalAmount: 10,
-        intendedTransactionAmount: 10,
-        deadline: new Date(Date.now() + 30 * 60_000).toISOString(),
-        oneTime: true,
-        ...tokenPermission,
+        approvalAmount: 100,
+        intendedTransactionAmount: 100,
+        unlimited: false,
+        network: "casper-test",
+        approvedProtocol: "approved-router",
+        allowanceResetExpected: false,
+        ...permissionOverrides,
       },
+      ...actionOverrides,
     },
+    ...requestOverrides,
   };
 }
 
-test("authenticated Gateway persists Allowed, Review Required, and Blocked token-permission findings", async () => {
+test("Gateway allows a bounded approved token permission and persists complete audit evidence", async () => {
   const { store, agent } = await fixture();
-  const allowed = await store.submitAgentGatewayIntent(intent(agent.id), { apiKey: agent.apiKey });
-  const review = await store.submitAgentGatewayIntent(intent(agent.id, {
-    tokenPermission: { spender: UNKNOWN_SPENDER, intendedSpender: UNKNOWN_SPENDER },
-  }), { apiKey: agent.apiKey });
-  const blocked = await store.submitAgentGatewayIntent(intent(agent.id, {
-    tokenPermission: { spender: BLOCKED_SPENDER, intendedSpender: BLOCKED_SPENDER },
-  }), { apiKey: agent.apiKey });
+  const response = await store.submitAgentGatewayIntent(intent(agent.id), { apiKey: agent.apiKey });
 
-  assert.deepEqual(
-    [allowed.result.decision, review.result.decision, blocked.result.decision],
-    ["Allowed", "Review Required", "Blocked"],
-  );
-
-  for (const response of [allowed, review, blocked]) {
-    assert.ok(response.result.moduleFindings.some((finding) => finding.module === "Token Approval & Permit Safety"));
-    assert.ok(response.result.pipelineStages.some((stage) => stage.id === "token-approval-permit-safety"));
-    assert.ok(response.auditLog.moduleFindings.some((finding) => finding.module === "Token Approval & Permit Safety"));
-    assert.equal(response.auditLog.originalIntent.action.tokenPermission.tokenContract, TOKEN_CONTRACT);
-    assert.equal(response.result.tokenPermissionControlsContext.availability, "foundation-available");
-    assert.equal(response.result.tokenPermissionControlsContext.owner, EXECUTION_WALLET);
-  }
+  assert.equal(response.result.decision, "Allowed");
+  assert.equal(response.result.tokenPermissionControlsContext.permissionType, "Fungible Token Approval");
+  assert.equal(response.result.tokenPermissionControlsContext.replayStatus, "clear");
+  assert.match(response.result.tokenPermissionControlsContext.fingerprint, /^[0-9a-f]{64}$/);
+  assert.ok(response.result.moduleFindings.some((item) => item.module === "Token Permission Controls" && item.status === "pass"));
+  assert.ok(response.result.pipelineStages.some((stage) => stage.id === "token-permission-controls" && stage.status === "completed"));
+  assert.equal(response.auditLog.originalIntent.action.tokenPermission.spender, APPROVED_SPENDER);
+  assert.equal(response.auditLog.originalIntent.action.tokenPermission.approvalAmount, 100);
+  assert.match(response.auditLog.originalIntent.action.tokenPermission.fingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(response.gatewayRequest.auditLogId, response.auditLog.id);
 });
 
-test("a permit fingerprint and signature hash cannot be replayed", async () => {
-  const { store, agent } = await fixture("Enforce");
-  const permitIntent = intent(agent.id, {
-    type: "Permit Authorization",
-    tokenPermission: {
-      kind: "Permit Authorization",
-      nonce: "17",
-      permitIdentifier: "permit:integration-17",
-      permitSignatureHash: "a".repeat(64),
-      oneTime: true,
-    },
-  });
+test("Gateway routes an unknown spender to Human Approval without weakening contract validation", async () => {
+  const { store, agent } = await fixture();
+  const response = await store.submitAgentGatewayIntent(
+    intent(agent.id, { tokenPermission: { spender: UNKNOWN_SPENDER } }),
+    { apiKey: agent.apiKey },
+  );
 
-  const first = await store.submitAgentGatewayIntent(permitIntent, { apiKey: agent.apiKey });
+  assert.equal(response.result.decision, "Review Required");
+  assert.ok(response.result.moduleFindings.some((item) => item.rule === "Approved spender" && item.status === "warning"));
+  assert.ok(response.auditLog.moduleFindings.some((item) => item.module === "Contract Validation" && item.status === "pass"));
+  assert.ok(response.approval);
+  assert.equal(response.approval.auditLogId, response.auditLog.id);
+});
+
+test("Gateway hard-blocks a blocked spender before execution", async () => {
+  const { store, agent } = await fixture();
+  const response = await store.submitAgentGatewayIntent(
+    intent(agent.id, { tokenPermission: { spender: BLOCKED_SPENDER } }),
+    { apiKey: agent.apiKey },
+  );
+
+  assert.equal(response.result.decision, "Blocked");
+  assert.equal(response.result.triggeredRule, "Blocked spender");
+  assert.ok(response.auditLog.moduleFindings.some((item) => item.rule === "Blocked spender" && item.status === "fail"));
+  assert.equal(response.approval, null);
+});
+
+test("Gateway persists permit fingerprints and blocks replay and protected-parameter mutation", async () => {
+  const { store, agent } = await fixture();
+  const deadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const permit = {
+    permissionType: "Permit Authorization",
+    nonce: "permit-nonce-42",
+    permitId: "permit-42",
+    deadline,
+    network: "casper-test",
+  };
+
+  const first = await store.submitAgentGatewayIntent(
+    intent(agent.id, { action: { entryPoint: "permit" }, tokenPermission: permit }),
+    { apiKey: agent.apiKey },
+  );
   assert.equal(first.result.decision, "Allowed");
-  assert.equal(first.auditLog.originalIntent.action.tokenPermission.permitSignatureHash, "a".repeat(64));
-  assert.ok(first.auditLog.originalIntent.action.tokenPermission.fingerprint);
 
-  const replay = await store.submitAgentGatewayIntent(permitIntent, { apiKey: agent.apiKey });
+  const replay = await store.submitAgentGatewayIntent(
+    intent(agent.id, { action: { entryPoint: "permit" }, tokenPermission: permit }),
+    { apiKey: agent.apiKey },
+  );
   assert.equal(replay.result.decision, "Blocked");
-  assert.ok(replay.result.moduleFindings.some((finding) =>
-    finding.module === "Token Approval & Permit Safety" && ["Reused permit signature", "Permit replay"].includes(finding.rule) && finding.status === "fail"));
+  assert.equal(replay.result.tokenPermissionControlsContext.replayStatus, "replay");
+  assert.equal(replay.result.triggeredRule, "Permit replay protection");
+
+  const mutation = await store.submitAgentGatewayIntent(
+    intent(agent.id, {
+      action: { entryPoint: "permit" },
+      tokenPermission: { ...permit, approvalAmount: 200, intendedTransactionAmount: 200 },
+    }),
+    { apiKey: agent.apiKey },
+  );
+  assert.equal(mutation.result.decision, "Blocked");
+  assert.equal(mutation.result.tokenPermissionControlsContext.replayStatus, "parameter_mutation");
+  assert.equal(mutation.result.triggeredRule, "Permit parameter binding");
 });
 
-test("unlimited approval is blocked and raw permit material is never persisted", async () => {
-  const { store, agent } = await fixture("Enforce");
-  const blocked = await store.submitAgentGatewayIntent(intent(agent.id, {
-    tokenPermission: { unlimited: true, approvalAmount: "unlimited" },
-  }), { apiKey: agent.apiKey });
-  assert.equal(blocked.result.decision, "Blocked");
-  assert.ok(blocked.result.moduleFindings.some((finding) => finding.rule === "Unlimited token approval" && finding.status === "fail"));
-
+test("Gateway rejects raw token-permission signatures and keeps generic calls compatible", async () => {
+  const { store, agent } = await fixture();
   await assert.rejects(
-    () => store.submitAgentGatewayIntent(intent(agent.id, {
-      type: "Permit Authorization",
-      tokenPermission: { kind: "Permit Authorization", nonce: "18", permitSignature: "0xraw-signature" },
-    }), { apiKey: agent.apiKey }),
-    /signing material/i,
+    () => store.submitAgentGatewayIntent(
+      intent(agent.id, { tokenPermission: { signature: `0x${"a".repeat(130)}` } }),
+      { apiKey: agent.apiKey },
+    ),
+    /signatures|signing material/i,
   );
-  const boot = await store.bootstrap(OWNER_WALLET);
-  assert.equal(boot.auditLogs.some((log) => JSON.stringify(log.originalIntent || {}).includes("0xraw-signature")), false);
+
+  const generic = intent(agent.id);
+  delete generic.action.tokenPermission;
+  const response = await store.submitAgentGatewayIntent(generic, { apiKey: agent.apiKey });
+  assert.equal(response.result.decision, "Allowed");
+  assert.equal(response.result.tokenPermissionControlsContext, null);
+  assert.ok(response.result.moduleFindings.some((item) => item.rule === "Token permission applicability" && item.status === "skipped"));
+  assert.equal(response.auditLog.originalIntent.action.tokenPermission, undefined);
 });

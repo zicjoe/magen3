@@ -176,28 +176,3 @@ test("keeps high-level swap intents backward compatible when no entry point is d
   assert.equal(result.needsReview, false);
   assert.ok(result.findings.some((item) => item.rule === "Valid contract entry point" && item.status === "skipped"));
 });
-
-
-test("validates Casper token contracts and isolates explicit EVM token permissions", () => {
-  const casper = evaluateContractValidation({
-    request: request({
-      actionType: "Token Approval",
-      targetType: "Token Contract",
-      entryPoint: "approve",
-    }),
-    policy: { ...basePolicy, structuredRules: { ...basePolicy.structuredRules, allowedEntryPoints: ["approve"] } },
-  });
-  const evm = evaluateContractValidation({
-    request: {
-      actionType: "Token Approval",
-      target: "0x2222222222222222222222222222222222222222",
-      targetType: "Token Contract",
-      executionWalletAddress: "0x1111111111111111111111111111111111111111",
-      tokenPermission: { network: "eip155:1" },
-    },
-    policy: basePolicy,
-  });
-  assert.equal(casper.hardBlock, false);
-  assert.equal(evm.hardBlock, false);
-  assert.ok(evm.findings.some((item) => item.status === "skipped" && item.rule === "Chain-specific contract validation"));
-});

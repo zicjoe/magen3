@@ -415,7 +415,7 @@ test("polls an exact-bound human approval by approval or audit ID", async () => 
   assert.equal(response.approval.mayProceedToSigning, true);
 });
 
-test("preserves explicit unsigned token-permission metadata without adding signature material", async () => {
+test("preserves unsigned Token Permission metadata without permit signatures", async () => {
   let captured;
   const client = new Magen3Client({
     gatewayUrl: "https://api.example",
@@ -425,44 +425,48 @@ test("preserves explicit unsigned token-permission metadata without adding signa
       captured = JSON.parse(init.body);
       return new Response(JSON.stringify({
         ok: true,
-        executionApproved: false,
-        result: { decision: "Review Required", risk: "High", riskScore: 55, reason: "new spender", recommendedAction: "review" },
+        executionApproved: true,
+        result: {
+          decision: "Allowed",
+          risk: "Low",
+          riskScore: 8,
+          reason: "token permission passed",
+          recommendedAction: "continue",
+          tokenPermissionControlsContext: { fingerprint: "a".repeat(64), replayStatus: "clear" },
+        },
         gatewayRequest: {},
         auditLog: {},
-        nextAction: "review",
+        nextAction: "sign",
       }), { status: 201 });
     },
   });
 
-  await client.checkIntent({
-    executionWalletAddress: "0x1111111111111111111111111111111111111111",
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
     action: {
-      type: "Permit Authorization",
+      type: "Contract Interaction",
       amount: 10,
-      target: "0x2222222222222222222222222222222222222222",
-      targetType: "Token Contract",
+      asset: "TEST",
+      target: `contract-${"2".repeat(64)}`,
+      entryPoint: "permit",
       tokenPermission: {
-        kind: "Permit Authorization",
-        standard: "ERC-20 Permit",
-        network: "eip155:84532",
-        chainId: "84532",
-        tokenContract: "0x2222222222222222222222222222222222222222",
-        owner: "0x1111111111111111111111111111111111111111",
-        spender: "0x3333333333333333333333333333333333333333",
+        permissionType: "Permit Authorization",
+        owner: `01${"1".repeat(64)}`,
+        tokenContract: `contract-${"2".repeat(64)}`,
+        tokenStandard: "CEP-18",
+        spender: `01${"3".repeat(64)}`,
         approvalAmount: 10,
         intendedTransactionAmount: 10,
-        deadline: "2026-07-23T12:30:00.000Z",
-        nonce: "7",
-        permitIdentifier: "permit:sdk-7",
-        permitSignatureHash: "a".repeat(64),
-        oneTime: true,
+        nonce: "nonce-1",
+        permitId: "permit-1",
+        deadline: "2026-07-24T10:30:00.000Z",
+        network: "casper-test",
       },
     },
   });
 
-  assert.equal(captured.action.tokenPermission.kind, "Permit Authorization");
-  assert.equal(captured.action.tokenPermission.chainId, "84532");
-  assert.equal(captured.action.tokenPermission.permitSignatureHash, "a".repeat(64));
-  assert.equal("signature" in captured.action.tokenPermission, false);
-  assert.equal("signedPermit" in captured.action.tokenPermission, false);
+  assert.equal(captured.action.tokenPermission.permissionType, "Permit Authorization");
+  assert.equal(captured.action.tokenPermission.spender, `01${"3".repeat(64)}`);
+  assert.equal(captured.action.tokenPermission.nonce, "nonce-1");
+  assert.equal(response.result.tokenPermissionControlsContext.replayStatus, "clear");
 });

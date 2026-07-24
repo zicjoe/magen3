@@ -61,7 +61,33 @@ The SDK never signs or broadcasts blockchain transactions.
 
 ## Token Approval & Permit Safety
 
-Python callers may include an `action["tokenPermission"]` dictionary with the exact network, token contract, owner, spender, bounded amount, intended transaction amount, deadline, nonce, identifier, and optional batch items. Inspect the final decision, structured findings, and `tokenPermissionControlsContext`. Never submit a raw permit signature or signed permit payload; only an optional 32-byte signature hash may be used for replay detection. The Foundation control does not independently query live allowance state or certify token safety.
+Submit normalized, unsigned permission metadata before a wallet creates an approval or permit signature:
+
+```python
+decision = client.check_intent({
+    "executionWalletAddress": "0x0000000000000000000000000000000000000001",
+    "targetChain": "ethereum-sepolia",
+    "action": {
+        "type": "Contract Call",
+        "target": "0x1111111111111111111111111111111111111111",
+        "targetType": "Trusted Contract",
+        "tokenPermission": {
+            "permissionType": "Fungible Token Approval",
+            "owner": "0x0000000000000000000000000000000000000001",
+            "tokenContract": "0x1111111111111111111111111111111111111111",
+            "spender": "0x2222222222222222222222222222222222222222",
+            "approvalAmount": 25,
+            "intendedTransactionAmount": 20,
+            "unlimited": False,
+            "network": "ethereum-sepolia",
+        },
+    },
+})
+```
+
+The response can include `tokenPermissionControlsContext` plus structured findings for spender policy, amount and ratio limits, unlimited authority, permit lifetime and nonce requirements, NFT operator authority, batch limits, allowance-reset expectations, and replay status. Generic contract calls without `action["tokenPermission"]` remain compatible and are not classified as approvals.
+
+Never send a permit signature, wallet signature, signed authorization, private key, seed phrase, or mnemonic through the Gateway. Magen3 stores a canonical permission fingerprint and enough sanitized metadata to detect replay or protected-parameter mutation without retaining raw signed authority.
 
 ## Human approval polling
 

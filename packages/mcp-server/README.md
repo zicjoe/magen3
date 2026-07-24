@@ -35,10 +35,6 @@ node packages/mcp-server/dist/server.js
 See `docs/MCP_SERVER.md` for Codex setup and testing.
 
 
-## Token Approval & Permit Safety
-
-The intent tools accept explicit unsigned `action.tokenPermission` metadata for token approvals, allowance changes/reset, permits, NFT operators, batches, and delegated spenders. Use the final Magen3 decision and structured findings. Never send a raw permit signature or signed permit payload; the schema accepts only an optional 32-byte signature hash for replay detection. This control is Foundation Available and does not query live allowances or certify a token contract.
-
 ## Human Approval & Quorum
 
 When an intent returns `Review Required`, stop execution and call `magen3_get_approval` with the approval ID or audit ID after a human resolves the request in Magen3. Continue only when `mayProceedToSigning` is true. The MCP server cannot approve a request or impersonate a reviewer.
@@ -86,3 +82,7 @@ The MCP schema accepts non-sensitive compliance evidence under `action.complianc
 Use `action.type: "x402 Payment"`, `targetType: "x402 Merchant"`, and an `action.x402` object containing the selected v2 exact-scheme requirements. Supply either an explicit expiration or `maxTimeoutSeconds` plus the stable `requirementsReceivedAt` time. For unsafe HTTP methods, bind the exact request body with `requestBodyHash`.
 
 After an Allowed decision and real facilitator activity, call `magen3_report_x402_settlement`. Confirmed status requires a transaction hash, delivery can be recorded only after confirmation, and settlement state cannot regress. Never send `PAYMENT-SIGNATURE`, signed payment payloads, wallet approvals, or private keys through MCP.
+
+## Token Permission Controls
+
+The MCP intent schema exposes `action.tokenPermission` for explicit unsigned token-authority metadata. Magen3 returns deterministic Token Permission Controls findings and replay context. The MCP server never accepts permit signatures, wallet signatures, private keys, or raw signed authority payloads.
