@@ -3979,8 +3979,8 @@ function ApprovalPolicyFields({
   const applyTreasurySecurityPreset = () => {
     if (configuredWallets.length < 4) return;
     const treasuryWallets = configuredWallets.slice(0, -2);
-    const securityWallet = configuredWallets.at(-2) as string;
-    const backupWallet = configuredWallets.at(-1) as string;
+    const securityWallet = configuredWallets[configuredWallets.length - 2];
+    const backupWallet = configuredWallets[configuredWallets.length - 1];
     const treasuryRequired = Math.min(2, treasuryWallets.length);
     onChange({
       approvalOrganizationalQuorumEnabled: "Yes",
