@@ -165,6 +165,24 @@ export interface Magen3InstructionIntegrityMetadata {
   currentPermissionScopes?: string[];
 }
 
+export interface Magen3ToolMcpIntegrityMetadata {
+  mcpServerId?: string;
+  mcpServerUrl?: string;
+  toolName: string;
+  toolVersion?: string;
+  /** SHA-256 hash of the approved server/tool manifest. */
+  manifestHash?: string;
+  /** SHA-256 hash of the approved tool input/output schema. */
+  schemaHash?: string;
+  /** SHA-256 hash of the approved human-readable tool description. */
+  descriptionHash?: string;
+  permissionScopes?: string[];
+  credentialScope?: string;
+  tls?: boolean;
+  toolOrigin?: string;
+  approvedAt?: string;
+}
+
 export interface Magen3TokenPermissionBatchItem {
   tokenContract?: string;
   spender?: string;
@@ -284,6 +302,8 @@ export interface Magen3Action {
   x402?: Magen3X402Payment;
   /** Deterministic goal, provenance, source-domain, parameter-binding, and tool-scope evidence. Never include private prompts, credentials, or unredacted document contents. */
   instructionIntegrity?: Magen3InstructionIntegrityMetadata;
+  /** Verifiable MCP server and tool identity, hashes, version, origin, TLS, and least-privilege scopes. Never include credentials or secret tool output. */
+  toolIntegrity?: Magen3ToolMcpIntegrityMetadata;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
@@ -555,6 +575,30 @@ export interface Magen3InstructionIntegrityContext {
   limitation?: string;
 }
 
+export interface Magen3ToolMcpIntegrityContext {
+  enabled?: boolean;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  metadataSupplied?: boolean;
+  applicable?: boolean;
+  serverId?: string;
+  serverUrl?: string;
+  toolName?: string;
+  toolVersion?: string;
+  manifestHash?: string;
+  schemaHash?: string;
+  descriptionHash?: string;
+  permissionScopes?: string[];
+  credentialScope?: string;
+  tls?: boolean;
+  toolOrigin?: string;
+  approvedAt?: string;
+  approvedServer?: boolean;
+  approvedTool?: boolean;
+  materialChangeDetected?: boolean;
+  violations?: Array<{ rule?: string; message?: string }>;
+  limitation?: string;
+}
+
 export interface Magen3TokenPermissionControlsContext {
   permissionType?: string;
   owner?: string;
@@ -790,6 +834,8 @@ export interface Magen3DecisionResult {
   pipelineStages?: Magen3PipelineStage[];
   /** Deterministic goal binding, source provenance, protected-parameter binding, confirmation, and tool-scope evidence. */
   instructionIntegrityContext?: Magen3InstructionIntegrityContext;
+  /** Deterministic MCP server/tool identity, hash, TLS, origin, credential, permission-scope, and capability-boundary evidence. */
+  toolMcpIntegrityContext?: Magen3ToolMcpIntegrityContext;
   /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
   emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */

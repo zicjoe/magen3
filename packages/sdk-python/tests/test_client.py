@@ -392,6 +392,16 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["action"]["instructionIntegrity"]["goalId"], "goal:transfer-001")
         self.assertEqual(result["result"]["instructionIntegrityContext"]["violations"], [])
 
+    def test_tool_mcp_integrity_metadata_and_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed", "toolMcpIntegrityContext": {"serverId": "mcp-main", "toolName": "wallet.transfer", "approvedServer": True, "approvedTool": True, "violations": []}}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({"executionWalletAddress": "01" + "1" * 64, "action": {"type": "Transfer", "amount": 1, "target": "01" + "2" * 64, "toolIntegrity": {"mcpServerId": "mcp-main", "mcpServerUrl": "https://mcp.example", "toolName": "wallet.transfer", "toolVersion": "1.0.0", "manifestHash": "a" * 64, "schemaHash": "b" * 64, "descriptionHash": "c" * 64, "permissionScopes": ["wallet:read"], "credentialScope": "wallet-limited", "tls": True, "toolOrigin": "magen3-mcp"}}})
+        self.assertEqual(captured["payload"]["action"]["toolIntegrity"]["toolName"], "wallet.transfer")
+        self.assertTrue(result["result"]["toolMcpIntegrityContext"]["approvedTool"])
+
 
 if __name__ == "__main__":
     unittest.main()

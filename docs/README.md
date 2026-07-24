@@ -39,3 +39,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 
 - [Contract Upgrade Safety](./CONTRACT_UPGRADE_SAFETY.md)
 - [Contract Argument Policies](./CONTRACT_ARGUMENT_POLICIES.md) — exact contract/entry-point runtime-argument rules, types, ranges, address policies, fingerprints, and Human Approval binding.
+
+- [`TOOL_MCP_INTEGRITY.md`](TOOL_MCP_INTEGRITY.md) — deterministic MCP server/tool identity, hash, transport, and permission-scope enforcement.

@@ -156,3 +156,8 @@ Both official SDKs pass public unsigned contract parameters through `action.pref
 ## Agent Instruction Integrity
 
 Both official SDKs pass `action.instructionIntegrity` through the existing intent envelope. Use stable goal and SHA-256 evidence from a trusted adapter. The SDKs do not generate provenance automatically and do not make prompt-injection claims.
+
+
+## Tool & MCP Integrity
+
+The TypeScript SDK exposes typed `action.toolIntegrity` metadata and `toolMcpIntegrityContext`. The Python SDK preserves the same dictionaries without transformation. SDKs do not generate trust claims for arbitrary external tools; trusted adapters must supply exact server/tool identities and hashes. Never include MCP credentials or secret tool output.

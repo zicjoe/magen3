@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "2.0.0",
+        version: "2.1.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -191,6 +191,7 @@ const server = createServer(async (req, res) => {
         tokenPermissionControls: { status: "live", classification: true, spenderPolicy: true, boundedAuthority: true, permitReplayProtection: true },
         privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
         instructionIntegrity: { status: "live", goalBinding: true, sourceProvenance: true, parameterBinding: true, externalContentConfirmation: true, permissionScopeContainment: true },
+        toolMcpIntegrity: { status: "live", approvedServers: true, approvedTools: true, manifestAndSchemaBinding: true, tls: true, permissionScopeContainment: true, agentCapabilityBoundary: true },
 
         contractUpgradeControls: {
           status: "Live",
@@ -352,6 +353,42 @@ const server = createServer(async (req, res) => {
           },
           limitation: "Magen3 verifies supplied provenance and exact deterministic bindings. It does not claim to detect every prompt-injection, social-engineering, or semantic-manipulation attack.",
           securityBoundary: "Only unsigned provenance metadata and hashes are accepted. Private keys, wallet signatures, raw signed transactions, and secret prompt contents are not required."
+        }
+      });
+    }
+
+    if (route === "GET /api/tool-mcp-integrity/status") {
+      return send(res, 200, {
+        ok: true,
+        toolMcpIntegrity: {
+          status: "live",
+          protectionArea: "Agent Trust & Access",
+          control: "Tool & MCP Integrity",
+          approvedMcpServerAllowlist: true,
+          approvedToolAllowlist: true,
+          manifestHashBinding: true,
+          schemaHashBinding: true,
+          descriptionHashChangeDetection: true,
+          versionChangeDetection: true,
+          permissionScopeContainment: true,
+          credentialScopeValidation: true,
+          tlsRequirement: true,
+          toolOriginBinding: true,
+          agentCapabilityBoundary: true,
+          policyFields: {
+            enabled: "structuredRules.toolIntegrityEnabled",
+            mode: "structuredRules.toolIntegrityMode: Observe | Review | Enforce",
+            servers: "structuredRules.approvedMcpServers",
+            tools: "structuredRules.approvedTools",
+            manifest: "structuredRules.requireManifestHash",
+            schema: "structuredRules.requireSchemaHash",
+            tls: "structuredRules.requireTls",
+            versionChanges: "structuredRules.allowToolVersionChanges",
+            unknownTool: "structuredRules.unknownToolAction: Warn | Review | Block",
+            permissionExpansion: "structuredRules.permissionExpansionAction: Warn | Review | Block"
+          },
+          limitation: "Magen3 verifies adapter-supplied identity, hashes, TLS, origin, version, and scopes. It does not certify arbitrary tool code or eliminate supply-chain risk.",
+          securityBoundary: "Only unsigned tool metadata and hashes are accepted. Magen3 never receives MCP credentials, private keys, wallet signatures, raw signed transactions, or secret tool outputs."
         }
       });
     }
@@ -521,7 +558,7 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
+          liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
           foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,

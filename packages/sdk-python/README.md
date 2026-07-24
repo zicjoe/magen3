@@ -195,3 +195,8 @@ Python callers place public unsigned contract arguments in `action["preflight"][
 ## Agent Instruction Integrity
 
 Pass minimal provenance under `action["instructionIntegrity"]` for sensitive or externally influenced execution. Include a stable `goalId`, SHA-256 `originalUserGoalHash`, source labels, confirmation state, and original/current permission scopes. Do not send private prompts, raw documents, credentials, wallet secrets, or signatures. The SDK preserves this metadata and the Gateway returns `instructionIntegrityContext`; Magen3 does not claim to detect every prompt-injection attack.
+
+
+## Tool & MCP Integrity
+
+Python callers may include public unsigned `action["toolIntegrity"]` evidence with the exact MCP server/tool identity, version, SHA-256 hashes, transport assertion, origin, credential-scope label, and permission scopes. Inspect `result["toolMcpIntegrityContext"]`. Do not send MCP credentials, private keys, signatures, or secret tool output.

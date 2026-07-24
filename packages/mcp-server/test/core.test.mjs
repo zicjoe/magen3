@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createToolHandlers, configFromEnv, INTENT_SCHEMA_DESCRIPTION } from "../dist/core.js";
+import { createToolHandlers, configFromEnv, INTENT_SCHEMA_DESCRIPTION, OFFICIAL_MCP_INTEGRITY } from "../dist/core.js";
 
 test("configFromEnv fails closed when credentials are missing", () => {
   assert.throws(() => configFromEnv({}), /MAGEN3_GATEWAY_URL/);
@@ -238,4 +238,49 @@ test("intent schema exposes the Agent Instruction Integrity security boundary", 
   const result = await handlers.getIntentSchema();
   assert.match(result.content[0].text, /Instruction Integrity verifies adapter-supplied provenance/i);
   assert.match(result.content[0].text, /does not.*detect every prompt-injection attack/i);
+});
+
+test("intent schema exposes the Tool & MCP Integrity boundary", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.toolMcpIntegrity, /approved server ID\/URL/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.toolIntegrity.schemaHash, /SHA-256/i);
+  const handlers = createToolHandlers({ verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); }, requireAllowed: async () => { throw new Error("unused"); }, getApproval: async () => { throw new Error("unused"); }, reportX402Settlement: async () => ({ ok: true }) });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Tool & MCP Integrity verifies the exact approved server\/tool identity/i);
+  assert.match(result.content[0].text, /never send server credentials/i);
+});
+
+
+test("official MCP tools inject stable integrity metadata when the caller omits it", async () => {
+  let checked;
+  let required;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async (intent) => { checked = intent; return { ok: true, result: { decision: "Allowed", risk: "Low", riskScore: 0, reason: "ok", recommendedAction: "continue" }, gatewayRequest: {}, auditLog: {}, nextAction: "Sign" }; },
+    requireAllowed: async (intent) => { required = intent; return { ok: true, executionApproved: true, result: { decision: "Allowed", risk: "Low", riskScore: 0, reason: "ok", recommendedAction: "continue" }, gatewayRequest: {}, auditLog: {}, nextAction: "Sign" }; },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const intent = { executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def" } };
+  await handlers.checkIntent(intent);
+  await handlers.requireAllowed(intent);
+  assert.equal(checked.action.toolIntegrity.mcpServerId, OFFICIAL_MCP_INTEGRITY.serverId);
+  assert.equal(checked.action.toolIntegrity.toolName, "magen3_check_intent");
+  assert.equal(checked.action.toolIntegrity.schemaHash, OFFICIAL_MCP_INTEGRITY.tools.magen3_check_intent.schemaHash);
+  assert.equal(required.action.toolIntegrity.toolName, "magen3_require_allowed");
+  assert.equal(required.action.toolIntegrity.manifestHash, OFFICIAL_MCP_INTEGRITY.manifestHash);
+  assert.equal(intent.action.toolIntegrity, undefined);
+});
+
+test("official MCP tools preserve explicit downstream tool metadata", async () => {
+  let captured;
+  const explicit = { mcpServerId: "external-mcp", toolName: "wallet.transfer", manifestHash: "a".repeat(64), schemaHash: "b".repeat(64), tls: true };
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async (intent) => { captured = intent; return { ok: true, result: { decision: "Allowed", risk: "Low", riskScore: 0, reason: "ok", recommendedAction: "continue" }, gatewayRequest: {}, auditLog: {}, nextAction: "Sign" }; },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  await handlers.checkIntent({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def", toolIntegrity: explicit } });
+  assert.deepEqual(captured.action.toolIntegrity, explicit);
 });

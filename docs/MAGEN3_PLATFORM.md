@@ -555,9 +555,16 @@ Contract Argument Policies is Live under Contract & Permission Safety. An enable
 
 The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
 
-Phase 1 deterministic permission and approval safety is complete. Agent Instruction Integrity is now the first Live Phase 2 control. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Tool & MCP Integrity.
+Phase 1 deterministic permission and approval safety is complete. Agent Instruction Integrity and Tool & MCP Integrity are now Live in Phase 2. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Delegation & Session Key Safety.
 
 
 ## Agent Instruction Integrity
 
 Agent Instruction Integrity is Live under Agent Trust & Access. The Gateway evaluates stable goal binding, minimal source provenance, source-domain policy, protected-parameter fingerprints, user confirmation for external-content changes, x402 self-authorization, and tool permission-scope expansion. The control is deterministic and uses no language model for authorization. It verifies supplied adapter evidence and does not claim to detect every prompt-injection attack. See `AGENT_INSTRUCTION_INTEGRITY.md`.
+
+
+## Tool & MCP Integrity
+
+Tool & MCP Integrity is a Live deterministic control inside Agent Trust & Access. It evaluates only requests that identify tool use and checks the exact approved MCP server, exact tool, version, manifest hash, schema hash, description hash, secure-transport assertion, origin, credential scope, requested permission scopes, and registered-agent capability scope. Unknown identities or unavailable required evidence follow the policy's Warn, Review, or Block behavior; material hash changes, blocked transport, origin mismatch, credential-scope mismatch, and capability overreach fail closed.
+
+The official Magen3 MCP adapter injects stable metadata for its two execution tools when a caller does not provide downstream tool metadata. Explicit downstream metadata is preserved. This verifies deterministic adapter evidence; it does not certify arbitrary tool code or eliminate supply-chain risk.

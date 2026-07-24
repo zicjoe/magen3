@@ -46,6 +46,11 @@ test("security coverage reaches 100 only when every configured protection check 
         externalContentHighRiskAction: "Review",
         allowParameterChangesAfterGoal: false,
         requireParameterChangeReason: true,
+        toolIntegrityEnabled: true,
+        toolIntegrityMode: "Review",
+        approvedMcpServers: [{ id: "mcp-main", url: "https://mcp.example", manifestHash: "a".repeat(64) }],
+        approvedTools: [{ serverId: "mcp-main", name: "wallet.transfer", manifestHash: "a".repeat(64), schemaHash: "b".repeat(64), permissionScopes: ["wallet:read"] }],
+        requireTls: true,
         approvalWorkflowEnabled: true,
         approvalRequiredCount: 1,
         approvalAllowOwnerFallback: true,
@@ -107,6 +112,7 @@ test("security coverage reaches 100 only when every configured protection check 
       decisionProofStatus: "recorded",
       moduleFindings: [
         { module: "Agent Instruction Integrity", status: "pass", severity: "info", rule: "Stable goal binding", message: "Goal-bound provenance passed." },
+        { module: "Tool & MCP Integrity", status: "pass", severity: "info", rule: "Approved MCP server", message: "Approved server." },
         { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
         { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
@@ -503,4 +509,26 @@ test("Integration Health surfaces Instruction Integrity violations", () => {
   );
   assert.ok(health.checks.some((check) => check.label === "Instruction Integrity" && check.status === "attention"));
   assert.notEqual(health.overall, "Healthy");
+});
+
+
+test("Tool & MCP Integrity coverage requires approved configuration and an observed pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", type: "Custom Agent", executionCapabilities: ["Custom"], apiKeyPreview: "mg3…", onboardingStatus: "complete", lastIntentAt: timestamp };
+  const base = { status: "Active", maxTransaction: 10, dailyLimit: 50, approvalThreshold: 5, trustedContracts: [], structuredRules: { toolIntegrityEnabled: true, toolIntegrityMode: "Review", approvedMcpServers: [{ id: "mcp-main" }], approvedTools: [{ serverId: "mcp-main", name: "custom.run" }], requireTls: true } };
+  const missing = securityModel.calculateSecurityCoverage(agent, base, []);
+  assert.ok(missing.checks.some((check) => check.id === "tool-mcp-integrity" && check.passed === false));
+  const observed = securityModel.calculateSecurityCoverage(agent, base, [{ timestamp, moduleFindings: [{ module: "Tool & MCP Integrity", status: "pass", severity: "info", rule: "Approved tool", message: "Approved tool." }] }]);
+  assert.ok(observed.checks.some((check) => check.id === "tool-mcp-integrity" && check.passed === true));
+});
+
+test("Integration Health surfaces Tool & MCP Integrity violations", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { id: "MAG-1", status: "Active", type: "Custom Agent", executionCapabilities: ["Custom"], apiKeyPreview: "mg3…", lastIntentAt: timestamp },
+    { status: "Active", structuredRules: { toolIntegrityEnabled: true } },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Tool & MCP Integrity", status: "fail", severity: "critical", rule: "schema hash binding", message: "Schema changed." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "Tool & MCP Integrity" && check.status === "attention"));
 });

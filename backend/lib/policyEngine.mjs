@@ -14,6 +14,7 @@ import { evaluateContractUpgradeSafety } from "./contractUpgradeSafety.mjs";
 import { evaluateContractArgumentPolicies } from "./contractArgumentPolicies.mjs";
 import { evaluateEmergencyControls } from "./emergencyControls.mjs";
 import { evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
+import { evaluateToolMcpIntegrity } from "./toolMcpIntegrity.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -106,6 +107,7 @@ function withStructuredResult({
   contractUpgradeSafetyContext = null,
   contractArgumentPoliciesContext = null,
   instructionIntegrityContext = null,
+  toolMcpIntegrityContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -136,6 +138,7 @@ function withStructuredResult({
     contractUpgradeSafetyContext,
     contractArgumentPoliciesContext,
     instructionIntegrityContext,
+    toolMcpIntegrityContext,
     emergencyControlsContext,
   };
 }
@@ -294,6 +297,34 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     });
   }
 
+  const toolMcpIntegrityResult = evaluateToolMcpIntegrity({ request, policy, agent });
+  checksPassed.push(...toolMcpIntegrityResult.checksPassed);
+  checksFailed.push(...toolMcpIntegrityResult.checksFailed);
+  moduleFindings.push(...toolMcpIntegrityResult.findings);
+  if (toolMcpIntegrityResult.hardBlock || toolMcpIntegrityResult.needsReview) {
+    const decision = toolMcpIntegrityResult.hardBlock ? "Blocked" : "Review Required";
+    return withStructuredResult({
+      decision,
+      risk: toolMcpIntegrityResult.hardBlock ? "Critical" : "High",
+      riskScore: toolMcpIntegrityResult.hardBlock ? 96 : 74,
+      checksPassed,
+      checksFailed,
+      reason: toolMcpIntegrityResult.hardBlock
+        ? "The request failed deterministic MCP server, tool identity, hash, TLS, origin, credential, or permission-scope checks."
+        : "The tool execution requires authorized review because its identity or approved scope is incomplete or materially changed.",
+      recommendedAction: toolMcpIntegrityResult.hardBlock
+        ? "Do not execute. Use an approved unchanged MCP server and tool with least-privilege scopes, or explicitly reapprove the material change."
+        : "Pause execution and review the exact server, tool, version, hashes, origin, and requested scopes before retrying.",
+      moduleFindings,
+      timestamp,
+      agent,
+      policy,
+      instructionIntegrityContext: instructionIntegrityResult.context,
+      toolMcpIntegrityContext: toolMcpIntegrityResult.context,
+      emergencyControlsContext: emergencyControlsResult.context,
+    });
+  }
+
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
@@ -403,8 +434,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -445,6 +476,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     contractUpgradeSafetyContext: contractUpgradeSafetyResult.context,
     contractArgumentPoliciesContext: contractArgumentPoliciesResult.context,
     instructionIntegrityContext: instructionIntegrityResult.context,
+    toolMcpIntegrityContext: toolMcpIntegrityResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }

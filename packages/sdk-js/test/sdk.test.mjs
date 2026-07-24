@@ -742,3 +742,27 @@ test("preserves Agent Instruction Integrity metadata and response context", asyn
   assert.equal(response.result.instructionIntegrityContext.parametersChanged, false);
   assert.deepEqual(response.result.instructionIntegrityContext.violations, []);
 });
+
+test("preserves Tool & MCP Integrity metadata and response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({ ok: true, executionApproved: true, result: {
+        decision: "Allowed", risk: "Low", riskScore: 5, reason: "tool passed", recommendedAction: "continue",
+        toolMcpIntegrityContext: { metadataSupplied: true, serverId: "mcp-main", toolName: "wallet.transfer", approvedServer: true, approvedTool: true, permissionScopes: ["wallet:read"], violations: [] },
+      }, gatewayRequest: {}, auditLog: {}, nextAction: "sign" }), { status: 201 });
+    },
+  });
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: { type: "Transfer", amount: 1, target: `01${"2".repeat(64)}`, toolIntegrity: {
+      mcpServerId: "mcp-main", mcpServerUrl: "https://mcp.example", toolName: "wallet.transfer", toolVersion: "1.0.0",
+      manifestHash: "a".repeat(64), schemaHash: "b".repeat(64), descriptionHash: "c".repeat(64), permissionScopes: ["wallet:read"], credentialScope: "wallet-limited", tls: true, toolOrigin: "magen3-mcp",
+    } },
+  });
+  assert.equal(captured.action.toolIntegrity.toolName, "wallet.transfer");
+  assert.deepEqual(captured.action.toolIntegrity.permissionScopes, ["wallet:read"]);
+  assert.equal(response.result.toolMcpIntegrityContext.approvedTool, true);
+});

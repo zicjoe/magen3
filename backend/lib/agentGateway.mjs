@@ -244,6 +244,21 @@ export function normalizeAgentGatewayIntent(body = {}) {
           : body.provenance && typeof body.provenance === "object"
             ? body.provenance
             : {};
+  const toolIntegrity = action.toolIntegrity && typeof action.toolIntegrity === "object"
+    ? action.toolIntegrity
+    : action.tool_integrity && typeof action.tool_integrity === "object"
+      ? action.tool_integrity
+      : action.mcpIntegrity && typeof action.mcpIntegrity === "object"
+        ? action.mcpIntegrity
+        : action.mcp_integrity && typeof action.mcp_integrity === "object"
+          ? action.mcp_integrity
+          : action.toolMcpIntegrity && typeof action.toolMcpIntegrity === "object"
+            ? action.toolMcpIntegrity
+            : body.toolIntegrity && typeof body.toolIntegrity === "object"
+              ? body.toolIntegrity
+              : body.mcpIntegrity && typeof body.mcpIntegrity === "object"
+                ? body.mcpIntegrity
+                : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -420,6 +435,19 @@ export function normalizeAgentGatewayIntent(body = {}) {
     instructionCurrentParameterHash: cleanString(instructionIntegrity.currentParameterHash || instructionIntegrity.current_parameter_hash || "", ""),
     instructionOriginalPermissionScopes: Array.isArray(instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes) ? (instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
     instructionCurrentPermissionScopes: Array.isArray(instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes) ? (instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
+    toolIntegrityMetadataSupplied: Object.keys(toolIntegrity).length > 0,
+    toolMcpServerId: cleanString(toolIntegrity.mcpServerId || toolIntegrity.mcp_server_id || toolIntegrity.serverId || toolIntegrity.server_id || "", ""),
+    toolMcpServerUrl: cleanString(toolIntegrity.mcpServerUrl || toolIntegrity.mcp_server_url || toolIntegrity.serverUrl || toolIntegrity.server_url || "", ""),
+    toolIntegrityToolName: cleanString(toolIntegrity.toolName || toolIntegrity.tool_name || toolIntegrity.name || instructionIntegrity.toolName || instructionIntegrity.tool_name || "", ""),
+    toolIntegrityToolVersion: cleanString(toolIntegrity.toolVersion || toolIntegrity.tool_version || toolIntegrity.version || "", ""),
+    toolIntegrityManifestHash: cleanString(toolIntegrity.manifestHash || toolIntegrity.manifest_hash || "", ""),
+    toolIntegritySchemaHash: cleanString(toolIntegrity.schemaHash || toolIntegrity.schema_hash || "", ""),
+    toolIntegrityDescriptionHash: cleanString(toolIntegrity.descriptionHash || toolIntegrity.description_hash || "", ""),
+    toolIntegrityPermissionScopes: Array.isArray(toolIntegrity.permissionScopes || toolIntegrity.permission_scopes) ? (toolIntegrity.permissionScopes || toolIntegrity.permission_scopes).slice(0, 100).map((item) => cleanString(item)).filter(Boolean) : [],
+    toolIntegrityCredentialScope: cleanString(toolIntegrity.credentialScope || toolIntegrity.credential_scope || "", ""),
+    toolIntegrityTls: Boolean(toolIntegrity.tls === true || String(toolIntegrity.tls || "").toLowerCase() === "true"),
+    toolIntegrityOrigin: cleanString(toolIntegrity.toolOrigin || toolIntegrity.tool_origin || toolIntegrity.origin || "", ""),
+    toolIntegrityApprovedAt: cleanString(toolIntegrity.approvedAt || toolIntegrity.approved_at || "", ""),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

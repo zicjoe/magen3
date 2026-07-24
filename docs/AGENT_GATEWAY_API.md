@@ -706,3 +706,8 @@ Do not submit private keys, mnemonics, wallet signatures, raw signed transaction
 ## Agent Instruction Integrity
 
 Submit minimal provenance under `action.instructionIntegrity`. Supported fields include `goalId`, `originalUserGoalHash`, `initiatedBy`, `intentSource`, `toolName`, `toolServer`, `sourceDomains`, `externalContentUsed`, `userConfirmed`, `sourceTrustLevel`, `parameterChangeReason`, `originalParameterHash`, `currentParameterHash`, `originalPermissionScopes`, and `currentPermissionScopes`. The response may include `instructionIntegrityContext`. Never send private prompts, email/document bodies, credentials, signatures, or wallet secrets.
+
+
+## Tool & MCP Integrity metadata
+
+When a tool or MCP server participates in execution, submit `action.toolIntegrity` with `mcpServerId` or `mcpServerUrl`, `toolName`, optional `toolVersion`, SHA-256 `manifestHash`, `schemaHash`, optional `descriptionHash`, `permissionScopes`, non-secret `credentialScope`, `tls`, `toolOrigin`, and optional `approvedAt`. The response may include `toolMcpIntegrityContext` plus structured findings. Never submit server credentials, private keys, wallet signatures, or secret tool output. Legacy requests without tool use remain compatible.

@@ -236,3 +236,8 @@ await magen3.checkIntent({
 ```
 
 Submit hashes and minimal source labels only. Do not include private prompts, raw emails/documents, API keys, wallet secrets, or signatures. Magen3 verifies supplied provenance and exact parameter bindings; it does not claim to detect every prompt-injection attack.
+
+
+## Tool & MCP Integrity
+
+Use typed `action.toolIntegrity` metadata for an exact MCP server/tool identity, version, SHA-256 manifest/schema/description hashes, transport assertion, origin, credential-scope label, and least-privilege scopes. The response may include `toolMcpIntegrityContext`. The SDK preserves this public unsigned evidence but does not certify external tools or transmit their credentials.

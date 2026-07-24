@@ -11,8 +11,51 @@ export interface Magen3McpConfig {
 
 export type ToolTextResult = CallToolResult;
 
+export const OFFICIAL_MCP_INTEGRITY = {
+  serverId: "magen3-official-mcp",
+  serverVersion: "0.4.0",
+  manifestHash: "942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0",
+  descriptionHash: "2014680b5e77e15d318ea3a9a2e4ba70056dc0c52201e420fd7e6126edd95447",
+  origin: "@magen3/mcp-server",
+  credentialScope: "agent-gateway",
+  tools: {
+    magen3_check_intent: {
+      schemaHash: "c335732278e81421716f5fd6a05c0c28f1d6418583e06c5be4779d743c695adf",
+      permissionScopes: ["magen3:intent:check"],
+    },
+    magen3_require_allowed: {
+      schemaHash: "035a2a5c4332c2f83826062cdfb12f769c537d84df3037a268f7f3a9afba3920",
+      permissionScopes: ["magen3:intent:require-allowed"],
+    },
+  },
+} as const;
+
+function withOfficialMcpIntegrity(intent: Magen3Intent, toolName: keyof typeof OFFICIAL_MCP_INTEGRITY.tools): Magen3Intent {
+  if (intent.action?.toolIntegrity) return intent;
+  const tool = OFFICIAL_MCP_INTEGRITY.tools[toolName];
+  return {
+    ...intent,
+    action: {
+      ...intent.action,
+      toolIntegrity: {
+        mcpServerId: OFFICIAL_MCP_INTEGRITY.serverId,
+        toolName,
+        toolVersion: OFFICIAL_MCP_INTEGRITY.serverVersion,
+        manifestHash: OFFICIAL_MCP_INTEGRITY.manifestHash,
+        schemaHash: tool.schemaHash,
+        descriptionHash: OFFICIAL_MCP_INTEGRITY.descriptionHash,
+        permissionScopes: [...tool.permissionScopes],
+        credentialScope: OFFICIAL_MCP_INTEGRITY.credentialScope,
+        tls: true,
+        toolOrigin: OFFICIAL_MCP_INTEGRITY.origin,
+      },
+    },
+  };
+}
+
 export const INTENT_SCHEMA_DESCRIPTION = {
   instructionIntegrity: "For sensitive or externally influenced execution, include action.instructionIntegrity with a stable goal ID, original goal hash, source provenance, protected-parameter hashes, confirmation state, and tool permission scopes. Magen3 validates these deterministically; it does not claim to detect every prompt-injection attack.",
+  toolMcpIntegrity: "When an MCP or other execution tool is used, include action.toolIntegrity with the approved server ID/URL, tool name/version, manifest/schema/description hashes, TLS state, origin, credential scope, and requested permission scopes. Never send MCP credentials or secret tool output.",
   emergencyCircuitBreaker: "Magen3 evaluates active scoped pause state before authorization and again before execution confirmation. A Blocked or Review Required pause must never be bypassed. Pause creation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP execution tool.",
   executionIntegrity: "For exact-once authorization, include action.lifecycle with a unique intent ID, idempotency key, creation time, expiry, optional sequence, retry/replacement reference, and optional client fingerprint. Magen3 always computes its own canonical fingerprint.",
   threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
@@ -78,6 +121,20 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       currentParameterHash: "Optional adapter-computed SHA-256 fingerprint; Magen3 independently computes its own",
       originalPermissionScopes: "Permission scopes approved when the goal was established",
       currentPermissionScopes: "Permission scopes requested by the current tool execution",
+    },
+    toolIntegrity: {
+      mcpServerId: "Approved MCP server identifier",
+      mcpServerUrl: "Approved HTTPS MCP server URL",
+      toolName: "Exact tool name",
+      toolVersion: "Exact tool version",
+      manifestHash: "SHA-256 server/tool manifest hash",
+      schemaHash: "SHA-256 tool input/output schema hash",
+      descriptionHash: "SHA-256 human-readable tool-description hash",
+      permissionScopes: "Least-privilege scopes requested for this execution",
+      credentialScope: "Non-secret credential scope label",
+      tls: "Whether the adapter verified TLS",
+      toolOrigin: "Approved tool package, publisher, or origin label",
+      approvedAt: "Optional ISO-8601 time the adapter approval snapshot was captured",
     },
     tokenPermission: {
       permissionType: "Explicit supported authority classification; omit tokenPermission for generic contract calls",
@@ -231,6 +288,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         schema: INTENT_SCHEMA_DESCRIPTION,
         decisions: ["Allowed", "Blocked", "Review Required"],
         instructionIntegrityBoundary: "Instruction Integrity verifies adapter-supplied provenance, stable goal binding, source-domain policy, protected-parameter fingerprints, user confirmation, and tool-scope containment. It does not read private prompts, authorize external content, or claim to detect every prompt-injection attack.",
+        toolMcpIntegrityBoundary: "Tool & MCP Integrity verifies the exact approved server/tool identity, version, hashes, TLS, origin, credential scope, requested permissions, and agent capability boundary. MCP must never send server credentials, private keys, wallet signatures, or secret tool output to Magen3.",
         threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
@@ -249,7 +307,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     },
     async checkIntent(intent: Magen3Intent): Promise<ToolTextResult> {
       try {
-        const response = await client.checkIntent(intent);
+        const response = await client.checkIntent(withOfficialMcpIntegrity(intent, "magen3_check_intent"));
         return text({ ...response, mcpGuidance: response.result.decision === "Allowed" ? "Policy allows continuation, but a human-controlled wallet must still approve signing." : response.result.decision === "Review Required" ? "Stop and request human review." : "Stop. Do not execute or bypass Magen3." });
       } catch (error) { return text(errorPayload(error), true); }
     },
@@ -281,7 +339,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     },
     async requireAllowed(intent: Magen3Intent): Promise<ToolTextResult> {
       try {
-        const response = await client.requireAllowed(intent);
+        const response = await client.requireAllowed(withOfficialMcpIntegrity(intent, "magen3_require_allowed"));
         return text({ ...response, mcpGuidance: "Allowed by Magen3. Do not sign or broadcast without explicit human approval." });
       } catch (error) { return text(errorPayload(error), true); }
     },

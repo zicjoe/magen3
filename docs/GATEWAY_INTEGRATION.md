@@ -325,3 +325,8 @@ See `CONTRACT_ARGUMENT_POLICIES.md` for policy examples and the security boundar
 ## Agent Instruction Integrity
 
 External agent adapters should capture a stable goal ID and original goal hash before consuming untrusted content. Submit only minimal provenance and protected-parameter hashes. When external content changes amount, destination, asset, contract, network, action, or runtime arguments, provide a reason and independent user confirmation according to policy.
+
+
+## Tool-aware Gateway integration
+
+Trusted adapters should populate `action.toolIntegrity` from the actual approved tool manifest and schema rather than from model-generated claims. Bind the exact server/tool pair in the active policy, stop on both `Blocked` and `Review Required`, and require reapproval after a material hash, origin, version, credential-scope, or permission-scope change. The official Magen3 MCP server injects its own stable metadata when downstream metadata is absent.

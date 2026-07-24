@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 has started: **Agent Instruction Integrity** is now Live alongside Token Approval & Permit Safety, Privileged Contract Action Classification, Emergency Circuit Breaker, Approval Escalation & Organizational Quorum, Contract Upgrade Safety, and Contract Argument Policies. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Tool & MCP Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 now has two Live controls: **Agent Instruction Integrity** and **Tool & MCP Integrity**. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Delegation & Session Key Safety**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -969,6 +969,7 @@ scripts/casper/              Contract and proof tooling
 
 - [`docs/MAGEN3_PLATFORM.md`](docs/MAGEN3_PLATFORM.md)
 - [`docs/AGENT_GATEWAY_API.md`](docs/AGENT_GATEWAY_API.md)
+- [`docs/TOOL_MCP_INTEGRITY.md`](docs/TOOL_MCP_INTEGRITY.md)
 - [`docs/GATEWAY_INTEGRATION.md`](docs/GATEWAY_INTEGRATION.md)
 - [`docs/OFFICIAL_SDKS.md`](docs/OFFICIAL_SDKS.md)
 - [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md)
@@ -995,3 +996,10 @@ Contract Argument Policies is Live under Agent Shield → Contract & Permission 
 ## Agent Instruction Integrity
 
 Agent Instruction Integrity is Live under Agent Shield → Agent Trust & Access. Sensitive actions may include `action.instructionIntegrity` with a stable goal ID, original user-goal hash, source provenance, confirmation state, protected-parameter hashes, and original/current tool permission scopes. Magen3 deterministically checks goal binding, source-domain policy, parameter changes, external-content confirmation, x402 self-authorization, and tool scope expansion before signing. It stores hashes and minimal provenance evidence—not private prompts or document contents—and does not claim to detect every prompt-injection attack. See `docs/AGENT_INSTRUCTION_INTEGRITY.md`.
+
+
+## Tool & MCP Integrity
+
+Tool & MCP Integrity is Live under Agent Shield → Agent Trust & Access. Requests may include `action.toolIntegrity` with an exact MCP server ID or URL, tool name and version, SHA-256 manifest/schema/description hashes, TLS state, origin, credential scope, and requested permission scopes. Magen3 deterministically enforces server and tool allowlists, material-change binding, least-privilege containment, and registered-agent capability boundaries before signing.
+
+The official `@magen3/mcp-server` automatically supplies stable integrity metadata for `magen3_check_intent` and `magen3_require_allowed` when downstream metadata is absent. New policy forms include exact default bindings for those two official tools. External adapters can submit their own approved metadata. Magen3 stores only sanitized identities, hashes, labels, and scopes—never MCP credentials or secret tool output. See `docs/TOOL_MCP_INTEGRITY.md`.

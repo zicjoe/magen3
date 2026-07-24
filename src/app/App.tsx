@@ -59,6 +59,12 @@ import {
   signCasperWalletMessage,
 } from "./lib/casperWallet";
 
+const OFFICIAL_MCP_SERVER_BINDING = "magen3-official-mcp||942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0";
+const OFFICIAL_MCP_TOOL_BINDINGS = [
+  "magen3-official-mcp|magen3_check_intent|0.4.0|942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0|c335732278e81421716f5fd6a05c0c28f1d6418583e06c5be4779d743c695adf|2014680b5e77e15d318ea3a9a2e4ba70056dc0c52201e420fd7e6126edd95447|magen3:intent:check|agent-gateway|@magen3/mcp-server",
+  "magen3-official-mcp|magen3_require_allowed|0.4.0|942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0|035a2a5c4332c2f83826062cdfb12f769c537d84df3037a268f7f3a9afba3920|2014680b5e77e15d318ea3a9a2e4ba70056dc0c52201e420fd7e6126edd95447|magen3:intent:require-allowed|agent-gateway|@magen3/mcp-server",
+].join("\n");
+
 // ──────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────
@@ -2973,7 +2979,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4285,6 +4291,45 @@ function InstructionIntegrityPolicyFields({
   );
 }
 
+function ToolMcpIntegrityPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#8B5CF6]/20 bg-[#8B5CF6]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Agent Trust & Access · Tool & MCP Integrity</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Approve exact MCP servers and tools, then bind versions, manifests, schemas, descriptions, TLS, origins, credential scope, and least-privilege permissions before execution.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.toolIntegrityEnabled ?? "")} onChange={(value) => onChange({ toolIntegrityEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.toolIntegrityMode ?? "")} onChange={(value) => onChange({ toolIntegrityMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Unknown Tool / Server" value={String(values.unknownToolAction ?? "")} onChange={(value) => onChange({ unknownToolAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Permission Expansion" value={String(values.permissionExpansionAction ?? "")} onChange={(value) => onChange({ permissionExpansionAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require Manifest Hash" value={String(values.requireManifestHash ?? "")} onChange={(value) => onChange({ requireManifestHash: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Schema Hash" value={String(values.requireSchemaHash ?? "")} onChange={(value) => onChange({ requireSchemaHash: value })} options={["Yes", "No"]} />
+        <SelectField label="Require TLS" value={String(values.requireTls ?? "")} onChange={(value) => onChange({ requireTls: value })} options={["Yes", "No"]} />
+        <SelectField label="Allow Version Changes" value={String(values.allowToolVersionChanges ?? "")} onChange={(value) => onChange({ allowToolVersionChanges: value })} options={["Yes", "No"]} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3" open>
+        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Approved server and tool bindings</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <TextareaField label="Approved MCP Servers" value={String(values.approvedMcpServers ?? "")} onChange={(value) => onChange({ approvedMcpServers: value })} />
+          <TextareaField label="Approved Tools" value={String(values.approvedTools ?? "")} onChange={(value) => onChange({ approvedTools: value })} />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-[#64748B]">Server format: <code>server-id|https://server.example|manifestSha256</code>. Tool format: <code>server-id|tool.name|version|manifestHash|schemaHash|descriptionHash|scope1,scope2|credential-scope|origin</code>.</p>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Magen3 verifies supplied identity and hashes but does not certify arbitrary tool code. Never submit MCP credentials, private keys, wallet signatures, or secret tool output.</p>
+    </div>
+  );
+}
+
 function TokenPermissionPolicyFields({
   values,
   onChange,
@@ -4605,6 +4650,16 @@ function PoliciesPage({
     externalContentHighRiskAction: "Review",
     allowParameterChangesAfterGoal: "No",
     requireParameterChangeReason: "Yes",
+    toolIntegrityEnabled: "Yes",
+    toolIntegrityMode: "Review",
+    approvedMcpServers: OFFICIAL_MCP_SERVER_BINDING,
+    approvedTools: OFFICIAL_MCP_TOOL_BINDINGS,
+    requireManifestHash: "Yes",
+    requireSchemaHash: "Yes",
+    requireTls: "Yes",
+    allowToolVersionChanges: "No",
+    unknownToolAction: "Review",
+    permissionExpansionAction: "Block",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -4798,6 +4853,16 @@ function PoliciesPage({
     externalContentHighRiskAction: "Review",
     allowParameterChangesAfterGoal: "No",
     requireParameterChangeReason: "Yes",
+    toolIntegrityEnabled: "Yes",
+    toolIntegrityMode: "Review",
+    approvedMcpServers: OFFICIAL_MCP_SERVER_BINDING,
+    approvedTools: OFFICIAL_MCP_TOOL_BINDINGS,
+    requireManifestHash: "Yes",
+    requireSchemaHash: "Yes",
+    requireTls: "Yes",
+    allowToolVersionChanges: "No",
+    unknownToolAction: "Review",
+    permissionExpansionAction: "Block",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -5002,6 +5067,16 @@ function PoliciesPage({
         externalContentHighRiskAction: form.externalContentHighRiskAction,
         allowParameterChangesAfterGoal: form.allowParameterChangesAfterGoal === "Yes",
         requireParameterChangeReason: form.requireParameterChangeReason !== "No",
+        toolIntegrityEnabled: form.toolIntegrityEnabled !== "No",
+        toolIntegrityMode: form.toolIntegrityMode,
+        approvedMcpServers: form.approvedMcpServers.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedTools: form.approvedTools.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireManifestHash: form.requireManifestHash !== "No",
+        requireSchemaHash: form.requireSchemaHash !== "No",
+        requireTls: form.requireTls !== "No",
+        allowToolVersionChanges: form.allowToolVersionChanges === "Yes",
+        unknownToolAction: form.unknownToolAction,
+        permissionExpansionAction: form.permissionExpansionAction,
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -5183,6 +5258,16 @@ function PoliciesPage({
     externalContentHighRiskAction: "Review",
     allowParameterChangesAfterGoal: "No",
     requireParameterChangeReason: "Yes",
+    toolIntegrityEnabled: "Yes",
+    toolIntegrityMode: "Review",
+    approvedMcpServers: OFFICIAL_MCP_SERVER_BINDING,
+    approvedTools: OFFICIAL_MCP_TOOL_BINDINGS,
+    requireManifestHash: "Yes",
+    requireSchemaHash: "Yes",
+    requireTls: "Yes",
+    allowToolVersionChanges: "No",
+    unknownToolAction: "Review",
+    permissionExpansionAction: "Block",
     lifecycleControlsEnabled: "Yes",
 
       lifecycleControlMode: "Enforce",
@@ -5370,6 +5455,16 @@ function PoliciesPage({
       externalContentHighRiskAction: String(policy.structuredRules?.externalContentHighRiskAction || "Review"),
       allowParameterChangesAfterGoal: policy.structuredRules?.allowParameterChangesAfterGoal === true ? "Yes" : "No",
       requireParameterChangeReason: policy.structuredRules?.requireParameterChangeReason === false ? "No" : "Yes",
+      toolIntegrityEnabled: policy.structuredRules?.toolIntegrityEnabled === true ? "Yes" : "No",
+      toolIntegrityMode: String(policy.structuredRules?.toolIntegrityMode || "Review"),
+      approvedMcpServers: Array.isArray(policy.structuredRules?.approvedMcpServers) ? policy.structuredRules.approvedMcpServers.map((item) => typeof item === "string" ? item : [item.id || item.serverId || "", item.url || item.serverUrl || "", item.manifestHash || ""].join("|")).join("\n") : "",
+      approvedTools: Array.isArray(policy.structuredRules?.approvedTools) ? policy.structuredRules.approvedTools.map((item) => typeof item === "string" ? item : [item.serverId || item.mcpServerId || "", item.name || item.toolName || "", item.version || item.toolVersion || "", item.manifestHash || "", item.schemaHash || "", item.descriptionHash || "", Array.isArray(item.permissionScopes) ? item.permissionScopes.join(",") : "", Array.isArray(item.credentialScopes) ? item.credentialScopes.join(",") : item.credentialScope || "", item.origin || item.toolOrigin || ""].join("|")).join("\n") : "",
+      requireManifestHash: policy.structuredRules?.requireManifestHash === false ? "No" : "Yes",
+      requireSchemaHash: policy.structuredRules?.requireSchemaHash === false ? "No" : "Yes",
+      requireTls: policy.structuredRules?.requireTls === false ? "No" : "Yes",
+      allowToolVersionChanges: policy.structuredRules?.allowToolVersionChanges === true ? "Yes" : "No",
+      unknownToolAction: String(policy.structuredRules?.unknownToolAction || "Review"),
+      permissionExpansionAction: String(policy.structuredRules?.permissionExpansionAction || "Block"),
       lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
       lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
       lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
@@ -5574,6 +5669,16 @@ function PoliciesPage({
         externalContentHighRiskAction: editForm.externalContentHighRiskAction,
         allowParameterChangesAfterGoal: editForm.allowParameterChangesAfterGoal === "Yes",
         requireParameterChangeReason: editForm.requireParameterChangeReason !== "No",
+        toolIntegrityEnabled: editForm.toolIntegrityEnabled !== "No",
+        toolIntegrityMode: editForm.toolIntegrityMode,
+        approvedMcpServers: editForm.approvedMcpServers.split("\n").map((item) => item.trim()).filter(Boolean),
+        approvedTools: editForm.approvedTools.split("\n").map((item) => item.trim()).filter(Boolean),
+        requireManifestHash: editForm.requireManifestHash !== "No",
+        requireSchemaHash: editForm.requireSchemaHash !== "No",
+        requireTls: editForm.requireTls !== "No",
+        allowToolVersionChanges: editForm.allowToolVersionChanges === "Yes",
+        unknownToolAction: editForm.unknownToolAction,
+        permissionExpansionAction: editForm.permissionExpansionAction,
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -5969,6 +6074,7 @@ function PoliciesPage({
               </div>
             </div>
             <InstructionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <ToolMcpIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -6259,6 +6365,7 @@ function PoliciesPage({
               </div>
             </div>
                 <InstructionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <ToolMcpIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -7768,10 +7875,10 @@ result = client.require_allowed(intent)`} /></div>
               <section id="mcp-server-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Official MCP Server</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  The local stdio server lives at <code className="text-[#22D3EE]">packages/mcp-server</code>. It exposes four tools to MCP-compatible agents.
+                  The local stdio server lives at <code className="text-[#22D3EE]">packages/mcp-server</code>. It exposes six tools to MCP-compatible agents and supplies stable Tool & MCP Integrity metadata for its execution gates.
                 </p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {["magen3_verify_agent", "magen3_get_intent_schema", "magen3_check_intent", "magen3_require_allowed"].map((tool) => (
+                  {["magen3_verify_agent", "magen3_get_intent_schema", "magen3_check_intent", "magen3_require_allowed", "magen3_get_approval", "magen3_report_x402_settlement"].map((tool) => (
                     <div key={tool} className="rounded-lg border border-[#1E293B] bg-[#111827] px-4 py-3 font-mono text-xs text-[#22D3EE]">{tool}</div>
                   ))}
                 </div>
@@ -7785,6 +7892,18 @@ codex mcp add magen3 \
                 <DocsCallout type="info">
                   Keep the API key in local environment configuration. Do not commit it, place it in an Agent Skills file, or include it in screenshots.
                 </DocsCallout>
+                <div className="mt-4 rounded-xl border border-[#8B5CF6]/20 bg-[#8B5CF6]/5 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-[#F8FAFC]">Tool & MCP Integrity</h3>
+                    <DocsBadge label="Live" variant="live" />
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">
+                    The official adapter injects an exact server ID, package version, manifest/schema/description hashes, origin, transport assertion, credential-scope label, and least-privilege permission scope when downstream metadata is absent. Explicit downstream tool metadata is preserved and evaluated against the active policy.
+                  </p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#64748B]">
+                    Magen3 stores only public identifiers, hashes, and scopes. It never receives MCP credentials or secret tool output and does not claim to certify arbitrary tool code.
+                  </p>
+                </div>
               </section>
 
               <section id="agent-skills-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -8173,6 +8292,29 @@ function playgroundComplianceEvidence(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function playgroundToolIntegrity(policy: Policy | undefined, overrides: Record<string, unknown> = {}) {
+  const serverEntry = Array.isArray(policy?.structuredRules?.approvedMcpServers) ? policy?.structuredRules?.approvedMcpServers[0] : undefined;
+  const toolEntry = Array.isArray(policy?.structuredRules?.approvedTools) ? policy?.structuredRules?.approvedTools[0] : undefined;
+  const serverParts = typeof serverEntry === "string" ? serverEntry.split("|") : [];
+  const toolParts = typeof toolEntry === "string" ? toolEntry.split("|") : [];
+  const manifestHash = String((typeof toolEntry === "object" && toolEntry ? toolEntry.manifestHash : toolParts[3]) || (typeof serverEntry === "object" && serverEntry ? serverEntry.manifestHash : serverParts[2]) || "a".repeat(64));
+  return {
+    mcpServerId: String((typeof serverEntry === "object" && serverEntry ? (serverEntry.id || serverEntry.serverId) : serverParts[0]) || "mcp-main"),
+    mcpServerUrl: String((typeof serverEntry === "object" && serverEntry ? (serverEntry.url || serverEntry.serverUrl) : serverParts[1]) || "https://mcp.example"),
+    toolName: String((typeof toolEntry === "object" && toolEntry ? (toolEntry.name || toolEntry.toolName) : toolParts[1]) || "wallet.transfer"),
+    toolVersion: String((typeof toolEntry === "object" && toolEntry ? (toolEntry.version || toolEntry.toolVersion) : toolParts[2]) || "1.0.0"),
+    manifestHash,
+    schemaHash: String((typeof toolEntry === "object" && toolEntry ? toolEntry.schemaHash : toolParts[4]) || "b".repeat(64)),
+    descriptionHash: String((typeof toolEntry === "object" && toolEntry ? toolEntry.descriptionHash : toolParts[5]) || "c".repeat(64)),
+    permissionScopes: typeof toolEntry === "object" && toolEntry && Array.isArray(toolEntry.permissionScopes) ? toolEntry.permissionScopes : String(toolParts[6] || "capability:Wallet Management").split(",").filter(Boolean),
+    credentialScope: String((typeof toolEntry === "object" && toolEntry ? (Array.isArray(toolEntry.credentialScopes) ? toolEntry.credentialScopes[0] : toolEntry.credentialScope) : toolParts[7]) || "wallet-limited"),
+    tls: true,
+    toolOrigin: String((typeof toolEntry === "object" && toolEntry ? (toolEntry.origin || toolEntry.toolOrigin) : toolParts[8]) || "magen3-mcp"),
+    approvedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
   "Instruction integrity — trusted goal": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT;
@@ -8216,6 +8358,30 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     goal: "Confirm sensitive execution without stable goal evidence requires review",
     reason: "Provenance is supplied, but goalId and originalUserGoalHash are intentionally omitted.",
     action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", instructionIntegrity: { initiatedBy: "user", intentSource: "user", sourceDomains: [], externalContentUsed: false, userConfirmed: true, sourceTrustLevel: "trusted" }, preflight: playgroundPreflight() },
+  }),
+  "Tool integrity — approved unchanged tool": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Execute through one approved unchanged MCP tool",
+    reason: "Verify exact server/tool identity, hashes, TLS, origin, credential scope, and least-privilege permissions.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", toolIntegrity: playgroundToolIntegrity(policy), preflight: playgroundPreflight() },
+  }),
+  "Tool integrity — changed schema": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Block a material tool schema change",
+    reason: "The supplied schema hash intentionally differs from the approved tool binding.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", toolIntegrity: playgroundToolIntegrity(policy, { schemaHash: "d".repeat(64) }), preflight: playgroundPreflight() },
+  }),
+  "Tool integrity — unknown tool": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Review an unapproved MCP tool",
+    reason: "The tool name is intentionally outside the approved tool allowlist.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", toolIntegrity: playgroundToolIntegrity(policy, { toolName: "unknown.tool" }), preflight: playgroundPreflight() },
+  }),
+  "Tool integrity — permission expansion": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Block tool permission-scope expansion",
+    reason: "The tool intentionally requests a scope beyond its approved least-privilege set.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", toolIntegrity: playgroundToolIntegrity(policy, { permissionScopes: ["wallet:read", "wallet:write"] }), preflight: playgroundPreflight() },
   }),
   "Fresh lifecycle-bound transfer": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy);
@@ -9322,6 +9488,7 @@ function SettingsPage({
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["Emergency Controls Status", `${api.baseUrl}/api/emergency-controls/status`],
     ["Instruction Integrity Status", `${api.baseUrl}/api/instruction-integrity/status`],
+    ["Tool & MCP Integrity Status", `${api.baseUrl}/api/tool-mcp-integrity/status`],
     ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],

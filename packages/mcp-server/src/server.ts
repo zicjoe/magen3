@@ -63,6 +63,20 @@ const actionSchema = z.object({
     originalPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
     currentPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
   }).strict().optional(),
+  toolIntegrity: z.object({
+    mcpServerId: z.string().min(1).max(256).optional(),
+    mcpServerUrl: z.string().url().optional(),
+    toolName: z.string().min(1).max(256),
+    toolVersion: z.string().min(1).max(128).optional(),
+    manifestHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    schemaHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    descriptionHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    permissionScopes: z.array(z.string().min(1).max(256)).max(100).optional(),
+    credentialScope: z.string().min(1).max(256).optional(),
+    tls: z.boolean().optional(),
+    toolOrigin: z.string().min(1).max(256).optional(),
+    approvedAt: z.string().datetime().optional(),
+  }).strict().refine((value) => Boolean(value.mcpServerId || value.mcpServerUrl), { message: "mcpServerId or mcpServerUrl is required" }).optional(),
   tokenPermission: z.object({
     permissionType: z.enum([
       "Fungible Token Approval", "Allowance Increase", "Allowance Decrease", "Allowance Reset",
