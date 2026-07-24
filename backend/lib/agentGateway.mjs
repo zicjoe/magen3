@@ -219,6 +219,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
           : body.privilegedAction && typeof body.privilegedAction === "object"
             ? body.privilegedAction
             : {};
+  const contractUpgrade = action.contractUpgrade && typeof action.contractUpgrade === "object"
+    ? action.contractUpgrade
+    : action.contract_upgrade && typeof action.contract_upgrade === "object"
+      ? action.contract_upgrade
+      : body.contractUpgrade && typeof body.contractUpgrade === "object"
+        ? body.contractUpgrade
+        : {};
   const lifecycle = action.lifecycle && typeof action.lifecycle === "object"
     ? action.lifecycle
     : action.executionLifecycle && typeof action.executionLifecycle === "object"
@@ -374,6 +381,18 @@ export function normalizeAgentGatewayIntent(body = {}) {
     privilegedActionClassifierSource: cleanString(privilegedAction.classifierSource || privilegedAction.classifier_source || "", ""),
     privilegedActionClassifierVersion: cleanString(privilegedAction.classifierVersion || privilegedAction.classifier_version || "", ""),
     privilegedActionNetwork: cleanString(privilegedAction.network || privilegedAction.chainName || privilegedAction.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
+    contractUpgradeMetadataSupplied: Object.keys(contractUpgrade).length > 0,
+    contractUpgradeContract: cleanString(contractUpgrade.contract || contractUpgrade.contractHash || contractUpgrade.contract_hash || privilegedAction.contract || target || "", ""),
+    contractUpgradePackage: cleanString(contractUpgrade.package || contractUpgrade.packageHash || contractUpgrade.package_hash || privilegedAction.package || action.contractPackageHash || "", ""),
+    contractUpgradeCurrentImplementation: cleanString(contractUpgrade.currentImplementation || contractUpgrade.current_implementation || contractUpgrade.oldImplementation || contractUpgrade.old_implementation || privilegedAction.currentValue || "", ""),
+    contractUpgradeRequestedImplementation: cleanString(contractUpgrade.requestedImplementation || contractUpgrade.requested_implementation || contractUpgrade.newImplementation || contractUpgrade.new_implementation || privilegedAction.implementation || privilegedAction.requestedValue || "", ""),
+    contractUpgradeCurrentCodeHash: cleanString(contractUpgrade.currentCodeHash || contractUpgrade.current_code_hash || "", ""),
+    contractUpgradeRequestedCodeHash: cleanString(contractUpgrade.requestedCodeHash || contractUpgrade.requested_code_hash || contractUpgrade.codeHash || contractUpgrade.code_hash || "", ""),
+    contractUpgradePackageVersion: cleanString(contractUpgrade.packageVersion || contractUpgrade.package_version || contractUpgrade.version || "", ""),
+    contractUpgradeAdministrator: cleanString(contractUpgrade.upgradeAdministrator || contractUpgrade.upgrade_administrator || contractUpgrade.administrator || privilegedAction.recipient || "", ""),
+    contractUpgradeRequestedAt: cleanString(contractUpgrade.requestedAt || contractUpgrade.requested_at || "", ""),
+    contractUpgradeExecuteAfter: cleanString(contractUpgrade.executeAfter || contractUpgrade.execute_after || "", ""),
+    contractUpgradeNetwork: cleanString(contractUpgrade.network || contractUpgrade.chainName || contractUpgrade.chain_name || action.chainName || body.chainName || "", ""),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

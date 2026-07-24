@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "1.7.0",
+        version: "1.8.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -190,6 +190,36 @@ const server = createServer(async (req, res) => {
         emergencyControls: { status: "live", scopedEnforcement: true, automaticTriggers: true, expiry: true, authorizedResume: true, approvalGatedResume: true },
         tokenPermissionControls: { status: "live", classification: true, spenderPolicy: true, boundedAuthority: true, permitReplayProtection: true },
         privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
+
+        contractUpgradeControls: {
+          status: "Live",
+          statusEndpoint: "GET /api/contract-upgrade-controls/status",
+          purpose: "Prevent unauthorized, unexpected, or insufficiently reviewed contract implementation changes before wallet signing.",
+          metadataPath: "action.contractUpgrade",
+          deterministicChecks: [
+            "Target contract, package, and network binding",
+            "Current and requested implementation validation",
+            "Approved and blocked implementation policy",
+            "Optional implementation code-hash requirement",
+            "Authorized upgrade administrator validation",
+            "Configurable upgrade delay and execute-after enforcement",
+            "Canonical protected-parameter fingerprint",
+            "Exact Human Approval binding and configurable quorum"
+          ],
+          policyFields: {
+            enabled: "structuredRules.contractUpgradeControlsEnabled",
+            mode: "structuredRules.contractUpgradeMode: Observe | Review | Enforce",
+            approvedImplementations: "structuredRules.contractUpgradeApprovedImplementations",
+            blockedImplementations: "structuredRules.contractUpgradeBlockedImplementations",
+            approval: "structuredRules.contractUpgradeRequiresApproval",
+            quorum: "structuredRules.contractUpgradeQuorum",
+            delay: "structuredRules.contractUpgradeDelaySeconds",
+            codeHash: "structuredRules.contractUpgradeRequireCodeHash",
+            administrators: "structuredRules.contractUpgradeApprovedAdministrators",
+            unknownImplementation: "structuredRules.contractUpgradeUnknownImplementationAction: Warn | Review | Block"
+          },
+          securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
+        },
         x402PaymentControls: { status: "foundation-available", supportedVersions: [2], supportedSchemes: ["exact"], settlementReporting: true },
         timestamp: new Date().toISOString(),
       });
@@ -307,6 +337,26 @@ const server = createServer(async (req, res) => {
     }
 
 
+    if (route === "GET /api/contract-upgrade-controls/status") {
+      return send(res, 200, {
+        ok: true,
+        contractUpgradeControls: {
+          status: "live",
+          protectionArea: "Contract & Permission Safety",
+          control: "Contract Upgrades",
+          targetAndNetworkBinding: true,
+          currentAndRequestedImplementationChecks: true,
+          approvedAndBlockedImplementations: true,
+          codeHashVerification: true,
+          administratorAuthorization: true,
+          upgradeDelayEnforcement: true,
+          exactParameterFingerprinting: true,
+          humanApprovalAndQuorum: true,
+          securityBoundary: "Magen3 evaluates unsigned upgrade metadata before wallet signing. It never accepts private keys, administrator signatures, or raw signed upgrade transactions through the Agent Gateway."
+        }
+      });
+    }
+
     if (route === "GET /api/privileged-action-controls/status") {
       return send(res, 200, {
         ok: true,
@@ -332,6 +382,36 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/x402-payment-controls/status") {
       return send(res, 200, {
         ok: true,
+
+        contractUpgradeControls: {
+          status: "Live",
+          statusEndpoint: "GET /api/contract-upgrade-controls/status",
+          purpose: "Prevent unauthorized, unexpected, or insufficiently reviewed contract implementation changes before wallet signing.",
+          metadataPath: "action.contractUpgrade",
+          deterministicChecks: [
+            "Target contract, package, and network binding",
+            "Current and requested implementation validation",
+            "Approved and blocked implementation policy",
+            "Optional implementation code-hash requirement",
+            "Authorized upgrade administrator validation",
+            "Configurable upgrade delay and execute-after enforcement",
+            "Canonical protected-parameter fingerprint",
+            "Exact Human Approval binding and configurable quorum"
+          ],
+          policyFields: {
+            enabled: "structuredRules.contractUpgradeControlsEnabled",
+            mode: "structuredRules.contractUpgradeMode: Observe | Review | Enforce",
+            approvedImplementations: "structuredRules.contractUpgradeApprovedImplementations",
+            blockedImplementations: "structuredRules.contractUpgradeBlockedImplementations",
+            approval: "structuredRules.contractUpgradeRequiresApproval",
+            quorum: "structuredRules.contractUpgradeQuorum",
+            delay: "structuredRules.contractUpgradeDelaySeconds",
+            codeHash: "structuredRules.contractUpgradeRequireCodeHash",
+            administrators: "structuredRules.contractUpgradeApprovedAdministrators",
+            unknownImplementation: "structuredRules.contractUpgradeUnknownImplementationAction: Warn | Review | Block"
+          },
+          securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
+        },
         x402PaymentControls: {
           status: "foundation-available",
           protocolVersion: 2,
@@ -805,6 +885,36 @@ const server = createServer(async (req, res) => {
           },
           securityBoundary: "Generic calls are skipped unless a supported entry point or explicit privileged-action object is present. Classification is deterministic for supported methods and unknown calls follow explicit policy."
         },
+
+        contractUpgradeControls: {
+          status: "Live",
+          statusEndpoint: "GET /api/contract-upgrade-controls/status",
+          purpose: "Prevent unauthorized, unexpected, or insufficiently reviewed contract implementation changes before wallet signing.",
+          metadataPath: "action.contractUpgrade",
+          deterministicChecks: [
+            "Target contract, package, and network binding",
+            "Current and requested implementation validation",
+            "Approved and blocked implementation policy",
+            "Optional implementation code-hash requirement",
+            "Authorized upgrade administrator validation",
+            "Configurable upgrade delay and execute-after enforcement",
+            "Canonical protected-parameter fingerprint",
+            "Exact Human Approval binding and configurable quorum"
+          ],
+          policyFields: {
+            enabled: "structuredRules.contractUpgradeControlsEnabled",
+            mode: "structuredRules.contractUpgradeMode: Observe | Review | Enforce",
+            approvedImplementations: "structuredRules.contractUpgradeApprovedImplementations",
+            blockedImplementations: "structuredRules.contractUpgradeBlockedImplementations",
+            approval: "structuredRules.contractUpgradeRequiresApproval",
+            quorum: "structuredRules.contractUpgradeQuorum",
+            delay: "structuredRules.contractUpgradeDelaySeconds",
+            codeHash: "structuredRules.contractUpgradeRequireCodeHash",
+            administrators: "structuredRules.contractUpgradeApprovedAdministrators",
+            unknownImplementation: "structuredRules.contractUpgradeUnknownImplementationAction: Warn | Review | Block"
+          },
+          securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
+        },
         x402PaymentControls: {
           status: "Foundation Available",
           statusEndpoint: "GET /api/x402-payment-controls/status",
@@ -864,6 +974,7 @@ const server = createServer(async (req, res) => {
           executionIntegrityContext: "Canonical intent fingerprint, lifecycle IDs, idempotency, timestamps, sequence, prior-match counts, retry references, and replay-window evidence",
           tokenPermissionControlsContext: "Classification, owner, token, spender, bounded amount, ratio, deadline, nonce, chain, fingerprint, replay state, batch, NFT operator, and policy-limit evidence",
           privilegedActionControlsContext: "Classification source, target, protected parameters, administrator or implementation policy, fingerprint, review requirement, and action-specific quorum evidence",
+          contractUpgradeSafetyContext: "Current/proposed implementation, code hashes, administrator authorization, upgrade delay, exact fingerprint, and approval quorum evidence",
           emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
           emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
           emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],

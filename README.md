@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, and **Approval Escalation & Organizational Quorum** complete and Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Contract Upgrade Safety**, followed by Contract Argument Policies. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 now has **Token Approval & Permit Safety**, **Privileged Contract Action Classification**, **Emergency Circuit Breaker**, **Approval Escalation & Organizational Quorum**, and **Contract Upgrade Safety** complete and Live. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Contract Argument Policies**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -979,3 +979,8 @@ scripts/casper/              Contract and proof tooling
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
+
+
+## Contract Upgrade Safety
+
+Contract Upgrade Safety is Live under Agent Shield → Contract & Permission Safety. It binds the current and proposed implementation, optional code hashes, authorized upgrade administrator, configured delay, exact parameter fingerprint, and Human Approval quorum before wallet signing. See `docs/CONTRACT_UPGRADE_SAFETY.md`.

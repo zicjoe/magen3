@@ -35,3 +35,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Privileged Action Controls](./PRIVILEGED_ACTION_CONTROLS.md) — deterministic administrative-call classification, policy, fingerprinting, and Human Approval binding.
 
 - [Approval Escalation & Organizational Quorum](./APPROVAL_ESCALATION_ORGANIZATIONAL_QUORUM.md) — deterministic tiers, named role groups, timed escalation, delays, and signing windows.
+
+- [Contract Upgrade Safety](./CONTRACT_UPGRADE_SAFETY.md)

@@ -62,6 +62,9 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.emergencyCircuitBreaker, /pause state/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.privilegedAction.classifiedAction, /classification/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.privilegedAction.requestedValue, /approval/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.contractUpgradeSafety, /implementation/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractUpgrade.requestedImplementation, /proposed/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.contractUpgrade.executeAfter, /delay/i);
 });
 
 test("reportX402Settlement delegates a bound settlement update", async () => {

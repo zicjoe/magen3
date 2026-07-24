@@ -542,3 +542,8 @@ No. It evaluates and records decisions. Wallet signing remains outside Magen3.
 ### Is the gateway cross-chain?
 
 The gateway and policy model are chain-agnostic. Casper Testnet is the current decision-proof layer. Target-chain execution adapters remain separate.
+
+
+## Contract Upgrade Safety
+
+Contract Upgrade Safety is Live. Gateway intents may include `action.contractUpgrade` with the current and requested implementation, optional code hashes, package version, upgrade administrator, request time, execution time, and network. The deterministic control binds these parameters to Human Approval and enforces implementation allowlists/blocklists, quorum, administrator rules, and delay before wallet signing.

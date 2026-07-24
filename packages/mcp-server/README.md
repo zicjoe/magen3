@@ -102,3 +102,7 @@ The MCP server deliberately exposes no pause-management tool. An agent must not 
 ## Approval escalation and organizational quorum
 
 `magen3_get_approval` reports deterministic tier, named group, escalation, delay, and execution-window evidence. MCP never submits a reviewer response or changes those controls. The tool remains fail closed until `mayProceedToSigning` is true, including when total quorum is complete but an execution delay is still active.
+
+## Contract Upgrade Safety
+
+For proxy or implementation changes, the MCP intent schema accepts unsigned `action.contractUpgrade` metadata. Magen3 checks target/network binding, current and proposed implementations, implementation policy, optional code hashes, upgrade administrator, delay, fingerprint, and exact approval quorum before signing. The MCP tool cannot approve upgrades and must never receive private keys, administrator signatures, or raw signed transactions.

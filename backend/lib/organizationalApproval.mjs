@@ -398,15 +398,20 @@ export function organizationalApprovalProgress(review) {
 export function buildApprovalExecutionTiming(review, resolvedAt) {
   const org = review?.reviewContext?.organizationalQuorum;
   const resolved = resolvedAt instanceof Date ? resolvedAt : new Date(resolvedAt);
-  if (!org?.enabled || Number.isNaN(resolved.getTime())) return null;
-  const delaySeconds = boundedInteger(org.executionDelaySeconds, 0, 0, 604_800);
-  const windowSeconds = boundedInteger(org.executionWindowSeconds, 0, 0, 604_800);
-  const notBefore = new Date(resolved.getTime() + delaySeconds * 1000);
+  const contractUpgradeNotBefore = new Date(review?.reviewContext?.contractUpgradeExecutionNotBefore || 0);
+  const hasContractUpgradeDelay = !Number.isNaN(contractUpgradeNotBefore.getTime()) && contractUpgradeNotBefore.getTime() > 0;
+  if (Number.isNaN(resolved.getTime()) || (!org?.enabled && !hasContractUpgradeDelay)) return null;
+  const delaySeconds = boundedInteger(org?.executionDelaySeconds, 0, 0, 604_800);
+  const windowSeconds = boundedInteger(org?.executionWindowSeconds, 0, 0, 604_800);
+  const organizationalNotBefore = new Date(resolved.getTime() + delaySeconds * 1000);
+  const notBefore = hasContractUpgradeDelay && contractUpgradeNotBefore > organizationalNotBefore ? contractUpgradeNotBefore : organizationalNotBefore;
   const approvalExpiry = new Date(review.expiresAt || 0);
   const desiredEnd = windowSeconds > 0 ? new Date(notBefore.getTime() + windowSeconds * 1000) : approvalExpiry;
   const windowEndsAt = Number.isNaN(approvalExpiry.getTime()) || desiredEnd.getTime() < approvalExpiry.getTime() ? desiredEnd : approvalExpiry;
   return {
-    delaySeconds,
+    delaySeconds: Math.max(0, Math.ceil((notBefore.getTime() - resolved.getTime()) / 1000)),
+    organizationalDelaySeconds: delaySeconds,
+    contractUpgradeExecutionNotBefore: hasContractUpgradeDelay ? contractUpgradeNotBefore.toISOString() : "",
     windowSeconds,
     notBefore: notBefore.toISOString(),
     windowEndsAt: windowEndsAt.toISOString(),

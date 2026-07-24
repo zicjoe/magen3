@@ -199,3 +199,7 @@ The SDK does not create, resume, or bypass emergency pauses. Every `checkIntent`
 
 Treat both `Blocked` and `Review Required` as a hard stop. Do not retry with another tool, action label, route, provider, wallet, or idempotency key to evade the pause. Pause administration remains an owner-wallet application and REST API operation.
 
+
+## Contract Upgrade Safety
+
+For proxy or implementation changes, pass unsigned `action.contractUpgrade` metadata with the current and requested implementation, optional code hashes, upgrade administrator, network, and any configured `executeAfter` time. The response may include `contractUpgradeSafetyContext` with the exact parameter fingerprint, policy mode, delay, and required approval quorum. Never include administrator private keys, signatures, or raw signed transactions.

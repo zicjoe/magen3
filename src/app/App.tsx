@@ -2821,6 +2821,17 @@ function AgentRegistrationWizard({
           approvedImplementations: Array.isArray(sourceRules.approvedImplementations) ? sourceRules.approvedImplementations : [],
           privilegedActionQuorumRules: sourceRules.privilegedActionQuorumRules && typeof sourceRules.privilegedActionQuorumRules === "object" && !Array.isArray(sourceRules.privilegedActionQuorumRules) ? sourceRules.privilegedActionQuorumRules : {},
           unknownPrivilegedAction: typeof sourceRules.unknownPrivilegedAction === "string" ? sourceRules.unknownPrivilegedAction : "Review",
+          contractUpgradeControlsEnabled: typeof sourceRules.contractUpgradeControlsEnabled === "boolean" ? sourceRules.contractUpgradeControlsEnabled : capabilities.some((item) => ["Treasury Operations", "dApp Interactions", "Enterprise Automation"].includes(item)),
+          contractUpgradeMode: typeof sourceRules.contractUpgradeMode === "string" ? sourceRules.contractUpgradeMode : "Review",
+          contractUpgradeApprovedImplementations: Array.isArray(sourceRules.contractUpgradeApprovedImplementations) ? sourceRules.contractUpgradeApprovedImplementations : [],
+          contractUpgradeBlockedImplementations: Array.isArray(sourceRules.contractUpgradeBlockedImplementations) ? sourceRules.contractUpgradeBlockedImplementations : [],
+          contractUpgradeRequiresApproval: typeof sourceRules.contractUpgradeRequiresApproval === "boolean" ? sourceRules.contractUpgradeRequiresApproval : true,
+          contractUpgradeQuorum: typeof sourceRules.contractUpgradeQuorum === "number" ? sourceRules.contractUpgradeQuorum : 2,
+          contractUpgradeDelaySeconds: typeof sourceRules.contractUpgradeDelaySeconds === "number" ? sourceRules.contractUpgradeDelaySeconds : 0,
+          contractUpgradeRequireCodeHash: typeof sourceRules.contractUpgradeRequireCodeHash === "boolean" ? sourceRules.contractUpgradeRequireCodeHash : true,
+          contractUpgradeRequireAdministrator: typeof sourceRules.contractUpgradeRequireAdministrator === "boolean" ? sourceRules.contractUpgradeRequireAdministrator : true,
+          contractUpgradeApprovedAdministrators: Array.isArray(sourceRules.contractUpgradeApprovedAdministrators) ? sourceRules.contractUpgradeApprovedAdministrators : [],
+          contractUpgradeUnknownImplementationAction: typeof sourceRules.contractUpgradeUnknownImplementationAction === "string" ? sourceRules.contractUpgradeUnknownImplementationAction : "Review",
           x402ControlsEnabled: typeof sourceRules.x402ControlsEnabled === "boolean" ? sourceRules.x402ControlsEnabled : capabilities.some((item) => ["Wallet Management", "Treasury Operations", "dApp Interactions", "Enterprise Automation", "Custom"].includes(item)),
           x402ControlMode: typeof sourceRules.x402ControlMode === "string" ? sourceRules.x402ControlMode : "Review",
           x402UnavailableAction: typeof sourceRules.x402UnavailableAction === "string" ? sourceRules.x402UnavailableAction : "Review",
@@ -2885,7 +2896,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4245,6 +4256,45 @@ function PrivilegedActionPolicyFields({
   );
 }
 
+function ContractUpgradePolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Contract & Permission Safety · Contract Upgrades</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind the current and proposed implementation, authorized upgrade administrator, code hash, delay, and exact Human Approval quorum before wallet signing.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.contractUpgradeControlsEnabled ?? "")} onChange={(value) => onChange({ contractUpgradeControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.contractUpgradeMode ?? "")} onChange={(value) => onChange({ contractUpgradeMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Unknown Implementation" value={String(values.contractUpgradeUnknownImplementationAction ?? "")} onChange={(value) => onChange({ contractUpgradeUnknownImplementationAction: value })} options={["Warn", "Review", "Block"]} />
+        <TextareaField label="Approved Implementations" value={String(values.contractUpgradeApprovedImplementations ?? "")} onChange={(value) => onChange({ contractUpgradeApprovedImplementations: value })} />
+        <TextareaField label="Blocked Implementations" value={String(values.contractUpgradeBlockedImplementations ?? "")} onChange={(value) => onChange({ contractUpgradeBlockedImplementations: value })} />
+        <TextareaField label="Approved Upgrade Administrators" value={String(values.contractUpgradeApprovedAdministrators ?? "")} onChange={(value) => onChange({ contractUpgradeApprovedAdministrators: value })} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Advanced approval and delay controls</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <SelectField label="Require Human Approval" value={String(values.contractUpgradeRequiresApproval ?? "")} onChange={(value) => onChange({ contractUpgradeRequiresApproval: value })} options={["Yes", "No"]} />
+          <InputField label="Required Quorum" value={String(values.contractUpgradeQuorum ?? "")} onChange={(value) => onChange({ contractUpgradeQuorum: value })} type="number" />
+          <InputField label="Upgrade Delay (seconds)" value={String(values.contractUpgradeDelaySeconds ?? "")} onChange={(value) => onChange({ contractUpgradeDelaySeconds: value })} type="number" />
+          <SelectField label="Require Code Hash" value={String(values.contractUpgradeRequireCodeHash ?? "")} onChange={(value) => onChange({ contractUpgradeRequireCodeHash: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Upgrade Administrator" value={String(values.contractUpgradeRequireAdministrator ?? "")} onChange={(value) => onChange({ contractUpgradeRequireAdministrator: value })} options={["Yes", "No"]} />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">This control reuses Privileged Action classification, exact approval binding, organizational quorum, and Audit Logs. It evaluates unsigned metadata only and never receives upgrade signatures or private keys.</p>
+    </div>
+  );
+}
+
 function X402PolicyFields({
   values,
   onChange,
@@ -4462,6 +4512,17 @@ function PoliciesPage({
     approvedImplementations: "",
     privilegedActionQuorumRules: "",
     unknownPrivilegedAction: "Review",
+    contractUpgradeControlsEnabled: "Yes",
+    contractUpgradeMode: "Review",
+    contractUpgradeApprovedImplementations: "",
+    contractUpgradeBlockedImplementations: "",
+    contractUpgradeRequiresApproval: "Yes",
+    contractUpgradeQuorum: "2",
+    contractUpgradeDelaySeconds: "0",
+    contractUpgradeRequireCodeHash: "Yes",
+    contractUpgradeRequireAdministrator: "Yes",
+    contractUpgradeApprovedAdministrators: "",
+    contractUpgradeUnknownImplementationAction: "Review",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4629,6 +4690,17 @@ function PoliciesPage({
     approvedImplementations: "",
     privilegedActionQuorumRules: "",
     unknownPrivilegedAction: "Review",
+    contractUpgradeControlsEnabled: "Yes",
+    contractUpgradeMode: "Review",
+    contractUpgradeApprovedImplementations: "",
+    contractUpgradeBlockedImplementations: "",
+    contractUpgradeRequiresApproval: "Yes",
+    contractUpgradeQuorum: "2",
+    contractUpgradeDelaySeconds: "0",
+    contractUpgradeRequireCodeHash: "Yes",
+    contractUpgradeRequireAdministrator: "Yes",
+    contractUpgradeApprovedAdministrators: "",
+    contractUpgradeUnknownImplementationAction: "Review",
     x402ControlsEnabled: "Yes",
     x402ControlMode: "Review",
     x402UnavailableAction: "Review",
@@ -4805,6 +4877,17 @@ function PoliciesPage({
         approvedImplementations: form.approvedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
         privilegedActionQuorumRules: parsePrivilegedQuorumRules(form.privilegedActionQuorumRules),
         unknownPrivilegedAction: form.unknownPrivilegedAction,
+        contractUpgradeControlsEnabled: form.contractUpgradeControlsEnabled !== "No",
+        contractUpgradeMode: form.contractUpgradeMode,
+        contractUpgradeApprovedImplementations: form.contractUpgradeApprovedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeBlockedImplementations: form.contractUpgradeBlockedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeRequiresApproval: form.contractUpgradeRequiresApproval !== "No",
+        contractUpgradeQuorum: Math.max(1, Math.min(10, Number(form.contractUpgradeQuorum) || 2)),
+        contractUpgradeDelaySeconds: Math.max(0, Number(form.contractUpgradeDelaySeconds) || 0),
+        contractUpgradeRequireCodeHash: form.contractUpgradeRequireCodeHash !== "No",
+        contractUpgradeRequireAdministrator: form.contractUpgradeRequireAdministrator !== "No",
+        contractUpgradeApprovedAdministrators: form.contractUpgradeApprovedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeUnknownImplementationAction: form.contractUpgradeUnknownImplementationAction,
         x402ControlsEnabled: form.x402ControlsEnabled !== "No",
         x402ControlMode: form.x402ControlMode,
         x402UnavailableAction: form.x402UnavailableAction,
@@ -4961,6 +5044,17 @@ function PoliciesPage({
     approvedImplementations: "",
     privilegedActionQuorumRules: "",
     unknownPrivilegedAction: "Review",
+    contractUpgradeControlsEnabled: "Yes",
+    contractUpgradeMode: "Review",
+    contractUpgradeApprovedImplementations: "",
+    contractUpgradeBlockedImplementations: "",
+    contractUpgradeRequiresApproval: "Yes",
+    contractUpgradeQuorum: "2",
+    contractUpgradeDelaySeconds: "0",
+    contractUpgradeRequireCodeHash: "Yes",
+    contractUpgradeRequireAdministrator: "Yes",
+    contractUpgradeApprovedAdministrators: "",
+    contractUpgradeUnknownImplementationAction: "Review",
     x402ControlsEnabled: "Yes",
       x402ControlMode: "Review",
       x402UnavailableAction: "Review",
@@ -5122,6 +5216,17 @@ function PoliciesPage({
       approvedImplementations: Array.isArray(policy.structuredRules?.approvedImplementations) ? (policy.structuredRules.approvedImplementations as string[]).join("\n") : "",
       privilegedActionQuorumRules: stringifyPrivilegedQuorumRules(policy.structuredRules?.privilegedActionQuorumRules),
       unknownPrivilegedAction: typeof policy.structuredRules?.unknownPrivilegedAction === "string" ? policy.structuredRules.unknownPrivilegedAction : "Review",
+      contractUpgradeControlsEnabled: policy.structuredRules?.contractUpgradeControlsEnabled === false ? "No" : "Yes",
+      contractUpgradeMode: typeof policy.structuredRules?.contractUpgradeMode === "string" ? policy.structuredRules.contractUpgradeMode : "Review",
+      contractUpgradeApprovedImplementations: Array.isArray(policy.structuredRules?.contractUpgradeApprovedImplementations) ? policy.structuredRules.contractUpgradeApprovedImplementations.join("\n") : "",
+      contractUpgradeBlockedImplementations: Array.isArray(policy.structuredRules?.contractUpgradeBlockedImplementations) ? policy.structuredRules.contractUpgradeBlockedImplementations.join("\n") : "",
+      contractUpgradeRequiresApproval: policy.structuredRules?.contractUpgradeRequiresApproval === false ? "No" : "Yes",
+      contractUpgradeQuorum: String(typeof policy.structuredRules?.contractUpgradeQuorum === "number" ? policy.structuredRules.contractUpgradeQuorum : 2),
+      contractUpgradeDelaySeconds: String(typeof policy.structuredRules?.contractUpgradeDelaySeconds === "number" ? policy.structuredRules.contractUpgradeDelaySeconds : 0),
+      contractUpgradeRequireCodeHash: policy.structuredRules?.contractUpgradeRequireCodeHash === false ? "No" : "Yes",
+      contractUpgradeRequireAdministrator: policy.structuredRules?.contractUpgradeRequireAdministrator === false ? "No" : "Yes",
+      contractUpgradeApprovedAdministrators: Array.isArray(policy.structuredRules?.contractUpgradeApprovedAdministrators) ? policy.structuredRules.contractUpgradeApprovedAdministrators.join("\n") : "",
+      contractUpgradeUnknownImplementationAction: typeof policy.structuredRules?.contractUpgradeUnknownImplementationAction === "string" ? policy.structuredRules.contractUpgradeUnknownImplementationAction : "Review",
       x402ControlsEnabled: policy.structuredRules?.x402ControlsEnabled === false ? "No" : "Yes",
       x402ControlMode: typeof policy.structuredRules?.x402ControlMode === "string" ? policy.structuredRules.x402ControlMode : "Observe",
       x402UnavailableAction: typeof policy.structuredRules?.x402UnavailableAction === "string" ? policy.structuredRules.x402UnavailableAction : "Warn",
@@ -5299,6 +5404,17 @@ function PoliciesPage({
         approvedImplementations: editForm.approvedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
         privilegedActionQuorumRules: parsePrivilegedQuorumRules(editForm.privilegedActionQuorumRules),
         unknownPrivilegedAction: editForm.unknownPrivilegedAction,
+        contractUpgradeControlsEnabled: editForm.contractUpgradeControlsEnabled !== "No",
+        contractUpgradeMode: editForm.contractUpgradeMode,
+        contractUpgradeApprovedImplementations: editForm.contractUpgradeApprovedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeBlockedImplementations: editForm.contractUpgradeBlockedImplementations.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeRequiresApproval: editForm.contractUpgradeRequiresApproval !== "No",
+        contractUpgradeQuorum: Math.max(1, Math.min(10, Number(editForm.contractUpgradeQuorum) || 2)),
+        contractUpgradeDelaySeconds: Math.max(0, Number(editForm.contractUpgradeDelaySeconds) || 0),
+        contractUpgradeRequireCodeHash: editForm.contractUpgradeRequireCodeHash !== "No",
+        contractUpgradeRequireAdministrator: editForm.contractUpgradeRequireAdministrator !== "No",
+        contractUpgradeApprovedAdministrators: editForm.contractUpgradeApprovedAdministrators.split("\n").map((item) => item.trim()).filter(Boolean),
+        contractUpgradeUnknownImplementationAction: editForm.contractUpgradeUnknownImplementationAction,
         x402ControlsEnabled: editForm.x402ControlsEnabled !== "No",
         x402ControlMode: editForm.x402ControlMode,
         x402UnavailableAction: editForm.x402UnavailableAction,
@@ -5619,6 +5735,7 @@ function PoliciesPage({
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <PrivilegedActionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <ContractUpgradePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <SelectField
@@ -5906,6 +6023,7 @@ function PoliciesPage({
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <PrivilegedActionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <ContractUpgradePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <SelectField
@@ -8077,7 +8195,16 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
         type: "Contract Interaction", amount: 0, asset: "CSPR", target,
         targetType: firstConfiguredContract(policy) ? "Trusted Contract" : "Unknown Contract",
         contractIdentifierType: contractIdentifierTypeFor(target), entryPoint: "upgrade_to", chainName: "casper-test",
-        privilegedAction: playgroundPrivilegedAction(policy, "Proxy Upgrade", { entryPoint: "upgrade_to", currentValue: `contract-hash-${"a".repeat(64)}`, requestedValue: implementation, implementation, recipient: "" }),
+        privilegedAction: playgroundPrivilegedAction(policy, "Proxy Upgrade", { entryPoint: "upgrade_to", currentValue: `contract-hash-${"a".repeat(64)}`, requestedValue: implementation, implementation, recipient: walletAddress }),
+        contractUpgrade: {
+          contract: target,
+          currentImplementation: `contract-hash-${"a".repeat(64)}`,
+          requestedImplementation: implementation,
+          requestedCodeHash: "d".repeat(64),
+          upgradeAdministrator: walletAddress,
+          requestedAt: new Date().toISOString(),
+          network: "casper-test",
+        },
         preflight: playgroundPreflight({ runtimeArgs: { implementation } }),
       },
     };

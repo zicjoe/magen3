@@ -217,6 +217,20 @@ export interface Magen3PrivilegedAction {
   network?: string;
 }
 
+export interface Magen3ContractUpgrade {
+  contract?: string;
+  package?: string;
+  currentImplementation: string;
+  requestedImplementation: string;
+  currentCodeHash?: string;
+  requestedCodeHash?: string;
+  packageVersion?: string;
+  upgradeAdministrator?: string;
+  requestedAt?: string;
+  executeAfter?: string;
+  network?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -245,6 +259,8 @@ export interface Magen3Action {
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
   privilegedAction?: Magen3PrivilegedAction;
+  /** Exact contract-upgrade metadata evaluated before signing. Never include upgrade signatures or private keys. */
+  contractUpgrade?: Magen3ContractUpgrade;
   /** Exact-once lifecycle metadata evaluated before wallet signing. */
   lifecycle?: Magen3Lifecycle;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
@@ -543,6 +559,32 @@ export interface Magen3PrivilegedActionControlsContext {
   };
 }
 
+export interface Magen3ContractUpgradeSafetyContext {
+  metadataSupplied?: boolean;
+  privilegedUpgrade?: boolean;
+  contract?: string;
+  package?: string;
+  currentImplementation?: string;
+  requestedImplementation?: string;
+  currentCodeHash?: string;
+  requestedCodeHash?: string;
+  packageVersion?: string;
+  upgradeAdministrator?: string;
+  requestedAt?: string;
+  executeAfter?: string;
+  network?: string;
+  parameterFingerprint?: string;
+  approvalRequired?: boolean;
+  requiredApprovalCount?: number;
+  config?: {
+    mode?: "Observe" | "Review" | "Enforce" | string;
+    requiresApproval?: boolean;
+    quorum?: number;
+    delaySeconds?: number;
+    requireCodeHash?: boolean;
+  };
+}
+
 export interface Magen3X402SettlementUpdate {
   auditLogId: string;
   status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
@@ -695,6 +737,8 @@ export interface Magen3DecisionResult {
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
   privilegedActionControlsContext?: Magen3PrivilegedActionControlsContext;
+  /** Current/proposed implementation, code-hash, administrator, delay, fingerprint, and exact approval evidence. */
+  contractUpgradeSafetyContext?: Magen3ContractUpgradeSafetyContext;
 }
 
 export interface Magen3IntentResponse {

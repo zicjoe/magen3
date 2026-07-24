@@ -183,3 +183,7 @@ The Python client passes through `result["emergencyControlsContext"]` and the op
 
 The SDK cannot activate, resume, or bypass a pause. Stop on both `Blocked` and `Review Required`; never retry through a different action label, route, provider, wallet, or idempotency key to avoid the control.
 
+
+## Contract Upgrade Safety
+
+Python callers may include unsigned `action["contractUpgrade"]` metadata containing the current and requested implementation, optional code hashes, upgrade administrator, network, and any configured `executeAfter` time. Inspect `result["contractUpgradeSafetyContext"]` for the exact parameter fingerprint, policy mode, delay, and required approval quorum. Never send administrator private keys, signatures, or raw signed transactions.

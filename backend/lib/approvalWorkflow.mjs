@@ -87,11 +87,31 @@ export function normalizeApprovalPolicy(policy = {}, ownerWalletAddress = "") {
 
 function privilegedApprovalRequirement(auditLog = {}) {
   const privilegedAction = auditLog?.originalIntent?.action?.privilegedAction;
-  if (!privilegedAction || typeof privilegedAction !== "object" || privilegedAction.approvalRequired !== true) return null;
-  const requested = Number(privilegedAction.requiredApprovalCount || 1);
+  const contractUpgrade = auditLog?.originalIntent?.action?.contractUpgrade;
+  const candidates = [];
+  if (privilegedAction && typeof privilegedAction === "object" && privilegedAction.approvalRequired === true) {
+    candidates.push({
+      source: "Privileged Action Controls",
+      classifiedAction: clean(privilegedAction.classifiedAction),
+      parameterFingerprint: clean(privilegedAction.parameterFingerprint),
+      requiredApprovals: Number(privilegedAction.requiredApprovalCount || 1),
+    });
+  }
+  if (contractUpgrade && typeof contractUpgrade === "object" && contractUpgrade.approvalRequired === true) {
+    candidates.push({
+      source: "Contract Upgrade Safety",
+      classifiedAction: "Contract Upgrade",
+      parameterFingerprint: clean(contractUpgrade.parameterFingerprint),
+      requiredApprovals: Number(contractUpgrade.requiredApprovalCount || 1),
+    });
+  }
+  if (candidates.length === 0) return null;
+  const strongest = candidates.reduce((best, item) => Number(item.requiredApprovals || 1) > Number(best.requiredApprovals || 1) ? item : best);
+  const requested = Number(strongest.requiredApprovals || 1);
   return {
-    classifiedAction: clean(privilegedAction.classifiedAction),
-    parameterFingerprint: clean(privilegedAction.parameterFingerprint),
+    source: strongest.source,
+    classifiedAction: strongest.classifiedAction,
+    parameterFingerprint: strongest.parameterFingerprint,
     requiredApprovals: Number.isInteger(requested) ? Math.min(10, Math.max(1, requested)) : 1,
   };
 }
@@ -113,6 +133,11 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
   const createdAt = now instanceof Date ? now : new Date(now);
   const expiresAt = new Date(createdAt.getTime() + config.expiryMinutes * 60_000);
   const organizationalConfigurationErrors = [...(organizational.configurationErrors || [])];
+  const contractUpgradeExecutionNotBefore = clean(auditLog?.originalIntent?.action?.contractUpgrade?.effectiveExecuteAfter || auditLog?.originalIntent?.action?.contractUpgrade?.executeAfter);
+  const contractUpgradeExecutionNotBeforeMs = contractUpgradeExecutionNotBefore ? Date.parse(contractUpgradeExecutionNotBefore) : NaN;
+  if (Number.isFinite(contractUpgradeExecutionNotBeforeMs) && contractUpgradeExecutionNotBeforeMs >= expiresAt.getTime()) {
+    organizationalConfigurationErrors.push("The contract-upgrade execution delay must end before the approval request expires.");
+  }
   if (organizational.enabled && Number(organizational.executionDelaySeconds || 0) >= config.expiryMinutes * 60) {
     organizationalConfigurationErrors.push("The execution delay must be shorter than the approval request expiry.");
   }
@@ -171,6 +196,7 @@ export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, no
         configurationErrors: organizationalConfigurationErrors,
         backupSubstitutions: {},
       },
+      contractUpgradeExecutionNotBefore: Number.isFinite(contractUpgradeExecutionNotBeforeMs) ? new Date(contractUpgradeExecutionNotBeforeMs).toISOString() : "",
       executionTiming: null,
       capabilityContext: Array.isArray(auditLog.capabilityContext) ? auditLog.capabilityContext : [],
       triggeredRule: clean(auditLog.triggeredRule),

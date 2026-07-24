@@ -65,6 +65,15 @@ test("security coverage reaches 100 only when every configured protection check 
         approvedImplementations: ["contract-package-hash-approved-implementation"],
         privilegedActionQuorumRules: { "Ownership Transfer": 2 },
         unknownPrivilegedAction: "Review",
+        contractUpgradeControlsEnabled: true,
+        contractUpgradeMode: "Review",
+        contractUpgradeApprovedImplementations: ["contract-package-hash-approved-implementation"],
+        contractUpgradeBlockedImplementations: [],
+        contractUpgradeRequiresApproval: true,
+        contractUpgradeQuorum: 2,
+        contractUpgradeRequireCodeHash: true,
+        contractUpgradeApprovedAdministrators: ["01" + "3".repeat(64)],
+        contractUpgradeUnknownImplementationAction: "Review",
         emergencyControlsEnabled: true,
         automaticPauseEnabled: false,
         emergencyAutomaticPauseAction: "Blocked",
@@ -90,6 +99,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Bridge Controls", status: "pass", severity: "info", rule: "Bridge route metadata", message: "Required bridge route metadata is present." },
         { module: "Token Permission Controls", status: "pass", severity: "info", rule: "Supported permission classification", message: "Supported token permission classification." },
         { module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." },
+        { module: "Contract Upgrade Safety", status: "pass", severity: "info", rule: "Upgrade target binding", message: "Upgrade target is bound." },
         { module: "Emergency Circuit Breaker", status: "pass", severity: "info", rule: "Active emergency pause", message: "No active emergency pause applies." },
       ],
     }],
@@ -251,6 +261,26 @@ test("Privileged Action coverage requires deterministic configuration and an obs
     moduleFindings: [{ module: "Privileged Action Controls", status: "pass", severity: "info", rule: "Supported privileged-action classification", message: "Supported privileged action classification." }],
   }]);
   assert.equal(observed.checks.find((item) => item.id === "privileged-action-controls").passed, true);
+});
+
+test("Contract Upgrade Safety coverage requires deterministic configuration and an observed target-bound pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", executionCapabilities: ["dApp Interactions"], apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp };
+  const policy = {
+    status: "Active",
+    structuredRules: {
+      contractUpgradeControlsEnabled: true,
+      contractUpgradeMode: "Review",
+      contractUpgradeApprovedImplementations: ["contract-package-hash-approved"],
+      contractUpgradeBlockedImplementations: [],
+      contractUpgradeQuorum: 2,
+      contractUpgradeUnknownImplementationAction: "Review",
+    },
+  };
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "contract-upgrade-safety").passed, false);
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{ timestamp, moduleFindings: [{ module: "Contract Upgrade Safety", status: "pass", severity: "info", rule: "Upgrade target binding", message: "Bound upgrade." }] }]);
+  assert.equal(observed.checks.find((item) => item.id === "contract-upgrade-safety").passed, true);
 });
 
 test("Emergency Controls coverage requires configuration and a Gateway pause-state evaluation", () => {
