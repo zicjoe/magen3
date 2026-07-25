@@ -48,7 +48,7 @@ An unavailable required hash never passes silently. Unknown identities follow th
 The official `@magen3/mcp-server` supplies stable evidence automatically when downstream metadata is absent:
 
 - server ID: `magen3-official-mcp`
-- version: `0.4.0`
+- version: `0.5.0`
 - tools: `magen3_check_intent` and `magen3_require_allowed`
 - exact manifest, schema, and description hashes
 - least-privilege Magen3 intent scopes

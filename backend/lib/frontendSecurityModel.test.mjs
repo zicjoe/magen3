@@ -51,6 +51,19 @@ test("security coverage reaches 100 only when every configured protection check 
         approvedMcpServers: [{ id: "mcp-main", url: "https://mcp.example", manifestHash: "a".repeat(64) }],
         approvedTools: [{ serverId: "mcp-main", name: "wallet.transfer", manifestHash: "a".repeat(64), schemaHash: "b".repeat(64), permissionScopes: ["wallet:read"] }],
         requireTls: true,
+        delegationControlsEnabled: true,
+        delegationMode: "Review",
+        requireExpiringDelegation: true,
+        maximumDelegationLifetime: 3600,
+        maximumDelegationDepth: 1,
+        allowRedelegation: false,
+        approvedDelegates: ["01" + "4".repeat(64)],
+        blockedDelegates: [],
+        revokedDelegationIds: [],
+        unknownDelegateAction: "Review",
+        requireScopeBinding: true,
+        requireCryptographicDelegationAttestation: true,
+        delegationUnavailableAction: "Review",
         approvalWorkflowEnabled: true,
         approvalRequiredCount: 1,
         approvalAllowOwnerFallback: true,
@@ -113,6 +126,7 @@ test("security coverage reaches 100 only when every configured protection check 
       moduleFindings: [
         { module: "Agent Instruction Integrity", status: "pass", severity: "info", rule: "Stable goal binding", message: "Goal-bound provenance passed." },
         { module: "Tool & MCP Integrity", status: "pass", severity: "info", rule: "Approved MCP server", message: "Approved server." },
+        { module: "Delegation & Session Key Safety", status: "pass", severity: "info", rule: "Cryptographic delegation attestation", message: "Casper-signed delegation verified." },
         { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
         { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
@@ -531,4 +545,47 @@ test("Integration Health surfaces Tool & MCP Integrity violations", () => {
     true,
   );
   assert.ok(health.checks.some((check) => check.label === "Tool & MCP Integrity" && check.status === "attention"));
+});
+
+
+test("Delegation Safety coverage requires bounded configuration and an observed cryptographic pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", type: "Wallet Assistant", executionCapabilities: ["Wallet Management"], apiKeyPreview: "mg3…", onboardingStatus: "complete", lastIntentAt: timestamp };
+  const policy = {
+    status: "Active",
+    structuredRules: {
+      delegationControlsEnabled: true,
+      delegationMode: "Review",
+      requireExpiringDelegation: true,
+      maximumDelegationLifetime: 3600,
+      maximumDelegationDepth: 1,
+      allowRedelegation: false,
+      approvedDelegates: ["01" + "4".repeat(64)],
+      blockedDelegates: [],
+      revokedDelegationIds: [],
+      requireScopeBinding: true,
+      requireCryptographicDelegationAttestation: true,
+    },
+  };
+
+  const configuredOnly = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(configuredOnly.checks.find((item) => item.id === "delegation-session-keys").passed, false);
+
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{
+    timestamp,
+    moduleFindings: [{ module: "Delegation & Session Key Safety", status: "pass", severity: "info", rule: "Cryptographic delegation attestation", message: "Signed delegation passed." }],
+  }]);
+  assert.equal(observed.checks.find((item) => item.id === "delegation-session-keys").passed, true);
+});
+
+test("Integration Health surfaces Delegation & Session Key Safety violations", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { id: "MAG-1", status: "Active", type: "Wallet Assistant", executionCapabilities: ["Wallet Management"], apiKeyPreview: "mg3…", lastIntentAt: timestamp },
+    { status: "Active", structuredRules: { delegationControlsEnabled: true } },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "Delegation & Session Key Safety", status: "fail", severity: "critical", rule: "Delegation revocation status", message: "Delegation revoked." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "Delegation & Session Key Safety" && check.status === "attention"));
+  assert.notEqual(health.overall, "Healthy");
 });

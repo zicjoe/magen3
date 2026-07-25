@@ -27,7 +27,7 @@ export const PROTECTION_MODULES = [
       { id: "credential-lifecycle", name: "Credential rotation and revocation", status: "Live" },
       { id: "instruction-integrity", name: "Instruction Integrity", status: "Live" },
       { id: "tool-mcp-integrity", name: "Tool and MCP integrity", status: "Live" },
-      { id: "delegation-session-keys", name: "Delegation and session permissions", status: "Planned" },
+      { id: "delegation-session-keys", name: "Delegation and session permissions", status: "Foundation Available" },
     ],
   },
   {

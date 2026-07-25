@@ -179,7 +179,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "2.1.0",
+        version: "2.2.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -192,6 +192,7 @@ const server = createServer(async (req, res) => {
         privilegedActionControls: { status: "live", deterministicClassification: true, administratorPolicy: true, implementationPolicy: true, approvalBinding: true },
         instructionIntegrity: { status: "live", goalBinding: true, sourceProvenance: true, parameterBinding: true, externalContentConfirmation: true, permissionScopeContainment: true },
         toolMcpIntegrity: { status: "live", approvedServers: true, approvedTools: true, manifestAndSchemaBinding: true, tls: true, permissionScopeContainment: true, agentCapabilityBoundary: true },
+        delegationSafety: { status: "foundation_available", casperAttestationVerification: true, scopeBinding: true, expiry: true, revocation: true, depth: true, amountAndFrequencyLimits: true },
 
         contractUpgradeControls: {
           status: "Live",
@@ -393,6 +394,43 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (route === "GET /api/delegation-safety/status") {
+      return send(res, 200, {
+        ok: true,
+        delegationSafety: {
+          status: "foundation_available",
+          protectionArea: "Agent Trust & Access",
+          control: "Delegation & Session Key Safety",
+          casperAttestationVerification: true,
+          supportedSignatureAlgorithms: ["Ed25519", "Secp256k1"],
+          exactDelegationBinding: true,
+          expirationAndLifetime: true,
+          revocationPolicy: true,
+          networkContractMethodAssetScopes: true,
+          amountAndFrequencyLimits: true,
+          delegationDepthAndRedelegation: true,
+          sanitizedAuditEvidence: true,
+          policyFields: {
+            enabled: "structuredRules.delegationControlsEnabled",
+            mode: "structuredRules.delegationMode: Observe | Review | Enforce",
+            expiry: "structuredRules.requireExpiringDelegation",
+            maximumLifetime: "structuredRules.maximumDelegationLifetime",
+            maximumDepth: "structuredRules.maximumDelegationDepth",
+            redelegation: "structuredRules.allowRedelegation",
+            approvedDelegates: "structuredRules.approvedDelegates",
+            blockedDelegates: "structuredRules.blockedDelegates",
+            revokedDelegations: "structuredRules.revokedDelegationIds",
+            unknownDelegate: "structuredRules.unknownDelegateAction: Warn | Review | Block",
+            scopeBinding: "structuredRules.requireScopeBinding",
+            attestation: "structuredRules.requireCryptographicDelegationAttestation",
+            unavailable: "structuredRules.delegationUnavailableAction: Warn | Review | Block"
+          },
+          securityBoundary: "The Gateway accepts a Casper Wallet delegation signature only transiently for verification. Audit records retain the canonical attestation hash, signature hash, signer algorithm, and deterministic scope evidence—not private keys or raw signatures.",
+          limitation: "Policy revocation and request-supplied revocation evidence are enforced immediately. Revocation performed only in an external wallet or smart-account system requires a trusted adapter or provider to update Magen3 policy/evidence before it can be detected."
+        }
+      });
+    }
+
     if (route === "GET /api/token-permission-controls/status") {
       return send(res, 200, {
         ok: true,
@@ -558,7 +596,7 @@ const server = createServer(async (req, res) => {
           liveProtectionSystem: "Agent Shield",
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
-          liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
+          liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Delegation & Session Key Safety", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
           foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
@@ -627,6 +665,29 @@ const server = createServer(async (req, res) => {
               currentParameterHash: "Optional client-computed SHA-256 fingerprint; server recomputes and verifies it",
               originalPermissionScopes: ["read"],
               currentPermissionScopes: ["read"]
+            },
+            delegation: {
+              delegationId: "Stable unique delegation identifier",
+              delegatingWallet: "Casper Ed25519 or Secp256k1 public key that grants authority",
+              delegate: "Approved delegate identity",
+              sessionKey: "Optional Casper session public key",
+              allowedNetworks: ["casper-test"],
+              allowedContracts: ["contract-package-hash-..."],
+              allowedMethods: ["Transfer"],
+              allowedAssets: ["CSPR"],
+              nativeAmountLimit: 25,
+              tokenAmountLimits: { "CSPR": 25 },
+              maxTransactionAmount: 25,
+              maxFrequency: 10,
+              validFrom: "ISO-8601 timestamp",
+              expiresAt: "ISO-8601 timestamp",
+              revocationStatus: "Active | Revoked",
+              delegationDepth: 0,
+              redelegationAllowed: false,
+              nonce: "Unique attestation nonce",
+              chainName: "casper-test",
+              attestationHash: "SHA-256 of the canonical Magen3 delegation message",
+              attestationSignature: "Transient Casper Wallet message signature; verified and not persisted raw"
             },
             preflight: {
               paymentAmountMotes: "Optional positive integer string for the proposed payment budget",
@@ -1105,6 +1166,7 @@ const server = createServer(async (req, res) => {
           contractUpgradeSafetyContext: "Current/proposed implementation, code hashes, administrator authorization, upgrade delay, exact fingerprint, and approval quorum evidence",
           contractArgumentPoliciesContext: "Exact contract and entry point, matching rule, evaluated arguments, deterministic violations, and canonical runtime-argument fingerprint",
           instructionIntegrityContext: "Goal binding, source provenance, protected-parameter fingerprints, external-content confirmation, permission scopes, deterministic violations, and explicit control limitations",
+          delegationSafetyContext: "Delegation identity, signer verification, exact attestation hash, scoped networks/contracts/methods/assets, expiry, revocation, depth, limits, frequency, and deterministic violations",
           emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
           emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
           emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],

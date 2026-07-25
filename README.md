@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 now has two Live controls: **Agent Instruction Integrity** and **Tool & MCP Integrity**. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Delegation & Session Key Safety**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 implementation now includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone begins Phase 3: **RPC & Chain Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
 
 ## Verification
 
@@ -1003,3 +1003,9 @@ Agent Instruction Integrity is Live under Agent Shield → Agent Trust & Access.
 Tool & MCP Integrity is Live under Agent Shield → Agent Trust & Access. Requests may include `action.toolIntegrity` with an exact MCP server ID or URL, tool name and version, SHA-256 manifest/schema/description hashes, TLS state, origin, credential scope, and requested permission scopes. Magen3 deterministically enforces server and tool allowlists, material-change binding, least-privilege containment, and registered-agent capability boundaries before signing.
 
 The official `@magen3/mcp-server` automatically supplies stable integrity metadata for `magen3_check_intent` and `magen3_require_allowed` when downstream metadata is absent. New policy forms include exact default bindings for those two official tools. External adapters can submit their own approved metadata. Magen3 stores only sanitized identities, hashes, labels, and scopes—never MCP credentials or secret tool output. See `docs/TOOL_MCP_INTEGRITY.md`.
+
+## Delegation & Session Key Safety
+
+Delegation & Session Key Safety is Foundation Available under Agent Shield → Agent Trust & Access pending deployed Casper Wallet or smart-account verification. Requests that use delegated authority may include `action.delegation` with a stable delegation ID, delegating Casper wallet, delegate or public session key, exact network/contract/method/asset scopes, bounded amounts and frequency, activation and expiry, revocation state, depth, redelegation behavior, nonce, and a transient Casper Wallet attestation signature.
+
+Magen3 constructs a domain-separated canonical attestation, verifies Casper Ed25519 or Secp256k1 signatures, checks execution-wallet binding and least-privilege scope, and stores only sanitized attestation/signature hashes and findings. Private session keys, wallet secrets, raw signatures, and signed transactions are never persisted. Existing requests without delegation metadata remain compatible. See [`docs/DELEGATION_SESSION_KEY_SAFETY.md`](docs/DELEGATION_SESSION_KEY_SAFETY.md).

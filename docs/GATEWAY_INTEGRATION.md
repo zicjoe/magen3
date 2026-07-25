@@ -330,3 +330,7 @@ External agent adapters should capture a stable goal ID and original goal hash b
 ## Tool-aware Gateway integration
 
 Trusted adapters should populate `action.toolIntegrity` from the actual approved tool manifest and schema rather than from model-generated claims. Bind the exact server/tool pair in the active policy, stop on both `Blocked` and `Review Required`, and require reapproval after a material hash, origin, version, credential-scope, or permission-scope change. The official Magen3 MCP server injects its own stable metadata when downstream metadata is absent.
+
+## Delegated execution adapters
+
+An adapter that submits delegated execution should construct the exact `action.delegation` object, build the canonical Magen3 delegation attestation, request a Casper Wallet message signature from the delegating wallet, and submit the signature only with the immediate Gateway request. The adapter must never submit the private session key. See `docs/DELEGATION_SESSION_KEY_SAFETY.md` for the canonical fields and deterministic enforcement boundary.

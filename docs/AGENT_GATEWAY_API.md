@@ -711,3 +711,9 @@ Submit minimal provenance under `action.instructionIntegrity`. Supported fields 
 ## Tool & MCP Integrity metadata
 
 When a tool or MCP server participates in execution, submit `action.toolIntegrity` with `mcpServerId` or `mcpServerUrl`, `toolName`, optional `toolVersion`, SHA-256 `manifestHash`, `schemaHash`, optional `descriptionHash`, `permissionScopes`, non-secret `credentialScope`, `tls`, `toolOrigin`, and optional `approvedAt`. The response may include `toolMcpIntegrityContext` plus structured findings. Never submit server credentials, private keys, wallet signatures, or secret tool output. Legacy requests without tool use remain compatible.
+
+## Delegation & Session Key Safety metadata
+
+When an execution uses delegated authority, submit the public scope and transient Casper Wallet message signature under `action.delegation`. Supported fields include `delegationId`, `delegatingWallet`, `delegate`, optional public `sessionKey`, allowed networks/contracts/methods/assets, native and token limits, maximum transaction amount, rolling hourly frequency, validity, revocation status, depth, redelegation flag, nonce, chain name, optional canonical `attestationHash`, and transient `attestationSignature`.
+
+Magen3 canonicalizes and domain-separates the attestation, verifies Ed25519 or Secp256k1 Casper signatures, and returns sanitized `delegationSafetyContext`. Raw delegation signatures and private session-key material are not persisted. See [Delegation & Session Key Safety](./DELEGATION_SESSION_KEY_SAFETY.md).

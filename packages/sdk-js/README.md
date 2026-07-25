@@ -241,3 +241,12 @@ Submit hashes and minimal source labels only. Do not include private prompts, ra
 ## Tool & MCP Integrity
 
 Use typed `action.toolIntegrity` metadata for an exact MCP server/tool identity, version, SHA-256 manifest/schema/description hashes, transport assertion, origin, credential-scope label, and least-privilege scopes. The response may include `toolMcpIntegrityContext`. The SDK preserves this public unsigned evidence but does not certify external tools or transmit their credentials.
+
+
+## Delegation & Session Key Safety
+
+Use `action.delegation` for Casper-signed, short-lived delegated execution. Scope the authority to exact networks, contracts, methods, assets, amount/frequency limits, validity, depth, and redelegation behavior. `attestationSignature` is transient verification input; Magen3 does not persist it raw and returns sanitized `delegationSafetyContext`. Never place private session keys, wallet secrets, mnemonics, or signed transactions in the intent.
+
+### Build the canonical delegation message
+
+Use `buildMagen3DelegationAttestationMessage({ agentId, ...delegation })` to create the exact domain-separated message the delegating Casper wallet must sign. The helper is deterministic and does not access a wallet or private key. Attach the returned wallet signature as transient `action.delegation.attestationSignature`; the Gateway recomputes the same message and verifies it.

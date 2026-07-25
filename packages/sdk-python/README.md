@@ -200,3 +200,12 @@ Pass minimal provenance under `action["instructionIntegrity"]` for sensitive or 
 ## Tool & MCP Integrity
 
 Python callers may include public unsigned `action["toolIntegrity"]` evidence with the exact MCP server/tool identity, version, SHA-256 hashes, transport assertion, origin, credential-scope label, and permission scopes. Inspect `result["toolMcpIntegrityContext"]`. Do not send MCP credentials, private keys, signatures, or secret tool output.
+
+
+## Delegation & Session Key Safety
+
+Pass a public `action["delegation"]` object when execution uses delegated authority or a session key. Bind the exact delegate, Casper delegating wallet, network, contracts, methods, assets, amount/frequency limits, validity period, depth, redelegation flag, nonce, and chain. A connected wallet adapter may supply a transient `attestationSignature`; Magen3 verifies it and returns sanitized `delegationSafetyContext` containing only the attestation/signature hashes and verification evidence. Never send a private session key, mnemonic, seed phrase, or raw signed transaction.
+
+### Build the canonical delegation message
+
+Use `build_delegation_attestation_message(delegation, agent_id)` before requesting a Casper Wallet message signature. `hash_delegation_attestation(delegation, agent_id)` returns the optional SHA-256 binding. These helpers do not access wallet secrets or sign transactions.

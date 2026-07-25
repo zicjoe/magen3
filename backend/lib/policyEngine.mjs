@@ -15,6 +15,7 @@ import { evaluateContractArgumentPolicies } from "./contractArgumentPolicies.mjs
 import { evaluateEmergencyControls } from "./emergencyControls.mjs";
 import { evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
 import { evaluateToolMcpIntegrity } from "./toolMcpIntegrity.mjs";
+import { evaluateDelegationSafety } from "./delegationSafety.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -108,6 +109,7 @@ function withStructuredResult({
   contractArgumentPoliciesContext = null,
   instructionIntegrityContext = null,
   toolMcpIntegrityContext = null,
+  delegationSafetyContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -139,6 +141,7 @@ function withStructuredResult({
     contractArgumentPoliciesContext,
     instructionIntegrityContext,
     toolMcpIntegrityContext,
+    delegationSafetyContext,
     emergencyControlsContext,
   };
 }
@@ -325,6 +328,35 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     });
   }
 
+  const delegationSafetyResult = evaluateDelegationSafety({ request, policy, agent, auditLogs });
+  checksPassed.push(...delegationSafetyResult.checksPassed);
+  checksFailed.push(...delegationSafetyResult.checksFailed);
+  moduleFindings.push(...delegationSafetyResult.findings);
+  if (delegationSafetyResult.hardBlock || delegationSafetyResult.needsReview) {
+    const decision = delegationSafetyResult.hardBlock ? "Blocked" : "Review Required";
+    return withStructuredResult({
+      decision,
+      risk: delegationSafetyResult.hardBlock ? "Critical" : "High",
+      riskScore: delegationSafetyResult.hardBlock ? 96 : 74,
+      checksPassed,
+      checksFailed,
+      reason: delegationSafetyResult.hardBlock
+        ? "The request exceeds or invalidates the signed delegated authority, session-key scope, lifetime, revocation, or execution limit."
+        : "The delegated authority requires authorized review because signer evidence, delegate approval, or scope binding is incomplete.",
+      recommendedAction: delegationSafetyResult.hardBlock
+        ? "Do not execute. Revoke or replace the delegation with a valid, short-lived, cryptographically signed and least-privilege authority."
+        : "Pause execution and obtain exact-bound human approval or resubmit a complete signed delegation attestation.",
+      moduleFindings,
+      timestamp,
+      agent,
+      policy,
+      instructionIntegrityContext: instructionIntegrityResult.context,
+      toolMcpIntegrityContext: toolMcpIntegrityResult.context,
+      delegationSafetyContext: delegationSafetyResult.context,
+      emergencyControlsContext: emergencyControlsResult.context,
+    });
+  }
+
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
@@ -434,8 +466,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -477,6 +509,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     contractArgumentPoliciesContext: contractArgumentPoliciesResult.context,
     instructionIntegrityContext: instructionIntegrityResult.context,
     toolMcpIntegrityContext: toolMcpIntegrityResult.context,
+    delegationSafetyContext: delegationSafetyResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }

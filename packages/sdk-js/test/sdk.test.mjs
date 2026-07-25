@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Magen3Client, Magen3Error } from "../dist/index.js";
+import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage } from "../dist/index.js";
 
 test("checkIntent authenticates and injects agent identity", async () => {
   let captured;
@@ -765,4 +765,44 @@ test("preserves Tool & MCP Integrity metadata and response context", async () =>
   assert.equal(captured.action.toolIntegrity.toolName, "wallet.transfer");
   assert.deepEqual(captured.action.toolIntegrity.permissionScopes, ["wallet:read"]);
   assert.equal(response.result.toolMcpIntegrityContext.approvedTool, true);
+});
+
+test("preserves Delegation & Session Key Safety metadata and sanitized response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({ ok: true, executionApproved: true, result: {
+        decision: "Allowed", risk: "Low", riskScore: 5, reason: "delegation passed", recommendedAction: "continue",
+        delegationSafetyContext: { delegationId: "dlg-sdk-001", delegate: `01${"2".repeat(64)}`, signatureVerified: true, signatureHash: "d".repeat(64), signatureAlgorithm: "Ed25519", allowedMethods: ["Transfer"], usedLastHour: 0, violations: [] },
+      }, gatewayRequest: {}, auditLog: {}, nextAction: "sign" }), { status: 201 });
+    },
+  });
+  const response = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: { type: "Transfer", amount: 1, asset: "CSPR", target: `01${"3".repeat(64)}`, delegation: {
+      delegationId: "dlg-sdk-001", delegatingWallet: `01${"1".repeat(64)}`, delegate: `01${"2".repeat(64)}`, sessionKey: `01${"2".repeat(64)}`,
+      allowedNetworks: ["casper-test"], allowedMethods: ["Transfer"], allowedAssets: ["CSPR"], maxTransactionAmount: 5, maxFrequency: 2,
+      validFrom: "2026-07-25T00:00:00.000Z", expiresAt: "2026-07-25T01:00:00.000Z", revocationStatus: "Active", delegationDepth: 0, redelegationAllowed: false,
+      nonce: "nonce-sdk-001", chainName: "casper-test", attestationHash: "a".repeat(64), attestationSignature: "b".repeat(128),
+    } },
+  });
+  assert.equal(captured.action.delegation.delegationId, "dlg-sdk-001");
+  assert.equal(captured.action.delegation.attestationSignature, "b".repeat(128));
+  assert.equal(response.result.delegationSafetyContext.signatureVerified, true);
+  assert.equal(response.result.delegationSafetyContext.signatureHash, "d".repeat(64));
+});
+
+
+test("builds the exact backend-compatible delegation attestation message", async () => {
+  const delegation = {
+    delegationId: "dlg-sdk-builder-001", agentId: "MAG-SDK-1", delegatingWallet: `01${"1".repeat(64)}`, delegate: "session-agent", sessionKey: `01${"2".repeat(64)}`,
+    allowedNetworks: ["casper-test"], allowedContracts: ["contract-package-hash-example"], allowedMethods: ["Transfer"], allowedAssets: ["CSPR"],
+    nativeAmountLimit: 25, tokenAmountLimits: { TEST: 10 }, maxTransactionAmount: 10, maxFrequency: 5, validFrom: "2026-07-25T00:00:00.000Z", expiresAt: "2026-07-25T01:00:00.000Z",
+    revocationStatus: "Active", delegationDepth: 0, redelegationAllowed: false, nonce: "nonce-sdk-builder-001", chainName: "casper-test",
+  };
+  const { buildDelegationAttestationMessage } = await import("../../../backend/lib/delegationSafety.mjs");
+  assert.equal(buildMagen3DelegationAttestationMessage(delegation), buildDelegationAttestationMessage(delegation));
+  assert.match(buildMagen3DelegationAttestationMessage(delegation), /does not sign or submit a blockchain transaction/);
 });

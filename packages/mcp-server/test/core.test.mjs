@@ -284,3 +284,13 @@ test("official MCP tools preserve explicit downstream tool metadata", async () =
   await handlers.checkIntent({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def", toolIntegrity: explicit } });
   assert.deepEqual(captured.action.toolIntegrity, explicit);
 });
+
+test("intent schema exposes Delegation & Session Key Safety without granting MCP signing authority", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.delegationSafety, /Casper Wallet attestation/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.delegationSafety, /never creates signatures/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.delegation.attestationSignature, /MCP never creates it/i);
+  const handlers = createToolHandlers({ verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); }, requireAllowed: async () => { throw new Error("unused"); }, getApproval: async () => { throw new Error("unused"); }, reportX402Settlement: async () => ({ ok: true }) });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Delegation & Session Key Safety verifies a caller-supplied Casper Wallet attestation/i);
+  assert.match(result.content[0].text, /never generates delegation signatures/i);
+});

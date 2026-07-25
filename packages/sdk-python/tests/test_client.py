@@ -1,9 +1,23 @@
 import json
 import unittest
-from magen3 import Magen3Client, Magen3Error
+from magen3 import Magen3Client, Magen3Error, build_delegation_attestation_message, hash_delegation_attestation
 
 
 class ClientTests(unittest.TestCase):
+    def test_delegation_attestation_builder(self):
+        delegation = {
+            "delegationId": "dlg-python-builder-001", "delegatingWallet": "01" + "1" * 64, "delegate": "session-agent",
+            "sessionKey": "01" + "2" * 64, "allowedNetworks": ["casper-test"], "allowedContracts": ["contract-package-hash-example"],
+            "allowedMethods": ["Transfer"], "allowedAssets": ["CSPR"], "nativeAmountLimit": 25, "tokenAmountLimits": {"TEST": 10},
+            "maxTransactionAmount": 10, "maxFrequency": 5, "validFrom": "2026-07-25T00:00:00.000Z", "expiresAt": "2026-07-25T01:00:00.000Z",
+            "revocationStatus": "Active", "delegationDepth": 0, "redelegationAllowed": False, "nonce": "nonce-python-builder-001", "chainName": "casper-test",
+        }
+        message = build_delegation_attestation_message(delegation, "MAG-PY-1")
+        self.assertIn("Magen3 Delegated Permission Attestation", message)
+        self.assertIn("Allowed Methods: transfer", message)
+        self.assertIn("does not sign or submit a blockchain transaction", message)
+        self.assertEqual(len(hash_delegation_attestation(delegation, "MAG-PY-1")), 64)
+
     def test_check_intent(self):
         captured = {}
         def transport(method, url, headers, data, timeout):
@@ -401,6 +415,19 @@ class ClientTests(unittest.TestCase):
         result = client.check_intent({"executionWalletAddress": "01" + "1" * 64, "action": {"type": "Transfer", "amount": 1, "target": "01" + "2" * 64, "toolIntegrity": {"mcpServerId": "mcp-main", "mcpServerUrl": "https://mcp.example", "toolName": "wallet.transfer", "toolVersion": "1.0.0", "manifestHash": "a" * 64, "schemaHash": "b" * 64, "descriptionHash": "c" * 64, "permissionScopes": ["wallet:read"], "credentialScope": "wallet-limited", "tls": True, "toolOrigin": "magen3-mcp"}}})
         self.assertEqual(captured["payload"]["action"]["toolIntegrity"]["toolName"], "wallet.transfer")
         self.assertTrue(result["result"]["toolMcpIntegrityContext"]["approvedTool"])
+
+
+    def test_delegation_metadata_and_sanitized_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed", "delegationSafetyContext": {"delegationId": "dlg-python-001", "signatureVerified": True, "signatureHash": "d" * 64, "signatureAlgorithm": "Ed25519", "allowedMethods": ["Transfer"], "violations": []}}}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({"executionWalletAddress": "01" + "1" * 64, "action": {"type": "Transfer", "amount": 1, "asset": "CSPR", "target": "01" + "3" * 64, "delegation": {"delegationId": "dlg-python-001", "delegatingWallet": "01" + "1" * 64, "delegate": "01" + "2" * 64, "sessionKey": "01" + "2" * 64, "allowedNetworks": ["casper-test"], "allowedMethods": ["Transfer"], "allowedAssets": ["CSPR"], "maxTransactionAmount": 5, "maxFrequency": 2, "validFrom": "2026-07-25T00:00:00.000Z", "expiresAt": "2026-07-25T01:00:00.000Z", "revocationStatus": "Active", "delegationDepth": 0, "redelegationAllowed": False, "nonce": "nonce-python-001", "chainName": "casper-test", "attestationHash": "a" * 64, "attestationSignature": "b" * 128}}})
+        self.assertEqual(captured["payload"]["action"]["delegation"]["delegationId"], "dlg-python-001")
+        self.assertEqual(captured["payload"]["action"]["delegation"]["attestationSignature"], "b" * 128)
+        self.assertTrue(result["result"]["delegationSafetyContext"]["signatureVerified"])
+        self.assertEqual(result["result"]["delegationSafetyContext"]["signatureHash"], "d" * 64)
 
 
 if __name__ == "__main__":

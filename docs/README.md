@@ -41,3 +41,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Contract Argument Policies](./CONTRACT_ARGUMENT_POLICIES.md) — exact contract/entry-point runtime-argument rules, types, ranges, address policies, fingerprints, and Human Approval binding.
 
 - [`TOOL_MCP_INTEGRITY.md`](TOOL_MCP_INTEGRITY.md) — deterministic MCP server/tool identity, hash, transport, and permission-scope enforcement.
+
+- [Delegation & Session Key Safety](./DELEGATION_SESSION_KEY_SAFETY.md) — Casper-signed, expiring, least-privilege delegated authority and session-key enforcement.

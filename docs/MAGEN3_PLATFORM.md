@@ -555,7 +555,7 @@ Contract Argument Policies is Live under Contract & Permission Safety. An enable
 
 The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
 
-Phase 1 deterministic permission and approval safety is complete. Agent Instruction Integrity and Tool & MCP Integrity are now Live in Phase 2. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Delegation & Session Key Safety.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 implementation includes Agent Instruction Integrity and Tool & MCP Integrity as Live controls. Delegation & Session Key Safety is Foundation Available pending deployed connected-wallet verification. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone begins Phase 3: RPC & Chain Integrity.
 
 
 ## Agent Instruction Integrity
@@ -568,3 +568,7 @@ Agent Instruction Integrity is Live under Agent Trust & Access. The Gateway eval
 Tool & MCP Integrity is a Live deterministic control inside Agent Trust & Access. It evaluates only requests that identify tool use and checks the exact approved MCP server, exact tool, version, manifest hash, schema hash, description hash, secure-transport assertion, origin, credential scope, requested permission scopes, and registered-agent capability scope. Unknown identities or unavailable required evidence follow the policy's Warn, Review, or Block behavior; material hash changes, blocked transport, origin mismatch, credential-scope mismatch, and capability overreach fail closed.
 
 The official Magen3 MCP adapter injects stable metadata for its two execution tools when a caller does not provide downstream tool metadata. Explicit downstream metadata is preserved. This verifies deterministic adapter evidence; it does not certify arbitrary tool code or eliminate supply-chain risk.
+
+## Delegation & Session Key Safety
+
+Delegation & Session Key Safety is a Foundation Available deterministic control inside Agent Trust & Access pending deployed Casper Wallet or smart-account verification. It verifies a domain-separated Casper-signed delegation attestation and enforces the exact delegating wallet, delegate/session identity, activation and expiry, policy revocation, network/contract/method/asset scopes, amount and rolling frequency limits, maximum delegation depth, and redelegation restriction. Raw signatures and private session keys are never persisted. Review outcomes reuse the existing exact-bound Human Approval workflow; invalid signatures, revoked or expired authority, wallet substitution, and hard scope violations fail closed.

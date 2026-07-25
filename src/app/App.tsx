@@ -59,10 +59,10 @@ import {
   signCasperWalletMessage,
 } from "./lib/casperWallet";
 
-const OFFICIAL_MCP_SERVER_BINDING = "magen3-official-mcp||942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0";
+const OFFICIAL_MCP_SERVER_BINDING = "magen3-official-mcp||a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c";
 const OFFICIAL_MCP_TOOL_BINDINGS = [
-  "magen3-official-mcp|magen3_check_intent|0.4.0|942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0|c335732278e81421716f5fd6a05c0c28f1d6418583e06c5be4779d743c695adf|2014680b5e77e15d318ea3a9a2e4ba70056dc0c52201e420fd7e6126edd95447|magen3:intent:check|agent-gateway|@magen3/mcp-server",
-  "magen3-official-mcp|magen3_require_allowed|0.4.0|942596a0502968d45162f488f17806a7464cc6ca58c059e086f85ff9cd2641e0|035a2a5c4332c2f83826062cdfb12f769c537d84df3037a268f7f3a9afba3920|2014680b5e77e15d318ea3a9a2e4ba70056dc0c52201e420fd7e6126edd95447|magen3:intent:require-allowed|agent-gateway|@magen3/mcp-server",
+  "magen3-official-mcp|magen3_check_intent|0.5.0|a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c|29b728aaa61bced4a3f533d23e52045f1f00d593f995634d83063c44fa0e18f2|f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2|magen3:intent:check|agent-gateway|@magen3/mcp-server",
+  "magen3-official-mcp|magen3_require_allowed|0.5.0|a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c|bfce0408d41a7656c7792bbd36d318a41f41cee2ea8bbee8e4c0b81f4a1e5359|f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2|magen3:intent:require-allowed|agent-gateway|@magen3/mcp-server",
 ].join("\n");
 
 // ──────────────────────────────────────────────────────────
@@ -2979,7 +2979,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4330,6 +4330,47 @@ function ToolMcpIntegrityPolicyFields({
   );
 }
 
+function DelegationSafetyPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#14B8A6]/20 bg-[#14B8A6]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Agent Trust & Access · Delegation & Session Key Safety</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Verify Casper-signed, short-lived delegated authority and enforce exact network, contract, method, asset, amount, frequency, lifetime, depth, and revocation scopes.</p>
+        </div>
+        <StatusBadge status="Live" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.delegationControlsEnabled ?? "")} onChange={(value) => onChange({ delegationControlsEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.delegationMode ?? "")} onChange={(value) => onChange({ delegationMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Unknown Delegate" value={String(values.unknownDelegateAction ?? "")} onChange={(value) => onChange({ unknownDelegateAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Unavailable Attestation" value={String(values.delegationUnavailableAction ?? "")} onChange={(value) => onChange({ delegationUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require Expiry" value={String(values.requireExpiringDelegation ?? "")} onChange={(value) => onChange({ requireExpiringDelegation: value })} options={["Yes", "No"]} />
+        <InputField label="Maximum Lifetime (sec)" value={String(values.maximumDelegationLifetime ?? "")} onChange={(value) => onChange({ maximumDelegationLifetime: value })} type="number" />
+        <InputField label="Maximum Delegation Depth" value={String(values.maximumDelegationDepth ?? "")} onChange={(value) => onChange({ maximumDelegationDepth: value })} type="number" />
+        <SelectField label="Allow Redelegation" value={String(values.allowRedelegation ?? "")} onChange={(value) => onChange({ allowRedelegation: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Scope Binding" value={String(values.requireScopeBinding ?? "")} onChange={(value) => onChange({ requireScopeBinding: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Casper Attestation" value={String(values.requireCryptographicDelegationAttestation ?? "")} onChange={(value) => onChange({ requireCryptographicDelegationAttestation: value })} options={["Yes", "No"]} />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Delegate approval and revocation lists</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <TextareaField label="Approved Delegates (one per line)" value={String(values.approvedDelegates ?? "")} onChange={(value) => onChange({ approvedDelegates: value })} />
+          <TextareaField label="Blocked Delegates (one per line)" value={String(values.blockedDelegates ?? "")} onChange={(value) => onChange({ blockedDelegates: value })} />
+          <TextareaField label="Revoked Delegation IDs" value={String(values.revokedDelegationIds ?? "")} onChange={(value) => onChange({ revokedDelegationIds: value })} />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Raw delegation signatures are used transiently for verification and are never stored in Audit Logs. External wallet or smart-account revocation must be supplied through a trusted adapter or policy update.</p>
+    </div>
+  );
+}
+
 function TokenPermissionPolicyFields({
   values,
   onChange,
@@ -4660,6 +4701,19 @@ function PoliciesPage({
     allowToolVersionChanges: "No",
     unknownToolAction: "Review",
     permissionExpansionAction: "Block",
+    delegationControlsEnabled: "Yes",
+    delegationMode: "Review",
+    requireExpiringDelegation: "Yes",
+    maximumDelegationLifetime: "3600",
+    maximumDelegationDepth: "1",
+    allowRedelegation: "No",
+    approvedDelegates: "",
+    blockedDelegates: "",
+    revokedDelegationIds: "",
+    unknownDelegateAction: "Review",
+    requireScopeBinding: "Yes",
+    requireCryptographicDelegationAttestation: "Yes",
+    delegationUnavailableAction: "Review",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -4863,6 +4917,19 @@ function PoliciesPage({
     allowToolVersionChanges: "No",
     unknownToolAction: "Review",
     permissionExpansionAction: "Block",
+    delegationControlsEnabled: "Yes",
+    delegationMode: "Review",
+    requireExpiringDelegation: "Yes",
+    maximumDelegationLifetime: "3600",
+    maximumDelegationDepth: "1",
+    allowRedelegation: "No",
+    approvedDelegates: "",
+    blockedDelegates: "",
+    revokedDelegationIds: "",
+    unknownDelegateAction: "Review",
+    requireScopeBinding: "Yes",
+    requireCryptographicDelegationAttestation: "Yes",
+    delegationUnavailableAction: "Review",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -5077,6 +5144,19 @@ function PoliciesPage({
         allowToolVersionChanges: form.allowToolVersionChanges === "Yes",
         unknownToolAction: form.unknownToolAction,
         permissionExpansionAction: form.permissionExpansionAction,
+        delegationControlsEnabled: form.delegationControlsEnabled !== "No",
+        delegationMode: form.delegationMode,
+        requireExpiringDelegation: form.requireExpiringDelegation !== "No",
+        maximumDelegationLifetime: Number(form.maximumDelegationLifetime || 3600),
+        maximumDelegationDepth: Number(form.maximumDelegationDepth || 1),
+        allowRedelegation: form.allowRedelegation === "Yes",
+        approvedDelegates: form.approvedDelegates.split("\n").map((item) => item.trim()).filter(Boolean),
+        blockedDelegates: form.blockedDelegates.split("\n").map((item) => item.trim()).filter(Boolean),
+        revokedDelegationIds: form.revokedDelegationIds.split("\n").map((item) => item.trim()).filter(Boolean),
+        unknownDelegateAction: form.unknownDelegateAction,
+        requireScopeBinding: form.requireScopeBinding !== "No",
+        requireCryptographicDelegationAttestation: form.requireCryptographicDelegationAttestation !== "No",
+        delegationUnavailableAction: form.delegationUnavailableAction,
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -5268,6 +5348,19 @@ function PoliciesPage({
     allowToolVersionChanges: "No",
     unknownToolAction: "Review",
     permissionExpansionAction: "Block",
+    delegationControlsEnabled: "Yes",
+    delegationMode: "Review",
+    requireExpiringDelegation: "Yes",
+    maximumDelegationLifetime: "3600",
+    maximumDelegationDepth: "1",
+    allowRedelegation: "No",
+    approvedDelegates: "",
+    blockedDelegates: "",
+    revokedDelegationIds: "",
+    unknownDelegateAction: "Review",
+    requireScopeBinding: "Yes",
+    requireCryptographicDelegationAttestation: "Yes",
+    delegationUnavailableAction: "Review",
     lifecycleControlsEnabled: "Yes",
 
       lifecycleControlMode: "Enforce",
@@ -5465,6 +5558,19 @@ function PoliciesPage({
       allowToolVersionChanges: policy.structuredRules?.allowToolVersionChanges === true ? "Yes" : "No",
       unknownToolAction: String(policy.structuredRules?.unknownToolAction || "Review"),
       permissionExpansionAction: String(policy.structuredRules?.permissionExpansionAction || "Block"),
+      delegationControlsEnabled: policy.structuredRules?.delegationControlsEnabled === true ? "Yes" : "No",
+      delegationMode: String(policy.structuredRules?.delegationMode || "Review"),
+      requireExpiringDelegation: policy.structuredRules?.requireExpiringDelegation === false ? "No" : "Yes",
+      maximumDelegationLifetime: String(policy.structuredRules?.maximumDelegationLifetime || 3600),
+      maximumDelegationDepth: String(policy.structuredRules?.maximumDelegationDepth ?? 1),
+      allowRedelegation: policy.structuredRules?.allowRedelegation === true ? "Yes" : "No",
+      approvedDelegates: Array.isArray(policy.structuredRules?.approvedDelegates) ? policy.structuredRules.approvedDelegates.join("\n") : "",
+      blockedDelegates: Array.isArray(policy.structuredRules?.blockedDelegates) ? policy.structuredRules.blockedDelegates.join("\n") : "",
+      revokedDelegationIds: Array.isArray(policy.structuredRules?.revokedDelegationIds) ? policy.structuredRules.revokedDelegationIds.join("\n") : "",
+      unknownDelegateAction: String(policy.structuredRules?.unknownDelegateAction || "Review"),
+      requireScopeBinding: policy.structuredRules?.requireScopeBinding === false ? "No" : "Yes",
+      requireCryptographicDelegationAttestation: policy.structuredRules?.requireCryptographicDelegationAttestation === false ? "No" : "Yes",
+      delegationUnavailableAction: String(policy.structuredRules?.delegationUnavailableAction || "Review"),
       lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
       lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
       lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
@@ -5679,6 +5785,19 @@ function PoliciesPage({
         allowToolVersionChanges: editForm.allowToolVersionChanges === "Yes",
         unknownToolAction: editForm.unknownToolAction,
         permissionExpansionAction: editForm.permissionExpansionAction,
+        delegationControlsEnabled: editForm.delegationControlsEnabled !== "No",
+        delegationMode: editForm.delegationMode,
+        requireExpiringDelegation: editForm.requireExpiringDelegation !== "No",
+        maximumDelegationLifetime: Number(editForm.maximumDelegationLifetime || 3600),
+        maximumDelegationDepth: Number(editForm.maximumDelegationDepth || 1),
+        allowRedelegation: editForm.allowRedelegation === "Yes",
+        approvedDelegates: editForm.approvedDelegates.split("\n").map((item) => item.trim()).filter(Boolean),
+        blockedDelegates: editForm.blockedDelegates.split("\n").map((item) => item.trim()).filter(Boolean),
+        revokedDelegationIds: editForm.revokedDelegationIds.split("\n").map((item) => item.trim()).filter(Boolean),
+        unknownDelegateAction: editForm.unknownDelegateAction,
+        requireScopeBinding: editForm.requireScopeBinding !== "No",
+        requireCryptographicDelegationAttestation: editForm.requireCryptographicDelegationAttestation !== "No",
+        delegationUnavailableAction: editForm.delegationUnavailableAction,
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -6075,6 +6194,7 @@ function PoliciesPage({
             </div>
             <InstructionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ToolMcpIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <DelegationSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -6366,6 +6486,7 @@ function PoliciesPage({
             </div>
                 <InstructionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ToolMcpIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <DelegationSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -8315,6 +8436,37 @@ function playgroundToolIntegrity(policy: Policy | undefined, overrides: Record<s
   };
 }
 
+function playgroundDelegation(walletAddress: string, policy: Policy | undefined, overrides: Record<string, unknown> = {}) {
+  const now = Date.now();
+  const approvedDelegates = Array.isArray(policy?.structuredRules?.approvedDelegates)
+    ? policy.structuredRules.approvedDelegates.map((item) => String(item)).filter(Boolean)
+    : [];
+  const revokedDelegationIds = Array.isArray(policy?.structuredRules?.revokedDelegationIds)
+    ? policy.structuredRules.revokedDelegationIds.map((item) => String(item)).filter(Boolean)
+    : [];
+  return {
+    delegationId: `delegation:playground-${Date.now()}`,
+    delegatingWallet: walletAddress,
+    delegate: approvedDelegates[0] || "playground-session-agent",
+    allowedNetworks: ["casper-test"],
+    allowedContracts: [],
+    allowedMethods: ["Transfer"],
+    allowedAssets: ["CSPR"],
+    nativeAmountLimit: 10,
+    maxTransactionAmount: 10,
+    maxFrequency: 5,
+    validFrom: new Date(now - 60_000).toISOString(),
+    expiresAt: new Date(now + 30 * 60_000).toISOString(),
+    revocationStatus: "Active",
+    delegationDepth: 0,
+    redelegationAllowed: false,
+    nonce: `delegation-nonce-${Date.now()}`,
+    chainName: "casper-test",
+    ...(revokedDelegationIds[0] ? { configuredRevokedDelegationId: revokedDelegationIds[0] } : {}),
+    ...overrides,
+  };
+}
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
   "Instruction integrity — trusted goal": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT;
@@ -8382,6 +8534,27 @@ const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, 
     goal: "Block tool permission-scope expansion",
     reason: "The tool intentionally requests a scope beyond its approved least-privilege set.",
     action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", toolIntegrity: playgroundToolIntegrity(policy, { permissionScopes: ["wallet:read", "wallet:write"] }), preflight: playgroundPreflight() },
+  }),
+  "Delegation safety — missing Casper signature": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Review a bounded delegation that has not yet been signed by the delegating Casper wallet",
+    reason: "The scope is intentionally bounded, but the cryptographic attestation signature is omitted. A real Allowed flow must be created and signed by a trusted wallet adapter outside this static example.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", delegation: playgroundDelegation(walletAddress, policy), preflight: playgroundPreflight() },
+  }),
+  "Delegation safety — revoked delegation": (agent, walletAddress, policy) => {
+    const configuredRevoked = Array.isArray(policy?.structuredRules?.revokedDelegationIds) ? String(policy?.structuredRules?.revokedDelegationIds[0] || "") : "";
+    return {
+      source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+      goal: "Block execution through revoked delegated authority",
+      reason: "The delegation is intentionally marked revoked; revocation is a hard block even when other evidence is incomplete.",
+      action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", delegation: playgroundDelegation(walletAddress, policy, { delegationId: configuredRevoked || "delegation:revoked-playground", revocationStatus: "Revoked" }), preflight: playgroundPreflight() },
+    };
+  },
+  "Delegation safety — method outside scope": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Block a delegated request that exceeds its authorized method scope",
+    reason: "The delegation authorizes only Transfer, while the request attempts a Contract Interaction.",
+    action: { type: "Contract Interaction", amount: 1, asset: "CSPR", target: firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT, targetType: "Trusted Contract", contractIdentifierType: contractIdentifierTypeFor(firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT), entryPoint: "mint", chainName: "casper-test", delegation: playgroundDelegation(walletAddress, policy, { allowedMethods: ["Transfer"], allowedContracts: [firstConfiguredContract(policy) || PLAYGROUND_DEMO_CONTRACT] }), preflight: playgroundPreflight({ runtimeArgs: { amount: "1" } }) },
   }),
   "Fresh lifecycle-bound transfer": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy);
@@ -9489,6 +9662,7 @@ function SettingsPage({
     ["Emergency Controls Status", `${api.baseUrl}/api/emergency-controls/status`],
     ["Instruction Integrity Status", `${api.baseUrl}/api/instruction-integrity/status`],
     ["Tool & MCP Integrity Status", `${api.baseUrl}/api/tool-mcp-integrity/status`],
+    ["Delegation Safety Status", `${api.baseUrl}/api/delegation-safety/status`],
     ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],

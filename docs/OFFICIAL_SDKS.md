@@ -161,3 +161,9 @@ Both official SDKs pass `action.instructionIntegrity` through the existing inten
 ## Tool & MCP Integrity
 
 The TypeScript SDK exposes typed `action.toolIntegrity` metadata and `toolMcpIntegrityContext`. The Python SDK preserves the same dictionaries without transformation. SDKs do not generate trust claims for arbitrary external tools; trusted adapters must supply exact server/tool identities and hashes. Never include MCP credentials or secret tool output.
+
+## Delegation & Session Key Safety
+
+Both official SDKs accept public `action.delegation` metadata and expose sanitized `delegationSafetyContext`. Use a trusted connected-wallet adapter to construct and sign the canonical Magen3 delegation attestation. The SDKs do not generate private session keys, read wallet secrets, or sign on behalf of the delegating wallet. Never include a private key, mnemonic, seed phrase, or raw signed transaction in an intent.
+
+The JavaScript SDK exports `buildMagen3DelegationAttestationMessage`, and the Python SDK exports `build_delegation_attestation_message` plus `hash_delegation_attestation`. These helpers produce the backend-compatible canonical message without accessing wallet secrets.

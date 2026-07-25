@@ -119,3 +119,8 @@ The intent schema accepts `action.instructionIntegrity` with a stable goal ID, o
 ## Tool & MCP Integrity
 
 The official server injects stable integrity evidence for `magen3_check_intent` and `magen3_require_allowed` when downstream metadata is absent. New Magen3 policy forms include exact default bindings for these official tools. Explicit downstream `action.toolIntegrity` metadata is preserved. This evidence is deterministic but does not certify arbitrary tool code or eliminate supply-chain risk.
+
+
+## Delegation & Session Key Safety
+
+The MCP intent schema accepts public `action.delegation` evidence for a bounded Casper delegation. The MCP server does not create a delegation signature, hold session-key secrets, or grant itself authority. A connected wallet adapter must create any `attestationSignature`, and Magen3 verifies it before authorization while storing only sanitized hashes and scope findings.

@@ -93,11 +93,13 @@ function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
     "seed", "approval", "approvals", "signature", "signatures",
   ]);
   const insideRuntimeArgs = path.includes("runtimeargs") || path.includes("runtime_args");
+  const insideDelegation = path.some((item) => ["delegation", "delegatedpermission", "delegated_permission", "sessionkey", "session_key"].includes(item));
 
   return Object.entries(value).some(([key, child]) => {
     const normalized = String(key).toLowerCase().replace(/[^a-z_]/g, "");
     if (alwaysForbidden.has(normalized)) return true;
-    if (!insideRuntimeArgs && signedPayloadFields.has(normalized)) return true;
+    const transientDelegationSignature = insideDelegation && ["signature", "attestationsignature", "attestation_signature"].includes(normalized);
+    if (!insideRuntimeArgs && !transientDelegationSignature && signedPayloadFields.has(normalized)) return true;
     return containsForbiddenSigningMaterial(child, depth + 1, [...path, normalized]);
   });
 }
@@ -259,6 +261,19 @@ export function normalizeAgentGatewayIntent(body = {}) {
               : body.mcpIntegrity && typeof body.mcpIntegrity === "object"
                 ? body.mcpIntegrity
                 : {};
+  const delegation = action.delegation && typeof action.delegation === "object"
+    ? action.delegation
+    : action.delegatedPermission && typeof action.delegatedPermission === "object"
+      ? action.delegatedPermission
+      : action.delegated_permission && typeof action.delegated_permission === "object"
+        ? action.delegated_permission
+        : action.sessionKey && typeof action.sessionKey === "object"
+          ? action.sessionKey
+          : action.session_key && typeof action.session_key === "object"
+            ? action.session_key
+            : body.delegation && typeof body.delegation === "object"
+              ? body.delegation
+              : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -448,6 +463,28 @@ export function normalizeAgentGatewayIntent(body = {}) {
     toolIntegrityTls: Boolean(toolIntegrity.tls === true || String(toolIntegrity.tls || "").toLowerCase() === "true"),
     toolIntegrityOrigin: cleanString(toolIntegrity.toolOrigin || toolIntegrity.tool_origin || toolIntegrity.origin || "", ""),
     toolIntegrityApprovedAt: cleanString(toolIntegrity.approvedAt || toolIntegrity.approved_at || "", ""),
+    delegationMetadataSupplied: Object.keys(delegation).length > 0,
+    delegationId: cleanString(delegation.delegationId || delegation.delegation_id || delegation.id || "", ""),
+    delegationDelegatingWallet: cleanString(delegation.delegatingWallet || delegation.delegating_wallet || delegation.owner || "", ""),
+    delegationDelegate: cleanString(delegation.delegate || delegation.delegateWallet || delegation.delegate_wallet || "", ""),
+    delegationSessionKey: cleanString(delegation.sessionKey || delegation.session_key || "", ""),
+    delegationAllowedNetworks: Array.isArray(delegation.allowedNetworks || delegation.allowed_networks) ? (delegation.allowedNetworks || delegation.allowed_networks).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
+    delegationAllowedContracts: Array.isArray(delegation.allowedContracts || delegation.allowed_contracts) ? (delegation.allowedContracts || delegation.allowed_contracts).slice(0, 100).map((item) => cleanString(item)).filter(Boolean) : [],
+    delegationAllowedMethods: Array.isArray(delegation.allowedMethods || delegation.allowed_methods) ? (delegation.allowedMethods || delegation.allowed_methods).slice(0, 100).map((item) => cleanString(item)).filter(Boolean) : [],
+    delegationAllowedAssets: Array.isArray(delegation.allowedAssets || delegation.allowed_assets) ? (delegation.allowedAssets || delegation.allowed_assets).slice(0, 100).map((item) => cleanString(item)).filter(Boolean) : [],
+    delegationNativeAmountLimit: optionalNumber(delegation.nativeAmountLimit ?? delegation.native_amount_limit, "delegation.nativeAmountLimit", { min: 0 }),
+    delegationTokenAmountLimits: delegation.tokenAmountLimits && typeof delegation.tokenAmountLimits === "object" && !Array.isArray(delegation.tokenAmountLimits) ? normalizeMetadataValue(delegation.tokenAmountLimits) : delegation.token_amount_limits && typeof delegation.token_amount_limits === "object" && !Array.isArray(delegation.token_amount_limits) ? normalizeMetadataValue(delegation.token_amount_limits) : {},
+    delegationMaxTransactionAmount: optionalNumber(delegation.maxTransactionAmount ?? delegation.max_transaction_amount, "delegation.maxTransactionAmount", { min: 0 }),
+    delegationMaxFrequency: optionalNumber(delegation.maxFrequency ?? delegation.max_frequency, "delegation.maxFrequency", { integer: true, min: 1 }),
+    delegationValidFrom: cleanString(delegation.validFrom || delegation.valid_from || "", ""),
+    delegationExpiresAt: cleanString(delegation.expiresAt || delegation.expires_at || "", ""),
+    delegationRevocationStatus: cleanString(delegation.revocationStatus || delegation.revocation_status || "Active", "Active"),
+    delegationDepth: optionalNumber(delegation.delegationDepth ?? delegation.delegation_depth ?? 0, "delegation.delegationDepth", { integer: true, min: 0 }),
+    delegationRedelegationAllowed: Boolean(delegation.redelegationAllowed === true || delegation.redelegation_allowed === true || String(delegation.redelegationAllowed || delegation.redelegation_allowed || "").toLowerCase() === "true"),
+    delegationNonce: cleanString(delegation.nonce || "", ""),
+    delegationAttestationHash: cleanString(delegation.attestationHash || delegation.attestation_hash || "", ""),
+    delegationAttestationSignature: cleanString(delegation.attestationSignature || delegation.attestation_signature || delegation.signature || "", ""),
+    delegationChainName: cleanString(delegation.chainName || delegation.chain_name || delegation.network || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

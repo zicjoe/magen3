@@ -77,6 +77,29 @@ const actionSchema = z.object({
     toolOrigin: z.string().min(1).max(256).optional(),
     approvedAt: z.string().datetime().optional(),
   }).strict().refine((value) => Boolean(value.mcpServerId || value.mcpServerUrl), { message: "mcpServerId or mcpServerUrl is required" }).optional(),
+  delegation: z.object({
+    delegationId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$/),
+    delegatingWallet: z.string().regex(/^(?:01[0-9a-f]{64}|02[0-9a-f]{66})$/i),
+    delegate: z.string().min(1).max(256),
+    sessionKey: z.string().regex(/^(?:01[0-9a-f]{64}|02[0-9a-f]{66})$/i).optional(),
+    allowedNetworks: z.array(z.string().min(1).max(128)).max(50).optional(),
+    allowedContracts: z.array(z.string().min(1).max(256)).max(100).optional(),
+    allowedMethods: z.array(z.string().min(1).max(128)).max(100).optional(),
+    allowedAssets: z.array(z.string().min(1).max(128)).max(100).optional(),
+    nativeAmountLimit: z.number().finite().nonnegative().optional(),
+    tokenAmountLimits: z.record(z.string(), z.number().finite().nonnegative()).optional(),
+    maxTransactionAmount: z.number().finite().nonnegative().optional(),
+    maxFrequency: z.number().int().positive().optional(),
+    validFrom: z.string().datetime().optional(),
+    expiresAt: z.string().datetime().optional(),
+    revocationStatus: z.string().min(1).max(64).optional(),
+    delegationDepth: z.number().int().nonnegative().optional(),
+    redelegationAllowed: z.boolean().optional(),
+    nonce: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$/),
+    chainName: z.string().min(1).max(128).optional(),
+    attestationHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    attestationSignature: z.string().regex(/^(?:0x)?[0-9a-f]{128,260}$/i).optional(),
+  }).strict().optional(),
   tokenPermission: z.object({
     permissionType: z.enum([
       "Fungible Token Approval", "Allowance Increase", "Allowance Decrease", "Allowance Reset",
@@ -232,8 +255,8 @@ const x402SettlementSchema = z.object({
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
-    { name: "magen3-execution-firewall", version: "0.4.0" },
-    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Agent Instruction Integrity, Emergency Circuit Breaker, Token Permission Controls, Privileged Action Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
+    { name: "magen3-execution-firewall", version: "0.5.0" },
+    { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Allowed permits continuation only to human-controlled wallet approval. Blocked means stop. Review Required means stop, surface the exact-bound approval request, and poll magen3_get_approval until it is approved or reaches a terminal state. Inspect deterministic module findings, including Agent Instruction Integrity, Tool & MCP Integrity, Delegation & Session Key Safety, Emergency Circuit Breaker, Token Permission Controls, Privileged Action Controls, Execution Integrity lifecycle/replay, Threat Intelligence, Oracle Validation, Bridge Controls, x402 Payment Controls, and Compliance Controls findings for non-sensitive attestation status, jurisdiction policy, opaque Travel Rule evidence, screening status, and configured exact matches. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());

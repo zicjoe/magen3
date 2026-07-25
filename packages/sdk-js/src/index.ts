@@ -183,6 +183,90 @@ export interface Magen3ToolMcpIntegrityMetadata {
   approvedAt?: string;
 }
 
+export interface Magen3Delegation {
+  /** Stable unique identifier for one delegated authority. */
+  delegationId: string;
+  /** Casper Ed25519 or Secp256k1 public key granting authority. */
+  delegatingWallet: string;
+  /** Approved delegate identity. */
+  delegate: string;
+  /** Optional constrained Casper session public key. */
+  sessionKey?: string;
+  allowedNetworks?: string[];
+  allowedContracts?: string[];
+  allowedMethods?: string[];
+  allowedAssets?: string[];
+  nativeAmountLimit?: number;
+  tokenAmountLimits?: Record<string, number>;
+  maxTransactionAmount?: number;
+  /** Rolling maximum executions per hour for this delegation ID. */
+  maxFrequency?: number;
+  validFrom?: string;
+  expiresAt?: string;
+  revocationStatus?: "Active" | "Revoked" | "Inactive" | string;
+  delegationDepth?: number;
+  redelegationAllowed?: boolean;
+  nonce: string;
+  chainName?: string;
+  /** Optional adapter-computed SHA-256 hash of the canonical Magen3 delegation attestation. */
+  attestationHash?: string;
+  /** Transient Casper Wallet message signature. The Gateway verifies it and does not persist it raw. */
+  attestationSignature?: string;
+}
+
+
+export interface Magen3DelegationAttestationInput extends Omit<Magen3Delegation, "attestationHash" | "attestationSignature"> {
+  /** Registered Magen3 Agent ID bound into the signed authority. */
+  agentId: string;
+  /** Domain-separated attestation namespace. Defaults to magen3.delegation.v1. */
+  domain?: string;
+}
+
+/**
+ * Build the exact canonical message that a delegating Casper wallet must sign.
+ * This helper does not access a wallet, hold a private key, or submit an intent.
+ */
+export function buildMagen3DelegationAttestationMessage(input: Magen3DelegationAttestationInput): string {
+  const clean = (value: unknown) => String(value ?? "").trim();
+  const uniqueSorted = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).map(clean).filter(Boolean))]
+    .map((item) => item.toLowerCase())
+    .sort();
+  const numberText = (value: unknown) => value === null || value === undefined || value === "" ? "" : String(Number(value));
+  const tokenLimits = input.tokenAmountLimits && typeof input.tokenAmountLimits === "object" && !Array.isArray(input.tokenAmountLimits)
+    ? Object.entries(input.tokenAmountLimits)
+      .map(([asset, limit]) => [clean(asset), Number(limit)] as const)
+      .filter(([asset, limit]) => Boolean(asset) && Number.isFinite(limit) && limit >= 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+    : [];
+  return [
+    "Magen3 Delegated Permission Attestation",
+    "Version: 1",
+    `Domain: ${clean(input.domain || "magen3.delegation.v1")}`,
+    `Chain: ${clean(input.chainName || "casper-test")}`,
+    `Delegation ID: ${clean(input.delegationId)}`,
+    `Agent ID: ${clean(input.agentId)}`,
+    `Delegating Wallet: ${clean(input.delegatingWallet)}`,
+    `Delegate: ${clean(input.delegate)}`,
+    `Session Key: ${clean(input.sessionKey)}`,
+    `Allowed Networks: ${uniqueSorted(input.allowedNetworks).join(",")}`,
+    `Allowed Contracts: ${uniqueSorted(input.allowedContracts).join(",")}`,
+    `Allowed Methods: ${uniqueSorted(input.allowedMethods).join(",")}`,
+    `Allowed Assets: ${uniqueSorted(input.allowedAssets).join(",")}`,
+    `Native Amount Limit: ${numberText(input.nativeAmountLimit)}`,
+    `Token Amount Limits: ${tokenLimits.map(([asset, limit]) => `${asset.toLowerCase()}=${limit}`).join(",")}`,
+    `Max Transaction Amount: ${numberText(input.maxTransactionAmount)}`,
+    `Max Frequency: ${numberText(input.maxFrequency)}`,
+    `Valid From: ${clean(input.validFrom)}`,
+    `Expires At: ${clean(input.expiresAt)}`,
+    `Revocation Status: ${clean(input.revocationStatus || "Active")}`,
+    `Delegation Depth: ${input.delegationDepth === null || input.delegationDepth === undefined ? "0" : String(Number(input.delegationDepth))}`,
+    `Redelegation Allowed: ${input.redelegationAllowed === true ? "true" : "false"}`,
+    `Nonce: ${clean(input.nonce)}`,
+    "",
+    "Signing this message authorizes only the bounded delegation above. It does not sign or submit a blockchain transaction.",
+  ].join("\n");
+}
+
 export interface Magen3TokenPermissionBatchItem {
   tokenContract?: string;
   spender?: string;
@@ -304,6 +388,8 @@ export interface Magen3Action {
   instructionIntegrity?: Magen3InstructionIntegrityMetadata;
   /** Verifiable MCP server and tool identity, hashes, version, origin, TLS, and least-privilege scopes. Never include credentials or secret tool output. */
   toolIntegrity?: Magen3ToolMcpIntegrityMetadata;
+  /** Casper-signed, short-lived delegated authority. Raw signatures are verified transiently and never persisted in audit evidence. */
+  delegation?: Magen3Delegation;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
@@ -599,6 +685,37 @@ export interface Magen3ToolMcpIntegrityContext {
   limitation?: string;
 }
 
+export interface Magen3DelegationSafetyContext {
+  enabled?: boolean;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  metadataSupplied?: boolean;
+  applicable?: boolean;
+  delegationId?: string;
+  delegatingWallet?: string;
+  delegate?: string;
+  sessionKey?: string;
+  chainName?: string;
+  attestationHash?: string;
+  signatureVerified?: boolean;
+  signatureHash?: string;
+  signatureAlgorithm?: "Ed25519" | "Secp256k1" | string;
+  allowedNetworks?: string[];
+  allowedContracts?: string[];
+  allowedMethods?: string[];
+  allowedAssets?: string[];
+  nativeAmountLimit?: number | null;
+  tokenAmountLimits?: Record<string, number>;
+  maxTransactionAmount?: number | null;
+  maxFrequency?: number | null;
+  validFrom?: string;
+  expiresAt?: string;
+  revocationStatus?: string;
+  delegationDepth?: number;
+  redelegationAllowed?: boolean;
+  usedLastHour?: number;
+  violations?: Array<{ rule?: string; message?: string }>;
+}
+
 export interface Magen3TokenPermissionControlsContext {
   permissionType?: string;
   owner?: string;
@@ -836,6 +953,8 @@ export interface Magen3DecisionResult {
   instructionIntegrityContext?: Magen3InstructionIntegrityContext;
   /** Deterministic MCP server/tool identity, hash, TLS, origin, credential, permission-scope, and capability-boundary evidence. */
   toolMcpIntegrityContext?: Magen3ToolMcpIntegrityContext;
+  /** Casper signer verification plus exact delegated network, contract, method, asset, lifetime, revocation, amount, frequency, and depth evidence. */
+  delegationSafetyContext?: Magen3DelegationSafetyContext;
   /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
   emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */
