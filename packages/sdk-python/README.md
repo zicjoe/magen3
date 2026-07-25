@@ -214,3 +214,8 @@ Use `build_delegation_attestation_message(delegation, agent_id)` before requesti
 ## RPC & Chain Integrity
 
 Submit public `action.rpcIntegrity` evidence only when it was collected by a trusted adapter. Magen3 checks approved provider identity, expected network binding, freshness, quorum agreement, and failover policy. Never send provider credentials or fabricate observations.
+
+
+## Gas Sponsorship & Fee Safety
+
+The Python SDK passes through `action.feeSafety` and the returned `gasSponsorshipFeeSafetyContext`. Trusted adapters must collect real fee, sponsor, payer, expiry, and budget evidence. The SDK never creates sponsorships or signs transactions.

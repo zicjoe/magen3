@@ -157,3 +157,8 @@ The MCP intent schema supports public delegated-permission metadata under `actio
 ## RPC & Chain Integrity
 
 MCP callers may relay public `action.rpcIntegrity` evidence produced by a trusted RPC adapter. The official MCP server does not query providers itself, fabricate observations, certify provider operators, or treat missing evidence as a pass. The schema includes expected network identity, selected provider, provider observations, and auditable failover metadata. See `RPC_CHAIN_INTEGRITY.md`.
+
+
+## Gas Sponsorship & Fee Safety
+
+MCP callers may relay public `action.feeSafety` evidence produced by a trusted transaction adapter. MCP never creates sponsorships, holds sponsor credentials, or relays raw signatures. The returned `gasSponsorshipFeeSafetyContext` is sanitized.

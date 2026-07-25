@@ -129,3 +129,8 @@ The MCP intent schema accepts public `action.delegation` evidence for a bounded 
 ## RPC & Chain Integrity
 
 Submit public `action.rpcIntegrity` evidence only when it was collected by a trusted adapter. Magen3 checks approved provider identity, expected network binding, freshness, quorum agreement, and failover policy. Never send provider credentials or fabricate observations.
+
+
+## Gas Sponsorship & Fee Safety
+
+The official MCP server may relay public `action.feeSafety` evidence produced by a trusted transaction adapter. MCP never creates sponsorships, holds sponsor credentials, or relays raw signatures. The returned `gasSponsorshipFeeSafetyContext` is sanitized.

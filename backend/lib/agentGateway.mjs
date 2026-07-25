@@ -90,7 +90,7 @@ function containsForbiddenSigningMaterial(value, depth = 0, path = []) {
     "paymentsignature", "payment_signature", "paymentpayload", "payment_payload", "signedpayment", "signed_payment",
   ]);
   const signedPayloadFields = new Set([
-    "seed", "approval", "approvals", "signature", "signatures",
+    "seed", "approval", "approvals", "signature", "signatures", "sponsorsignature", "sponsor_signature", "paymastersignature", "paymaster_signature",
   ]);
   const insideRuntimeArgs = path.includes("runtimeargs") || path.includes("runtime_args");
   const insideDelegation = path.some((item) => ["delegation", "delegatedpermission", "delegated_permission", "sessionkey", "session_key"].includes(item));
@@ -287,6 +287,21 @@ export function normalizeAgentGatewayIntent(body = {}) {
             : body.chainIntegrity && typeof body.chainIntegrity === "object"
               ? body.chainIntegrity
               : {};
+  const feeSafety = action.feeSafety && typeof action.feeSafety === "object"
+    ? action.feeSafety
+    : action.fee_safety && typeof action.fee_safety === "object"
+      ? action.fee_safety
+      : action.gasSponsorship && typeof action.gasSponsorship === "object"
+        ? action.gasSponsorship
+        : action.gas_sponsorship && typeof action.gas_sponsorship === "object"
+          ? action.gas_sponsorship
+          : action.sponsorship && typeof action.sponsorship === "object"
+            ? action.sponsorship
+            : body.feeSafety && typeof body.feeSafety === "object"
+              ? body.feeSafety
+              : body.gasSponsorship && typeof body.gasSponsorship === "object"
+                ? body.gasSponsorship
+                : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -508,6 +523,26 @@ export function normalizeAgentGatewayIntent(body = {}) {
     rpcAutomaticFailoverUsed: Boolean(rpcIntegrity.automaticFailoverUsed === true || rpcIntegrity.automatic_failover_used === true || String(rpcIntegrity.automaticFailoverUsed || rpcIntegrity.automatic_failover_used || "").toLowerCase() === "true"),
     rpcFailoverFrom: cleanString(rpcIntegrity.failoverFrom || rpcIntegrity.failover_from || "", ""),
     rpcFailoverReason: cleanString(rpcIntegrity.failoverReason || rpcIntegrity.failover_reason || "", ""),
+    feeSafetyMetadataSupplied: Object.keys(feeSafety).length > 0,
+    feeChainFamily: cleanString(feeSafety.chainFamily || feeSafety.chain_family || feeSafety.family || "", ""),
+    feeChainName: cleanString(feeSafety.chainName || feeSafety.chain_name || feeSafety.network || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
+    feeEstimatedGas: optionalNumber(feeSafety.estimatedGas ?? feeSafety.estimated_gas, "feeSafety.estimatedGas", { min: 0 }),
+    feeGasLimit: optionalNumber(feeSafety.gasLimit ?? feeSafety.gas_limit, "feeSafety.gasLimit", { min: 0 }),
+    feeGasPrice: optionalNumber(feeSafety.gasPrice ?? feeSafety.gas_price, "feeSafety.gasPrice", { min: 0 }),
+    feePriorityFee: optionalNumber(feeSafety.priorityFee ?? feeSafety.priority_fee ?? feeSafety.maxPriorityFee ?? feeSafety.max_priority_fee, "feeSafety.priorityFee", { min: 0 }),
+    feeMaximumFee: optionalNumber(feeSafety.maximumFee ?? feeSafety.maximum_fee ?? feeSafety.maxFee ?? feeSafety.max_fee, "feeSafety.maximumFee", { min: 0 }),
+    feeNetworkFee: optionalNumber(feeSafety.networkFee ?? feeSafety.network_fee ?? feeSafety.feeAmount ?? feeSafety.fee_amount, "feeSafety.networkFee", { min: 0 }),
+    feeUnit: cleanString(feeSafety.unit || feeSafety.feeUnit || feeSafety.fee_unit || "", ""),
+    feeSponsor: cleanString(feeSafety.sponsor || feeSafety.sponsorId || feeSafety.sponsor_id || "", ""),
+    feePaymaster: cleanString(feeSafety.paymaster || feeSafety.paymasterAddress || feeSafety.paymaster_address || "", ""),
+    feeSponsorshipId: cleanString(feeSafety.sponsorshipId || feeSafety.sponsorship_id || "", ""),
+    feeSponsorshipExpiry: cleanString(feeSafety.sponsorshipExpiry || feeSafety.sponsorship_expiry || feeSafety.expiresAt || feeSafety.expires_at || "", ""),
+    feeSponsorshipScopes: Array.isArray(feeSafety.sponsorshipScopes || feeSafety.sponsorship_scopes || feeSafety.scope) ? (feeSafety.sponsorshipScopes || feeSafety.sponsorship_scopes || feeSafety.scope).slice(0, 100).map((item) => cleanString(item)).filter(Boolean) : cleanString(feeSafety.scope || "") ? [cleanString(feeSafety.scope)] : [],
+    feeSponsorSignatureHash: cleanString(feeSafety.sponsorSignatureHash || feeSafety.sponsor_signature_hash || feeSafety.evidenceHash || feeSafety.evidence_hash || "", ""),
+    feeExpectedPayer: cleanString(feeSafety.expectedPayer || feeSafety.expected_payer || "", ""),
+    feeActualPayer: cleanString(feeSafety.actualPayer || feeSafety.actual_payer || feeSafety.payer || "", ""),
+    feeSponsored: Boolean(feeSafety.sponsored === true || String(feeSafety.sponsored || "").toLowerCase() === "true"),
+    feeSponsorshipAvailable: !(feeSafety.sponsorshipAvailable === false || feeSafety.sponsorship_available === false || String(feeSafety.sponsorshipAvailable ?? feeSafety.sponsorship_available ?? "true").toLowerCase() === "false"),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

@@ -5,6 +5,7 @@ import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } fr
 import { getOracleValidationSnapshot, summarizeOracleValidationSnapshot } from "./lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } from "./lib/complianceControls.mjs";
 import { getRpcChainIntegrityStatus } from "./lib/rpcChainIntegrity.mjs";
+import { getGasSponsorshipFeeSafetyStatus } from "./lib/gasSponsorshipFeeSafety.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -180,7 +181,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "2.3.0",
+        version: "2.4.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -195,6 +196,7 @@ const server = createServer(async (req, res) => {
         toolMcpIntegrity: { status: "live", approvedServers: true, approvedTools: true, manifestAndSchemaBinding: true, tls: true, permissionScopeContainment: true, agentCapabilityBoundary: true },
         delegationSafety: { status: "foundation_available", casperAttestationVerification: true, scopeBinding: true, expiry: true, revocation: true, depth: true, amountAndFrequencyLimits: true },
         rpcChainIntegrity: getRpcChainIntegrityStatus(),
+        gasSponsorshipFeeSafety: getGasSponsorshipFeeSafetyStatus(),
 
         contractUpgradeControls: {
           status: "Live",
@@ -286,7 +288,7 @@ const server = createServer(async (req, res) => {
             settlementReconciliation: "foundation-available",
             statefulSimulation: "foundation-available",
             rpcIntegrity: "foundation-available",
-            gasSponsorship: "planned"
+            gasSponsorship: "foundation-available"
           },
           lifecycle: {
             canonicalFingerprinting: true,
@@ -305,6 +307,10 @@ const server = createServer(async (req, res) => {
 
     if (route === "GET /api/rpc-chain-integrity/status") {
       return send(res, 200, { ok: true, rpcChainIntegrity: getRpcChainIntegrityStatus() });
+    }
+
+    if (route === "GET /api/gas-sponsorship-fee-safety/status") {
+      return send(res, 200, { ok: true, gasSponsorshipFeeSafety: getGasSponsorshipFeeSafetyStatus() });
     }
 
     if (route === "GET /api/approval-workflow/status") {
@@ -616,7 +622,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Delegation & Session Key Safety", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
-          foundationProtectionModules: ["Human Approval & Quorum", "RPC & Chain Integrity", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
+          foundationProtectionModules: ["Human Approval & Quorum", "RPC & Chain Integrity", "Gas Sponsorship & Fee Safety", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -626,6 +632,7 @@ const server = createServer(async (req, res) => {
           verifyEndpoint: "/api/agent-gateway/me",
           emergencyControlsStatusEndpoint: "/api/emergency-controls/status",
           rpcChainIntegrityStatusEndpoint: "/api/rpc-chain-integrity/status",
+          gasSponsorshipFeeSafetyStatusEndpoint: "/api/gas-sponsorship-fee-safety/status",
           emergencyPauseManagementEndpoints: ["/api/emergency-pauses", "/api/emergency-pauses/:id/resume"],
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
@@ -735,6 +742,27 @@ const server = createServer(async (req, res) => {
               automaticFailoverUsed: false,
               failoverFrom: "Optional prior approved endpoint",
               failoverReason: "Required when automatic failover was used"
+            },
+            feeSafety: {
+              chainFamily: "Casper | EVM | Other",
+              chainName: "Exact action network",
+              estimatedGas: "Optional trusted estimate",
+              gasLimit: "Optional proposed gas limit",
+              gasPrice: "EVM-only gas price",
+              priorityFee: "EVM-only priority fee",
+              maximumFee: "Maximum fee charged by the constructed transaction",
+              networkFee: "Normalized fee amount in the declared unit",
+              unit: "CSPR | motes | wei | gwei | native",
+              sponsor: "Approved sponsor or relayer identifier",
+              paymaster: "EVM-only approved Paymaster address",
+              sponsorshipId: "Bounded sponsorship identifier",
+              sponsorshipExpiry: "ISO-8601 expiry",
+              sponsorshipScopes: ["Transfer"],
+              sponsorSignatureHash: "SHA-256 evidence hash only; never the raw signature",
+              expectedPayer: "Expected payer identity",
+              actualPayer: "Payer encoded by the constructed transaction",
+              sponsored: true,
+              sponsorshipAvailable: true
             },
             preflight: {
               paymentAmountMotes: "Optional positive integer string for the proposed payment budget",

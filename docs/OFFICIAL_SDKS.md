@@ -172,3 +172,8 @@ The JavaScript SDK exports `buildMagen3DelegationAttestationMessage`, and the Py
 ## RPC & Chain Integrity
 
 Both official SDKs pass through `action.rpcIntegrity` and the returned `rpcChainIntegrityContext`. A trusted external adapter must collect real provider observations; the SDK does not fabricate network identity, synchronization, block freshness, provider agreement, or failover evidence. See `RPC_CHAIN_INTEGRITY.md`.
+
+
+## Gas Sponsorship & Fee Safety
+
+Both official SDKs pass through `action.feeSafety` and the returned `gasSponsorshipFeeSafetyContext`. Trusted adapters must collect real fee, sponsor, payer, expiry, and budget evidence. The SDK never creates sponsorships or signs transactions.

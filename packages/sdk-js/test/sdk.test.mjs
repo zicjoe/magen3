@@ -835,3 +835,29 @@ test("preserves RPC & Chain Integrity metadata and sanitized response context", 
   assert.equal(result.result.rpcChainIntegrityContext.networkAgreement, true);
   assert.equal(result.result.rpcChainIntegrityContext.violations.length, 0);
 });
+
+test("preserves Gas Sponsorship & Fee Safety metadata and sanitized response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example", agentId: "MAG-FEE-1", apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({ ok: true, executionApproved: true, result: {
+        decision: "Allowed", risk: "Low", riskScore: 3, reason: "fee evidence passed", recommendedAction: "continue",
+        gasSponsorshipFeeSafetyContext: { metadataSupplied: true, chainFamily: "Casper", sponsor: "magen3-relayer", networkFee: 1, payerMatches: true, fingerprint: "f".repeat(64), violations: [] },
+      }, gatewayRequest: {}, auditLog: {}, nextAction: "sign" }), { status: 201 });
+    },
+  });
+  const result = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: { type: "Transfer", amount: 1, asset: "CSPR", target: `01${"2".repeat(64)}`, chainName: "casper-test", feeSafety: {
+      chainFamily: "Casper", chainName: "casper-test", networkFee: 1, feeUnit: "CSPR", sponsor: "magen3-relayer",
+      sponsorshipId: "sponsor-sdk-1", sponsorshipExpiry: "2026-07-25T03:00:00.000Z", sponsorshipScopes: ["Transfer"], sponsorSignatureHash: "a".repeat(64),
+      expectedPayer: "magen3-relayer", actualPayer: "magen3-relayer", sponsored: true, sponsorshipAvailable: true,
+    } },
+  });
+  assert.equal(captured.action.feeSafety.sponsor, "magen3-relayer");
+  assert.equal(captured.action.feeSafety.sponsorSignatureHash, "a".repeat(64));
+  assert.equal(result.result.gasSponsorshipFeeSafetyContext.payerMatches, true);
+  assert.equal(result.result.gasSponsorshipFeeSafetyContext.violations.length, 0);
+});

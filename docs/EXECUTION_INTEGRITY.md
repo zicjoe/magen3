@@ -107,3 +107,8 @@ Magen3 accepts unsigned intent metadata only. Never send private keys, mnemonics
 ## RPC & Chain Integrity
 
 RPC & Chain Integrity complements lifecycle and replay protection by checking whether authorization relies on fresh, approved, network-bound provider evidence. It evaluates `action.rpcIntegrity` before downstream wallet, contract, and execution decisions. The control is Foundation Available pending deployed real-provider adapter verification. See [RPC & Chain Integrity](./RPC_CHAIN_INTEGRITY.md).
+
+
+## Gas Sponsorship & Fee Safety
+
+Gas Sponsorship & Fee Safety complements lifecycle and RPC controls by evaluating bounded fee, approved sponsor or Paymaster, expiry, scope, payer, rolling budget, operation count, and failure evidence before signing. See [Gas Sponsorship & Fee Safety](./GAS_SPONSORSHIP_FEE_SAFETY.md).

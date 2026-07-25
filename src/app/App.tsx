@@ -2979,7 +2979,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4411,6 +4411,48 @@ function RpcChainIntegrityPolicyFields({
   );
 }
 
+function GasSponsorshipFeeSafetyPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · Gas Sponsorship & Fee Safety</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bound network fees, relayers, EVM Paymasters, sponsorship expiry and scope, payer identity, rolling budgets, operation counts, and repeated failure thresholds before signing.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.feeSafetyEnabled ?? "")} onChange={(value) => onChange({ feeSafetyEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.feeSafetyMode ?? "")} onChange={(value) => onChange({ feeSafetyMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Sponsorship Unavailable" value={String(values.feeSafetySponsorshipUnavailableAction ?? "")} onChange={(value) => onChange({ feeSafetySponsorshipUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <InputField label="Maximum Network Fee" value={String(values.feeSafetyMaximumNetworkFee ?? "")} onChange={(value) => onChange({ feeSafetyMaximumNetworkFee: value })} type="number" />
+        <InputField label="Maximum EVM Gas Price" value={String(values.feeSafetyMaximumGasPrice ?? "")} onChange={(value) => onChange({ feeSafetyMaximumGasPrice: value })} type="number" />
+        <InputField label="Maximum EVM Priority Fee" value={String(values.feeSafetyMaximumPriorityFee ?? "")} onChange={(value) => onChange({ feeSafetyMaximumPriorityFee: value })} type="number" />
+        <InputField label="Rolling Sponsored Budget" value={String(values.feeSafetySponsoredBudget ?? "")} onChange={(value) => onChange({ feeSafetySponsoredBudget: value })} type="number" />
+        <InputField label="Maximum Sponsored Operations" value={String(values.feeSafetyMaximumSponsoredOperations ?? "")} onChange={(value) => onChange({ feeSafetyMaximumSponsoredOperations: value })} type="number" />
+        <InputField label="Maximum Failed Sponsored Operations" value={String(values.feeSafetyMaximumFailedSponsoredOperations ?? "")} onChange={(value) => onChange({ feeSafetyMaximumFailedSponsoredOperations: value })} type="number" />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Sponsor, Paymaster, expiry, and evidence controls</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <TextareaField label="Approved Sponsors / Relayers" value={String(values.feeSafetyApprovedSponsors ?? "")} onChange={(value) => onChange({ feeSafetyApprovedSponsors: value })} />
+          <TextareaField label="Approved EVM Paymasters" value={String(values.feeSafetyApprovedPaymasters ?? "")} onChange={(value) => onChange({ feeSafetyApprovedPaymasters: value })} />
+          <InputField label="Rolling Window (sec)" value={String(values.feeSafetyLookbackSeconds ?? "")} onChange={(value) => onChange({ feeSafetyLookbackSeconds: value })} type="number" />
+          <SelectField label="Require Sponsorship Expiry" value={String(values.feeSafetyRequireSponsorshipExpiry ?? "")} onChange={(value) => onChange({ feeSafetyRequireSponsorshipExpiry: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Sponsor Evidence Hash" value={String(values.feeSafetyRequireSponsorEvidence ?? "")} onChange={(value) => onChange({ feeSafetyRequireSponsorEvidence: value })} options={["Yes", "No"]} />
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Casper relayer evidence and EVM Paymaster fields remain isolated. Never submit sponsor credentials, raw signatures, private keys, signed transactions, or Paymaster secrets.</p>
+    </div>
+  );
+}
+
 function TokenPermissionPolicyFields({
   values,
   onChange,
@@ -4765,6 +4807,20 @@ function PoliciesPage({
     rpcIntegrityUnavailableAction: "Review",
     rpcIntegrityRequireNetworkIdentity: "Yes",
     rpcIntegrityAllowAutomaticFailover: "No",
+    feeSafetyEnabled: "No",
+    feeSafetyMode: "Review",
+    feeSafetyMaximumNetworkFee: "5",
+    feeSafetyMaximumGasPrice: "100",
+    feeSafetyMaximumPriorityFee: "10",
+    feeSafetyApprovedSponsors: "magen3-relayer",
+    feeSafetyApprovedPaymasters: "",
+    feeSafetySponsorshipUnavailableAction: "Review",
+    feeSafetySponsoredBudget: "100",
+    feeSafetyMaximumSponsoredOperations: "100",
+    feeSafetyMaximumFailedSponsoredOperations: "3",
+    feeSafetyLookbackSeconds: "86400",
+    feeSafetyRequireSponsorshipExpiry: "Yes",
+    feeSafetyRequireSponsorEvidence: "Yes",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -4992,6 +5048,20 @@ function PoliciesPage({
     rpcIntegrityUnavailableAction: "Review",
     rpcIntegrityRequireNetworkIdentity: "Yes",
     rpcIntegrityAllowAutomaticFailover: "No",
+    feeSafetyEnabled: "No",
+    feeSafetyMode: "Review",
+    feeSafetyMaximumNetworkFee: "5",
+    feeSafetyMaximumGasPrice: "100",
+    feeSafetyMaximumPriorityFee: "10",
+    feeSafetyApprovedSponsors: "magen3-relayer",
+    feeSafetyApprovedPaymasters: "",
+    feeSafetySponsorshipUnavailableAction: "Review",
+    feeSafetySponsoredBudget: "100",
+    feeSafetyMaximumSponsoredOperations: "100",
+    feeSafetyMaximumFailedSponsoredOperations: "3",
+    feeSafetyLookbackSeconds: "86400",
+    feeSafetyRequireSponsorshipExpiry: "Yes",
+    feeSafetyRequireSponsorEvidence: "Yes",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -5230,6 +5300,20 @@ function PoliciesPage({
         rpcIntegrityUnavailableAction: form.rpcIntegrityUnavailableAction,
         rpcIntegrityRequireNetworkIdentity: form.rpcIntegrityRequireNetworkIdentity !== "No",
         rpcIntegrityAllowAutomaticFailover: form.rpcIntegrityAllowAutomaticFailover === "Yes",
+        feeSafetyEnabled: form.feeSafetyEnabled === "Yes",
+        feeSafetyMode: form.feeSafetyMode,
+        feeSafetyMaximumNetworkFee: Number(form.feeSafetyMaximumNetworkFee) > 0 ? Number(form.feeSafetyMaximumNetworkFee) : null,
+        feeSafetyMaximumGasPrice: Number(form.feeSafetyMaximumGasPrice) > 0 ? Number(form.feeSafetyMaximumGasPrice) : null,
+        feeSafetyMaximumPriorityFee: Number(form.feeSafetyMaximumPriorityFee) >= 0 ? Number(form.feeSafetyMaximumPriorityFee) : null,
+        feeSafetyApprovedSponsors: form.feeSafetyApprovedSponsors.split("\n").map((item) => item.trim()).filter(Boolean),
+        feeSafetyApprovedPaymasters: form.feeSafetyApprovedPaymasters.split("\n").map((item) => item.trim()).filter(Boolean),
+        feeSafetySponsorshipUnavailableAction: form.feeSafetySponsorshipUnavailableAction,
+        feeSafetySponsoredBudget: Number(form.feeSafetySponsoredBudget) > 0 ? Number(form.feeSafetySponsoredBudget) : null,
+        feeSafetyMaximumSponsoredOperations: Math.max(1, Number(form.feeSafetyMaximumSponsoredOperations) || 100),
+        feeSafetyMaximumFailedSponsoredOperations: Math.max(0, Number(form.feeSafetyMaximumFailedSponsoredOperations) || 0),
+        feeSafetyLookbackSeconds: Math.max(60, Number(form.feeSafetyLookbackSeconds) || 86400),
+        feeSafetyRequireSponsorshipExpiry: form.feeSafetyRequireSponsorshipExpiry !== "No",
+        feeSafetyRequireSponsorEvidence: form.feeSafetyRequireSponsorEvidence === "Yes",
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -5445,6 +5529,20 @@ function PoliciesPage({
     rpcIntegrityUnavailableAction: "Review",
     rpcIntegrityRequireNetworkIdentity: "Yes",
     rpcIntegrityAllowAutomaticFailover: "No",
+    feeSafetyEnabled: "No",
+    feeSafetyMode: "Review",
+    feeSafetyMaximumNetworkFee: "5",
+    feeSafetyMaximumGasPrice: "100",
+    feeSafetyMaximumPriorityFee: "10",
+    feeSafetyApprovedSponsors: "magen3-relayer",
+    feeSafetyApprovedPaymasters: "",
+    feeSafetySponsorshipUnavailableAction: "Review",
+    feeSafetySponsoredBudget: "100",
+    feeSafetyMaximumSponsoredOperations: "100",
+    feeSafetyMaximumFailedSponsoredOperations: "3",
+    feeSafetyLookbackSeconds: "86400",
+    feeSafetyRequireSponsorshipExpiry: "Yes",
+    feeSafetyRequireSponsorEvidence: "Yes",
     lifecycleControlsEnabled: "Yes",
 
       lifecycleControlMode: "Enforce",
@@ -5666,6 +5764,20 @@ function PoliciesPage({
       rpcIntegrityUnavailableAction: String(policy.structuredRules?.rpcIntegrityUnavailableAction || "Review"),
       rpcIntegrityRequireNetworkIdentity: policy.structuredRules?.rpcIntegrityRequireNetworkIdentity === false ? "No" : "Yes",
       rpcIntegrityAllowAutomaticFailover: policy.structuredRules?.rpcIntegrityAllowAutomaticFailover === true ? "Yes" : "No",
+      feeSafetyEnabled: policy.structuredRules?.feeSafetyEnabled === true ? "Yes" : "No",
+      feeSafetyMode: String(policy.structuredRules?.feeSafetyMode || "Review"),
+      feeSafetyMaximumNetworkFee: String(policy.structuredRules?.feeSafetyMaximumNetworkFee ?? 5),
+      feeSafetyMaximumGasPrice: String(policy.structuredRules?.feeSafetyMaximumGasPrice ?? 100),
+      feeSafetyMaximumPriorityFee: String(policy.structuredRules?.feeSafetyMaximumPriorityFee ?? 10),
+      feeSafetyApprovedSponsors: Array.isArray(policy.structuredRules?.feeSafetyApprovedSponsors) ? policy.structuredRules.feeSafetyApprovedSponsors.join("\n") : "",
+      feeSafetyApprovedPaymasters: Array.isArray(policy.structuredRules?.feeSafetyApprovedPaymasters) ? policy.structuredRules.feeSafetyApprovedPaymasters.join("\n") : "",
+      feeSafetySponsorshipUnavailableAction: String(policy.structuredRules?.feeSafetySponsorshipUnavailableAction || "Review"),
+      feeSafetySponsoredBudget: String(policy.structuredRules?.feeSafetySponsoredBudget ?? 100),
+      feeSafetyMaximumSponsoredOperations: String(policy.structuredRules?.feeSafetyMaximumSponsoredOperations ?? 100),
+      feeSafetyMaximumFailedSponsoredOperations: String(policy.structuredRules?.feeSafetyMaximumFailedSponsoredOperations ?? 3),
+      feeSafetyLookbackSeconds: String(policy.structuredRules?.feeSafetyLookbackSeconds ?? 86400),
+      feeSafetyRequireSponsorshipExpiry: policy.structuredRules?.feeSafetyRequireSponsorshipExpiry === false ? "No" : "Yes",
+      feeSafetyRequireSponsorEvidence: policy.structuredRules?.feeSafetyRequireSponsorEvidence === true ? "Yes" : "No",
       lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
       lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
       lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
@@ -5904,6 +6016,20 @@ function PoliciesPage({
         rpcIntegrityUnavailableAction: editForm.rpcIntegrityUnavailableAction,
         rpcIntegrityRequireNetworkIdentity: editForm.rpcIntegrityRequireNetworkIdentity !== "No",
         rpcIntegrityAllowAutomaticFailover: editForm.rpcIntegrityAllowAutomaticFailover === "Yes",
+        feeSafetyEnabled: editForm.feeSafetyEnabled === "Yes",
+        feeSafetyMode: editForm.feeSafetyMode,
+        feeSafetyMaximumNetworkFee: Number(editForm.feeSafetyMaximumNetworkFee) > 0 ? Number(editForm.feeSafetyMaximumNetworkFee) : null,
+        feeSafetyMaximumGasPrice: Number(editForm.feeSafetyMaximumGasPrice) > 0 ? Number(editForm.feeSafetyMaximumGasPrice) : null,
+        feeSafetyMaximumPriorityFee: Number(editForm.feeSafetyMaximumPriorityFee) >= 0 ? Number(editForm.feeSafetyMaximumPriorityFee) : null,
+        feeSafetyApprovedSponsors: editForm.feeSafetyApprovedSponsors.split("\n").map((item) => item.trim()).filter(Boolean),
+        feeSafetyApprovedPaymasters: editForm.feeSafetyApprovedPaymasters.split("\n").map((item) => item.trim()).filter(Boolean),
+        feeSafetySponsorshipUnavailableAction: editForm.feeSafetySponsorshipUnavailableAction,
+        feeSafetySponsoredBudget: Number(editForm.feeSafetySponsoredBudget) > 0 ? Number(editForm.feeSafetySponsoredBudget) : null,
+        feeSafetyMaximumSponsoredOperations: Math.max(1, Number(editForm.feeSafetyMaximumSponsoredOperations) || 100),
+        feeSafetyMaximumFailedSponsoredOperations: Math.max(0, Number(editForm.feeSafetyMaximumFailedSponsoredOperations) || 0),
+        feeSafetyLookbackSeconds: Math.max(60, Number(editForm.feeSafetyLookbackSeconds) || 86400),
+        feeSafetyRequireSponsorshipExpiry: editForm.feeSafetyRequireSponsorshipExpiry !== "No",
+        feeSafetyRequireSponsorEvidence: editForm.feeSafetyRequireSponsorEvidence === "Yes",
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -6302,6 +6428,7 @@ function PoliciesPage({
             <ToolMcpIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <DelegationSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <RpcChainIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <GasSponsorshipFeeSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -6595,6 +6722,7 @@ function PoliciesPage({
                 <ToolMcpIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <DelegationSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <RpcChainIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <GasSponsorshipFeeSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -8604,7 +8732,51 @@ function playgroundRpcIntegrity(policy: Policy | undefined, overrides: Record<st
   };
 }
 
+function playgroundFeeSafety(policy: Policy | undefined, overrides: Record<string, unknown> = {}) {
+  const approvedSponsors = Array.isArray(policy?.structuredRules?.feeSafetyApprovedSponsors)
+    ? policy.structuredRules.feeSafetyApprovedSponsors.map((item) => String(item)).filter(Boolean)
+    : [];
+  const now = Date.now();
+  return {
+    chainFamily: "Casper",
+    chainName: "casper-test",
+    networkFee: 1,
+    feeUnit: "CSPR",
+    sponsor: approvedSponsors[0] || "magen3-relayer",
+    sponsorshipId: `sponsorship:playground-${now}`,
+    sponsorshipExpiry: new Date(now + 15 * 60_000).toISOString(),
+    sponsorshipScopes: ["Transfer"],
+    sponsorSignatureHash: "e".repeat(64),
+    expectedPayer: approvedSponsors[0] || "magen3-relayer",
+    actualPayer: approvedSponsors[0] || "magen3-relayer",
+    sponsored: true,
+    sponsorshipAvailable: true,
+    rollingSponsoredSpend: 1,
+    rollingSponsoredOperations: 1,
+    rollingFailedSponsoredOperations: 0,
+    ...overrides,
+  };
+}
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
+  "Fee safety — bounded Casper sponsorship": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Authorize a bounded Casper relayer fee before execution",
+    reason: "Demonstrate approved sponsor, payer, expiry, scope, evidence hash, and rolling budget checks.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", feeSafety: playgroundFeeSafety(policy), preflight: playgroundPreflight() },
+  }),
+  "Fee safety — excessive network fee": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Detect an excessive sponsored network fee",
+    reason: "The submitted network fee intentionally exceeds the configured maximum.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", feeSafety: playgroundFeeSafety(policy, { networkFee: 999 }), preflight: playgroundPreflight() },
+  }),
+  "Fee safety — EVM Paymaster fields on Casper": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Block EVM-only Paymaster evidence from a Casper transaction",
+    reason: "The request intentionally mixes a Paymaster and EVM gas fields into a Casper flow.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", feeSafety: playgroundFeeSafety(policy, { paymaster: "0x1111111111111111111111111111111111111111", gasPrice: 30, priorityFee: 2 }), preflight: playgroundPreflight() },
+  }),
   "RPC integrity — approved provider": (agent, walletAddress, policy) => ({
     source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
     goal: "Verify approved RPC network identity before execution",
@@ -9825,6 +9997,7 @@ function SettingsPage({
     ["Tool & MCP Integrity Status", `${api.baseUrl}/api/tool-mcp-integrity/status`],
     ["Delegation Safety Status", `${api.baseUrl}/api/delegation-safety/status`],
     ["RPC & Chain Integrity Status", `${api.baseUrl}/api/rpc-chain-integrity/status`],
+    ["Gas Sponsorship & Fee Safety Status", `${api.baseUrl}/api/gas-sponsorship-fee-safety/status`],
     ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],

@@ -311,3 +311,13 @@ test("intent schema exposes the RPC & Chain Integrity boundary", async () => {
   assert.match(result.content[0].text, /RPC & Chain Integrity verifies adapter-supplied provider identity/i);
   assert.match(result.content[0].text, /never fabricates provider observations/i);
 });
+
+test("intent schema exposes Gas Sponsorship & Fee Safety without granting sponsor authority", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.gasSponsorshipFeeSafety, /relayer, sponsor, or EVM Paymaster/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.gasSponsorshipFeeSafety, /never creates sponsorships/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.feeSafety.sponsorSignatureHash, /hash/i);
+  const handlers = createToolHandlers({ verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); }, requireAllowed: async () => { throw new Error("unused"); }, getApproval: async () => { throw new Error("unused"); }, reportX402Settlement: async () => ({ ok: true }) });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Gas Sponsorship & Fee Safety/i);
+  assert.match(result.content[0].text, /never.*raw sponsor signatures/i);
+});

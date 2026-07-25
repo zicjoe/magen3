@@ -722,3 +722,8 @@ Magen3 canonicalizes and domain-separates the attestation, verifies Ed25519 or S
 ## RPC & Chain Integrity metadata
 
 Trusted adapters may include `action.rpcIntegrity` with expected chain identity, selected provider, provider observations, and optional failover evidence. Observations can include TLS and synchronization state, latest block height and timestamp, timeout or rate-limit state, speculative-endpoint classification, and optional transaction-status or contract-state hashes. Magen3 returns sanitized `rpcChainIntegrityContext` and structured `RPC & Chain Integrity` findings. Never send RPC credentials or private provider configuration. See [RPC & Chain Integrity](./RPC_CHAIN_INTEGRITY.md).
+
+
+## Gas Sponsorship & Fee Safety metadata
+
+Trusted transaction adapters may include `action.feeSafety` with `chainFamily`, `chainName`, bounded public fee values, an approved `sponsor` or EVM `paymaster`, sponsorship ID, expiry, scopes, a SHA-256 evidence hash, expected and actual payer labels, availability, and rolling usage counters. Magen3 returns sanitized `gasSponsorshipFeeSafetyContext` and structured `Gas Sponsorship & Fee Safety` findings. Casper and EVM-only fields are isolated. Never send sponsor credentials, raw sponsor or Paymaster signatures, private keys, signed transactions, or wallet secrets. See [Gas Sponsorship & Fee Safety](./GAS_SPONSORSHIP_FEE_SAFETY.md).

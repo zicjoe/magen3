@@ -103,7 +103,7 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Policy & Approval Controls | Deterministic policy enforcement; review thresholds; Emergency Circuit Breaker; Approval Escalation & Organizational Quorum | Human approval and quorum; Cryptographic reviewer signatures | — |
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
-| Execution Integrity | Transaction construction preflight; lifecycle and replay protection | Execution/settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship and Paymaster controls |
+| Execution Integrity | Transaction construction preflight; lifecycle and replay protection | RPC & Chain Integrity; Gas Sponsorship & Fee Safety; execution/settlement reconciliation; stateful simulation | — |
 | Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
 | Threat & Compliance | — | Threat-intelligence screening; non-sensitive compliance evidence | Managed risk-provider adapters |
@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. Phase 3 has begun with **RPC & Chain Integrity** as Foundation Available pending real deployed provider-adapter verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Gas Sponsorship & Fee Safety**. Provider-backed controls remain Foundation Available until their published Live criteria are satisfied.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. Phase 3 now includes **RPC & Chain Integrity** and **Gas Sponsorship & Fee Safety** as Foundation Available pending deployed trusted-adapter verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Execution & Settlement Reconciliation**. Provider-backed controls remain Foundation Available until their published Live criteria are satisfied.
 
 ## Verification
 
@@ -1016,3 +1016,8 @@ Magen3 constructs a domain-separated canonical attestation, verifies Casper Ed25
 RPC & Chain Integrity is Foundation Available under Execution Integrity. Trusted adapters may submit `action.rpcIntegrity` with the expected chain identity, selected approved endpoint, fresh provider observations, synchronization and block-height evidence, optional transaction or contract-state hashes, and auditable failover metadata. Magen3 deterministically checks approved providers, TLS, freshness, network binding, height regression, minimum quorum, provider agreement, speculative endpoint isolation, and failover policy before signing.
 
 The implementation does not certify an RPC provider or treat unavailable evidence as safe. Promotion to Live requires deployed real-provider adapter verification. See `docs/RPC_CHAIN_INTEGRITY.md`.
+
+
+## Gas Sponsorship & Fee Safety
+
+Gas Sponsorship & Fee Safety is Foundation Available under Execution Integrity. Trusted transaction adapters may submit public `action.feeSafety` evidence for bounded Casper network fees and relayers or isolated EVM gas/Paymaster flows. Magen3 checks chain-family consistency, fee caps, approved sponsors or Paymasters, sponsorship availability, expiry, scope, evidence hashes, expected payer, rolling budgets, operation counts, and repeated failures before signing. Raw sponsor signatures, credentials, private keys, and signed transactions are rejected. See [`docs/GAS_SPONSORSHIP_FEE_SAFETY.md`](docs/GAS_SPONSORSHIP_FEE_SAFETY.md).

@@ -249,6 +249,34 @@ export interface Magen3RpcChainIntegrityMetadata {
   failoverReason?: string;
 }
 
+export interface Magen3GasSponsorshipFeeSafetyMetadata {
+  /** Casper, EVM, or another explicitly isolated chain family. */
+  chainFamily?: "Casper" | "EVM" | "Other" | string;
+  /** Exact network bound to the constructed transaction. */
+  chainName?: string;
+  estimatedGas?: number;
+  gasLimit?: number;
+  /** EVM-only gas-price evidence. */
+  gasPrice?: number;
+  /** EVM-only priority-fee evidence. */
+  priorityFee?: number;
+  maximumFee?: number;
+  networkFee?: number;
+  unit?: string;
+  sponsor?: string;
+  /** EVM-only approved Paymaster identifier/address. */
+  paymaster?: string;
+  sponsorshipId?: string;
+  sponsorshipExpiry?: string;
+  sponsorshipScopes?: string[];
+  /** SHA-256 evidence hash only. Never send the raw sponsor signature. */
+  sponsorSignatureHash?: string;
+  expectedPayer?: string;
+  actualPayer?: string;
+  sponsored?: boolean;
+  sponsorshipAvailable?: boolean;
+}
+
 export interface Magen3DelegationAttestationInput extends Omit<Magen3Delegation, "attestationHash" | "attestationSignature"> {
   /** Registered Magen3 Agent ID bound into the signed authority. */
   agentId: string;
@@ -426,6 +454,8 @@ export interface Magen3Action {
   delegation?: Magen3Delegation;
   /** RPC provider identity, freshness, synchronization, agreement, and failover evidence. Never include provider credentials. */
   rpcIntegrity?: Magen3RpcChainIntegrityMetadata;
+  /** Public fee, sponsor, Paymaster, expiry, scope, payer, and budget evidence. Never include raw sponsor signatures or credentials. */
+  feeSafety?: Magen3GasSponsorshipFeeSafetyMetadata;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
@@ -662,6 +692,38 @@ export interface Magen3RpcChainIntegrityContext {
   transactionStatusAgreement?: boolean;
   contractStateAgreement?: boolean;
   providerObservations?: Magen3RpcProviderObservationContext[];
+  violations?: Array<{ rule?: string; message?: string }>;
+}
+
+
+export interface Magen3GasSponsorshipFeeSafetyContext {
+  status?: "passed" | "warning" | "review" | "blocked" | "skipped" | string;
+  metadataSupplied?: boolean;
+  chainFamily?: string;
+  chainName?: string;
+  feeUnit?: string;
+  networkFee?: number | null;
+  estimatedGas?: number | null;
+  gasLimit?: number | null;
+  gasPrice?: number | null;
+  priorityFee?: number | null;
+  maximumFee?: number | null;
+  sponsored?: boolean;
+  sponsor?: string;
+  paymaster?: string;
+  sponsorshipId?: string;
+  sponsorshipExpiry?: string;
+  sponsorshipScopes?: string[];
+  sponsorApproved?: boolean;
+  paymasterApproved?: boolean;
+  sponsorEvidenceVerified?: boolean;
+  expectedPayer?: string;
+  actualPayer?: string;
+  sponsorshipAvailable?: boolean;
+  rollingBudgetUsed?: number;
+  rollingSponsoredOperations?: number;
+  recentFailedSponsoredOperations?: number;
+  protectedFingerprint?: string;
   violations?: Array<{ rule?: string; message?: string }>;
 }
 
@@ -1019,6 +1081,8 @@ export interface Magen3DecisionResult {
   delegationSafetyContext?: Magen3DelegationSafetyContext;
   /** Approved RPC provider, network identity, freshness, height, state-consistency, and failover evidence. */
   rpcChainIntegrityContext?: Magen3RpcChainIntegrityContext;
+  /** Deterministic network-fee, sponsor, Paymaster, expiry, payer, budget, and operation-limit evidence. */
+  gasSponsorshipFeeSafetyContext?: Magen3GasSponsorshipFeeSafetyContext;
   /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
   emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */

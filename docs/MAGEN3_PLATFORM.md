@@ -84,7 +84,7 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Policy & Approval Controls | Policy enforcement; review thresholds; Emergency Circuit Breaker; Approval Escalation & Organizational Quorum | Human approval and quorum; Cryptographic reviewer signatures | — |
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
-| Execution Integrity | Transaction preflight; Lifecycle & Replay | Settlement reconciliation; stateful simulation | RPC integrity; gas sponsorship |
+| Execution Integrity | Transaction preflight; Lifecycle & Replay | RPC & Chain Integrity; Gas Sponsorship & Fee Safety; settlement reconciliation; stateful simulation | — |
 | Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
 | Threat & Compliance | — | Threat screening; compliance evidence | Managed provider adapters |
@@ -555,7 +555,7 @@ Contract Argument Policies is Live under Contract & Permission Safety. An enable
 
 The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 includes Agent Instruction Integrity and Tool & MCP Integrity as Live controls. Delegation & Session Key Safety is Foundation Available pending deployed connected-wallet verification. Phase 3 has begun with RPC & Chain Integrity as Foundation Available pending deployed trusted-provider adapter verification. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Gas Sponsorship & Fee Safety.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 includes Agent Instruction Integrity and Tool & MCP Integrity as Live controls. Delegation & Session Key Safety is Foundation Available pending deployed connected-wallet verification. Phase 3 includes RPC & Chain Integrity and Gas Sponsorship & Fee Safety as Foundation Available pending deployed trusted-adapter verification. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Execution & Settlement Reconciliation.
 
 
 ## Agent Instruction Integrity
@@ -579,3 +579,8 @@ Delegation & Session Key Safety is a Foundation Available deterministic control 
 RPC & Chain Integrity is Foundation Available inside Execution Integrity. It evaluates trusted adapter evidence for approved RPC identity, expected chain/network/genesis binding, TLS, synchronization, latest-block freshness, historical height regression, minimum provider quorum, provider agreement, transaction and contract-state consistency, speculative endpoint isolation, and auditable failover. Unavailable evidence follows explicit Warn, Review, or Block policy and never counts as a pass.
 
 The control is not marked Live until real deployed RPC adapters and Railway/PostgreSQL behavior are verified end to end. See `RPC_CHAIN_INTEGRITY.md`.
+
+
+## Gas Sponsorship & Fee Safety
+
+Gas Sponsorship & Fee Safety is Foundation Available inside Execution Integrity. It evaluates trusted adapter evidence for bounded Casper network fees and relayers, or isolated EVM gas and Paymaster flows. It checks fee caps, approved sponsor identities, expiry, scope, public evidence hashes, expected payer, rolling sponsored budget, operation limits, and repeated failures. Casper requests containing EVM-only Paymaster or gas-price fields fail closed. Raw sponsor signatures and provider credentials are prohibited. See `GAS_SPONSORSHIP_FEE_SAFETY.md`.

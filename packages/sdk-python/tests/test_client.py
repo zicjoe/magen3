@@ -448,5 +448,21 @@ class ClientTests(unittest.TestCase):
 
 
 
+    def test_gas_sponsorship_fee_safety_metadata_and_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed", "gasSponsorshipFeeSafetyContext": {"metadataSupplied": True, "chainFamily": "Casper", "sponsor": "magen3-relayer", "payerMatches": True, "fingerprint": "f" * 64, "violations": []}}}
+        client = Magen3Client("https://api.example", "MAG-FEE-1", "secret", transport=transport)
+        result = client.check_intent({"executionWalletAddress": "01" + "1" * 64, "action": {"type": "Transfer", "amount": 1, "asset": "CSPR", "target": "01" + "2" * 64, "chainName": "casper-test", "feeSafety": {
+            "chainFamily": "Casper", "chainName": "casper-test", "networkFee": 1, "feeUnit": "CSPR", "sponsor": "magen3-relayer",
+            "sponsorshipId": "sponsor-python-1", "sponsorshipExpiry": "2026-07-25T03:00:00.000Z", "sponsorshipScopes": ["Transfer"], "sponsorSignatureHash": "a" * 64,
+            "expectedPayer": "magen3-relayer", "actualPayer": "magen3-relayer", "sponsored": True, "sponsorshipAvailable": True
+        }}})
+        self.assertEqual(captured["payload"]["action"]["feeSafety"]["sponsor"], "magen3-relayer")
+        self.assertTrue(result["result"]["gasSponsorshipFeeSafetyContext"]["payerMatches"])
+        self.assertEqual(result["result"]["gasSponsorshipFeeSafetyContext"]["violations"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
