@@ -4,6 +4,7 @@ import { getCasperStatus } from "./casper/auditPayload.mjs";
 import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } from "./lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot, summarizeOracleValidationSnapshot } from "./lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } from "./lib/complianceControls.mjs";
+import { getRpcChainIntegrityStatus } from "./lib/rpcChainIntegrity.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -179,7 +180,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "2.2.0",
+        version: "2.3.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -193,6 +194,7 @@ const server = createServer(async (req, res) => {
         instructionIntegrity: { status: "live", goalBinding: true, sourceProvenance: true, parameterBinding: true, externalContentConfirmation: true, permissionScopeContainment: true },
         toolMcpIntegrity: { status: "live", approvedServers: true, approvedTools: true, manifestAndSchemaBinding: true, tls: true, permissionScopeContainment: true, agentCapabilityBoundary: true },
         delegationSafety: { status: "foundation_available", casperAttestationVerification: true, scopeBinding: true, expiry: true, revocation: true, depth: true, amountAndFrequencyLimits: true },
+        rpcChainIntegrity: getRpcChainIntegrityStatus(),
 
         contractUpgradeControls: {
           status: "Live",
@@ -222,6 +224,19 @@ const server = createServer(async (req, res) => {
             unknownImplementation: "structuredRules.contractUpgradeUnknownImplementationAction: Warn | Review | Block"
           },
           securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
+        },
+        rpcChainIntegrityPolicy: {
+          enabled: "structuredRules.rpcIntegrityEnabled",
+          mode: "structuredRules.rpcIntegrityMode: Observe | Review | Enforce",
+          approvedEndpoints: "structuredRules.approvedRpcEndpoints",
+          tls: "structuredRules.rpcIntegrityRequireTls",
+          freshness: "structuredRules.rpcIntegrityMaximumBlockAgeSeconds",
+          providerQuorum: "structuredRules.rpcIntegrityMinimumProviders",
+          heightTolerance: "structuredRules.rpcIntegrityMaximumHeightDifference",
+          disagreement: "structuredRules.rpcIntegrityDisagreementAction: Warn | Review | Block",
+          unavailable: "structuredRules.rpcIntegrityUnavailableAction: Warn | Review | Block",
+          networkIdentity: "structuredRules.rpcIntegrityRequireNetworkIdentity",
+          failover: "structuredRules.rpcIntegrityAllowAutomaticFailover"
         },
         contractArgumentControls: {
           status: "live",
@@ -270,7 +285,7 @@ const server = createServer(async (req, res) => {
             lifecycleAndReplay: "live",
             settlementReconciliation: "foundation-available",
             statefulSimulation: "foundation-available",
-            rpcIntegrity: "planned",
+            rpcIntegrity: "foundation-available",
             gasSponsorship: "planned"
           },
           lifecycle: {
@@ -286,6 +301,10 @@ const server = createServer(async (req, res) => {
           securityBoundary: "Magen3 evaluates unsigned intent metadata before wallet signing and never receives private keys, mnemonics, wallet approvals, or transaction signatures."
         }
       });
+    }
+
+    if (route === "GET /api/rpc-chain-integrity/status") {
+      return send(res, 200, { ok: true, rpcChainIntegrity: getRpcChainIntegrityStatus() });
     }
 
     if (route === "GET /api/approval-workflow/status") {
@@ -597,7 +616,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Delegation & Session Key Safety", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
-          foundationProtectionModules: ["Human Approval & Quorum", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
+          foundationProtectionModules: ["Human Approval & Quorum", "RPC & Chain Integrity", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -606,6 +625,7 @@ const server = createServer(async (req, res) => {
           endpoint: "/api/agent-gateway/intents",
           verifyEndpoint: "/api/agent-gateway/me",
           emergencyControlsStatusEndpoint: "/api/emergency-controls/status",
+          rpcChainIntegrityStatusEndpoint: "/api/rpc-chain-integrity/status",
           emergencyPauseManagementEndpoints: ["/api/emergency-pauses", "/api/emergency-pauses/:id/resume"],
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
@@ -688,6 +708,33 @@ const server = createServer(async (req, res) => {
               chainName: "casper-test",
               attestationHash: "SHA-256 of the canonical Magen3 delegation message",
               attestationSignature: "Transient Casper Wallet message signature; verified and not persisted raw"
+            },
+            rpcIntegrity: {
+              expectedChainName: "casper-test",
+              expectedNetworkIdentifier: "casper-testnet",
+              expectedGenesisHash: "Optional 64-character chain fingerprint",
+              selectedEndpoint: "https://approved-rpc.example/rpc",
+              selectedProviderId: "provider-primary",
+              providerObservations: [{
+                providerId: "provider-primary",
+                endpoint: "https://approved-rpc.example/rpc",
+                chainName: "casper-test",
+                networkIdentifier: "casper-testnet",
+                genesisHash: "64-character chain fingerprint",
+                tls: true,
+                synced: true,
+                latestBlockHeight: 123456,
+                latestBlockTimestamp: "ISO-8601 timestamp",
+                responseTimestamp: "ISO-8601 timestamp",
+                timedOut: false,
+                rateLimited: false,
+                speculative: false,
+                transactionStatusHash: "Optional 64-character status hash",
+                contractStateHash: "Optional 64-character state hash"
+              }],
+              automaticFailoverUsed: false,
+              failoverFrom: "Optional prior approved endpoint",
+              failoverReason: "Required when automatic failover was used"
             },
             preflight: {
               paymentAmountMotes: "Optional positive integer string for the proposed payment budget",

@@ -64,6 +64,17 @@ test("security coverage reaches 100 only when every configured protection check 
         requireScopeBinding: true,
         requireCryptographicDelegationAttestation: true,
         delegationUnavailableAction: "Review",
+        rpcIntegrityEnabled: true,
+        rpcIntegrityMode: "Review",
+        approvedRpcEndpoints: ["https://node.testnet.casper.network/rpc|casper-testnet-primary|casper-test|casper-testnet|" + "a".repeat(64)],
+        rpcIntegrityRequireTls: true,
+        rpcIntegrityMaximumBlockAgeSeconds: 120,
+        rpcIntegrityMinimumProviders: 1,
+        rpcIntegrityMaximumHeightDifference: 5,
+        rpcIntegrityDisagreementAction: "Block",
+        rpcIntegrityUnavailableAction: "Review",
+        rpcIntegrityRequireNetworkIdentity: true,
+        rpcIntegrityAllowAutomaticFailover: false,
         approvalWorkflowEnabled: true,
         approvalRequiredCount: 1,
         approvalAllowOwnerFallback: true,
@@ -127,6 +138,7 @@ test("security coverage reaches 100 only when every configured protection check 
         { module: "Agent Instruction Integrity", status: "pass", severity: "info", rule: "Stable goal binding", message: "Goal-bound provenance passed." },
         { module: "Tool & MCP Integrity", status: "pass", severity: "info", rule: "Approved MCP server", message: "Approved server." },
         { module: "Delegation & Session Key Safety", status: "pass", severity: "info", rule: "Cryptographic delegation attestation", message: "Casper-signed delegation verified." },
+        { module: "RPC & Chain Integrity", status: "pass", severity: "info", rule: "Network identity binding", message: "Approved provider matches the expected chain." },
         { module: "Wallet Validation", status: "pass", severity: "info", rule: "Valid execution wallet format", message: "Valid wallet." },
         { module: "Contract Validation", status: "pass", severity: "info", rule: "Approved contract", message: "Approved contract." },
         { module: "Execution Simulation", status: "pass", severity: "info", rule: "Payment budget format", message: "Payment preflight evaluated." },
@@ -588,4 +600,30 @@ test("Integration Health surfaces Delegation & Session Key Safety violations", (
   );
   assert.ok(health.checks.some((check) => check.label === "Delegation & Session Key Safety" && check.status === "attention"));
   assert.notEqual(health.overall, "Healthy");
+});
+
+
+test("RPC & Chain Integrity coverage requires approved configuration and an observed network-bound pass", () => {
+  const timestamp = new Date().toISOString();
+  const agent = { status: "Active", type: "Wallet Assistant", executionCapabilities: ["Wallet Management"], apiKeyPreview: "mg3_live_…rpc", onboardingStatus: "complete", lastIntentAt: timestamp };
+  const policy = { status: "Active", maxTransaction: 10, dailyLimit: 50, approvalThreshold: 5, trustedContracts: ["01" + "2".repeat(64)], structuredRules: {
+    rpcIntegrityEnabled: true, rpcIntegrityMode: "Review", approvedRpcEndpoints: ["https://node.testnet.casper.network/rpc|primary|casper-test|casper-testnet|" + "a".repeat(64)],
+    rpcIntegrityRequireTls: true, rpcIntegrityMaximumBlockAgeSeconds: 120, rpcIntegrityMinimumProviders: 1, rpcIntegrityMaximumHeightDifference: 5,
+    rpcIntegrityDisagreementAction: "Block", rpcIntegrityUnavailableAction: "Review", rpcIntegrityRequireNetworkIdentity: true, rpcIntegrityAllowAutomaticFailover: false,
+  } };
+  const unobserved = securityModel.calculateSecurityCoverage(agent, policy, []);
+  assert.equal(unobserved.checks.find((check) => check.id === "rpc-chain-integrity")?.passed, false);
+  const observed = securityModel.calculateSecurityCoverage(agent, policy, [{ timestamp, moduleFindings: [{ module: "RPC & Chain Integrity", status: "pass", severity: "info", rule: "Network identity binding", message: "Network matched." }] }]);
+  assert.equal(observed.checks.find((check) => check.id === "rpc-chain-integrity")?.passed, true);
+});
+
+test("Integration Health surfaces RPC & Chain Integrity disagreement", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…rpc", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Blocked", decisionProofStatus: "recorded", moduleFindings: [{ module: "RPC & Chain Integrity", status: "fail", severity: "critical", rule: "RPC network disagreement", message: "Providers disagree." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "RPC & Chain Integrity" && check.status === "attention"));
 });

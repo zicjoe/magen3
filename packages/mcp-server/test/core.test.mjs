@@ -52,6 +52,9 @@ test("intent schema describes live contract validation and execution preflight f
   assert.match(INTENT_SCHEMA_DESCRIPTION.x402PaymentControls, /request ID/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.x402.network, /CAIP-2/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.x402.paymentRequiredHash, /PAYMENT-REQUIRED/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.rpcChainIntegrity, /trusted RPC adapters/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.rpcIntegrity.providerObservations, /sync state/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.rpcIntegrity.failoverReason, /failover/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.executionIntegrity, /idempotency/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.lifecycle.intentId, /unique/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.lifecycle.retryOf, /audit ID/i);
@@ -293,4 +296,18 @@ test("intent schema exposes Delegation & Session Key Safety without granting MCP
   const result = await handlers.getIntentSchema();
   assert.match(result.content[0].text, /Delegation & Session Key Safety verifies a caller-supplied Casper Wallet attestation/i);
   assert.match(result.content[0].text, /never generates delegation signatures/i);
+});
+
+
+test("intent schema exposes the RPC & Chain Integrity boundary", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /RPC & Chain Integrity verifies adapter-supplied provider identity/i);
+  assert.match(result.content[0].text, /never fabricates provider observations/i);
 });

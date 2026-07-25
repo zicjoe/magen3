@@ -806,3 +806,32 @@ test("builds the exact backend-compatible delegation attestation message", async
   assert.equal(buildMagen3DelegationAttestationMessage(delegation), buildDelegationAttestationMessage(delegation));
   assert.match(buildMagen3DelegationAttestationMessage(delegation), /does not sign or submit a blockchain transaction/);
 });
+
+
+test("preserves RPC & Chain Integrity metadata and sanitized response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example", agentId: "MAG-RPC-1", apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true, executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 4, reason: "RPC evidence passed", recommendedAction: "continue", rpcChainIntegrityContext: { metadataSupplied: true, selectedProviderId: "primary", selectedEndpoint: "https://node.testnet.casper.network/rpc", usableProviderCount: 1, networkAgreement: true, transactionStatusAgreement: true, contractStateAgreement: true, automaticFailoverUsed: false, violations: [] } },
+        gatewayRequest: {}, auditLog: {}, nextAction: "sign",
+      }), { status: 201 });
+    },
+  });
+  const result = await client.checkIntent({
+    executionWalletAddress: `01${"1".repeat(64)}`,
+    action: { type: "Transfer", amount: 1, asset: "CSPR", target: `01${"2".repeat(64)}`, chainName: "casper-test", rpcIntegrity: {
+      expectedChainName: "casper-test", expectedNetworkIdentifier: "casper-testnet", expectedGenesisHash: "a".repeat(64),
+      selectedEndpoint: "https://node.testnet.casper.network/rpc", selectedProviderId: "primary",
+      providerObservations: [{ providerId: "primary", endpoint: "https://node.testnet.casper.network/rpc", chainName: "casper-test", networkIdentifier: "casper-testnet", genesisHash: "a".repeat(64), tls: true, synced: true, latestBlockHeight: 125000, latestBlockTimestamp: "2026-07-25T00:00:00.000Z", responseTimestamp: "2026-07-25T00:00:05.000Z", timedOut: false, rateLimited: false, speculative: false, transactionStatusHash: "b".repeat(64), contractStateHash: "c".repeat(64) }],
+      automaticFailoverUsed: false,
+    } },
+  });
+  assert.equal(captured.action.rpcIntegrity.selectedProviderId, "primary");
+  assert.equal(captured.action.rpcIntegrity.providerObservations[0].networkIdentifier, "casper-testnet");
+  assert.equal(result.result.rpcChainIntegrityContext.networkAgreement, true);
+  assert.equal(result.result.rpcChainIntegrityContext.violations.length, 0);
+});

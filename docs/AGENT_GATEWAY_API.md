@@ -717,3 +717,8 @@ When a tool or MCP server participates in execution, submit `action.toolIntegrit
 When an execution uses delegated authority, submit the public scope and transient Casper Wallet message signature under `action.delegation`. Supported fields include `delegationId`, `delegatingWallet`, `delegate`, optional public `sessionKey`, allowed networks/contracts/methods/assets, native and token limits, maximum transaction amount, rolling hourly frequency, validity, revocation status, depth, redelegation flag, nonce, chain name, optional canonical `attestationHash`, and transient `attestationSignature`.
 
 Magen3 canonicalizes and domain-separates the attestation, verifies Ed25519 or Secp256k1 Casper signatures, and returns sanitized `delegationSafetyContext`. Raw delegation signatures and private session-key material are not persisted. See [Delegation & Session Key Safety](./DELEGATION_SESSION_KEY_SAFETY.md).
+
+
+## RPC & Chain Integrity metadata
+
+Trusted adapters may include `action.rpcIntegrity` with expected chain identity, selected provider, provider observations, and optional failover evidence. Observations can include TLS and synchronization state, latest block height and timestamp, timeout or rate-limit state, speculative-endpoint classification, and optional transaction-status or contract-state hashes. Magen3 returns sanitized `rpcChainIntegrityContext` and structured `RPC & Chain Integrity` findings. Never send RPC credentials or private provider configuration. See [RPC & Chain Integrity](./RPC_CHAIN_INTEGRITY.md).

@@ -16,6 +16,7 @@ import { evaluateEmergencyControls } from "./emergencyControls.mjs";
 import { evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
 import { evaluateToolMcpIntegrity } from "./toolMcpIntegrity.mjs";
 import { evaluateDelegationSafety } from "./delegationSafety.mjs";
+import { evaluateRpcChainIntegrity } from "./rpcChainIntegrity.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -110,6 +111,7 @@ function withStructuredResult({
   instructionIntegrityContext = null,
   toolMcpIntegrityContext = null,
   delegationSafetyContext = null,
+  rpcChainIntegrityContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -142,6 +144,7 @@ function withStructuredResult({
     instructionIntegrityContext,
     toolMcpIntegrityContext,
     delegationSafetyContext,
+    rpcChainIntegrityContext,
     emergencyControlsContext,
   };
 }
@@ -357,6 +360,36 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     });
   }
 
+  const rpcChainIntegrityResult = evaluateRpcChainIntegrity({ request, policy, auditLogs });
+  checksPassed.push(...rpcChainIntegrityResult.checksPassed);
+  checksFailed.push(...rpcChainIntegrityResult.checksFailed);
+  moduleFindings.push(...rpcChainIntegrityResult.findings);
+  if (rpcChainIntegrityResult.hardBlock || rpcChainIntegrityResult.needsReview) {
+    const decision = rpcChainIntegrityResult.hardBlock ? "Blocked" : "Review Required";
+    return withStructuredResult({
+      decision,
+      risk: rpcChainIntegrityResult.hardBlock ? "Critical" : "High",
+      riskScore: rpcChainIntegrityResult.hardBlock ? 96 : 74,
+      checksPassed,
+      checksFailed,
+      reason: rpcChainIntegrityResult.hardBlock
+        ? "The request failed deterministic RPC network identity, provider, freshness, agreement, or failover checks."
+        : "The request requires authorized review because RPC or chain-integrity evidence is incomplete, unavailable, or inconsistent.",
+      recommendedAction: rpcChainIntegrityResult.hardBlock
+        ? "Do not execute. Use approved synchronized providers that agree on the expected chain and state before retrying."
+        : "Pause execution and restore the required trusted RPC evidence or obtain exact-bound human approval.",
+      moduleFindings,
+      timestamp,
+      agent,
+      policy,
+      instructionIntegrityContext: instructionIntegrityResult.context,
+      toolMcpIntegrityContext: toolMcpIntegrityResult.context,
+      delegationSafetyContext: delegationSafetyResult.context,
+      rpcChainIntegrityContext: rpcChainIntegrityResult.context,
+      emergencyControlsContext: emergencyControlsResult.context,
+    });
+  }
+
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
@@ -466,8 +499,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || rpcChainIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || rpcChainIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -510,6 +543,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     instructionIntegrityContext: instructionIntegrityResult.context,
     toolMcpIntegrityContext: toolMcpIntegrityResult.context,
     delegationSafetyContext: delegationSafetyResult.context,
+    rpcChainIntegrityContext: rpcChainIntegrityResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }

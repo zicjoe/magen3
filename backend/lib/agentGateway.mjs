@@ -274,6 +274,19 @@ export function normalizeAgentGatewayIntent(body = {}) {
             : body.delegation && typeof body.delegation === "object"
               ? body.delegation
               : {};
+  const rpcIntegrity = action.rpcIntegrity && typeof action.rpcIntegrity === "object"
+    ? action.rpcIntegrity
+    : action.rpc_integrity && typeof action.rpc_integrity === "object"
+      ? action.rpc_integrity
+      : action.chainIntegrity && typeof action.chainIntegrity === "object"
+        ? action.chainIntegrity
+        : action.chain_integrity && typeof action.chain_integrity === "object"
+          ? action.chain_integrity
+          : body.rpcIntegrity && typeof body.rpcIntegrity === "object"
+            ? body.rpcIntegrity
+            : body.chainIntegrity && typeof body.chainIntegrity === "object"
+              ? body.chainIntegrity
+              : {};
 
   if (containsForbiddenSigningMaterial(body)) {
     const err = new Error("Wallet signing material, transaction approvals or signatures, private keys, and raw signed transactions are not accepted by the pre-signing Agent Gateway");
@@ -485,6 +498,16 @@ export function normalizeAgentGatewayIntent(body = {}) {
     delegationAttestationHash: cleanString(delegation.attestationHash || delegation.attestation_hash || "", ""),
     delegationAttestationSignature: cleanString(delegation.attestationSignature || delegation.attestation_signature || delegation.signature || "", ""),
     delegationChainName: cleanString(delegation.chainName || delegation.chain_name || delegation.network || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
+    rpcIntegrityMetadataSupplied: Object.keys(rpcIntegrity).length > 0,
+    rpcExpectedChainName: cleanString(rpcIntegrity.expectedChainName || rpcIntegrity.expected_chain_name || rpcIntegrity.chainName || rpcIntegrity.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name || "", ""),
+    rpcExpectedNetworkIdentifier: cleanString(rpcIntegrity.expectedNetworkIdentifier || rpcIntegrity.expected_network_identifier || rpcIntegrity.networkIdentifier || rpcIntegrity.network_identifier || rpcIntegrity.networkId || rpcIntegrity.network_id || "", ""),
+    rpcExpectedGenesisHash: cleanString(rpcIntegrity.expectedGenesisHash || rpcIntegrity.expected_genesis_hash || rpcIntegrity.genesisHash || rpcIntegrity.genesis_hash || rpcIntegrity.chainFingerprint || rpcIntegrity.chain_fingerprint || "", ""),
+    rpcSelectedEndpoint: cleanString(rpcIntegrity.selectedEndpoint || rpcIntegrity.selected_endpoint || rpcIntegrity.rpcEndpoint || rpcIntegrity.rpc_endpoint || "", ""),
+    rpcSelectedProviderId: cleanString(rpcIntegrity.selectedProviderId || rpcIntegrity.selected_provider_id || rpcIntegrity.providerId || rpcIntegrity.provider_id || "", ""),
+    rpcProviderObservations: Array.isArray(rpcIntegrity.providerObservations || rpcIntegrity.provider_observations || rpcIntegrity.observations) ? normalizeMetadataValue((rpcIntegrity.providerObservations || rpcIntegrity.provider_observations || rpcIntegrity.observations).slice(0, 10)) : [],
+    rpcAutomaticFailoverUsed: Boolean(rpcIntegrity.automaticFailoverUsed === true || rpcIntegrity.automatic_failover_used === true || String(rpcIntegrity.automaticFailoverUsed || rpcIntegrity.automatic_failover_used || "").toLowerCase() === "true"),
+    rpcFailoverFrom: cleanString(rpcIntegrity.failoverFrom || rpcIntegrity.failover_from || "", ""),
+    rpcFailoverReason: cleanString(rpcIntegrity.failoverReason || rpcIntegrity.failover_reason || "", ""),
     lifecycleIntentId: cleanString(lifecycle.intentId || lifecycle.intent_id || body.intentId || body.intent_id || "", ""),
     lifecycleIdempotencyKey: cleanString(lifecycle.idempotencyKey || lifecycle.idempotency_key || body.idempotencyKey || body.idempotency_key || "", ""),
     lifecycleSequence: optionalNumber(lifecycle.sequence ?? body.sequence, "lifecycleSequence", { integer: true, min: 0 }),

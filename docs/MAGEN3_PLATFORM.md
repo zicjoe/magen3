@@ -555,7 +555,7 @@ Contract Argument Policies is Live under Contract & Permission Safety. An enable
 
 The control computes a canonical SHA-256 argument fingerprint and reuses the existing full-intent Human Approval binding, so changed runtime arguments invalidate prior authorization. Legacy policies remain compatible because the control is disabled until configured. No database migration is required because policy rules, normalized intent, findings, approval evidence, and audit context use the existing JSON-backed model. See `CONTRACT_ARGUMENT_POLICIES.md`.
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 implementation includes Agent Instruction Integrity and Tool & MCP Integrity as Live controls. Delegation & Session Key Safety is Foundation Available pending deployed connected-wallet verification. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone begins Phase 3: RPC & Chain Integrity.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 includes Agent Instruction Integrity and Tool & MCP Integrity as Live controls. Delegation & Session Key Safety is Foundation Available pending deployed connected-wallet verification. Phase 3 has begun with RPC & Chain Integrity as Foundation Available pending deployed trusted-provider adapter verification. Cryptographic Reviewer Signatures remains Foundation Available pending deployed Casper Wallet verification. The next roadmap milestone is Gas Sponsorship & Fee Safety.
 
 
 ## Agent Instruction Integrity
@@ -572,3 +572,10 @@ The official Magen3 MCP adapter injects stable metadata for its two execution to
 ## Delegation & Session Key Safety
 
 Delegation & Session Key Safety is a Foundation Available deterministic control inside Agent Trust & Access pending deployed Casper Wallet or smart-account verification. It verifies a domain-separated Casper-signed delegation attestation and enforces the exact delegating wallet, delegate/session identity, activation and expiry, policy revocation, network/contract/method/asset scopes, amount and rolling frequency limits, maximum delegation depth, and redelegation restriction. Raw signatures and private session keys are never persisted. Review outcomes reuse the existing exact-bound Human Approval workflow; invalid signatures, revoked or expired authority, wallet substitution, and hard scope violations fail closed.
+
+
+## RPC & Chain Integrity
+
+RPC & Chain Integrity is Foundation Available inside Execution Integrity. It evaluates trusted adapter evidence for approved RPC identity, expected chain/network/genesis binding, TLS, synchronization, latest-block freshness, historical height regression, minimum provider quorum, provider agreement, transaction and contract-state consistency, speculative endpoint isolation, and auditable failover. Unavailable evidence follows explicit Warn, Review, or Block policy and never counts as a pass.
+
+The control is not marked Live until real deployed RPC adapters and Railway/PostgreSQL behavior are verified end to end. See `RPC_CHAIN_INTEGRITY.md`.

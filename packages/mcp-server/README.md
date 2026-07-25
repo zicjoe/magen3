@@ -124,3 +124,8 @@ The official server injects stable integrity evidence for `magen3_check_intent` 
 ## Delegation & Session Key Safety
 
 The MCP intent schema accepts public `action.delegation` evidence for a bounded Casper delegation. The MCP server does not create a delegation signature, hold session-key secrets, or grant itself authority. A connected wallet adapter must create any `attestationSignature`, and Magen3 verifies it before authorization while storing only sanitized hashes and scope findings.
+
+
+## RPC & Chain Integrity
+
+Submit public `action.rpcIntegrity` evidence only when it was collected by a trusted adapter. Magen3 checks approved provider identity, expected network binding, freshness, quorum agreement, and failover policy. Never send provider credentials or fabricate observations.

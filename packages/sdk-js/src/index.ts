@@ -215,6 +215,40 @@ export interface Magen3Delegation {
 }
 
 
+export interface Magen3RpcProviderObservation {
+  providerId?: string;
+  endpoint?: string;
+  chainName?: string;
+  networkIdentifier?: string;
+  /** Optional 64-character genesis or chain fingerprint. */
+  genesisHash?: string;
+  tls?: boolean;
+  synced?: boolean;
+  latestBlockHeight?: number;
+  latestBlockTimestamp?: string;
+  responseTimestamp?: string;
+  timedOut?: boolean;
+  rateLimited?: boolean;
+  /** True only for endpoints isolated for speculative execution rather than authorization. */
+  speculative?: boolean;
+  /** Optional 64-character canonical transaction-status evidence hash. */
+  transactionStatusHash?: string;
+  /** Optional 64-character canonical contract-state evidence hash. */
+  contractStateHash?: string;
+}
+
+export interface Magen3RpcChainIntegrityMetadata {
+  expectedChainName?: string;
+  expectedNetworkIdentifier?: string;
+  expectedGenesisHash?: string;
+  selectedEndpoint?: string;
+  selectedProviderId?: string;
+  providerObservations: Magen3RpcProviderObservation[];
+  automaticFailoverUsed?: boolean;
+  failoverFrom?: string;
+  failoverReason?: string;
+}
+
 export interface Magen3DelegationAttestationInput extends Omit<Magen3Delegation, "attestationHash" | "attestationSignature"> {
   /** Registered Magen3 Agent ID bound into the signed authority. */
   agentId: string;
@@ -390,6 +424,8 @@ export interface Magen3Action {
   toolIntegrity?: Magen3ToolMcpIntegrityMetadata;
   /** Casper-signed, short-lived delegated authority. Raw signatures are verified transiently and never persisted in audit evidence. */
   delegation?: Magen3Delegation;
+  /** RPC provider identity, freshness, synchronization, agreement, and failover evidence. Never include provider credentials. */
+  rpcIntegrity?: Magen3RpcChainIntegrityMetadata;
   /** Explicit token authority metadata evaluated before signing. Never include permit signatures or raw signed payloads. */
   tokenPermission?: Magen3TokenPermission;
   /** Supported administrative action metadata evaluated before signing. Never include admin keys, signatures, or raw signed transactions. */
@@ -602,6 +638,32 @@ export interface Magen3ExecutionIntegrityContext {
   maxRetryAttempts?: number;
 }
 
+
+export interface Magen3RpcProviderObservationContext extends Magen3RpcProviderObservation {}
+
+export interface Magen3RpcChainIntegrityContext {
+  status?: "passed" | "warning" | "review" | "failed" | "skipped" | string;
+  enabled?: boolean;
+  mode?: "Observe" | "Review" | "Enforce" | string;
+  metadataSupplied?: boolean;
+  expectedChainName?: string;
+  expectedNetworkIdentifier?: string;
+  expectedGenesisHash?: string;
+  selectedEndpoint?: string;
+  selectedProviderId?: string;
+  providerCount?: number;
+  usableProviderCount?: number;
+  approvedProviderCount?: number;
+  automaticFailoverUsed?: boolean;
+  failoverFrom?: string;
+  failoverReason?: string;
+  networkIdentityVerified?: boolean | null;
+  networkAgreement?: boolean;
+  transactionStatusAgreement?: boolean;
+  contractStateAgreement?: boolean;
+  providerObservations?: Magen3RpcProviderObservationContext[];
+  violations?: Array<{ rule?: string; message?: string }>;
+}
 
 export interface Magen3EmergencyPause {
   id?: string;
@@ -955,6 +1017,8 @@ export interface Magen3DecisionResult {
   toolMcpIntegrityContext?: Magen3ToolMcpIntegrityContext;
   /** Casper signer verification plus exact delegated network, contract, method, asset, lifetime, revocation, amount, frequency, and depth evidence. */
   delegationSafetyContext?: Magen3DelegationSafetyContext;
+  /** Approved RPC provider, network identity, freshness, height, state-consistency, and failover evidence. */
+  rpcChainIntegrityContext?: Magen3RpcChainIntegrityContext;
   /** Active scoped pause evidence, automatic-trigger state, expiry, and audited resume requirements. */
   emergencyControlsContext?: Magen3EmergencyControlsContext;
   /** Sanitized feed status and exact-match evidence. Never includes provider credentials. */

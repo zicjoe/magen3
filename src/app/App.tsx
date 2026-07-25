@@ -2979,7 +2979,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
       });
@@ -4371,6 +4371,46 @@ function DelegationSafetyPolicyFields({
   );
 }
 
+function RpcChainIntegrityPolicyFields({
+  values,
+  onChange,
+}: {
+  values: Record<string, unknown>;
+  onChange: (patch: Record<string, string>) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · RPC & Chain Integrity</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind authorization to approved RPC providers, the expected chain identity, fresh synchronized blocks, multi-provider agreement, and auditable failover evidence.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Enable Controls" value={String(values.rpcIntegrityEnabled ?? "")} onChange={(value) => onChange({ rpcIntegrityEnabled: value })} options={["Yes", "No"]} />
+        <SelectField label="Violation Handling" value={String(values.rpcIntegrityMode ?? "")} onChange={(value) => onChange({ rpcIntegrityMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Provider Disagreement" value={String(values.rpcIntegrityDisagreementAction ?? "")} onChange={(value) => onChange({ rpcIntegrityDisagreementAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Evidence Unavailable" value={String(values.rpcIntegrityUnavailableAction ?? "")} onChange={(value) => onChange({ rpcIntegrityUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require TLS" value={String(values.rpcIntegrityRequireTls ?? "")} onChange={(value) => onChange({ rpcIntegrityRequireTls: value })} options={["Yes", "No"]} />
+        <SelectField label="Require Network Identity" value={String(values.rpcIntegrityRequireNetworkIdentity ?? "")} onChange={(value) => onChange({ rpcIntegrityRequireNetworkIdentity: value })} options={["Yes", "No"]} />
+        <SelectField label="Allow Automatic Failover" value={String(values.rpcIntegrityAllowAutomaticFailover ?? "")} onChange={(value) => onChange({ rpcIntegrityAllowAutomaticFailover: value })} options={["Yes", "No"]} />
+        <InputField label="Maximum Block Age (sec)" value={String(values.rpcIntegrityMaximumBlockAgeSeconds ?? "")} onChange={(value) => onChange({ rpcIntegrityMaximumBlockAgeSeconds: value })} type="number" />
+        <InputField label="Minimum RPC Providers" value={String(values.rpcIntegrityMinimumProviders ?? "")} onChange={(value) => onChange({ rpcIntegrityMinimumProviders: value })} type="number" />
+        <InputField label="Maximum Height Difference" value={String(values.rpcIntegrityMaximumHeightDifference ?? "")} onChange={(value) => onChange({ rpcIntegrityMaximumHeightDifference: value })} type="number" />
+      </div>
+      <details className="mt-4 rounded-lg border border-[#1E293B] bg-[#050B14] p-3" open>
+        <summary className="cursor-pointer text-xs font-semibold text-[#CBD5E1]">Approved provider bindings</summary>
+        <div className="mt-3">
+          <TextareaField label="Approved RPC Endpoints" value={String(values.approvedRpcEndpoints ?? "")} onChange={(value) => onChange({ approvedRpcEndpoints: value })} />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-[#64748B]">One per line: <code>https://rpc.example/rpc|provider-id|chain-name|network-id|optional-genesis-hash</code>. Provider credentials must never be entered here.</p>
+      </details>
+      <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">The deterministic evaluator is implemented. The control remains Foundation Available until deployed trusted adapters collect and verify real provider observations end to end.</p>
+    </div>
+  );
+}
+
 function TokenPermissionPolicyFields({
   values,
   onChange,
@@ -4714,6 +4754,17 @@ function PoliciesPage({
     requireScopeBinding: "Yes",
     requireCryptographicDelegationAttestation: "Yes",
     delegationUnavailableAction: "Review",
+    rpcIntegrityEnabled: "No",
+    rpcIntegrityMode: "Review",
+    approvedRpcEndpoints: "https://node.testnet.casper.network/rpc|casper-testnet-primary|casper-test|casper-testnet",
+    rpcIntegrityRequireTls: "Yes",
+    rpcIntegrityMaximumBlockAgeSeconds: "120",
+    rpcIntegrityMinimumProviders: "1",
+    rpcIntegrityMaximumHeightDifference: "5",
+    rpcIntegrityDisagreementAction: "Block",
+    rpcIntegrityUnavailableAction: "Review",
+    rpcIntegrityRequireNetworkIdentity: "Yes",
+    rpcIntegrityAllowAutomaticFailover: "No",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -4930,6 +4981,17 @@ function PoliciesPage({
     requireScopeBinding: "Yes",
     requireCryptographicDelegationAttestation: "Yes",
     delegationUnavailableAction: "Review",
+    rpcIntegrityEnabled: "No",
+    rpcIntegrityMode: "Review",
+    approvedRpcEndpoints: "https://node.testnet.casper.network/rpc|casper-testnet-primary|casper-test|casper-testnet",
+    rpcIntegrityRequireTls: "Yes",
+    rpcIntegrityMaximumBlockAgeSeconds: "120",
+    rpcIntegrityMinimumProviders: "1",
+    rpcIntegrityMaximumHeightDifference: "5",
+    rpcIntegrityDisagreementAction: "Block",
+    rpcIntegrityUnavailableAction: "Review",
+    rpcIntegrityRequireNetworkIdentity: "Yes",
+    rpcIntegrityAllowAutomaticFailover: "No",
     lifecycleControlsEnabled: "Yes",
 
     lifecycleControlMode: "Enforce",
@@ -5157,6 +5219,17 @@ function PoliciesPage({
         requireScopeBinding: form.requireScopeBinding !== "No",
         requireCryptographicDelegationAttestation: form.requireCryptographicDelegationAttestation !== "No",
         delegationUnavailableAction: form.delegationUnavailableAction,
+        rpcIntegrityEnabled: form.rpcIntegrityEnabled === "Yes",
+        rpcIntegrityMode: form.rpcIntegrityMode,
+        approvedRpcEndpoints: form.approvedRpcEndpoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        rpcIntegrityRequireTls: form.rpcIntegrityRequireTls !== "No",
+        rpcIntegrityMaximumBlockAgeSeconds: Math.max(5, Number(form.rpcIntegrityMaximumBlockAgeSeconds) || 120),
+        rpcIntegrityMinimumProviders: Math.max(1, Math.min(10, Number(form.rpcIntegrityMinimumProviders) || 1)),
+        rpcIntegrityMaximumHeightDifference: Math.max(0, Number(form.rpcIntegrityMaximumHeightDifference) || 5),
+        rpcIntegrityDisagreementAction: form.rpcIntegrityDisagreementAction,
+        rpcIntegrityUnavailableAction: form.rpcIntegrityUnavailableAction,
+        rpcIntegrityRequireNetworkIdentity: form.rpcIntegrityRequireNetworkIdentity !== "No",
+        rpcIntegrityAllowAutomaticFailover: form.rpcIntegrityAllowAutomaticFailover === "Yes",
         lifecycleControlsEnabled: form.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: form.lifecycleControlMode,
         lifecycleUnavailableAction: form.lifecycleUnavailableAction,
@@ -5361,6 +5434,17 @@ function PoliciesPage({
     requireScopeBinding: "Yes",
     requireCryptographicDelegationAttestation: "Yes",
     delegationUnavailableAction: "Review",
+    rpcIntegrityEnabled: "No",
+    rpcIntegrityMode: "Review",
+    approvedRpcEndpoints: "https://node.testnet.casper.network/rpc|casper-testnet-primary|casper-test|casper-testnet",
+    rpcIntegrityRequireTls: "Yes",
+    rpcIntegrityMaximumBlockAgeSeconds: "120",
+    rpcIntegrityMinimumProviders: "1",
+    rpcIntegrityMaximumHeightDifference: "5",
+    rpcIntegrityDisagreementAction: "Block",
+    rpcIntegrityUnavailableAction: "Review",
+    rpcIntegrityRequireNetworkIdentity: "Yes",
+    rpcIntegrityAllowAutomaticFailover: "No",
     lifecycleControlsEnabled: "Yes",
 
       lifecycleControlMode: "Enforce",
@@ -5571,6 +5655,17 @@ function PoliciesPage({
       requireScopeBinding: policy.structuredRules?.requireScopeBinding === false ? "No" : "Yes",
       requireCryptographicDelegationAttestation: policy.structuredRules?.requireCryptographicDelegationAttestation === false ? "No" : "Yes",
       delegationUnavailableAction: String(policy.structuredRules?.delegationUnavailableAction || "Review"),
+      rpcIntegrityEnabled: policy.structuredRules?.rpcIntegrityEnabled === true ? "Yes" : "No",
+      rpcIntegrityMode: String(policy.structuredRules?.rpcIntegrityMode || "Review"),
+      approvedRpcEndpoints: Array.isArray(policy.structuredRules?.approvedRpcEndpoints) ? policy.structuredRules.approvedRpcEndpoints.map((item) => typeof item === "string" ? item : [item.endpoint || item.url || "", item.id || item.providerId || "", item.chainName || "", item.networkIdentifier || "", item.genesisHash || ""].join("|")).join("\n") : "",
+      rpcIntegrityRequireTls: policy.structuredRules?.rpcIntegrityRequireTls === false ? "No" : "Yes",
+      rpcIntegrityMaximumBlockAgeSeconds: String(policy.structuredRules?.rpcIntegrityMaximumBlockAgeSeconds || 120),
+      rpcIntegrityMinimumProviders: String(policy.structuredRules?.rpcIntegrityMinimumProviders || 1),
+      rpcIntegrityMaximumHeightDifference: String(policy.structuredRules?.rpcIntegrityMaximumHeightDifference ?? 5),
+      rpcIntegrityDisagreementAction: String(policy.structuredRules?.rpcIntegrityDisagreementAction || "Block"),
+      rpcIntegrityUnavailableAction: String(policy.structuredRules?.rpcIntegrityUnavailableAction || "Review"),
+      rpcIntegrityRequireNetworkIdentity: policy.structuredRules?.rpcIntegrityRequireNetworkIdentity === false ? "No" : "Yes",
+      rpcIntegrityAllowAutomaticFailover: policy.structuredRules?.rpcIntegrityAllowAutomaticFailover === true ? "Yes" : "No",
       lifecycleControlsEnabled: policy.structuredRules?.lifecycleControlsEnabled === false ? "No" : "Yes",
       lifecycleControlMode: typeof policy.structuredRules?.lifecycleControlMode === "string" ? policy.structuredRules.lifecycleControlMode : "Observe",
       lifecycleUnavailableAction: typeof policy.structuredRules?.lifecycleUnavailableAction === "string" ? policy.structuredRules.lifecycleUnavailableAction : "Warn",
@@ -5798,6 +5893,17 @@ function PoliciesPage({
         requireScopeBinding: editForm.requireScopeBinding !== "No",
         requireCryptographicDelegationAttestation: editForm.requireCryptographicDelegationAttestation !== "No",
         delegationUnavailableAction: editForm.delegationUnavailableAction,
+        rpcIntegrityEnabled: editForm.rpcIntegrityEnabled === "Yes",
+        rpcIntegrityMode: editForm.rpcIntegrityMode,
+        approvedRpcEndpoints: editForm.approvedRpcEndpoints.split("\n").map((item) => item.trim()).filter(Boolean),
+        rpcIntegrityRequireTls: editForm.rpcIntegrityRequireTls !== "No",
+        rpcIntegrityMaximumBlockAgeSeconds: Math.max(5, Number(editForm.rpcIntegrityMaximumBlockAgeSeconds) || 120),
+        rpcIntegrityMinimumProviders: Math.max(1, Math.min(10, Number(editForm.rpcIntegrityMinimumProviders) || 1)),
+        rpcIntegrityMaximumHeightDifference: Math.max(0, Number(editForm.rpcIntegrityMaximumHeightDifference) || 5),
+        rpcIntegrityDisagreementAction: editForm.rpcIntegrityDisagreementAction,
+        rpcIntegrityUnavailableAction: editForm.rpcIntegrityUnavailableAction,
+        rpcIntegrityRequireNetworkIdentity: editForm.rpcIntegrityRequireNetworkIdentity !== "No",
+        rpcIntegrityAllowAutomaticFailover: editForm.rpcIntegrityAllowAutomaticFailover === "Yes",
         lifecycleControlsEnabled: editForm.lifecycleControlsEnabled !== "No",
         lifecycleControlMode: editForm.lifecycleControlMode,
         lifecycleUnavailableAction: editForm.lifecycleUnavailableAction,
@@ -6195,6 +6301,7 @@ function PoliciesPage({
             <InstructionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ToolMcpIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <DelegationSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
+            <RpcChainIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
             <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
@@ -6487,6 +6594,7 @@ function PoliciesPage({
                 <InstructionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ToolMcpIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <DelegationSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
+                <RpcChainIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
                 <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
@@ -8467,7 +8575,60 @@ function playgroundDelegation(walletAddress: string, policy: Policy | undefined,
   };
 }
 
+function playgroundRpcIntegrity(policy: Policy | undefined, overrides: Record<string, unknown> = {}) {
+  const now = Date.now();
+  const approvedEntries = Array.isArray(policy?.structuredRules?.approvedRpcEndpoints)
+    ? policy.structuredRules.approvedRpcEndpoints
+    : [];
+  const first = approvedEntries[0];
+  const parts = typeof first === "string" ? first.split("|").map((item) => item.trim()) : [];
+  const entry = first && typeof first === "object" && !Array.isArray(first) ? first as Record<string, unknown> : undefined;
+  const endpoint = String(entry?.endpoint || entry?.url || parts[0] || "https://node.testnet.casper.network/rpc");
+  const providerId = String(entry?.id || entry?.providerId || parts[1] || "casper-testnet-primary");
+  const chainName = String(entry?.chainName || parts[2] || "casper-test");
+  const networkIdentifier = String(entry?.networkIdentifier || parts[3] || "casper-testnet");
+  const genesisHash = String(entry?.genesisHash || parts[4] || "a".repeat(64)).replace(/^0x/, "");
+  return {
+    expectedChainName: chainName,
+    expectedNetworkIdentifier: networkIdentifier,
+    expectedGenesisHash: genesisHash,
+    selectedEndpoint: endpoint,
+    selectedProviderId: providerId,
+    providerObservations: [{
+      providerId, endpoint, chainName, networkIdentifier, genesisHash, tls: endpoint.startsWith("https://"), synced: true,
+      latestBlockHeight: 125000, latestBlockTimestamp: new Date(now - 5_000).toISOString(), responseTimestamp: new Date(now).toISOString(),
+      timedOut: false, rateLimited: false, speculative: false, transactionStatusHash: "b".repeat(64), contractStateHash: "c".repeat(64),
+    }],
+    automaticFailoverUsed: false,
+    ...overrides,
+  };
+}
+
 const PLAYGROUND_EXAMPLES: Record<string, (agent: Agent, walletAddress: string, policy?: Policy) => Record<string, unknown>> = {
+  "RPC integrity — approved provider": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Verify approved RPC network identity before execution",
+    reason: "Demonstrate fresh synchronized TLS evidence from the policy-approved provider.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", rpcIntegrity: playgroundRpcIntegrity(policy), preflight: playgroundPreflight() },
+  }),
+  "RPC integrity — stale provider": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Detect stale RPC chain state",
+    reason: "The selected provider intentionally reports an old latest-block timestamp.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", rpcIntegrity: playgroundRpcIntegrity(policy, { providerObservations: [{ providerId: "casper-testnet-primary", endpoint: "https://node.testnet.casper.network/rpc", chainName: "casper-test", networkIdentifier: "casper-testnet", genesisHash: "a".repeat(64), tls: true, synced: true, latestBlockHeight: 125000, latestBlockTimestamp: new Date(Date.now() - 15 * 60_000).toISOString(), responseTimestamp: new Date().toISOString(), timedOut: false, rateLimited: false, speculative: false }] }), preflight: playgroundPreflight() },
+  }),
+  "RPC integrity — network mismatch": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Block execution when the provider reports the wrong network",
+    reason: "The provider intentionally reports a mainnet identity for a Casper Testnet request.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", rpcIntegrity: playgroundRpcIntegrity(policy, { providerObservations: [{ providerId: "casper-testnet-primary", endpoint: "https://node.testnet.casper.network/rpc", chainName: "casper", networkIdentifier: "casper-mainnet", genesisHash: "d".repeat(64), tls: true, synced: true, latestBlockHeight: 125000, latestBlockTimestamp: new Date(Date.now() - 5_000).toISOString(), responseTimestamp: new Date().toISOString(), timedOut: false, rateLimited: false, speculative: false }] }), preflight: playgroundPreflight() },
+  }),
+  "RPC integrity — provider unavailable": (agent, walletAddress, policy) => ({
+    source: "Magen3 Intent Playground", agentId: agent.id, walletAddress, executionWalletAddress: walletAddress,
+    goal: "Route unavailable RPC evidence according to policy",
+    reason: "The selected approved provider intentionally reports a timeout.",
+    action: { type: "Transfer", amount: 5, asset: "CSPR", target: firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT, targetType: "Wallet Address", chainName: "casper-test", rpcIntegrity: playgroundRpcIntegrity(policy, { providerObservations: [{ providerId: "casper-testnet-primary", endpoint: "https://node.testnet.casper.network/rpc", chainName: "casper-test", networkIdentifier: "casper-testnet", genesisHash: "a".repeat(64), tls: true, synced: true, latestBlockHeight: 125000, latestBlockTimestamp: new Date(Date.now() - 5_000).toISOString(), responseTimestamp: new Date().toISOString(), timedOut: true, rateLimited: false, speculative: false }] }), preflight: playgroundPreflight() },
+  }),
   "Instruction integrity — trusted goal": (agent, walletAddress, policy) => {
     const approvedWallet = firstConfiguredWallet(policy) || PLAYGROUND_DEMO_RECIPIENT;
     return {
@@ -9663,6 +9824,7 @@ function SettingsPage({
     ["Instruction Integrity Status", `${api.baseUrl}/api/instruction-integrity/status`],
     ["Tool & MCP Integrity Status", `${api.baseUrl}/api/tool-mcp-integrity/status`],
     ["Delegation Safety Status", `${api.baseUrl}/api/delegation-safety/status`],
+    ["RPC & Chain Integrity Status", `${api.baseUrl}/api/rpc-chain-integrity/status`],
     ["Emergency Pause Management", `${api.baseUrl}/api/emergency-pauses`],
     ["Token Permission Controls Status", `${api.baseUrl}/api/token-permission-controls/status`],
     ["x402 Payment Controls Status", `${api.baseUrl}/api/x402-payment-controls/status`],

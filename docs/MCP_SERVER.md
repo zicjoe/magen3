@@ -152,3 +152,8 @@ If a real downstream tool is the execution authority, submit its explicit `actio
 ## Delegation & Session Key Safety
 
 The MCP intent schema supports public delegated-permission metadata under `action.delegation`. A trusted wallet adapter may attach a transient Casper message signature for verification, but the official MCP server does not hold wallet secrets, create private session keys, or sign delegated authority on behalf of a reviewer or execution wallet. Magen3 stores only the canonical attestation hash, signature hash/algorithm, verified scope evidence, and findings.
+
+
+## RPC & Chain Integrity
+
+MCP callers may relay public `action.rpcIntegrity` evidence produced by a trusted RPC adapter. The official MCP server does not query providers itself, fabricate observations, certify provider operators, or treat missing evidence as a pass. The schema includes expected network identity, selected provider, provider observations, and auditable failover metadata. See `RPC_CHAIN_INTEGRITY.md`.

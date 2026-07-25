@@ -209,3 +209,8 @@ Pass a public `action["delegation"]` object when execution uses delegated author
 ### Build the canonical delegation message
 
 Use `build_delegation_attestation_message(delegation, agent_id)` before requesting a Casper Wallet message signature. `hash_delegation_attestation(delegation, agent_id)` returns the optional SHA-256 binding. These helpers do not access wallet secrets or sign transactions.
+
+
+## RPC & Chain Integrity
+
+Submit public `action.rpcIntegrity` evidence only when it was collected by a trusted adapter. Magen3 checks approved provider identity, expected network binding, freshness, quorum agreement, and failover policy. Never send provider credentials or fabricate observations.

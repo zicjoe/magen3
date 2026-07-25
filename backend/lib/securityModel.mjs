@@ -78,7 +78,7 @@ export const PROTECTION_MODULES = [
       { id: "lifecycle-replay", name: "Lifecycle and replay protection", status: "Live" },
       { id: "settlement-reconciliation", name: "Execution and settlement reconciliation", status: "Foundation Available" },
       { id: "stateful-simulation", name: "Stateful execution simulation", status: "Foundation Available" },
-      { id: "rpc-integrity", name: "RPC and chain integrity", status: "Planned" },
+      { id: "rpc-integrity", name: "RPC and chain integrity", status: "Foundation Available" },
       { id: "gas-sponsorship", name: "Gas sponsorship and fee safety", status: "Planned" },
     ],
   },

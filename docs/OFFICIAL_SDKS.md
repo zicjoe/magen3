@@ -167,3 +167,8 @@ The TypeScript SDK exposes typed `action.toolIntegrity` metadata and `toolMcpInt
 Both official SDKs accept public `action.delegation` metadata and expose sanitized `delegationSafetyContext`. Use a trusted connected-wallet adapter to construct and sign the canonical Magen3 delegation attestation. The SDKs do not generate private session keys, read wallet secrets, or sign on behalf of the delegating wallet. Never include a private key, mnemonic, seed phrase, or raw signed transaction in an intent.
 
 The JavaScript SDK exports `buildMagen3DelegationAttestationMessage`, and the Python SDK exports `build_delegation_attestation_message` plus `hash_delegation_attestation`. These helpers produce the backend-compatible canonical message without accessing wallet secrets.
+
+
+## RPC & Chain Integrity
+
+Both official SDKs pass through `action.rpcIntegrity` and the returned `rpcChainIntegrityContext`. A trusted external adapter must collect real provider observations; the SDK does not fabricate network identity, synchronization, block freshness, provider agreement, or failover evidence. See `RPC_CHAIN_INTEGRITY.md`.

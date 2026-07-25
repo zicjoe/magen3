@@ -102,3 +102,8 @@ Existing agent IDs, API keys, policies, Gateway routes, headers, and audit recor
 ## Security boundary
 
 Magen3 accepts unsigned intent metadata only. Never send private keys, mnemonics, wallet approvals, transaction signatures, signed deploys, or signed x402 payment payloads.
+
+
+## RPC & Chain Integrity
+
+RPC & Chain Integrity complements lifecycle and replay protection by checking whether authorization relies on fresh, approved, network-bound provider evidence. It evaluates `action.rpcIntegrity` before downstream wallet, contract, and execution decisions. The control is Foundation Available pending deployed real-provider adapter verification. See [RPC & Chain Integrity](./RPC_CHAIN_INTEGRITY.md).

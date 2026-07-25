@@ -430,5 +430,23 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result["result"]["delegationSafetyContext"]["signatureHash"], "d" * 64)
 
 
+    def test_rpc_chain_integrity_metadata_and_context_pass_through(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed", "rpcChainIntegrityContext": {"metadataSupplied": True, "selectedProviderId": "primary", "networkAgreement": True, "providerAgreement": True, "violations": []}}}
+        client = Magen3Client("https://api.example", "MAG-RPC-1", "secret", transport=transport)
+        result = client.check_intent({"executionWalletAddress": "01" + "1" * 64, "action": {"type": "Transfer", "amount": 1, "asset": "CSPR", "target": "01" + "2" * 64, "chainName": "casper-test", "rpcIntegrity": {
+            "expectedChainName": "casper-test", "expectedNetworkIdentifier": "casper-testnet", "expectedGenesisHash": "a" * 64,
+            "selectedEndpoint": "https://node.testnet.casper.network/rpc", "selectedProviderId": "primary",
+            "providerObservations": [{"providerId": "primary", "endpoint": "https://node.testnet.casper.network/rpc", "chainName": "casper-test", "networkIdentifier": "casper-testnet", "genesisHash": "a" * 64, "tls": True, "synced": True, "latestBlockHeight": 125000, "latestBlockTimestamp": "2026-07-25T00:00:00.000Z", "responseTimestamp": "2026-07-25T00:00:05.000Z", "timedOut": False, "rateLimited": False, "speculative": False}],
+            "automaticFailoverUsed": False,
+        }}})
+        self.assertEqual(captured["payload"]["action"]["rpcIntegrity"]["selectedProviderId"], "primary")
+        self.assertTrue(result["result"]["rpcChainIntegrityContext"]["networkAgreement"])
+        self.assertEqual(result["result"]["rpcChainIntegrityContext"]["violations"], [])
+
+
+
 if __name__ == "__main__":
     unittest.main()

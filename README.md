@@ -853,7 +853,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 implementation now includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone begins Phase 3: **RPC & Chain Integrity**. Provider-backed controls remain Foundation Available until real provider integration and end-to-end verification satisfy their published Live criteria.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. Phase 3 has begun with **RPC & Chain Integrity** as Foundation Available pending real deployed provider-adapter verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Gas Sponsorship & Fee Safety**. Provider-backed controls remain Foundation Available until their published Live criteria are satisfied.
 
 ## Verification
 
@@ -881,7 +881,7 @@ The repository retains the existing Dockerfile and `railway.json`.
 3. Set `CORS_ORIGIN` to the deployed Vercel frontend origin. Multiple origins require the backend configuration to support them; do not use `*` with sensitive production deployments unless intentionally accepted.
 4. Deploy the backend.
 5. Run `pnpm db:migrate` against the production database before relying on the Human Approval & Quorum fields.
-6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/token-permission-controls/status`, `/api/privileged-action-controls/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
+6. Confirm `/api/health`, `/api/approval-workflow/status`, `/api/token-permission-controls/status`, `/api/privileged-action-controls/status`, `/api/execution-integrity/status`, `/api/threat-intelligence/status`, `/api/oracle-validation/status`, `/api/compliance-controls/status`, `/api/rpc-chain-integrity/status`, `/api/public-config`, and `/api/agent-gateway/spec`.
 
 The start command remains:
 
@@ -1009,3 +1009,10 @@ The official `@magen3/mcp-server` automatically supplies stable integrity metada
 Delegation & Session Key Safety is Foundation Available under Agent Shield → Agent Trust & Access pending deployed Casper Wallet or smart-account verification. Requests that use delegated authority may include `action.delegation` with a stable delegation ID, delegating Casper wallet, delegate or public session key, exact network/contract/method/asset scopes, bounded amounts and frequency, activation and expiry, revocation state, depth, redelegation behavior, nonce, and a transient Casper Wallet attestation signature.
 
 Magen3 constructs a domain-separated canonical attestation, verifies Casper Ed25519 or Secp256k1 signatures, checks execution-wallet binding and least-privilege scope, and stores only sanitized attestation/signature hashes and findings. Private session keys, wallet secrets, raw signatures, and signed transactions are never persisted. Existing requests without delegation metadata remain compatible. See [`docs/DELEGATION_SESSION_KEY_SAFETY.md`](docs/DELEGATION_SESSION_KEY_SAFETY.md).
+
+
+## RPC & Chain Integrity
+
+RPC & Chain Integrity is Foundation Available under Execution Integrity. Trusted adapters may submit `action.rpcIntegrity` with the expected chain identity, selected approved endpoint, fresh provider observations, synchronization and block-height evidence, optional transaction or contract-state hashes, and auditable failover metadata. Magen3 deterministically checks approved providers, TLS, freshness, network binding, height regression, minimum quorum, provider agreement, speculative endpoint isolation, and failover policy before signing.
+
+The implementation does not certify an RPC provider or treat unavailable evidence as safe. Promotion to Live requires deployed real-provider adapter verification. See `docs/RPC_CHAIN_INTEGRITY.md`.
