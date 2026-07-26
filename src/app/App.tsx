@@ -2546,6 +2546,69 @@ function DashboardPage({
 // Agent Shield Page
 // ──────────────────────────────────────────────────────────
 
+const SHIELD_CONTROL_COVERAGE_CHECKS: Record<string, string[]> = {
+  "agent-authentication": ["credential", "agent-state"],
+  "credential-lifecycle": ["credential"],
+  "instruction-integrity": ["instruction-integrity"],
+  "tool-mcp-integrity": ["tool-mcp-integrity"],
+  "delegation-session-keys": ["delegation-session-keys"],
+  "policy-enforcement": ["active-policy", "spend-limits", "destination-controls", "contract-controls"],
+  "review-thresholds": ["review-threshold"],
+  "approval-quorum": ["approval-workflow"],
+  "reviewer-signatures": ["approval-workflow"],
+  "organizational-approval": ["organizational-approval"],
+  "emergency-controls": ["emergency-controls"],
+  "wallet-identity": ["destination-controls"],
+  "wallet-spend-controls": ["spend-limits", "destination-controls"],
+  "asset-identity": ["capabilities"],
+  "contract-identity": ["contract-controls"],
+  "entry-point-controls": ["contract-controls"],
+  "privileged-actions": ["privileged-action-controls"],
+  "contract-upgrades": ["contract-upgrade-safety"],
+  "contract-arguments": ["contract-argument-policies"],
+  "token-permissions": ["token-permission-controls"],
+  "transaction-preflight": ["execution-preflight"],
+  "lifecycle-replay": ["lifecycle-replay"],
+  "settlement-reconciliation": ["gateway-activity"],
+  "rpc-integrity": ["rpc-chain-integrity"],
+  "gas-sponsorship": ["gas-sponsorship-fee-safety"],
+  "quote-bounds": ["oracle-validation"],
+  "oracle-integrity": ["oracle-validation"],
+  "bridge-routes": ["bridge-controls"],
+  "x402-authorization": ["x402-payment-controls"],
+  "x402-settlement": ["x402-payment-controls"],
+  "threat-screening": ["threat-intelligence"],
+  "compliance-evidence": ["compliance-controls"],
+};
+
+const SHIELD_AREA_FINDING_MODULES: Record<string, string[]> = {
+  "agent-trust-access": ["Agent Authentication", "Instruction Integrity", "Tool & MCP Integrity", "Delegation & Session Key Safety"],
+  "policy-approval-controls": ["Policy Enforcement", "Policy & Approval Controls", "Emergency Circuit Breaker"],
+  "wallet-asset-safety": ["Wallet Validation", "Asset Identity"],
+  "contract-permission-safety": ["Contract Validation", "Privileged Action Controls", "Contract Upgrade Safety", "Contract Argument Policies", "Token Permission Controls"],
+  "execution-integrity": ["Execution Simulation", "Execution Integrity", "Execution & Settlement Reconciliation", "RPC & Chain Integrity", "Gas Sponsorship & Fee Safety"],
+  "market-oracle-integrity": ["Oracle Validation", "Execution Quality"],
+  "cross-chain-payment-controls": ["Bridge Controls", "x402 Payment Controls", "x402 Settlement"],
+  "threat-compliance": ["Threat Intelligence", "Compliance Controls"],
+};
+
+function isPendingShieldReview(log: AuditLog) {
+  if (log.decision !== "Review Required") return false;
+  const status = String(log.approvalStatus || "").trim().toLowerCase();
+  return !["approved", "rejected", "expired", "resolved"].includes(status);
+}
+
+function compactCapabilities(capabilities: ExecutionCapability[], selectedCapabilities?: ExecutionCapability[]): string[] {
+  const relevant = selectedCapabilities
+    ? capabilities.filter((capability) => selectedCapabilities.includes(capability))
+    : capabilities;
+  const allCapabilities = EXECUTION_CAPABILITY_CATALOG.map((item) => item.id);
+  if (!selectedCapabilities && relevant.length === allCapabilities.length) return ["All capabilities"];
+  const visible: string[] = relevant.slice(0, 2);
+  if (relevant.length > 2) visible.push(`+${relevant.length - 2} more`);
+  return visible.length ? visible : ["Not currently relevant"];
+}
+
 function AgentShieldPage({
   agents,
   policies,
@@ -2559,133 +2622,567 @@ function AgentShieldPage({
   apiOnline: boolean;
   onNavigate: (p: Page) => void;
 }) {
-  const activeAgents = agents.filter((agent) => agent.status === "Active");
-  const coverages = activeAgents.map((agent) => calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), auditLogs.filter((log) => log.agentId === agent.id)));
-  const averageCoverage = coverages.length ? Math.round(coverages.reduce((sum, item) => sum + item.score, 0) / coverages.length) : 0;
-  const latestLog = auditLogs[0];
+  const [selectedAgentId, setSelectedAgentId] = useState("all");
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [showFullPipeline, setShowFullPipeline] = useState(false);
+
+  useEffect(() => {
+    if (selectedAgentId !== "all" && !agents.some((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId("all");
+    }
+  }, [agents, selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAreaId) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedAreaId(null);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [selectedAreaId]);
+
+  const activeAgents = useMemo(() => agents.filter((agent) => agent.status === "Active"), [agents]);
+  const selectedAgent = selectedAgentId === "all" ? undefined : agents.find((agent) => agent.id === selectedAgentId);
+  const selectedCapabilities = selectedAgent ? normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type) : undefined;
+  const scopedAgents = selectedAgent ? [selectedAgent] : activeAgents;
+  const scopedLogs = useMemo(() => {
+    const items = selectedAgent ? auditLogs.filter((log) => log.agentId === selectedAgent.id) : auditLogs;
+    return [...items].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
+  }, [auditLogs, selectedAgent]);
+  const scopedCoverages = scopedAgents.map((agent) => ({
+    agent,
+    coverage: calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), auditLogs.filter((log) => log.agentId === agent.id)),
+  }));
+  const averageCoverage = scopedCoverages.length
+    ? Math.round(scopedCoverages.reduce((sum, item) => sum + item.coverage.score, 0) / scopedCoverages.length)
+    : 0;
+  const selectedCoverage = selectedAgent
+    ? calculateSecurityCoverage(selectedAgent, getActivePolicy(policies, selectedAgent.id), scopedLogs)
+    : undefined;
+  const latestLog = scopedLogs[0];
+  const pendingReviews = scopedLogs.filter(isPendingShieldReview);
+  const unresolvedExecutions = scopedLogs.filter(executionNeedsAttention);
   const protectionControls = PROTECTION_MODULE_CATALOG.flatMap((area) => area.controls);
   const statusCounts = protectionControls.reduce<Record<string, number>>((acc, control) => {
     acc[control.status] = (acc[control.status] || 0) + 1;
     return acc;
   }, {});
+  const visibleAreas = selectedAgent && selectedCapabilities
+    ? recommendedModules(selectedCapabilities)
+    : PROTECTION_MODULE_CATALOG;
+  const selectedArea = PROTECTION_MODULE_CATALOG.find((area) => area.id === selectedAreaId);
+
+  const coverageCheckById = useMemo(() => new Map((selectedCoverage?.checks || []).map((check) => [check.id, check])), [selectedCoverage]);
+  const controlCoverageIssue = (controlId: string) => {
+    const mapped = SHIELD_CONTROL_COVERAGE_CHECKS[controlId] || [];
+    return mapped.map((id) => coverageCheckById.get(id)).find((check) => check && !check.passed);
+  };
+
+  const attentionItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      title: string;
+      description: string;
+      action: string;
+      page: Page;
+      severity: "warning" | "critical";
+    }> = [];
+    if (!apiOnline) {
+      items.push({
+        id: "gateway-unavailable",
+        title: "Gateway status is unavailable",
+        description: "Agent Shield cannot confirm live Gateway connectivity. Check the deployed backend before allowing agent execution.",
+        action: "Open settings",
+        page: "settings",
+        severity: "critical",
+      });
+    }
+    if (agents.length === 0) {
+      items.push({
+        id: "no-agents",
+        title: "No autonomous agent is connected",
+        description: "Register an agent to configure protection coverage and begin evaluating intents.",
+        action: "Manage agents",
+        page: "connected-agents",
+        severity: "warning",
+      });
+    } else if (!selectedAgent && activeAgents.length === 0) {
+      items.push({
+        id: "no-active-agents",
+        title: "No connected agent is active",
+        description: "All registered agents are currently revoked, so the Gateway has no active execution identity to protect.",
+        action: "Manage agents",
+        page: "connected-agents",
+        severity: "critical",
+      });
+    }
+    if (selectedAgent?.status === "Revoked") {
+      items.push({
+        id: "selected-agent-revoked",
+        title: `${selectedAgent.name} is revoked`,
+        description: "This agent cannot authenticate or submit new execution intents until a valid active configuration is restored.",
+        action: "Manage agent",
+        page: "connected-agents",
+        severity: "critical",
+      });
+    }
+    const agentsWithoutPolicy = scopedAgents.filter((agent) => !getActivePolicy(policies, agent.id));
+    if (agentsWithoutPolicy.length > 0) {
+      items.push({
+        id: "missing-policy",
+        title: `${agentsWithoutPolicy.length} ${agentsWithoutPolicy.length === 1 ? "agent has" : "agents have"} no active policy`,
+        description: agentsWithoutPolicy.length === 1
+          ? `${agentsWithoutPolicy[0].name} cannot receive complete policy protection until an active policy is assigned.`
+          : `${agentsWithoutPolicy.slice(0, 2).map((agent) => agent.name).join(", ")}${agentsWithoutPolicy.length > 2 ? ` and ${agentsWithoutPolicy.length - 2} more` : ""} need active policies.`,
+        action: "Configure policies",
+        page: "policies",
+        severity: "critical",
+      });
+    }
+    const lowCoverageAgents = scopedCoverages.filter(({ agent, coverage }) => getActivePolicy(policies, agent.id) && coverage.score < 65);
+    if (lowCoverageAgents.length > 0) {
+      items.push({
+        id: "coverage-attention",
+        title: `${lowCoverageAgents.length} ${lowCoverageAgents.length === 1 ? "agent needs" : "agents need"} stronger coverage`,
+        description: lowCoverageAgents.length === 1
+          ? `${lowCoverageAgents[0].agent.name} is at ${lowCoverageAgents[0].coverage.score}% configured protection coverage.`
+          : `Coverage gaps are visible across ${lowCoverageAgents.length} active agents.`,
+        action: "Review agents",
+        page: "connected-agents",
+        severity: "warning",
+      });
+    }
+    if (pendingReviews.length > 0) {
+      items.push({
+        id: "pending-review",
+        title: `${pendingReviews.length} ${pendingReviews.length === 1 ? "decision is" : "decisions are"} awaiting review`,
+        description: `The oldest unresolved review is for ${pendingReviews[pendingReviews.length - 1]?.agentName || "an agent"}. Execution must remain gated until it is resolved.`,
+        action: "Review audit",
+        page: "audit-log",
+        severity: "warning",
+      });
+    }
+    if (unresolvedExecutions.length > 0) {
+      items.push({
+        id: "unresolved-execution",
+        title: `${unresolvedExecutions.length} unresolved ${unresolvedExecutions.length === 1 ? "execution" : "executions"}`,
+        description: "Pending, uncertain, or replaced transactions must be reconciled before an unsafe retry is attempted.",
+        action: "View executions",
+        page: "audit-log",
+        severity: unresolvedExecutions.some((log) => canonicalExecutionStatus(log.executionStatus || "") === "uncertain") ? "critical" : "warning",
+      });
+    }
+    const failedProofs = scopedLogs.filter((log) => log.decisionProofStatus === "failed");
+    if (failedProofs.length > 0) {
+      items.push({
+        id: "proof-failure",
+        title: `${failedProofs.length} Casper decision ${failedProofs.length === 1 ? "proof needs" : "proofs need"} attention`,
+        description: "The authorization decision remains in the audit record, but its Casper proof was not confirmed by the relayer.",
+        action: "Inspect audit",
+        page: "audit-log",
+        severity: "critical",
+      });
+    }
+    return items;
+  }, [activeAgents.length, agents.length, apiOnline, pendingReviews, policies, scopedAgents, scopedCoverages, scopedLogs, selectedAgent, unresolvedExecutions]);
+
+  const protectionAreaIcons: Record<string, ReactElement> = {
+    "agent-trust-access": <Lock size={20} />,
+    "policy-approval-controls": <FileText size={20} />,
+    "wallet-asset-safety": <Wallet size={20} />,
+    "contract-permission-safety": <Code2 size={20} />,
+    "execution-integrity": <Zap size={20} />,
+    "market-oracle-integrity": <TrendingUp size={20} />,
+    "cross-chain-payment-controls": <Globe size={20} />,
+    "threat-compliance": <ShieldAlert size={20} />,
+  };
+
+  const selectedAreaControlGroups = useMemo(() => {
+    if (!selectedArea) return [];
+    const needsConfiguration = selectedArea.controls.filter((control) => Boolean(controlCoverageIssue(control.id)));
+    const remaining = selectedArea.controls.filter((control) => !needsConfiguration.includes(control));
+    return [
+      { id: "needs-configuration", label: "Needs configuration", controls: needsConfiguration, tone: "warning" },
+      { id: "active-protection", label: "Active protection", controls: remaining.filter((control) => control.status === "Live"), tone: "live" },
+      { id: "foundation", label: "Available foundation", controls: remaining.filter((control) => control.status === "Foundation Available" || control.status === "Preview"), tone: "foundation" },
+      { id: "roadmap", label: "Roadmap", controls: remaining.filter((control) => control.status === "Planned"), tone: "planned" },
+    ].filter((group) => group.controls.length > 0);
+  }, [coverageCheckById, selectedArea]);
+
+  const compactPipeline = useMemo(() => {
+    if (!latestLog?.pipelineStages?.length) return [];
+    const priority: Record<string, number> = { failed: 5, warning: 4, pending: 3, completed: 2, skipped: 1 };
+    const groups = [
+      { id: "received", label: "Received", match: (id: string) => id.includes("intent") && id.includes("received") },
+      { id: "authenticated", label: "Authenticated", match: (id: string) => id.includes("authentication") },
+      { id: "policy", label: "Policy", match: (id: string) => id.includes("policy") && !id.includes("approval") },
+      { id: "protection", label: "Protection", match: (id: string) => ["wallet", "contract", "execution", "market", "oracle", "bridge", "threat", "compliance", "protection"].some((word) => id.includes(word)) && !id.includes("submitted") && !id.includes("confirmed") },
+      { id: "decision", label: "Decision", match: (id: string) => id.includes("risk") || id === "decision" || id.endsWith("-decision") },
+      { id: "audit", label: "Audit", match: (id: string) => id.includes("audit") },
+      { id: "proof", label: "Casper Proof", match: (id: string) => id.includes("casper") || id.includes("proof") },
+      { id: "settlement", label: "Settlement", match: (id: string) => id.includes("settlement") || id.includes("reconciliation") },
+    ];
+    return groups.flatMap((group) => {
+      const matches = latestLog.pipelineStages!.filter((stage) => group.match(stage.id.toLowerCase()));
+      if (matches.length === 0) return [];
+      const status = [...matches].sort((left, right) => (priority[right.status] || 0) - (priority[left.status] || 0))[0].status;
+      return [{ ...group, status }];
+    });
+  }, [latestLog]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E]">
-            <ShieldCheck size={13} /> Agent Shield Live
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E]">
+              <ShieldCheck size={13} /> Live
+            </span>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${apiOnline ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} /> Gateway {apiOnline ? "Online" : "Unavailable"}
+            </span>
+            <span className="inline-flex rounded-full border border-[#1E293B] bg-[#0B1220] px-2.5 py-1 text-xs font-semibold text-[#94A3B8]">
+              {activeAgents.length} active {activeAgents.length === 1 ? "agent" : "agents"}
+            </span>
           </div>
           <h1 className="mt-3 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Agent Shield</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">
-            The live pre-execution protection system for autonomous blockchain agents. Agent Shield authenticates the agent, loads its configuration and policy, runs relevant checks, returns Allowed / Blocked / Review Required, stores the audit record, and submits a Casper decision proof.
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">
+            Pre-execution protection and operational oversight for autonomous blockchain agents.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Btn variant="secondary" onClick={() => onNavigate("intent-playground")}><Send size={16} /> Test Intent</Btn>
-          <Btn variant="primary" onClick={() => onNavigate("connected-agents")}><Plus size={16} /> Register Agent</Btn>
+          <Btn variant="primary" onClick={() => onNavigate("connected-agents")}><Bot size={16} /> Manage Agents</Btn>
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {[
-          ["Connected Agents", agents.length, Bot],
-          ["Active Policies", policies.filter((policy) => policy.status === "Active").length, FileText],
-          ["Average Coverage", `${averageCoverage}%`, ShieldCheck],
-          ["Decisions", auditLogs.length, Activity],
-          ["Gateway", apiOnline ? "Online" : "Unavailable", Server],
-        ].map(([label, value, Icon]) => {
-          const MetricIcon = Icon as typeof Bot;
-          return (
-            <div key={String(label)} className={`${CARD} p-4`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{String(value)}</div>
-                  <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{String(label)}</div>
-                </div>
-                <MetricIcon size={18} className="text-[#22D3EE]" />
+      <div className={`${CARD} p-4`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Viewing</div>
+            <div className="mt-1 text-sm text-[#F8FAFC]">Choose an agent to focus coverage, findings, and operational attention.</div>
+          </div>
+          <div className="relative w-full sm:w-72">
+            <select
+              className={`${INPUT_CLS} appearance-none pr-10`}
+              value={selectedAgentId}
+              onChange={(event) => {
+                setSelectedAgentId(event.target.value);
+                setSelectedAreaId(null);
+                setShowFullPipeline(false);
+              }}
+            >
+              <option value="all">All Agents</option>
+              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.status}</option>)}
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+          </div>
+        </div>
+      </div>
+
+      <div className={`${CARD_GLOW} overflow-hidden bg-[#1E293B]`}>
+        <div className="grid gap-px sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: selectedAgent ? "Security Coverage" : "Average Coverage",
+              value: `${averageCoverage}%`,
+              detail: selectedAgent ? selectedCoverage?.label || "No coverage data" : `${scopedAgents.length} active ${scopedAgents.length === 1 ? "agent" : "agents"}`,
+              icon: <ShieldCheck size={18} />,
+              tone: "text-[#22D3EE]",
+            },
+            {
+              label: selectedAgent ? "Agent Status" : "Agents Protected",
+              value: selectedAgent ? selectedAgent.status : `${activeAgents.length} of ${agents.length}`,
+              detail: selectedAgent ? `${normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type).length} execution capabilities` : "currently active",
+              icon: <Bot size={18} />,
+              tone: selectedAgent?.status === "Revoked" ? "text-[#EF4444]" : "text-[#22C55E]",
+            },
+            {
+              label: "Pending Reviews",
+              value: pendingReviews.length,
+              detail: pendingReviews.length ? "human action required" : "nothing waiting",
+              icon: <Clock size={18} />,
+              tone: pendingReviews.length ? "text-[#F59E0B]" : "text-[#22C55E]",
+            },
+            {
+              label: "Unresolved Executions",
+              value: unresolvedExecutions.length,
+              detail: unresolvedExecutions.length ? "retry remains gated" : "settlement clear",
+              icon: <RefreshCw size={18} />,
+              tone: unresolvedExecutions.length ? "text-[#F59E0B]" : "text-[#22C55E]",
+            },
+          ].map((metric) => (
+            <div key={metric.label} className="flex items-start justify-between gap-3 bg-[#111827] p-4 sm:p-5">
+              <div>
+                <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{metric.value}</div>
+                <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{metric.label}</div>
+                <div className="mt-1 text-xs text-[#64748B]">{metric.detail}</div>
               </div>
+              <span className={metric.tone}>{metric.icon}</span>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className={`${CARD_GLOW} p-5`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className={SECTION_TITLE}>Security Pipeline</h2>
-              <p className="mt-1 text-sm text-[#94A3B8]">Every intent follows this deterministic flow. Only relevant checks are evaluated.</p>
+      <section className={`${CARD} overflow-hidden`}>
+        <div className="flex items-start justify-between gap-4 border-b border-[#1E293B] px-5 py-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={17} className={attentionItems.length ? "text-[#F59E0B]" : "text-[#22C55E]"} />
+              <h2 className={SECTION_TITLE}>Attention Required</h2>
             </div>
-            {latestLog && <DecisionBadge decision={latestLog.decision} />}
+            <p className="mt-1 text-sm text-[#94A3B8]">Only operational conditions that need action are shown here.</p>
           </div>
-          <div className="mt-5">
-            <PipelineTimeline stages={latestLog?.pipelineStages} />
-          </div>
+          {attentionItems.length > 0 && <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2.5 py-1 text-xs font-semibold text-[#F59E0B]">{attentionItems.length} items</span>}
         </div>
-
-        <div className={`${CARD_GLOW} p-5`}>
-          <h2 className={SECTION_TITLE}>Current Protection Status</h2>
-          <p className="mt-1 text-sm text-[#94A3B8]">Statuses reflect actual backend enforcement, foundation work, and roadmap state.</p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {(["Live", "Foundation Available", "Preview", "Planned"] as const).map((status) => (
-              <div key={status} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">
-                <StatusBadge status={status} />
-                <div className="mt-2 text-2xl font-bold text-[#F8FAFC]">{statusCounts[status] || 0}</div>
-                <div className="mt-1 text-xs text-[#94A3B8]">security controls</div>
+        {attentionItems.length === 0 ? (
+          <div className="flex items-start gap-3 p-5">
+            <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/10 p-2.5 text-[#22C55E]"><CheckCircle size={18} /></div>
+            <div>
+              <div className="text-sm font-semibold text-[#F8FAFC]">All active agents are operating normally</div>
+              <div className="mt-1 text-sm text-[#94A3B8]">No pending reviews, unresolved executions, failed proofs, or mapped configuration gaps require immediate action.</div>
+            </div>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#1E293B]">
+            {attentionItems.slice(0, 5).map((item) => (
+              <div key={item.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className={`mt-0.5 rounded-lg border p-2 ${item.severity === "critical" ? "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#F59E0B]/25 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>
+                    {item.severity === "critical" ? <ShieldAlert size={16} /> : <AlertTriangle size={16} />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[#F8FAFC]">{item.title}</div>
+                    <div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{item.description}</div>
+                  </div>
+                </div>
+                <Btn variant="ghost" size="sm" className="self-start whitespace-nowrap sm:self-auto" onClick={() => onNavigate(item.page)}>{item.action}<ChevronRight size={14} /></Btn>
               </div>
             ))}
           </div>
-          <div className="mt-4 rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-            A module marked unavailable in an audit finding did not contribute a pass result. Planned and Preview modules never silently authorize execution.
-          </div>
-        </div>
-      </div>
+        )}
+      </section>
 
       <section className="space-y-4">
-        <div>
-          <h2 className={SECTION_TITLE}>Agent Shield Protection Areas</h2>
-          <p className="mt-1 text-sm text-[#94A3B8]">Eight coherent areas keep the product clear. Each area reveals only the controls relevant to an agent’s execution capabilities.</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className={SECTION_TITLE}>Protection Areas</h2>
+            <p className="mt-1 text-sm text-[#94A3B8]">
+              {selectedAgent
+                ? `${visibleAreas.length} of 8 areas are relevant to ${selectedAgent.name} based on its configured capabilities.`
+                : "Eight coherent protection areas keep Agent Shield clear while preserving control-level depth."}
+            </p>
+          </div>
+          {selectedAgent && selectedCapabilities && (
+            <div className="text-xs text-[#64748B]">Relevant to {selectedCapabilities.join(" · ")}</div>
+          )}
         </div>
-        <div className="grid gap-5 md:grid-cols-2">
-          {PROTECTION_MODULE_CATALOG.map((area) => {
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {visibleAreas.map((area) => {
             const live = area.controls.filter((control) => control.status === "Live").length;
-            const foundation = area.controls.filter((control) => control.status === "Foundation Available").length;
-            const planned = area.controls.filter((control) => control.status === "Planned").length;
+            const foundation = area.controls.filter((control) => control.status === "Foundation Available" || control.status === "Preview").length;
+            const needsConfiguration = selectedAgent ? area.controls.filter((control) => Boolean(controlCoverageIssue(control.id))).length : 0;
+            const areaModules = SHIELD_AREA_FINDING_MODULES[area.id] || [];
+            const latestAreaLog = scopedLogs.find((log) => log.moduleFindings?.some((finding) => areaModules.includes(finding.module)));
+            const recentFindingAttention = latestAreaLog?.moduleFindings?.filter((finding) => areaModules.includes(finding.module) && ["warning", "fail", "unavailable"].includes(finding.status)).length || 0;
+            const capabilities = compactCapabilities(area.capabilities, selectedCapabilities);
             return (
-              <div key={area.id} className={`${CARD} flex flex-col p-5`}>
+              <button
+                type="button"
+                key={area.id}
+                onClick={() => setSelectedAreaId(area.id)}
+                className={`${CARD} group flex min-h-[260px] flex-col p-5 text-left transition-colors hover:border-[#334155] focus:outline-none focus:border-[#22D3EE]/50`}
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]"><Shield size={20} /></div>
-                  <div className="text-right text-[11px] text-[#94A3B8]">{live} Live · {foundation} Foundation · {planned} Planned</div>
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]">{protectionAreaIcons[area.id] || <Shield size={20} />}</div>
+                  {selectedAgent ? needsConfiguration > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] font-semibold text-[#F59E0B]"><AlertTriangle size={10} /> {needsConfiguration} need config</span>
+                  ) : recentFindingAttention > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] font-semibold text-[#F59E0B]"><AlertTriangle size={10} /> Recent finding</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[#22C55E]/20 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] font-semibold text-[#22C55E]"><CheckCircle size={10} /> No attention</span>
+                  ) : (
+                    <span className="inline-flex rounded-full border border-[#1E293B] bg-[#0B1220] px-2 py-0.5 text-[10px] font-semibold text-[#94A3B8]">Catalogue view</span>
+                  )}
                 </div>
-                <h3 className="mt-4 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{area.name}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{area.description}</p>
-                <div className="mt-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Relevant capabilities</div>
-                  <CapabilityChips capabilities={area.capabilities} compact />
+                <h3 className="mt-4 text-base font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{area.name}</h3>
+                <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-[#94A3B8]">{area.description}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-semibold">
+                  <span className="inline-flex items-center gap-1 text-[#22C55E]"><span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" /> {live} Live</span>
+                  {foundation > 0 && <span className="inline-flex items-center gap-1 text-[#22D3EE]"><span className="h-1.5 w-1.5 rounded-full bg-[#22D3EE]" /> {foundation} Foundation</span>}
+                  <span className="text-[#64748B]">{area.controls.length} controls</span>
                 </div>
-                <div className="mt-4 space-y-2 border-t border-[#1E293B] pt-4">
-                  {area.controls.map((control) => (
-                    <div key={control.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xs font-semibold text-[#F8FAFC]">{control.name}</div>
-                          <div className="mt-1 text-[11px] leading-relaxed text-[#94A3B8]">{control.description}</div>
-                        </div>
-                        <StatusBadge status={control.status} />
-                      </div>
-                    </div>
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {capabilities.map((capability) => (
+                    <span key={capability} className="rounded-full border border-[#1E293B] bg-[#0B1220] px-2 py-0.5 text-[10px] font-semibold text-[#94A3B8]">{capability}</span>
                   ))}
                 </div>
-              </div>
+                <div className="mt-auto flex items-end justify-between gap-3 border-t border-[#1E293B] pt-4">
+                  <div className="text-[10px] text-[#64748B]">{latestAreaLog ? `Last evaluated ${fmtTs(latestAreaLog.timestamp)}` : "Not observed yet"}</div>
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#22D3EE]">View controls <ChevronRight size={13} className="transition-transform group-hover:translate-x-0.5" /></span>
+                </div>
+              </button>
             );
           })}
         </div>
       </section>
+
+      <section className={`${CARD_GLOW} p-5`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Activity size={18} className="text-[#22D3EE]" />
+              <h2 className={SECTION_TITLE}>Latest Evaluation</h2>
+            </div>
+            {latestLog ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#94A3B8]">
+                <span className="font-semibold text-[#F8FAFC]">{latestLog.agentName}</span>
+                <span>·</span>
+                <span>{latestLog.action}{latestLog.amount > 0 ? ` ${latestLog.amount} ${auditAsset(latestLog)}` : ""}</span>
+                <span>·</span>
+                <span>{fmtTs(latestLog.timestamp)}</span>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-[#94A3B8]">No recent evaluation is available for this view.</p>
+            )}
+          </div>
+          {latestLog && <DecisionBadge decision={latestLog.decision} />}
+        </div>
+
+        {latestLog ? (
+          <>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {compactPipeline.length > 0 ? compactPipeline.map((stage, index) => {
+                const stageClass = stage.status === "failed"
+                  ? "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"
+                  : stage.status === "warning" || stage.status === "pending"
+                    ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"
+                    : stage.status === "completed"
+                      ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]"
+                      : "border-[#1E293B] bg-[#0B1220] text-[#64748B]";
+                return (
+                  <div key={stage.id} className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${stageClass}`}>
+                      {stage.status === "completed" ? <CheckCircle size={12} /> : stage.status === "failed" ? <XCircle size={12} /> : stage.status === "warning" || stage.status === "pending" ? <Clock size={12} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                      {stage.label}
+                    </span>
+                    {index < compactPipeline.length - 1 && <ArrowRight size={13} className="text-[#334155]" />}
+                  </div>
+                );
+              }) : <div className="text-sm text-[#94A3B8]">Detailed pipeline stages were not stored for this legacy audit record.</div>}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#1E293B] pt-4">
+              <div className="text-xs text-[#94A3B8]">{latestLog.primaryReason || latestLog.reason}</div>
+              <Btn variant="ghost" size="sm" onClick={() => setShowFullPipeline((current) => !current)}>{showFullPipeline ? "Hide full pipeline" : "View full pipeline"}<ChevronDown size={14} className={showFullPipeline ? "rotate-180" : ""} /></Btn>
+            </div>
+            {showFullPipeline && <div className="mt-4 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><PipelineTimeline stages={latestLog.pipelineStages} /></div>}
+          </>
+        ) : (
+          <div className="mt-5 flex flex-col items-start gap-3 rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-5">
+            <div className="text-sm text-[#94A3B8]">Test an intent to see Agent Shield authenticate the agent, apply policy, run relevant controls, assess risk, and record the decision.</div>
+            <Btn variant="secondary" size="sm" onClick={() => onNavigate("intent-playground")}><Send size={14} /> Test Intent</Btn>
+          </div>
+        )}
+      </section>
+
+      <details className={`${CARD} group p-4`}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-[#F8FAFC]">Control Availability</div>
+            <div className="mt-1 text-xs text-[#94A3B8]">Implementation maturity across the Agent Shield catalogue.</div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="text-xs font-semibold text-[#22C55E]">{statusCounts.Live || 0} Live</span>
+            <span className="text-xs font-semibold text-[#22D3EE]">{statusCounts["Foundation Available"] || 0} Foundation</span>
+            {(statusCounts.Preview || 0) > 0 && <span className="text-xs font-semibold text-[#22D3EE]">{statusCounts.Preview} Preview</span>}
+            <span className="text-xs font-semibold text-[#64748B]">{statusCounts.Planned || 0} Planned</span>
+            <ChevronDown size={15} className="text-[#64748B] transition-transform group-open:rotate-180" />
+          </div>
+        </summary>
+        <div className="mt-4 border-t border-[#1E293B] pt-4 text-xs leading-relaxed text-[#94A3B8]">
+          Availability describes implementation maturity, not whether every control is configured for every agent. Foundation controls have enforceable groundwork but still require the stated provider, polling, wallet-signature, or end-to-end deployment evidence before they can be labelled Live. Unavailable findings never contribute a pass.
+        </div>
+      </details>
+
+      {selectedArea && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#050B14]/75 backdrop-blur-sm" onMouseDown={() => setSelectedAreaId(null)}>
+          <div role="dialog" aria-modal="true" aria-label={`${selectedArea.name} controls`} className="h-full w-full max-w-xl overflow-y-auto border-l border-[#1E293B] bg-[#0B1220] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="sticky top-0 z-10 border-b border-[#1E293B] bg-[#0B1220]/95 px-5 py-4 backdrop-blur">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 p-2.5 text-[#22D3EE]">{protectionAreaIcons[selectedArea.id] || <Shield size={20} />}</div>
+                  <div>
+                    <div className="text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{selectedArea.name}</div>
+                    <div className="mt-1 text-xs text-[#94A3B8]">{selectedAgent ? `Configuration for ${selectedAgent.name}` : "Platform control catalogue"}</div>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setSelectedAreaId(null)} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><X size={18} /></button>
+              </div>
+            </div>
+
+            <div className="space-y-6 p-5">
+              <p className="text-sm leading-relaxed text-[#94A3B8]">{selectedArea.description}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {compactCapabilities(selectedArea.capabilities, selectedCapabilities).map((capability) => (
+                  <span key={capability} className="rounded-full border border-[#1E293B] bg-[#111827] px-2.5 py-1 text-[10px] font-semibold text-[#94A3B8]">{capability}</span>
+                ))}
+              </div>
+
+              {selectedAreaControlGroups.map((group) => (
+                <section key={group.id}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{group.label}</h3>
+                    <span className="text-[10px] text-[#64748B]">{group.controls.length} {group.controls.length === 1 ? "control" : "controls"}</span>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-[#1E293B] bg-[#111827]">
+                    {group.controls.map((control, index) => {
+                      const issue = controlCoverageIssue(control.id);
+                      const dotClass = group.tone === "warning" ? "bg-[#F59E0B]" : group.tone === "live" ? "bg-[#22C55E]" : group.tone === "foundation" ? "bg-[#22D3EE]" : "bg-[#64748B]";
+                      return (
+                        <div key={control.id} className={`${index > 0 ? "border-t border-[#1E293B]" : ""} p-4`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-start gap-2.5">
+                              <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${dotClass}`} />
+                              <div>
+                                <div className="text-sm font-semibold text-[#F8FAFC]">{control.name}</div>
+                                <div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{issue?.detail || control.description}</div>
+                                {issue && <div className="mt-2 text-xs leading-relaxed text-[#F59E0B]">{issue.recommendation}</div>}
+                              </div>
+                            </div>
+                            <span className={`whitespace-nowrap text-[10px] font-semibold ${control.status === "Live" ? "text-[#22C55E]" : control.status === "Planned" ? "text-[#64748B]" : "text-[#22D3EE]"}`}>{control.status === "Foundation Available" ? "Foundation" : control.status}</span>
+                          </div>
+                          {control.configurable && selectedAgent && (
+                            <div className="mt-3 pl-5">
+                              <Btn
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedAreaId(null);
+                                  onNavigate(["agent-authentication", "credential-lifecycle"].includes(control.id) ? "connected-agents" : issue?.page as Page || "policies");
+                                }}
+                              >
+                                View configuration <ChevronRight size={13} />
+                              </Btn>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 function AgentRegistrationWizard({
   open,
