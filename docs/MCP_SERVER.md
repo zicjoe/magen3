@@ -162,3 +162,7 @@ MCP callers may relay public `action.rpcIntegrity` evidence produced by a truste
 ## Gas Sponsorship & Fee Safety
 
 MCP callers may relay public `action.feeSafety` evidence produced by a trusted transaction adapter. MCP never creates sponsorships, holds sponsor credentials, or relays raw signatures. The returned `gasSponsorshipFeeSafetyContext` is sanitized.
+
+## Execution & Settlement Reconciliation
+
+Use `magen3_report_execution_reconciliation` to report authenticated public transaction state after authorization. Use `magen3_poll_execution_reconciliation` to poll a bound transaction through the backend-configured Casper or EVM adapter. The MCP schema does not accept RPC URLs. Both tools preserve the original Audit binding and pass observations through Magen3's attempt, retry, replacement, confirmation, finality, delivery, and refund state machine. The tools never sign, broadcast, or receive wallet secrets.

@@ -727,3 +727,9 @@ Trusted adapters may include `action.rpcIntegrity` with expected chain identity,
 ## Gas Sponsorship & Fee Safety metadata
 
 Trusted transaction adapters may include `action.feeSafety` with `chainFamily`, `chainName`, bounded public fee values, an approved `sponsor` or EVM `paymaster`, sponsorship ID, expiry, scopes, a SHA-256 evidence hash, expected and actual payer labels, availability, and rolling usage counters. Magen3 returns sanitized `gasSponsorshipFeeSafetyContext` and structured `Gas Sponsorship & Fee Safety` findings. Casper and EVM-only fields are isolated. Never send sponsor credentials, raw sponsor or Paymaster signatures, private keys, signed transactions, or wallet secrets. See [Gas Sponsorship & Fee Safety](./GAS_SPONSORSHIP_FEE_SAFETY.md).
+
+## Execution reconciliation
+
+Report public post-authorization state with `POST /api/agent-gateway/executions/reconcile` using the same connected-agent API key. Required fields are `agentId`, `auditLogId`, and `status`; transaction-bound states require a transaction identifier either in the update or already stored on the audit. Supported states are `submitted`, `pending`, `confirmed`, `failed`, `uncertain`, `replaced`, `refunded`, and `delivered`.
+
+Optional provider polling is available at `POST /api/agent-gateway/executions/poll`. Supply `agentId`, `auditLogId`, and optionally `chainFamily`, `chainName`, or the already-authorized `transactionHash`. Caller-provided `rpcUrl`, `rpcEndpoint`, `providerUrl`, and `endpoint` fields are rejected. See [Execution & Settlement Reconciliation](./EXECUTION_SETTLEMENT_RECONCILIATION.md).

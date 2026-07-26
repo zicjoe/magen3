@@ -90,6 +90,25 @@ class Magen3Client:
         payload["agentId"] = self.agent_id
         return self._request("POST", "/api/agent-gateway/x402/settlements", payload)
 
+    def report_execution_reconciliation(self, update: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(update.get("auditLogId", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        payload = dict(update)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/executions/reconcile", payload)
+
+    def poll_execution_reconciliation(self, options: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(options.get("auditLogId", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        prohibited = next((key for key in options if key.lower() in {"rpcurl", "rpcendpoint", "providerurl", "endpoint"}), None)
+        if prohibited:
+            raise ValueError(f"{prohibited} is not accepted; RPC endpoints are configured on the Magen3 backend")
+        payload = dict(options)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/executions/poll", payload)
+
     def require_allowed(self, intent: Dict[str, Any]) -> Dict[str, Any]:
         response = self.check_intent(intent)
         result = response.get("result", {})

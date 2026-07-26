@@ -950,6 +950,67 @@ export interface Magen3X402SettlementUpdate {
   note?: string;
 }
 
+export type Magen3ExecutionReconciliationState =
+  | "not_submitted"
+  | "submitted"
+  | "pending"
+  | "confirmed"
+  | "failed"
+  | "uncertain"
+  | "replaced"
+  | "refunded"
+  | "delivered";
+
+export interface Magen3ExecutionReconciliationUpdate {
+  auditLogId: string;
+  status: Exclude<Magen3ExecutionReconciliationState, "not_submitted">;
+  transactionHash?: string;
+  replacementTransactionHash?: string;
+  replacementAuditLogId?: string;
+  refundTransactionHash?: string;
+  attempt?: number;
+  confirmations?: number;
+  finalized?: boolean;
+  blockHeight?: number;
+  observedAt?: string;
+  provider?: string;
+  providerReference?: string;
+  resourceDelivered?: boolean;
+  deliveryReference?: string;
+  failureReason?: string;
+  chainName?: string;
+  note?: string;
+}
+
+export interface Magen3ExecutionReconciliationPollOptions {
+  auditLogId: string;
+  /** Optional when the audit already has a bound transaction hash. */
+  transactionHash?: string;
+  /** Selects a backend-configured adapter. Request-provided RPC URLs are never accepted. */
+  chainFamily?: "casper" | "evm" | string;
+  chainName?: string;
+  note?: string;
+}
+
+export interface Magen3ExecutionReconciliationRecord {
+  status: Magen3ExecutionReconciliationState;
+  transactionHash?: string;
+  attempt?: number;
+  confirmations?: number;
+  requiredConfirmations?: number;
+  finalized?: boolean;
+  finalityDeadline?: string;
+  finalizedAt?: string;
+  replacementOf?: string;
+  replacedBy?: string;
+  failureReason?: string;
+  resourceDeliveryStatus?: string;
+  refundStatus?: string;
+  provider?: string;
+  lastCheckedAt?: string;
+  history?: Array<Record<string, unknown>>;
+}
+
 
 export interface Magen3ApprovalResponseRecord {
   walletAddress: string;
@@ -1199,6 +1260,24 @@ export class Magen3Client {
     return this.request<Record<string, unknown>>("/api/agent-gateway/x402/settlements", {
       method: "POST",
       body: JSON.stringify({ ...update, agentId: this.agentId }),
+    });
+  }
+
+  async reportExecutionReconciliation(update: Magen3ExecutionReconciliationUpdate): Promise<{ ok: boolean; reconciliation: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown> }> {
+    if (!update?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    return this.request<{ ok: boolean; reconciliation: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown> }>("/api/agent-gateway/executions/reconcile", {
+      method: "POST",
+      body: JSON.stringify({ ...update, agentId: this.agentId }),
+    });
+  }
+
+  async pollExecutionReconciliation(options: Magen3ExecutionReconciliationPollOptions): Promise<{ ok: boolean; reconciliation: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown> }> {
+    if (!options?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    const prohibitedProviderField = Object.keys(options).find((key) => /^(?:rpcUrl|rpcEndpoint|providerUrl|endpoint)$/i.test(key));
+    if (prohibitedProviderField) throw new TypeError(`${prohibitedProviderField} is not accepted; RPC endpoints are configured on the Magen3 backend`);
+    return this.request<{ ok: boolean; reconciliation: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown> }>("/api/agent-gateway/executions/poll", {
+      method: "POST",
+      body: JSON.stringify({ ...options, agentId: this.agentId }),
     });
   }
 

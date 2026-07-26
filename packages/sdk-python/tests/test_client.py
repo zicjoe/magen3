@@ -288,6 +288,55 @@ class ClientTests(unittest.TestCase):
         self.assertNotIn("paymentSignature", captured[1]["payload"])
 
 
+    def test_execution_reconciliation_reporting(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured.update({"method": method, "url": url, "headers": headers, "payload": json.loads(data.decode())})
+            return {"ok": True, "reconciliation": {"status": "confirmed", "confirmations": 3}}
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.report_execution_reconciliation({
+            "auditLogId": "AUDIT-EXEC-1",
+            "status": "confirmed",
+            "transactionHash": "0x" + "d" * 64,
+            "attempt": 1,
+            "confirmations": 3,
+            "finalized": True,
+            "provider": "casper-rpc-primary",
+            "resourceDelivered": True,
+        })
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["url"], "https://api.example/api/agent-gateway/executions/reconcile")
+        self.assertEqual(captured["headers"]["x-magen3-agent-key"], "secret")
+        self.assertEqual(captured["payload"]["agentId"], "MAG-1")
+        self.assertEqual(captured["payload"]["auditLogId"], "AUDIT-EXEC-1")
+        self.assertNotIn("signedTransaction", captured["payload"])
+        self.assertEqual(result["reconciliation"]["status"], "confirmed")
+
+    def test_execution_reconciliation_requires_audit_id(self):
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=lambda *_: {})
+        with self.assertRaisesRegex(ValueError, "auditLogId is required"):
+            client.report_execution_reconciliation({"status": "pending"})
+
+    def test_execution_reconciliation_polling(self):
+        captured = {}
+        def transport(method, url, headers, data, timeout):
+            captured.update({"method": method, "url": url, "payload": json.loads(data.decode())})
+            return {"ok": True, "reconciliation": {"status": "pending", "provider": "configured-casper-rpc"}}
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.poll_execution_reconciliation({"auditLogId": "AUDIT-POLL-1", "chainFamily": "casper", "chainName": "casper-test"})
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["url"], "https://api.example/api/agent-gateway/executions/poll")
+        self.assertEqual(captured["payload"]["agentId"], "MAG-1")
+        self.assertNotIn("rpcUrl", captured["payload"])
+        self.assertEqual(result["reconciliation"]["status"], "pending")
+
+    def test_execution_reconciliation_polling_rejects_rpc_url(self):
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=lambda *_: {})
+        with self.assertRaisesRegex(ValueError, "not accepted"):
+            client.poll_execution_reconciliation({"auditLogId": "AUDIT-POLL-1", "rpcUrl": "https://evil.example"})
+
     def test_contract_argument_runtime_args_and_context_pass_through(self):
         captured = {}
         def transport(method, url, headers, data, timeout):

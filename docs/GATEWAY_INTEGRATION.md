@@ -334,3 +334,7 @@ Trusted adapters should populate `action.toolIntegrity` from the actual approved
 ## Delegated execution adapters
 
 An adapter that submits delegated execution should construct the exact `action.delegation` object, build the canonical Magen3 delegation attestation, request a Casper Wallet message signature from the delegating wallet, and submit the signature only with the immediate Gateway request. The adapter must never submit the private session key. See `docs/DELEGATION_SESSION_KEY_SAFETY.md` for the canonical fields and deterministic enforcement boundary.
+
+## Post-authorization reconciliation
+
+After an Allowed intent or a currently executable approved review is submitted, preserve the returned Audit ID. Report submission and later state changes to `/api/agent-gateway/executions/reconcile`. Do not create a fresh retry while the original is pending or uncertain. Use an explicit replacement intent and replacement link when policy permits. For configured networks, `/api/agent-gateway/executions/poll` can query only the backend-approved RPC adapter and then applies the same deterministic state machine. Never send signed transactions, wallet signatures, secrets, or provider URLs.

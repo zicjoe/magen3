@@ -185,6 +185,23 @@ export async function runMigrations() {
       execution_signed_by TEXT NOT NULL DEFAULT '',
       execution_note TEXT NOT NULL DEFAULT '',
       execution_updated_at TIMESTAMPTZ,
+      execution_attempt_count INTEGER NOT NULL DEFAULT 0,
+      execution_confirmations INTEGER NOT NULL DEFAULT 0,
+      execution_required_confirmations INTEGER NOT NULL DEFAULT 1,
+      execution_finality_deadline TIMESTAMPTZ,
+      execution_finalized_at TIMESTAMPTZ,
+      execution_replacement_of TEXT NOT NULL DEFAULT '',
+      execution_replacement_audit_id TEXT NOT NULL DEFAULT '',
+      execution_replaced_by TEXT NOT NULL DEFAULT '',
+      execution_replaced_by_audit_id TEXT NOT NULL DEFAULT '',
+      execution_failure_reason TEXT NOT NULL DEFAULT '',
+      settlement_status TEXT NOT NULL DEFAULT 'not_required',
+      resource_delivery_status TEXT NOT NULL DEFAULT 'not_required',
+      refund_status TEXT NOT NULL DEFAULT 'not_applicable',
+      reconciliation_provider TEXT NOT NULL DEFAULT '',
+      reconciliation_last_checked_at TIMESTAMPTZ,
+      execution_reconciliation JSONB NOT NULL DEFAULT '{}'::jsonb,
+      execution_history JSONB NOT NULL DEFAULT '[]'::jsonb,
       decision_proof_status TEXT NOT NULL DEFAULT 'queued',
       decision_proof_payload_hash TEXT NOT NULL DEFAULT '',
       decision_proof_error TEXT NOT NULL DEFAULT '',
@@ -271,6 +288,23 @@ export async function runMigrations() {
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_signed_by TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_note TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_updated_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_attempt_count INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_confirmations INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_required_confirmations INTEGER NOT NULL DEFAULT 1;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_finality_deadline TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_finalized_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_replacement_of TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_replacement_audit_id TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_replaced_by TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_replaced_by_audit_id TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_failure_reason TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS settlement_status TEXT NOT NULL DEFAULT 'not_required';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS resource_delivery_status TEXT NOT NULL DEFAULT 'not_required';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS refund_status TEXT NOT NULL DEFAULT 'not_applicable';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reconciliation_provider TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reconciliation_last_checked_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_reconciliation JSONB NOT NULL DEFAULT '{}'::jsonb;`);
+  await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_history JSONB NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_status TEXT NOT NULL DEFAULT 'queued';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_payload_hash TEXT NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS decision_proof_error TEXT NOT NULL DEFAULT '';`);
@@ -344,6 +378,8 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_wallet_address ON audit_logs(execution_wallet_address);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_tx_hash ON audit_logs(execution_tx_hash);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_execution_status ON audit_logs(execution_status);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_reconciliation_checked ON audit_logs(reconciliation_last_checked_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_logs_decision_proof_status ON audit_logs(decision_proof_status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_agent_id ON action_reviews(agent_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_action_reviews_wallet_address ON action_reviews(wallet_address);`);

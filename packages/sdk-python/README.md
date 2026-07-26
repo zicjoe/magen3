@@ -219,3 +219,22 @@ Submit public `action.rpcIntegrity` evidence only when it was collected by a tru
 ## Gas Sponsorship & Fee Safety
 
 The Python SDK passes through `action.feeSafety` and the returned `gasSponsorshipFeeSafetyContext`. Trusted adapters must collect real fee, sponsor, payer, expiry, and budget evidence. The SDK never creates sponsorships or signs transactions.
+
+## Execution & Settlement Reconciliation
+
+```python
+client.report_execution_reconciliation({
+    "auditLogId": "AUD-...",
+    "status": "pending",
+    "transactionHash": "0x...",
+    "attempt": 1,
+})
+
+client.poll_execution_reconciliation({
+    "auditLogId": "AUD-...",
+    "chainFamily": "casper",
+    "chainName": "casper-test",
+})
+```
+
+Polling uses only RPC endpoints configured on the Magen3 backend. Do not send signed transactions, wallet signatures, private keys, or provider URLs.

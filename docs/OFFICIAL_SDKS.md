@@ -177,3 +177,7 @@ Both official SDKs pass through `action.rpcIntegrity` and the returned `rpcChain
 ## Gas Sponsorship & Fee Safety
 
 Both official SDKs pass through `action.feeSafety` and the returned `gasSponsorshipFeeSafetyContext`. Trusted adapters must collect real fee, sponsor, payer, expiry, and budget evidence. The SDK never creates sponsorships or signs transactions.
+
+## Execution & Settlement Reconciliation
+
+The TypeScript SDK exposes `reportExecutionReconciliation` and `pollExecutionReconciliation`. The Python SDK exposes `report_execution_reconciliation` and `poll_execution_reconciliation`. Reporting accepts public state evidence; polling selects only a backend-configured Casper or EVM adapter. Both require the original Magen3 Audit ID and connected-agent credentials. Neither method accepts raw signed transactions, wallet secrets, or caller-selected RPC URLs. See `EXECUTION_SETTLEMENT_RECONCILIATION.md`.

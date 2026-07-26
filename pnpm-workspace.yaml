@@ -1,4 +1,5 @@
 packages:
-  - "packages/*"
+  - "packages/sdk-js"
+  - "packages/mcp-server"
 allowBuilds:
   esbuild: true

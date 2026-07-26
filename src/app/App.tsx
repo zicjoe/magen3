@@ -31,6 +31,7 @@ import {
   TrendingUp,
   Server,
   Send,
+  RefreshCw,
   Code2,
   ChevronRight,
   Menu,
@@ -189,6 +190,23 @@ interface AuditLog {
   executionSignedBy?: string;
   executionNote?: string;
   executionUpdatedAt?: string;
+  executionAttemptCount?: number;
+  executionConfirmations?: number;
+  executionRequiredConfirmations?: number;
+  executionFinalityDeadline?: string;
+  executionFinalizedAt?: string;
+  executionReplacementOf?: string;
+  executionReplacementAuditId?: string;
+  executionReplacedBy?: string;
+  executionReplacedByAuditId?: string;
+  executionFailureReason?: string;
+  settlementStatus?: string;
+  resourceDeliveryStatus?: string;
+  refundStatus?: string;
+  reconciliationProvider?: string;
+  reconciliationLastCheckedAt?: string;
+  executionReconciliation?: Record<string, unknown>;
+  executionHistory?: Array<Record<string, unknown>>;
   decisionProofStatus?: string;
   decisionProofPayloadHash?: string;
   decisionProofError?: string;
@@ -772,11 +790,33 @@ function auditX402Settlement(log: AuditLog) {
     : record;
 }
 
+function canonicalExecutionStatus(status = "") {
+  const normalized = status.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["executed", "recorded", "settled", "success", "finalized", "x402_confirmed"].includes(normalized)) return "confirmed";
+  if (["broadcast", "broadcasted", "x402_submitted"].includes(normalized)) return "submitted";
+  if (["processing", "confirming", "x402_pending"].includes(normalized)) return "pending";
+  if (["reverted", "dropped", "x402_failed"].includes(normalized)) return "failed";
+  if (["unknown", "x402_uncertain"].includes(normalized)) return "uncertain";
+  return normalized;
+}
+
+function executionNeedsAttention(log: AuditLog) {
+  const state = canonicalExecutionStatus(log.settlementStatus || log.executionStatus || "");
+  return ["submitted", "pending", "uncertain", "replaced"].includes(state)
+    || log.resourceDeliveryStatus === "pending"
+    || log.refundStatus === "pending";
+}
+
 function executionProofStatus(status = "", txHash = "") {
-  if (status === "x402_confirmed") return { label: "Payment confirmed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
-  if (status === "x402_submitted" || status === "x402_pending") return { label: "Settlement pending", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
-  if (status === "x402_uncertain") return { label: "Settlement uncertain", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
-  if (status === "x402_failed") return { label: "Settlement failed", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
+  const state = canonicalExecutionStatus(status);
+  if (state === "delivered") return { label: "Delivered", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (state === "refunded") return { label: "Refunded", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (state === "confirmed") return { label: status === "x402_confirmed" ? "Payment confirmed" : "Confirmed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
+  if (state === "submitted") return { label: status === "x402_submitted" ? "Settlement submitted" : "Submitted", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (state === "pending") return { label: status === "x402_pending" ? "Settlement pending" : "Pending finality", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (state === "uncertain") return { label: "Outcome uncertain", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
+  if (state === "replaced") return { label: "Replaced", className: "bg-[#A78BFA]/10 text-[#C4B5FD] border-[#A78BFA]/20" };
+  if (state === "failed") return { label: status === "x402_failed" ? "Settlement failed" : "Execution failed", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
   if (isRealCasperDeployHash(txHash)) return { label: "Executed", className: "bg-[#22C55E]/15 text-[#22C55E] border-[#22C55E]/30" };
   if (status === "approved_pending_signature") return { label: "Waiting for signature", className: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20" };
   if (status === "blocked_not_submitted") return { label: "Blocked before execution", className: "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20" };
@@ -789,6 +829,14 @@ function executionProofStatus(status = "", txHash = "") {
 }
 
 function executionProofExplanation(log: AuditLog) {
+  const canonicalStatus = canonicalExecutionStatus(log.settlementStatus || log.executionStatus || "");
+  if (canonicalStatus === "delivered") return "The authorized execution reached the configured finality requirement and the expected resource or destination delivery was reported.";
+  if (canonicalStatus === "refunded") return "The authorized execution was reconciled to a refund. The refund transaction and history remain linked to this audit record.";
+  if (canonicalStatus === "replaced") return "The original transaction was explicitly linked to a replacement. Track the replacement to a terminal state before any further retry.";
+  if (canonicalStatus === "uncertain") return "The outcome is uncertain. Magen3 blocks unsafe automatic retry until the existing transaction is reconciled or an authorized replacement is linked.";
+  if (canonicalStatus === "failed") return `The execution failed${log.executionFailureReason ? `: ${log.executionFailureReason}` : "."} A retry must use a fresh lifecycle-bound attempt and remain within the configured submission limit.`;
+  if (canonicalStatus === "submitted" || canonicalStatus === "pending") return `The transaction is ${canonicalStatus}. Do not submit a duplicate while reconciliation is unresolved.`;
+  if (canonicalStatus === "confirmed" && log.action !== "x402 Payment") return `The execution reached ${log.executionConfirmations || 0} of ${log.executionRequiredConfirmations || 1} configured confirmations or was explicitly reported finalized.`;
   if (log.action === "x402 Payment") {
     const settlement = auditX402Settlement(log);
     const resourceDelivered = settlement?.resourceDelivered === true;
@@ -2275,6 +2323,7 @@ function DashboardPage({
   const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
   const pendingApprovals = approvals.filter((approval) => approval.reviewStatus === "Pending" || approval.reviewStatus === "Configuration Required");
   const activeEmergencyPauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
+  const unresolvedExecutions = auditLogs.filter(executionNeedsAttention);
   const complianceFeedOperational = complianceControlsStatus.status === "available";
   const complianceFeedLabel = complianceFeedOperational
     ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
@@ -2294,6 +2343,7 @@ function DashboardPage({
     { label: "x402 controls", value: x402PaymentsToday.length ? `${x402PaymentsToday.length} today` : "Ready", done: x402FoundationAvailable },
     { label: "Approval queue", value: String(pendingApprovals.length), done: pendingApprovals.length === 0 },
     { label: "Emergency pauses", value: String(activeEmergencyPauses.length), done: activeEmergencyPauses.length === 0 },
+    { label: "Unresolved execution", value: String(unresolvedExecutions.length), done: unresolvedExecutions.length === 0 },
   ];
 
   return (
@@ -2301,6 +2351,11 @@ function DashboardPage({
       {activeEmergencyPauses.length > 0 && (
         <button type="button" onClick={() => onNavigate("settings")} className="w-full rounded-xl border border-[#EF4444]/35 bg-[#EF4444]/10 p-4 text-left">
           <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 text-[#EF4444]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{activeEmergencyPauses.length} active emergency pause{activeEmergencyPauses.length === 1 ? "" : "s"}</div><div className="mt-1 text-xs leading-relaxed text-[#FCA5A5]">Execution is currently blocked or routed to review for one or more scopes. Open Settings to investigate and use the authorized resume workflow.</div></div></div>
+        </button>
+      )}
+      {unresolvedExecutions.length > 0 && (
+        <button type="button" onClick={() => onNavigate("audit")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
+          <div className="flex items-start gap-3"><RefreshCw className="mt-0.5 text-[#F59E0B]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{unresolvedExecutions.length} execution{unresolvedExecutions.length === 1 ? "" : "s"} need reconciliation</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Pending, uncertain, replaced, delivery-pending, or refund-pending records require attention. Open Audit Logs before retrying.</div></div></div>
         </button>
       )}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -2852,6 +2907,14 @@ function AgentRegistrationWizard({
           lifecycleMaxLifetimeSeconds: typeof sourceRules.lifecycleMaxLifetimeSeconds === "number" ? sourceRules.lifecycleMaxLifetimeSeconds : 900,
           lifecycleReplayWindowSeconds: typeof sourceRules.lifecycleReplayWindowSeconds === "number" ? sourceRules.lifecycleReplayWindowSeconds : 86400,
           lifecycleMaxRetryAttempts: typeof sourceRules.lifecycleMaxRetryAttempts === "number" ? sourceRules.lifecycleMaxRetryAttempts : 3,
+          reconciliationEnabled: typeof sourceRules.reconciliationEnabled === "boolean" ? sourceRules.reconciliationEnabled : true,
+          maximumSubmissionAttempts: typeof sourceRules.maximumSubmissionAttempts === "number" ? sourceRules.maximumSubmissionAttempts : 3,
+          pendingRetryAction: typeof sourceRules.pendingRetryAction === "string" ? sourceRules.pendingRetryAction : "Block",
+          uncertainRetryAction: typeof sourceRules.uncertainRetryAction === "string" ? sourceRules.uncertainRetryAction : "Block",
+          requiredConfirmations: typeof sourceRules.requiredConfirmations === "number" ? sourceRules.requiredConfirmations : 1,
+          finalityTimeoutSeconds: typeof sourceRules.finalityTimeoutSeconds === "number" ? sourceRules.finalityTimeoutSeconds : 3600,
+          replacementAllowed: typeof sourceRules.replacementAllowed === "boolean" ? sourceRules.replacementAllowed : true,
+          resourceDeliveryRequired: typeof sourceRules.resourceDeliveryRequired === "boolean" ? sourceRules.resourceDeliveryRequired : false,
           threatIntelligenceMode: typeof sourceRules.threatIntelligenceMode === "string" ? sourceRules.threatIntelligenceMode : "Review",
           threatIntelligenceMinConfidence: typeof sourceRules.threatIntelligenceMinConfidence === "number" ? sourceRules.threatIntelligenceMinConfidence : 70,
           threatIntelligenceUnavailableAction: typeof sourceRules.threatIntelligenceUnavailableAction === "string" ? sourceRules.threatIntelligenceUnavailableAction : "Warn",
@@ -3731,6 +3794,7 @@ ${snippet}
             />
           ) : (() => {
             const latestLog = auditLogs.find((log) => log.agentId === selectedAgent.id);
+            const unresolvedAgentExecutions = auditLogs.filter((log) => log.agentId === selectedAgent.id && executionNeedsAttention(log));
             const rawKey = latestCredentials?.id === selectedAgent.id
               ? latestCredentials.apiKey
               : selectedAgent.apiKey;
@@ -3793,6 +3857,14 @@ ${snippet}
                       <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} onNavigate={onNavigate} />
                       <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} emergencyPauses={emergencyPauses.filter((pause) => !pause.agentId || pause.agentId === selectedAgent.id)} />
                     </div>
+                    {unresolvedAgentExecutions.length > 0 && (
+                      <button type="button" onClick={() => onNavigate("audit")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
+                        <div className="flex items-start justify-between gap-3">
+                          <div><div className="text-sm font-semibold text-[#F8FAFC]">Unresolved execution · {unresolvedAgentExecutions.length}</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Review pending, uncertain, replacement, delivery, or refund state before submitting another attempt.</div></div>
+                          <ArrowRight size={18} className="shrink-0 text-[#F59E0B]" />
+                        </div>
+                      </button>
+                    )}
                     <AgentInsightsPanel agent={selectedAgent} logs={auditLogs} />
                     <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} selectedAgentId={selectedAgent.id} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
                     <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
@@ -4255,6 +4327,28 @@ function ExecutionIntegrityPolicyFields({
         <InputField label="Maximum Retry Attempts" value={String(values.lifecycleMaxRetryAttempts ?? "")} onChange={(value) => onChange({ lifecycleMaxRetryAttempts: value })} type="number" />
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Legacy policies remain non-breaking. New policies enable strict lifecycle metadata by default; the server computes the canonical fingerprint and never accepts signing secrets.</p>
+      <details className="mt-4 rounded-lg border border-[#22D3EE]/20 bg-[#050B14] p-3">
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · Reconciliation</div>
+              <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Enforce transaction binding, submission attempts, pending and uncertain retry rules, replacement links, confirmation/finality, resource delivery, and refund state after authorization.</p>
+            </div>
+            <StatusBadge status="Foundation Available" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <SelectField label="Enable Reconciliation" value={String(values.reconciliationEnabled ?? "Yes")} onChange={(value) => onChange({ reconciliationEnabled: value })} options={["Yes", "No"]} />
+          <InputField label="Maximum Submission Attempts" value={String(values.maximumSubmissionAttempts ?? "3")} onChange={(value) => onChange({ maximumSubmissionAttempts: value })} type="number" />
+          <SelectField label="Retry While Pending" value={String(values.pendingRetryAction ?? "Block")} onChange={(value) => onChange({ pendingRetryAction: value })} options={["Block", "Review"]} />
+          <SelectField label="Retry While Uncertain" value={String(values.uncertainRetryAction ?? "Block")} onChange={(value) => onChange({ uncertainRetryAction: value })} options={["Block", "Review"]} />
+          <InputField label="Required Confirmations" value={String(values.requiredConfirmations ?? "1")} onChange={(value) => onChange({ requiredConfirmations: value })} type="number" />
+          <InputField label="Finality Timeout (sec)" value={String(values.finalityTimeoutSeconds ?? "3600")} onChange={(value) => onChange({ finalityTimeoutSeconds: value })} type="number" />
+          <SelectField label="Allow Replacement" value={String(values.replacementAllowed ?? "Yes")} onChange={(value) => onChange({ replacementAllowed: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Resource Delivery" value={String(values.resourceDeliveryRequired ?? "No")} onChange={(value) => onChange({ resourceDeliveryRequired: value })} options={["Yes", "No"]} />
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">This foundation validates authenticated reports and deterministic transitions. It is not marked Live until a real chain-specific transaction polling adapter independently verifies state end to end.</p>
+      </details>
     </div>
   );
 }
@@ -4838,6 +4932,14 @@ function PoliciesPage({
     lifecycleMaxLifetimeSeconds: "900",
     lifecycleReplayWindowSeconds: "86400",
     lifecycleMaxRetryAttempts: "3",
+    reconciliationEnabled: "Yes",
+    maximumSubmissionAttempts: "3",
+    pendingRetryAction: "Block",
+    uncertainRetryAction: "Block",
+    requiredConfirmations: "1",
+    finalityTimeoutSeconds: "3600",
+    replacementAllowed: "Yes",
+    resourceDeliveryRequired: "No",
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
@@ -5079,6 +5181,14 @@ function PoliciesPage({
     lifecycleMaxLifetimeSeconds: "900",
     lifecycleReplayWindowSeconds: "86400",
     lifecycleMaxRetryAttempts: "3",
+    reconciliationEnabled: "Yes",
+    maximumSubmissionAttempts: "3",
+    pendingRetryAction: "Block",
+    uncertainRetryAction: "Block",
+    requiredConfirmations: "1",
+    finalityTimeoutSeconds: "3600",
+    replacementAllowed: "Yes",
+    resourceDeliveryRequired: "No",
     threatIntelligenceMode: "Review",
     threatIntelligenceMinConfidence: "70",
     threatIntelligenceUnavailableAction: "Warn",
@@ -5330,6 +5440,14 @@ function PoliciesPage({
         lifecycleMaxLifetimeSeconds: Math.max(30, Number(form.lifecycleMaxLifetimeSeconds) || 900),
         lifecycleReplayWindowSeconds: Math.max(60, Number(form.lifecycleReplayWindowSeconds) || 86400),
         lifecycleMaxRetryAttempts: Math.max(0, Number(form.lifecycleMaxRetryAttempts) || 3),
+        reconciliationEnabled: form.reconciliationEnabled !== "No",
+        maximumSubmissionAttempts: Math.max(1, Math.min(100, Number(form.maximumSubmissionAttempts) || 3)),
+        pendingRetryAction: form.pendingRetryAction,
+        uncertainRetryAction: form.uncertainRetryAction,
+        requiredConfirmations: Math.max(1, Math.min(10000, Number(form.requiredConfirmations) || 1)),
+        finalityTimeoutSeconds: Math.max(30, Math.min(2592000, Number(form.finalityTimeoutSeconds) || 3600)),
+        replacementAllowed: form.replacementAllowed !== "No",
+        resourceDeliveryRequired: form.resourceDeliveryRequired === "Yes",
         threatIntelligenceMode: form.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(form.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: form.threatIntelligenceUnavailableAction,
@@ -5560,6 +5678,14 @@ function PoliciesPage({
       lifecycleMaxLifetimeSeconds: "900",
       lifecycleReplayWindowSeconds: "86400",
       lifecycleMaxRetryAttempts: "3",
+    reconciliationEnabled: "Yes",
+    maximumSubmissionAttempts: "3",
+    pendingRetryAction: "Block",
+    uncertainRetryAction: "Block",
+    requiredConfirmations: "1",
+    finalityTimeoutSeconds: "3600",
+    replacementAllowed: "Yes",
+    resourceDeliveryRequired: "No",
       threatIntelligenceMode: "Review",
       threatIntelligenceMinConfidence: "70",
       threatIntelligenceUnavailableAction: "Warn",
@@ -5794,6 +5920,14 @@ function PoliciesPage({
       lifecycleMaxLifetimeSeconds: String(typeof policy.structuredRules?.lifecycleMaxLifetimeSeconds === "number" ? policy.structuredRules.lifecycleMaxLifetimeSeconds : 3600),
       lifecycleReplayWindowSeconds: String(typeof policy.structuredRules?.lifecycleReplayWindowSeconds === "number" ? policy.structuredRules.lifecycleReplayWindowSeconds : 86400),
       lifecycleMaxRetryAttempts: String(typeof policy.structuredRules?.lifecycleMaxRetryAttempts === "number" ? policy.structuredRules.lifecycleMaxRetryAttempts : 3),
+      reconciliationEnabled: policy.structuredRules?.reconciliationEnabled === false ? "No" : "Yes",
+      maximumSubmissionAttempts: String(typeof policy.structuredRules?.maximumSubmissionAttempts === "number" ? policy.structuredRules.maximumSubmissionAttempts : 3),
+      pendingRetryAction: typeof policy.structuredRules?.pendingRetryAction === "string" ? policy.structuredRules.pendingRetryAction : "Block",
+      uncertainRetryAction: typeof policy.structuredRules?.uncertainRetryAction === "string" ? policy.structuredRules.uncertainRetryAction : "Block",
+      requiredConfirmations: String(typeof policy.structuredRules?.requiredConfirmations === "number" ? policy.structuredRules.requiredConfirmations : 1),
+      finalityTimeoutSeconds: String(typeof policy.structuredRules?.finalityTimeoutSeconds === "number" ? policy.structuredRules.finalityTimeoutSeconds : 3600),
+      replacementAllowed: policy.structuredRules?.replacementAllowed === false ? "No" : "Yes",
+      resourceDeliveryRequired: policy.structuredRules?.resourceDeliveryRequired === true ? "Yes" : "No",
       threatIntelligenceMode: typeof policy.structuredRules?.threatIntelligenceMode === "string" ? policy.structuredRules.threatIntelligenceMode : "Observe",
       threatIntelligenceMinConfidence: String(typeof policy.structuredRules?.threatIntelligenceMinConfidence === "number" ? policy.structuredRules.threatIntelligenceMinConfidence : 70),
       threatIntelligenceUnavailableAction: typeof policy.structuredRules?.threatIntelligenceUnavailableAction === "string" ? policy.structuredRules.threatIntelligenceUnavailableAction : "Warn",
@@ -6046,6 +6180,14 @@ function PoliciesPage({
         lifecycleMaxLifetimeSeconds: Math.max(30, Number(editForm.lifecycleMaxLifetimeSeconds) || 900),
         lifecycleReplayWindowSeconds: Math.max(60, Number(editForm.lifecycleReplayWindowSeconds) || 86400),
         lifecycleMaxRetryAttempts: Math.max(0, Number(editForm.lifecycleMaxRetryAttempts) || 3),
+        reconciliationEnabled: editForm.reconciliationEnabled !== "No",
+        maximumSubmissionAttempts: Math.max(1, Math.min(100, Number(editForm.maximumSubmissionAttempts) || 3)),
+        pendingRetryAction: editForm.pendingRetryAction,
+        uncertainRetryAction: editForm.uncertainRetryAction,
+        requiredConfirmations: Math.max(1, Math.min(10000, Number(editForm.requiredConfirmations) || 1)),
+        finalityTimeoutSeconds: Math.max(30, Math.min(2592000, Number(editForm.finalityTimeoutSeconds) || 3600)),
+        replacementAllowed: editForm.replacementAllowed !== "No",
+        resourceDeliveryRequired: editForm.resourceDeliveryRequired === "Yes",
         threatIntelligenceMode: editForm.threatIntelligenceMode,
         threatIntelligenceMinConfidence: clampPercentage(editForm.threatIntelligenceMinConfidence),
         threatIntelligenceUnavailableAction: editForm.threatIntelligenceUnavailableAction,
@@ -7380,6 +7522,45 @@ function AuditLogPage({
                           {selected.executionTxHash ? (isX402Payment ? selected.executionTxHash : normalizeCasperDeployHash(selected.executionTxHash)) : "None"}
                         </div>
                       </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Submission Attempt</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionAttemptCount || 0}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Confirmations</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionConfirmations || 0} / {selected.executionRequiredConfirmations || 1}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Finality</span>
+                        <div className={`mt-1 font-semibold ${selected.executionFinalizedAt ? "text-[#22C55E]" : selected.executionFinalityDeadline ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>
+                          {selected.executionFinalizedAt ? `Finalized ${fmtTs(selected.executionFinalizedAt)}` : selected.executionFinalityDeadline ? `Due ${fmtTs(selected.executionFinalityDeadline)}` : "Not reported"}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Reconciliation Provider</span>
+                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.reconciliationProvider || "Not reported"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Resource Delivery</span>
+                        <div className={`mt-1 font-semibold ${selected.resourceDeliveryStatus === "delivered" ? "text-[#22C55E]" : selected.resourceDeliveryStatus === "pending" ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>{selected.resourceDeliveryStatus || "not_required"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Refund</span>
+                        <div className={`mt-1 font-semibold ${selected.refundStatus === "refunded" ? "text-[#22C55E]" : selected.refundStatus === "pending" ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>{selected.refundStatus || "not_applicable"}</div>
+                      </div>
+                      {(selected.executionReplacedBy || selected.executionReplacementOf) && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">Replacement Link</span>
+                          <div className="text-[#C4B5FD] font-mono mt-1 break-all">{selected.executionReplacedBy || selected.executionReplacementOf}</div>
+                          {(selected.executionReplacedByAuditId || selected.executionReplacementAuditId) && <div className="mt-1 text-[#94A3B8]">Audit: {selected.executionReplacedByAuditId || selected.executionReplacementAuditId}</div>}
+                        </div>
+                      )}
+                      {selected.executionFailureReason && (
+                        <div className="col-span-2 rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/10 p-3">
+                          <span className="text-[#FCA5A5] uppercase tracking-wider">Failure Reason</span>
+                          <div className="text-[#FCA5A5] mt-1">{selected.executionFailureReason}</div>
+                        </div>
+                      )}
                       {isX402Payment && (
                         <>
                           <div>
@@ -7401,6 +7582,27 @@ function AuditLogPage({
                           <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Note" : "Execution Note"}</span>
                           <div className="text-[#F8FAFC] mt-1">{selected.executionNote}</div>
                         </div>
+                      )}
+                      {Array.isArray(selected.executionHistory) && selected.executionHistory.length > 0 && (
+                        <details className="col-span-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                          <summary className="cursor-pointer text-[#94A3B8] uppercase tracking-wider">Reconciliation History · {selected.executionHistory.length} event{selected.executionHistory.length === 1 ? "" : "s"}</summary>
+                          <div className="mt-3 space-y-2">
+                            {[...selected.executionHistory].reverse().map((event, index) => (
+                              <div key={`${String(event.fingerprint || event.observedAt || index)}-${index}`} className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-semibold text-[#F8FAFC]">{String(event.status || "unknown")}</span>
+                                  <span className="text-[#94A3B8]">{event.observedAt ? fmtTs(String(event.observedAt)) : "Timestamp unavailable"}</span>
+                                </div>
+                                <div className="mt-2 grid gap-2 md:grid-cols-3 text-[#94A3B8]">
+                                  <span>Attempt {String(event.attempt ?? 0)}</span>
+                                  <span>{String(event.confirmations ?? 0)} confirmations</span>
+                                  <span>{event.provider ? `Provider ${String(event.provider)}` : "Provider not reported"}</span>
+                                </div>
+                                {event.transactionHash && <div className="mt-2 break-all font-mono text-[#22D3EE]">{String(event.transactionHash)}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
                       )}
                       <div className="col-span-2">
                         <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
@@ -8033,7 +8235,7 @@ Content-Type: application/json
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Eight protection areas:</span> Agent Trust & Access, Policy & Approval Controls, Wallet & Asset Safety, Contract & Permission Safety, Execution Integrity, Market & Oracle Integrity, Cross-chain & Payment Controls, and Threat & Compliance. Status is shown per control. Transaction preflight and Lifecycle & Replay are Live inside Execution Integrity; stateful simulation and settlement reconciliation remain Foundation Available.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="info"><span className="font-semibold text-[#F8FAFC]">Eight protection areas:</span> Agent Trust & Access, Policy & Approval Controls, Wallet & Asset Safety, Contract & Permission Safety, Execution Integrity, Market & Oracle Integrity, Cross-chain & Payment Controls, and Threat & Compliance. Status is shown per control. Transaction preflight and Lifecycle & Replay are Live inside Execution Integrity. Execution & Settlement Reconciliation now has authenticated reporting, deterministic transitions, retry prevention, replacement tracking, finality, delivery, and refund handling as Foundation Available; real chain polling remains the Live criterion. Stateful simulation remains Foundation Available.</DocsCallout></div>
               </section>
 
 
@@ -9992,6 +10194,9 @@ function SettingsPage({
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
+    ["Execution Reconciliation Status", `${api.baseUrl}/api/execution-reconciliation/status`],
+    ["Execution Reconciliation Reporting", `${api.baseUrl}/api/agent-gateway/executions/reconcile`],
+    ["Execution Reconciliation Polling", `${api.baseUrl}/api/agent-gateway/executions/poll`],
     ["Emergency Controls Status", `${api.baseUrl}/api/emergency-controls/status`],
     ["Instruction Integrity Status", `${api.baseUrl}/api/instruction-integrity/status`],
     ["Tool & MCP Integrity Status", `${api.baseUrl}/api/tool-mcp-integrity/status`],

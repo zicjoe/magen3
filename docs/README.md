@@ -11,6 +11,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `AGENT_INSTRUCTION_INTEGRITY.md` — deterministic goal binding, source provenance, protected-parameter fingerprints, external-content confirmation, permission-scope containment, audit evidence, and limitations.
 - `EXECUTION_INTEGRITY.md` — lifecycle metadata, canonical intent fingerprints, replay prevention, idempotency, expiry, sequence, retry/replacement rules, policy controls, and compatibility.
 - `RPC_CHAIN_INTEGRITY.md` — approved RPC providers, network identity, freshness, quorum agreement, failover, audit evidence, and Live criteria.
+- `EXECUTION_SETTLEMENT_RECONCILIATION.md` — authenticated execution state, retry prevention, replacement links, confirmations, finality, delivery, refund, optional backend-configured polling, and Live criteria.
 - `TOKEN_PERMISSION_CONTROLS.md` — deterministic approval and permit classification, spender and amount policy, expiry, fingerprint replay prevention, Human Approval binding, SDK/MCP schema, and security boundary.
 - `HUMAN_APPROVAL_WORKFLOW.md` — exact-intent Review Required approvals, quorum, expiry, separation of duties, agent polling, audit evidence, and current security boundary.
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.

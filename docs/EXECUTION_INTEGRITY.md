@@ -112,3 +112,7 @@ RPC & Chain Integrity complements lifecycle and replay protection by checking wh
 ## Gas Sponsorship & Fee Safety
 
 Gas Sponsorship & Fee Safety complements lifecycle and RPC controls by evaluating bounded fee, approved sponsor or Paymaster, expiry, scope, payer, rolling budget, operation count, and failure evidence before signing. See [Gas Sponsorship & Fee Safety](./GAS_SPONSORSHIP_FEE_SAFETY.md).
+
+## Execution & Settlement Reconciliation
+
+After authorization, agents report execution state through `POST /api/agent-gateway/executions/reconcile`, or request an observation from a backend-configured adapter through `POST /api/agent-gateway/executions/poll`. The shared state machine binds transaction identity, enforces attempt limits and safe retry behavior, links replacements, checks confirmations and finality timeout, and records failure, refund, and delivery evidence in the existing Audit Log. The control remains Foundation Available until a deployed real-network flow is verified end to end. See [Execution & Settlement Reconciliation](./EXECUTION_SETTLEMENT_RECONCILIATION.md).

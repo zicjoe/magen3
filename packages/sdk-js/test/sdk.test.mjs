@@ -337,6 +337,68 @@ test("preserves x402 authorization metadata and reports settlement without signe
   assert.equal("paymentSignature" in calls[1].payload, false);
 });
 
+test("reports authenticated execution reconciliation without signing material", async () => {
+  const calls = [];
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)), payload: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ok: true, reconciliation: { status: "confirmed", transactionHash: `0x${"d".repeat(64)}` } }), { status: 200 });
+    },
+  });
+
+  const result = await client.reportExecutionReconciliation({
+    auditLogId: "AUDIT-EXEC-1",
+    status: "confirmed",
+    transactionHash: `0x${"d".repeat(64)}`,
+    attempt: 1,
+    confirmations: 3,
+    finalized: true,
+    provider: "casper-rpc-primary",
+    resourceDelivered: true,
+  });
+
+  assert.equal(calls[0].url, "https://api.example/api/agent-gateway/executions/reconcile");
+  assert.equal(calls[0].headers["x-magen3-agent-key"], "secret");
+  assert.equal(calls[0].payload.agentId, "MAG-1");
+  assert.equal(calls[0].payload.auditLogId, "AUDIT-EXEC-1");
+  assert.equal(calls[0].payload.confirmations, 3);
+  assert.equal("signedTransaction" in calls[0].payload, false);
+  assert.equal("privateKey" in calls[0].payload, false);
+  assert.equal(result.reconciliation.status, "confirmed");
+});
+
+test("requires an audit ID for execution reconciliation", async () => {
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret", fetch: async () => new Response("{}") });
+  await assert.rejects(() => client.reportExecutionReconciliation({ status: "pending" }), /auditLogId is required/);
+});
+
+test("polls execution reconciliation through backend-configured providers", async () => {
+  const calls = [];
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), payload: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ok: true, reconciliation: { status: "pending", provider: "configured-casper-rpc" } }), { status: 200 });
+    },
+  });
+  const result = await client.pollExecutionReconciliation({ auditLogId: "AUDIT-POLL-1", chainFamily: "casper", chainName: "casper-test" });
+  assert.equal(calls[0].url, "https://api.example/api/agent-gateway/executions/poll");
+  assert.equal(calls[0].payload.agentId, "MAG-1");
+  assert.equal(calls[0].payload.chainFamily, "casper");
+  assert.equal("rpcUrl" in calls[0].payload, false);
+  assert.equal(result.reconciliation.status, "pending");
+});
+
+test("rejects request-provided reconciliation RPC endpoints", async () => {
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret", fetch: async () => new Response("{}") });
+  await assert.rejects(() => client.pollExecutionReconciliation({ auditLogId: "AUDIT-POLL-1", rpcUrl: "https://evil.example" }), /not accepted/);
+});
+
 test("preserves Execution Integrity lifecycle metadata in intent payloads", async () => {
   let captured;
   const client = new Magen3Client({

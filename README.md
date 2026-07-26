@@ -779,6 +779,12 @@ MAGEN3_CONTRACT_HASH=hash-b08ae51143e0d2fa78761e7819010e4c941dba3734252cdcf28ea7
 CASPER_RECORDING_MODE=relayer
 CASPER_AUTO_RECORD_DECISIONS=true
 CASPER_RELAYER_SECRET_KEY_PATH=/secure/path/secret_key.pem
+
+# Optional post-authorization transaction polling; disabled by default
+RECONCILIATION_POLLING_ENABLED=true
+RECONCILIATION_CASPER_RPC_URL=https://node.testnet.casper.network/rpc
+# RECONCILIATION_EVM_RPC_URL=https://approved-evm-rpc.example
+RECONCILIATION_POLL_TIMEOUT_MS=10000
 ```
 
 Use only one relayer key source in production. Never commit real keys.
@@ -853,7 +859,7 @@ Feed precedence is inline JSON, then file path, then remote URL. Provider creden
 
 ## Roadmap progress
 
-Phase 1 deterministic permission and approval safety is complete. Phase 2 includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. Phase 3 now includes **RPC & Chain Integrity** and **Gas Sponsorship & Fee Safety** as Foundation Available pending deployed trusted-adapter verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Execution & Settlement Reconciliation**. Provider-backed controls remain Foundation Available until their published Live criteria are satisfied.
+Phase 1 deterministic permission and approval safety is complete. Phase 2 includes **Agent Instruction Integrity** and **Tool & MCP Integrity** as Live controls, while **Delegation & Session Key Safety** is Foundation Available pending deployed connected-wallet verification. Phase 3 now includes **RPC & Chain Integrity**, **Gas Sponsorship & Fee Safety**, and **Execution & Settlement Reconciliation** as Foundation Available pending deployed trusted-adapter and real-network verification. **Cryptographic Reviewer Signatures** remains Foundation Available pending deployed Casper Wallet browser verification. Magen3 is not finished. The next recommended milestone is **Real Stateful Execution Simulation**. Provider-backed controls remain Foundation Available until their published Live criteria are satisfied.
 
 ## Verification
 
@@ -1021,3 +1027,7 @@ The implementation does not certify an RPC provider or treat unavailable evidenc
 ## Gas Sponsorship & Fee Safety
 
 Gas Sponsorship & Fee Safety is Foundation Available under Execution Integrity. Trusted transaction adapters may submit public `action.feeSafety` evidence for bounded Casper network fees and relayers or isolated EVM gas/Paymaster flows. Magen3 checks chain-family consistency, fee caps, approved sponsors or Paymasters, sponsorship availability, expiry, scope, evidence hashes, expected payer, rolling budgets, operation counts, and repeated failures before signing. Raw sponsor signatures, credentials, private keys, and signed transactions are rejected. See [`docs/GAS_SPONSORSHIP_FEE_SAFETY.md`](docs/GAS_SPONSORSHIP_FEE_SAFETY.md).
+
+## Execution & Settlement Reconciliation
+
+Execution & Settlement Reconciliation is Foundation Available under Execution Integrity. After authorization, authenticated agents can report `submitted`, `pending`, `confirmed`, `failed`, `uncertain`, `replaced`, `refunded`, or `delivered` state. Magen3 binds the transaction identity, enforces attempt and retry policy, links replacements, checks confirmation/finality requirements, tracks resource delivery and refunds, and updates the existing Audit timeline. Optional Casper and EVM polling uses backend-configured RPC endpoints only; callers cannot provide provider URLs. See [`docs/EXECUTION_SETTLEMENT_RECONCILIATION.md`](docs/EXECUTION_SETTLEMENT_RECONCILIATION.md).

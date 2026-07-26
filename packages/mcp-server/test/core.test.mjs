@@ -107,6 +107,59 @@ test("reportX402Settlement delegates a bound settlement update", async () => {
   assert.equal(captured.resourceDelivered, true);
 });
 
+test("reportExecutionReconciliation delegates public post-authorization state", async () => {
+  let captured;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async (update) => { captured = update; return { ok: true, reconciliation: { status: "confirmed" } }; },
+  });
+  const result = await handlers.reportExecutionReconciliation({
+    auditLogId: "AUDIT-EXEC-1",
+    status: "confirmed",
+    transactionHash: `0x${"d".repeat(64)}`,
+    attempt: 1,
+    confirmations: 3,
+    finalized: true,
+    resourceDelivered: true,
+  });
+  assert.equal(result.isError, undefined);
+  assert.equal(captured.auditLogId, "AUDIT-EXEC-1");
+  assert.equal(captured.confirmations, 3);
+  assert.match(result.content[0].text, /confirmed/);
+});
+
+test("pollExecutionReconciliation delegates backend-configured polling", async () => {
+  let captured;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => ({ ok: true }),
+    requireAllowed: async () => ({ ok: true }),
+    getApproval: async () => ({ ok: true }),
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async (options) => { captured = options; return { ok: true, reconciliation: { status: "pending", provider: "configured-casper-rpc" } }; },
+  });
+  const result = await handlers.pollExecutionReconciliation({ auditLogId: "AUDIT-POLL-1", chainFamily: "casper", chainName: "casper-test" });
+  assert.equal(captured.auditLogId, "AUDIT-POLL-1");
+  assert.equal(captured.chainFamily, "casper");
+  assert.match(result.content[0].text, /configured-casper-rpc/);
+});
+
+test("intent schema exposes the reconciliation security boundary", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }), checkIntent: async () => ({ ok: true }), requireAllowed: async () => ({ ok: true }),
+    getApproval: async () => ({ ok: true }), reportX402Settlement: async () => ({ ok: true }), reportExecutionReconciliation: async () => ({ ok: true }), pollExecutionReconciliation: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Execution & Settlement Reconciliation/i);
+  assert.match(result.content[0].text, /unsafe retries/i);
+  assert.match(result.content[0].text, /raw signed transactions/i);
+});
+
 test("getApproval polls the exact-bound review workflow and gives fail-closed guidance", async () => {
   let captured;
   const handlers = createToolHandlers({

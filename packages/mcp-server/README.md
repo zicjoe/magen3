@@ -134,3 +134,10 @@ Submit public `action.rpcIntegrity` evidence only when it was collected by a tru
 ## Gas Sponsorship & Fee Safety
 
 The official MCP server may relay public `action.feeSafety` evidence produced by a trusted transaction adapter. MCP never creates sponsorships, holds sponsor credentials, or relays raw signatures. The returned `gasSponsorshipFeeSafetyContext` is sanitized.
+
+## Execution & Settlement Reconciliation
+
+- `magen3_report_execution_reconciliation` records authenticated public execution state.
+- `magen3_poll_execution_reconciliation` queries a bound transaction through the backend-configured Casper or EVM adapter.
+
+The MCP schema cannot provide RPC URLs. Both tools preserve Audit ownership and never receive signed transactions or wallet secrets.

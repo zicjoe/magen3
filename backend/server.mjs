@@ -181,7 +181,7 @@ const server = createServer(async (req, res) => {
         ok: true,
         service: "magen3-api",
         network: "casper-testnet",
-        version: "2.4.0",
+        version: "2.5.0",
         storage: store.mode,
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
@@ -197,6 +197,7 @@ const server = createServer(async (req, res) => {
         delegationSafety: { status: "foundation_available", casperAttestationVerification: true, scopeBinding: true, expiry: true, revocation: true, depth: true, amountAndFrequencyLimits: true },
         rpcChainIntegrity: getRpcChainIntegrityStatus(),
         gasSponsorshipFeeSafety: getGasSponsorshipFeeSafetyStatus(),
+        executionReconciliation: await store.executionReconciliationStatus("", {}),
 
         contractUpgradeControls: {
           status: "Live",
@@ -289,6 +290,15 @@ const server = createServer(async (req, res) => {
             statefulSimulation: "foundation-available",
             rpcIntegrity: "foundation-available",
             gasSponsorship: "foundation-available"
+          },
+          reconciliation: {
+            authenticatedReporting: true,
+            transactionHashBinding: true,
+            retryPrevention: true,
+            replacementTracking: true,
+            confirmationAndFinality: true,
+            resourceDeliveryAndRefund: true,
+            realPollingConfigured: false
           },
           lifecycle: {
             canonicalFingerprinting: true,
@@ -553,6 +563,12 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (route === "GET /api/execution-reconciliation/status") {
+      const agentId = String(url.searchParams.get("agentId") || "").trim();
+      const apiKey = agentId ? readAgentGatewayKey(req) : "";
+      return send(res, 200, { ok: true, executionReconciliation: await store.executionReconciliationStatus(agentId, { apiKey }) });
+    }
+
     if (route === "GET /api/x402-payment-controls/status") {
       return send(res, 200, {
         ok: true,
@@ -622,7 +638,7 @@ const server = createServer(async (req, res) => {
           positioning: "A modular execution firewall for autonomous blockchain agents",
           decisionModel: ["Allowed", "Blocked", "Review Required"],
           liveProtectionModules: ["Identity and Authentication", "Agent Instruction Integrity", "Tool & MCP Integrity", "Delegation & Session Key Safety", "Policy Enforcement", "Emergency Circuit Breaker", "Approval Escalation & Organizational Quorum", "Wallet Validation", "Contract Validation", "Risk Assessment", "Execution Integrity"],
-          foundationProtectionModules: ["Human Approval & Quorum", "RPC & Chain Integrity", "Gas Sponsorship & Fee Safety", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
+          foundationProtectionModules: ["Human Approval & Quorum", "RPC & Chain Integrity", "Gas Sponsorship & Fee Safety", "Execution & Settlement Reconciliation", "Execution Simulation", "Threat Intelligence", "Oracle Validation", "Bridge Controls", "Compliance Controls", "x402 Payment Controls"],
         },
         threatIntelligence,
         oracleValidation,
@@ -1179,6 +1195,41 @@ const server = createServer(async (req, res) => {
           },
           securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
         },
+        executionSettlementReconciliation: {
+          status: "Foundation Available",
+          protectionArea: "Execution Integrity",
+          statusEndpoint: "GET /api/execution-reconciliation/status",
+          reportingEndpoint: "POST /api/agent-gateway/executions/reconcile",
+          pollingEndpoint: "POST /api/agent-gateway/executions/poll",
+          purpose: "Track authenticated execution state after authorization, enforce monotonic transitions, prevent unsafe retries, link replacements, and preserve finality, delivery, refund, and failure evidence in the audit record.",
+          supportedStates: ["not_submitted", "submitted", "pending", "confirmed", "failed", "uncertain", "replaced", "refunded", "delivered"],
+          deterministicChecks: [
+            "Agent API-key authentication and audit ownership",
+            "Allowed or exact-approved Review Required authorization",
+            "Transaction identifier binding",
+            "Maximum submission attempts",
+            "Pending and uncertain retry prevention",
+            "Replacement permission and linked audit or transaction identity",
+            "Required confirmations or explicit finality",
+            "Finality deadline and timeout to uncertain state",
+            "Resource or destination delivery only after confirmation",
+            "Refund state and append-only reconciliation history",
+            "Signed transaction and wallet-secret rejection"
+          ],
+          policyFields: {
+            enabled: "structuredRules.reconciliationEnabled",
+            attempts: "structuredRules.maximumSubmissionAttempts",
+            pendingRetry: "structuredRules.pendingRetryAction: Block | Review",
+            uncertainRetry: "structuredRules.uncertainRetryAction: Block | Review",
+            confirmations: "structuredRules.requiredConfirmations",
+            finalityTimeout: "structuredRules.finalityTimeoutSeconds",
+            replacement: "structuredRules.replacementAllowed",
+            delivery: "structuredRules.resourceDeliveryRequired"
+          },
+          securityBoundary: "Magen3 accepts only authenticated public execution evidence. It rejects raw signed transactions, wallet signatures, private keys, mnemonics, sponsor credentials, and signed payment payloads.",
+          pollingBoundary: "Optional Casper and EVM polling uses backend-configured RPC endpoints only; request bodies cannot provide arbitrary RPC URLs.",
+          limitation: "The current foundation includes an opt-in chain polling adapter but remains Foundation Available until configured providers and deployed end-to-end finality behavior are verified."
+        },
         x402PaymentControls: {
           status: "Foundation Available",
           statusEndpoint: "GET /api/x402-payment-controls/status",
@@ -1250,7 +1301,8 @@ const server = createServer(async (req, res) => {
           nextAction: "Allowed actions should request user wallet signature before execution",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",
-          execution: "Approved actions can later attach the real execution deploy hash"
+          execution: "Approved actions can later report authenticated submission, pending, confirmation, failure, uncertainty, replacement, refund, and delivery state through the reconciliation endpoint",
+          executionReconciliation: "Append-only attempt history, transaction binding, confirmations, finality deadline, replacement links, delivery, refund, failure, and provider evidence"
         }
       });
     }
@@ -1275,6 +1327,22 @@ const server = createServer(async (req, res) => {
       const apiKey = readAgentGatewayKey(req);
       const agentId = String(url.searchParams.get("agentId") || "").trim();
       return send(res, 200, await store.getAgentApproval(gatewayApprovalMatch[1], { agentId }, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/executions/reconcile") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.reconcileExecution(auditLogId, body, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/executions/poll") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.pollExecution(auditLogId, body, { apiKey }));
     }
 
     if (route === "POST /api/agent-gateway/x402/settlements") {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { reconciliationPolicy } from "./executionReconciliation.mjs";
 
 const MODES = new Set(["Observe", "Review", "Enforce"]);
 const UNAVAILABLE_ACTIONS = new Set(["Warn", "Review", "Block"]);
@@ -18,6 +19,8 @@ const CONFIRMED_EXECUTION_STATES = new Set([
   "recorded",
   "settled",
   "success",
+  "delivered",
+  "refunded",
 ]);
 
 function clean(value) {
@@ -144,6 +147,7 @@ export function buildIntentFingerprint(request = {}) {
 
 function normalizeConfig(policy = {}) {
   const rules = policy.structuredRules && typeof policy.structuredRules === "object" ? policy.structuredRules : {};
+  const reconciliation = reconciliationPolicy(policy);
   const mode = MODES.has(rules.lifecycleControlMode) ? rules.lifecycleControlMode : "Observe";
   const unavailableAction = UNAVAILABLE_ACTIONS.has(rules.lifecycleUnavailableAction) ? rules.lifecycleUnavailableAction : "Warn";
   return {
@@ -162,7 +166,10 @@ function normalizeConfig(policy = {}) {
     maxFutureSkewSeconds: finiteInteger(rules.lifecycleMaxFutureSkewSeconds, 300, { min: 0, max: 3600 }),
     maxLifetimeSeconds: finiteInteger(rules.lifecycleMaxLifetimeSeconds, 3600, { min: 30, max: 604800 }),
     replayWindowSeconds: finiteInteger(rules.lifecycleReplayWindowSeconds, 86400, { min: 60, max: 2592000 }),
-    maxRetryAttempts: finiteInteger(rules.lifecycleMaxRetryAttempts, 3, { min: 0, max: 100 }),
+    maxRetryAttempts: finiteInteger(rules.lifecycleMaxRetryAttempts, reconciliation.maximumSubmissionAttempts, { min: 0, max: 100 }),
+    replacementAllowed: reconciliation.replacementAllowed,
+    pendingRetryAction: reconciliation.pendingRetryAction,
+    uncertainRetryAction: reconciliation.uncertainRetryAction,
   };
 }
 
@@ -230,6 +237,17 @@ function applyUnavailable(state, { rule, message, evidence = {}, remediation = "
     state.scoreDelta += action === "Review" ? 18 : 6;
     if (action === "Review") state.needsReview = true;
   }
+}
+
+function applyRetryAction(state, action, violation) {
+  if (action === "Block") {
+    applyViolation(state, violation, { hard: true });
+    return;
+  }
+  state.findings.push(finding("warning", "high", violation.rule, violation.message, violation.evidence || {}, violation.remediation || ""));
+  state.checksFailed.push(violation.message);
+  state.scoreDelta += 20;
+  state.needsReview = true;
 }
 
 function dateMs(value) {
@@ -398,10 +416,14 @@ export function evaluateExecutionIntegrity({ request = {}, policy = {}, auditLog
       applyViolation(state, { rule: retryOf ? "Retry audit reference" : "Replacement audit reference", message: "The referenced prior audit record does not exist for this agent.", evidence: { referenceId }, remediation: "Reference a real prior Magen3 audit ID owned by the same agent." }, { hard: true });
     } else {
       const executionState = normalizeExecutionState(referenced);
-      if (CONFIRMED_EXECUTION_STATES.has(executionState) || referenced.executionTxHash) {
-        applyViolation(state, { rule: retryOf ? "Retry after confirmed execution" : "Replacement after confirmed execution", message: "The referenced intent already has a confirmed or recorded execution.", evidence: { referenceId, executionStatus: executionState, executionTxHash: referenced.executionTxHash || "" }, remediation: "Do not retry or replace a confirmed execution." }, { hard: true });
+      if (CONFIRMED_EXECUTION_STATES.has(executionState) || executionState === "replaced") {
+        applyViolation(state, { rule: retryOf ? "Retry after terminal execution" : "Replacement after terminal execution", message: "The referenced intent already has a confirmed, delivered, refunded, or replaced execution state.", evidence: { referenceId, executionStatus: executionState, executionTxHash: referenced.executionTxHash || "" }, remediation: "Do not retry or replace a terminal execution. Reconcile the linked record instead." }, { hard: true });
+      } else if (replacementOf && !config.replacementAllowed) {
+        applyViolation(state, { rule: "Replacement policy", message: "The active policy does not allow replacement transactions.", evidence: { replacementOf, executionStatus: executionState }, remediation: "Reconcile the original transaction or update the policy through an authorized workflow." }, { hard: true });
+      } else if (replacementOf && !["submitted", "pending", "uncertain", "failed", "broadcast", "processing"].includes(executionState)) {
+        applyViolation(state, { rule: "Replacement state", message: "A replacement must reference a submitted, pending, uncertain, or failed execution.", evidence: { replacementOf, executionStatus: executionState }, remediation: "Submit the original transaction first or use retryOf for a failed pre-submission attempt." }, { hard: true });
       } else if (retryOf && config.preventRetryAfterUncertain && UNRESOLVED_EXECUTION_STATES.has(executionState)) {
-        applyViolation(state, { rule: "Retry after uncertain execution", message: "The referenced execution is still pending or uncertain, so a retry could create a duplicate transaction.", evidence: { retryOf, executionStatus: executionState }, remediation: "Reconcile the original execution before creating another transaction." }, { hard: true });
+        applyRetryAction(state, executionState === "uncertain" ? config.uncertainRetryAction : config.pendingRetryAction, { rule: "Retry after uncertain execution", message: "The referenced execution is still pending or uncertain, so a retry could create a duplicate transaction.", evidence: { retryOf, executionStatus: executionState }, remediation: "Reconcile the original execution before creating another transaction." });
       } else if (attempt > config.maxRetryAttempts) {
         applyViolation(state, { rule: "Maximum lifecycle attempts", message: "The lifecycle attempt exceeds the active retry limit.", evidence: { attempt, maximum: config.maxRetryAttempts }, remediation: "Stop automatic retries and require authorized investigation." }, { hard: true });
       } else pass(state, retryOf ? "Retry audit reference" : "Replacement audit reference", "The referenced audit exists and is not confirmed as executed.", { referenceId, executionStatus: executionState, attempt });

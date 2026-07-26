@@ -8,6 +8,8 @@ import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
+import { buildReconciliationAuditPatch, reconciliationStatusSummary } from "../lib/executionReconciliation.mjs";
+import { getExecutionReconciliationPollingStatus, pollExecutionTransaction } from "../lib/executionReconciliationPoller.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
 import { approvalExecutionAuthorized, approvalOrganizationalFinding, approvalPublicSummary, approvalSignatureFinding, approvalVerifiedCount, createApprovalRequest, expireApproval, respondToApproval } from "../lib/approvalWorkflow.mjs";
 import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
@@ -1503,16 +1505,128 @@ export function createMemoryStore() {
         err.status = 400;
         throw err;
       }
+      const requiredConfirmations = Math.max(1, Number(executionPolicy?.structuredRules?.requiredConfirmations || 1));
+      const { patch, result } = buildReconciliationAuditPatch({
+        auditLog,
+        policy: executionPolicy || {},
+        body: {
+          status: "confirmed",
+          transactionHash: executionTxHash,
+          attempt: Math.max(1, Number(auditLog.executionAttemptCount || 0) || 1),
+          confirmations: requiredConfirmations,
+          finalized: true,
+          provider: "manual-casper-wallet-confirmation",
+          note: String(body?.note || "Real execution transaction signed after Magen3 approval.").trim(),
+        },
+      });
       auditLogs = auditLogs.map((log) => log.id === id ? {
         ...log,
+        ...patch,
         executionStatus: "executed",
-        executionTxHash,
         executionSignedBy: normalizeWalletAddress(body?.signedBy || body?.walletAddress || ""),
-        executionNote: String(body?.note || "Real execution transaction signed after Magen3 approval.").trim(),
-        executionUpdatedAt: new Date().toISOString(),
-        pipelineStages: [...(log.pipelineStages || []).filter((stage) => stage.id !== "execution-recorded"), { id: "execution-recorded", label: "Execution recorded", status: "completed", timestamp: new Date().toISOString() }],
       } : log);
-      return { auditLog: auditLogs.find((log) => log.id === id), executionTxHash, confirmed: true };
+      return { auditLog: auditLogs.find((log) => log.id === id), executionTxHash, reconciliation: result.record, confirmed: true };
+    },
+
+    async executionReconciliationStatus(agentId = "", context = {}) {
+      const activePolicy = agentId
+        ? policies.find((item) => item.agentId === requireGatewayAgent(agentId, context.apiKey).id && item.status === "Active") || {}
+        : {};
+      const unresolved = auditLogs.filter((log) => ["submitted", "pending", "uncertain", "replaced"].includes(String(log.executionStatus || "").toLowerCase()) || log.resourceDeliveryStatus === "pending");
+      const polling = getExecutionReconciliationPollingStatus();
+      return {
+        ...reconciliationStatusSummary(activePolicy),
+        realPollingConfigured: polling.configured,
+        polling,
+        unresolvedExecutions: unresolved.length,
+      };
+    },
+
+    async reconcileExecution(id, body, context = {}) {
+      const agentId = String(body?.agentId || body?.agent_id || "").trim();
+      if (!agentId) {
+        const err = new Error("agentId is required for execution reconciliation");
+        err.status = 400;
+        throw err;
+      }
+      const sensitiveKey = Object.keys(body || {}).find((key) => /private|mnemonic|seed|raw.*transaction|signed.*transaction|paymentSignature|walletSignature/i.test(key));
+      if (sensitiveKey) {
+        const err = new Error(`Execution reconciliation must not include signing material or secrets (${sensitiveKey})`);
+        err.status = 400;
+        throw err;
+      }
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const auditLog = auditLogs.find((log) => log.id === id && log.agentId === agentRecord.id);
+      if (!auditLog) {
+        const err = new Error("Execution audit log not found for this connected agent");
+        err.status = 404;
+        throw err;
+      }
+      const review = auditLog.approvalRequestId ? actionReviews.find((item) => item.id === auditLog.approvalRequestId) : null;
+      const approvedAfterReview = auditLog.decision === "Review Required" && approvalExecutionAuthorized(review);
+      if (auditLog.decision !== "Allowed" && !approvedAfterReview) {
+        const err = new Error("Execution can only be reconciled for an Allowed decision or a currently authorized Review Required decision");
+        err.status = 409;
+        throw err;
+      }
+      const activePolicy = policies.find((item) => item.agentId === agentRecord.id && item.status === "Active") || {};
+      const replacementAuditLogId = String(body?.replacementAuditLogId || body?.replacedByAuditLogId || "").trim();
+      if (replacementAuditLogId) {
+        const replacementAudit = auditLogs.find((log) => log.id === replacementAuditLogId && log.agentId === agentRecord.id);
+        if (!replacementAudit || replacementAudit.id === auditLog.id) {
+          const err = new Error("replacementAuditLogId must identify a different audit owned by the same connected agent");
+          err.status = 400;
+          throw err;
+        }
+      }
+      const { patch, result } = buildReconciliationAuditPatch({ auditLog, policy: activePolicy, body });
+      auditLogs = auditLogs.map((log) => {
+        if (log.id === id) return { ...log, ...patch };
+        if (replacementAuditLogId && log.id === replacementAuditLogId) return { ...log, executionReplacementOf: id, executionReplacementAuditId: id };
+        return log;
+      });
+      return { ok: true, auditLog: auditLogs.find((log) => log.id === id), reconciliation: result.record, history: result.history, idempotent: result.idempotent, unresolved: result.unresolved, terminal: result.terminal };
+    },
+
+    async pollExecution(id, body, context = {}) {
+      const agentId = String(body?.agentId || body?.agent_id || "").trim();
+      if (!agentId) {
+        const err = new Error("agentId is required for execution reconciliation polling");
+        err.status = 400;
+        throw err;
+      }
+      const prohibitedProviderField = Object.keys(body || {}).find((key) => /^(?:rpcUrl|rpcEndpoint|providerUrl|endpoint)$/i.test(key));
+      if (prohibitedProviderField) {
+        const err = new Error(`${prohibitedProviderField} is not accepted. Reconciliation RPC endpoints are configured only on the backend.`);
+        err.status = 400;
+        throw err;
+      }
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const auditLog = auditLogs.find((log) => log.id === id && log.agentId === agentRecord.id);
+      if (!auditLog) {
+        const err = new Error("Execution audit log not found for this connected agent");
+        err.status = 404;
+        throw err;
+      }
+      const transactionHash = String(body?.transactionHash || auditLog.executionTxHash || auditLog.executionReconciliation?.transactionHash || "").trim();
+      if (!transactionHash) {
+        const err = new Error("A bound transactionHash is required before execution reconciliation can be polled");
+        err.status = 400;
+        throw err;
+      }
+      const originalAction = auditLog.originalIntent?.action && typeof auditLog.originalIntent.action === "object" ? auditLog.originalIntent.action : {};
+      const observation = await pollExecutionTransaction({
+        transactionHash,
+        chainFamily: String(body?.chainFamily || originalAction?.feeSafety?.chainFamily || "").trim(),
+        chainName: String(body?.chainName || originalAction?.chainName || auditLog.originalIntent?.targetChain || "").trim(),
+      });
+      return this.reconcileExecution(id, {
+        ...observation,
+        auditLogId: id,
+        agentId,
+        attempt: Math.max(1, Number(auditLog.executionAttemptCount || auditLog.executionReconciliation?.attempt || 1)),
+        note: String(body?.note || `Polled through ${observation.provider}.`).trim(),
+      }, context);
     },
 
     async updateX402Settlement(id, body, context = {}) {
@@ -1553,8 +1667,25 @@ export function createMemoryStore() {
       update = mergeX402SettlementTransition(previous, update);
       const settlementStageStatus = update.status === "confirmed" ? "completed" : update.status === "failed" ? "failed" : update.status === "uncertain" ? "warning" : "pending";
       const deliveryStageStatus = update.resourceDelivered ? "completed" : update.status === "failed" ? "failed" : "pending";
+      const { patch: reconciliationPatch } = buildReconciliationAuditPatch({
+        auditLog,
+        policy: activePolicy || {},
+        body: {
+          status: update.status,
+          transactionHash: update.transactionHash,
+          attempt: update.attempt,
+          confirmations: update.status === "confirmed" ? Math.max(1, Number(activePolicy?.structuredRules?.requiredConfirmations || 1)) : 0,
+          finalized: update.status === "confirmed",
+          resourceDelivered: update.resourceDelivered,
+          provider: "x402-facilitator",
+          providerReference: update.facilitatorReference || "",
+          failureReason: update.status === "failed" ? (update.note || "x402 facilitator reported failure") : "",
+          note: update.note || `x402 settlement reported as ${update.status}.`,
+        },
+      });
       auditLogs = auditLogs.map((log) => log.id === id ? {
         ...log,
+        ...reconciliationPatch,
         originalIntent: {
           ...(log.originalIntent || {}),
           action: {
@@ -1573,7 +1704,7 @@ export function createMemoryStore() {
         executionNote: update.note || `x402 settlement reported as ${update.status}.`,
         executionUpdatedAt: update.updatedAt,
         pipelineStages: updatePipelineStage(
-          updatePipelineStage(log.pipelineStages, "x402-settlement", settlementStageStatus, update.updatedAt, `x402 settlement: ${update.status}`),
+          updatePipelineStage(reconciliationPatch.pipelineStages, "x402-settlement", settlementStageStatus, update.updatedAt, `x402 settlement: ${update.status}`),
           "x402-resource-delivery",
           deliveryStageStatus,
           update.resourceDelivered ? update.updatedAt : "",
