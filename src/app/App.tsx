@@ -3861,26 +3861,45 @@ function ConnectedAgentsPage({
   onCreateEmergencyPause: (body: Record<string, unknown>) => Promise<unknown>;
   onResumeEmergencyPause: (id: string, reason: string) => Promise<unknown>;
 }) {
+  type ConnectedAgentTab = "overview" | "setup" | "activity" | "access";
+  type AgentAttentionIssue = {
+    id: string;
+    kind: "gateway" | "policy" | "execution" | "approval" | "pause" | "coverage" | "credential";
+    title: string;
+    description: string;
+    severity: "critical" | "warning";
+    actionLabel: string;
+    tab?: ConnectedAgentTab;
+    page?: Page;
+  };
+
   const [latestCredentials, setLatestCredentials] = useState<Agent | null>(null);
+  const [credentialAcknowledged, setCredentialAcknowledged] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [copied, setCopied] = useState("");
   const [showRegister, setShowRegister] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Revoked" | "No Policy">("All");
   const [policyFilter, setPolicyFilter] = useState("All");
-  const [activeTab, setActiveTab] = useState<"overview" | "integration" | "activity" | "security">("overview");
+  const [activeTab, setActiveTab] = useState<ConnectedAgentTab>("overview");
   const [skillTarget, setSkillTarget] = useState<"Claude" | "Codex" | "Custom Agent" | ".env" | "API Snippet">("Claude");
+  const [showSkillKit, setShowSkillKit] = useState(false);
+  const [showAgentDetails, setShowAgentDetails] = useState(false);
+  const [showMobileDirectory, setShowMobileDirectory] = useState(false);
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
   const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
-  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) || agents[0];
-  const selectedPolicy = selectedAgent ? getActivePolicy(policies, selectedAgent.id) : undefined;
 
   useEffect(() => {
     if (!selectedAgentId && agents[0]?.id) {
       setSelectedAgentId(agents[0].id);
     }
   }, [agents, selectedAgentId]);
+
+  useEffect(() => {
+    setShowSkillKit(false);
+    setShowAgentDetails(false);
+  }, [selectedAgentId]);
 
   const copyText = useCallback(async (label: string, value: string) => {
     if (!value) return;
@@ -4026,7 +4045,9 @@ ${snippet}
     const rotated = await onRotateAgentApiKey(agentId);
     if (rotated) {
       setLatestCredentials(rotated);
+      setCredentialAcknowledged(false);
       setSelectedAgentId(rotated.id);
+      setActiveTab("access");
     }
   }, [onRotateAgentApiKey]);
 
@@ -4034,26 +4055,161 @@ ${snippet}
     const revoked = await onRevokeAgent(agentId);
     if (revoked) {
       setLatestCredentials(null);
+      setCredentialAcknowledged(false);
     }
   }, [onRevokeAgent]);
 
-  const agentAuditLogs = selectedAgent
-    ? auditLogs.filter((log) => log.agentId === selectedAgent.id).slice(0, 5)
-    : [];
-  const scopedAgentIds = new Set(agents.map((agent) => agent.id));
-  const scopedAuditLogs = auditLogs.filter((log) => scopedAgentIds.has(log.agentId));
+  const agentSnapshots = useMemo(() => agents.map((agent) => {
+    const policy = getActivePolicy(policies, agent.id);
+    const logs = auditLogs.filter((log) => log.agentId === agent.id);
+    const latestLog = logs[0];
+    const coverage = calculateSecurityCoverage(agent, policy, logs);
+    const activePauses = emergencyPauses.filter((pause) =>
+      (pause.active === true || pause.status === "Active") && (!pause.agentId || pause.agentId === agent.id)
+    );
+    const unresolvedExecutions = logs.filter((log) => executionNeedsAttention(log));
+    const pendingApprovals = logs.filter((log) => {
+      if (log.decision !== "Review Required") return false;
+      const status = String(log.approvalStatus || "Pending").toLowerCase();
+      return !["approved", "rejected", "expired", "cancelled", "resolved"].includes(status);
+    });
+    const hasCredential = Boolean(
+      (latestCredentials?.id === agent.id && latestCredentials.apiKey) || agent.apiKey || agent.apiKeyPreview
+    );
+    const issues: AgentAttentionIssue[] = [];
+
+    if (agent.status === "Active" && !policy) {
+      issues.push({
+        id: `${agent.id}-policy`,
+        kind: "policy",
+        title: `${agent.name} has no active policy`,
+        description: "Gateway authorization cannot use agent-specific policy controls until an active policy is assigned.",
+        severity: "critical",
+        actionLabel: "Configure policy",
+        page: "policies",
+      });
+    }
+    if (activePauses.length > 0) {
+      issues.push({
+        id: `${agent.id}-pause`,
+        kind: "pause",
+        title: `${agent.name} is paused`,
+        description: `${activePauses.length} active emergency pause ${activePauses.length === 1 ? "scope is" : "scopes are"} blocking or reviewing execution.`,
+        severity: "critical",
+        actionLabel: "Review controls",
+        tab: "access",
+      });
+    }
+    if (unresolvedExecutions.length > 0) {
+      issues.push({
+        id: `${agent.id}-execution`,
+        kind: "execution",
+        title: `${agent.name} has ${unresolvedExecutions.length} unresolved ${unresolvedExecutions.length === 1 ? "execution" : "executions"}`,
+        description: "Review pending, uncertain, replacement, delivery, or refund state before submitting another attempt.",
+        severity: "warning",
+        actionLabel: "Review execution",
+        page: "audit-log",
+      });
+    }
+    if (pendingApprovals.length > 0) {
+      issues.push({
+        id: `${agent.id}-approval`,
+        kind: "approval",
+        title: `${agent.name} has ${pendingApprovals.length} pending ${pendingApprovals.length === 1 ? "review" : "reviews"}`,
+        description: "A Review Required decision is waiting for the configured human approval workflow.",
+        severity: "warning",
+        actionLabel: "Review decision",
+        page: "audit-log",
+      });
+    }
+    if (agent.status === "Active" && coverage.score < 60) {
+      issues.push({
+        id: `${agent.id}-coverage`,
+        kind: "coverage",
+        title: `${agent.name} has low Security Coverage`,
+        description: `${coverage.score}% configured coverage. Review missing controls and recommendations for this agent.`,
+        severity: "warning",
+        actionLabel: "View coverage",
+        tab: "overview",
+      });
+    }
+    if (agent.status === "Active" && !hasCredential) {
+      issues.push({
+        id: `${agent.id}-credential`,
+        kind: "credential",
+        title: `${agent.name} has no active API credential`,
+        description: "Rotate the credential to issue a new one-time key before the external agent calls the Gateway.",
+        severity: "critical",
+        actionLabel: "Manage access",
+        tab: "access",
+      });
+    }
+
+    return {
+      agent,
+      policy,
+      logs,
+      latestLog,
+      coverage,
+      activePauses,
+      unresolvedExecutions,
+      pendingApprovals,
+      hasCredential,
+      issues,
+    };
+  }), [agents, policies, auditLogs, emergencyPauses, latestCredentials]);
+
+  const snapshotById = useMemo(() => new Map(agentSnapshots.map((snapshot) => [snapshot.agent.id, snapshot])), [agentSnapshots]);
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) || agents[0];
+  const selectedSnapshot = selectedAgent ? snapshotById.get(selectedAgent.id) : undefined;
+  const selectedPolicy = selectedSnapshot?.policy;
+  const selectedLogs = selectedSnapshot?.logs || [];
+  const agentAuditLogs = selectedLogs.slice(0, 5);
+  const rawKey = selectedAgent && latestCredentials?.id === selectedAgent.id
+    ? latestCredentials.apiKey
+    : selectedAgent?.apiKey;
+  const selectedSnippet = selectedAgent ? integrationSnippet(selectedAgent, rawKey) : "";
+  const selectedSkill = selectedAgent ? agentSkillKit(selectedAgent, rawKey, skillTarget, selectedSnippet) : "";
+  const skillFilename = !selectedAgent
+    ? "SKILL.md"
+    : skillTarget === ".env"
+      ? `magen3-${selectedAgent.id.toLowerCase()}.env`
+      : skillTarget === "API Snippet"
+        ? `magen3-${selectedAgent.id.toLowerCase()}-gateway.js`
+        : "SKILL.md";
+
+  const scopedAgentIds = useMemo(() => new Set(agents.map((agent) => agent.id)), [agents]);
+  const scopedAuditLogs = useMemo(() => auditLogs.filter((log) => scopedAgentIds.has(log.agentId)), [auditLogs, scopedAgentIds]);
   const today = new Date();
   const requestsToday = scopedAuditLogs.filter((log) => isSameDay(new Date(log.timestamp), today)).length;
-  const agentMetrics = [
-    { label: "Active Agents", value: agents.filter((agent) => agent.status === "Active").length, icon: Bot },
-    { label: "Revoked Agents", value: agents.filter((agent) => agent.status === "Revoked").length, icon: ShieldX },
-    { label: "Requests Today", value: requestsToday, icon: Activity },
-    { label: "Allowed", value: scopedAuditLogs.filter((log) => log.decision === "Allowed").length, icon: CheckCircle },
-    { label: "Review Required", value: scopedAuditLogs.filter((log) => log.decision === "Review Required").length, icon: Clock },
-    { label: "Blocked", value: scopedAuditLogs.filter((log) => log.decision === "Blocked").length, icon: XCircle },
-  ];
+  const unresolvedExecutions = scopedAuditLogs.filter((log) => executionNeedsAttention(log));
+  const activeAgentsCount = agents.filter((agent) => agent.status === "Active").length;
+  const agentsNeedingAttention = agentSnapshots.filter((snapshot) => snapshot.agent.status === "Active" && snapshot.issues.length > 0).length;
+
+  const attentionItems = useMemo(() => {
+    const items: Array<AgentAttentionIssue & { agentId?: string; agentName?: string }> = [];
+    if (!apiOnline) {
+      items.push({
+        id: "gateway-unavailable",
+        kind: "gateway",
+        title: "Gateway is unavailable",
+        description: "Connected agents cannot submit new intents until backend connectivity is restored.",
+        severity: "critical",
+        actionLabel: "Open settings",
+        page: "settings",
+      });
+    }
+    for (const snapshot of agentSnapshots) {
+      for (const issue of snapshot.issues) {
+        items.push({ ...issue, agentId: snapshot.agent.id, agentName: snapshot.agent.name });
+      }
+    }
+    return items;
+  }, [apiOnline, agentSnapshots]);
+
   const filteredAgents = agents.filter((agent) => {
-    const policy = getActivePolicy(policies, agent.id);
+    const snapshot = snapshotById.get(agent.id);
+    const policy = snapshot?.policy;
     const query = agentSearch.trim().toLowerCase();
     const matchesSearch =
       !query ||
@@ -4068,213 +4224,220 @@ ${snippet}
     return matchesSearch && matchesStatus && matchesPolicy;
   });
 
+  const openAgent = useCallback((agentId: string, tab: ConnectedAgentTab = "overview") => {
+    setSelectedAgentId(agentId);
+    setActiveTab(tab);
+    setShowMobileDirectory(false);
+  }, []);
+
+  const handleAttentionAction = useCallback((item: AgentAttentionIssue & { agentId?: string }) => {
+    if (item.agentId) {
+      setSelectedAgentId(item.agentId);
+    }
+    if (item.page) {
+      onNavigate(item.page);
+      return;
+    }
+    if (item.tab) {
+      setActiveTab(item.tab);
+      setShowMobileDirectory(false);
+    }
+  }, [onNavigate]);
+
+  const compactCapabilities = (capabilities: ExecutionCapability[], maximum = 3) => (
+    <div className="flex flex-wrap gap-1.5">
+      {capabilities.slice(0, maximum).map((capability) => (
+        <span key={capability} className="rounded-full border border-[#1E293B] bg-[#050B14] px-2 py-0.5 text-[10px] font-semibold text-[#94A3B8]">
+          {capability}
+        </span>
+      ))}
+      {capabilities.length > maximum && (
+        <span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2 py-0.5 text-[10px] font-semibold text-[#64748B]">
+          +{capabilities.length - maximum} more
+        </span>
+      )}
+    </div>
+  );
+
+  const detailTabs = [
+    { id: "overview", label: "Overview", icon: Eye },
+    { id: "setup", label: "Setup & Integration", icon: Code2 },
+    { id: "activity", label: "Activity", icon: Activity },
+    { id: "access", label: "Access", icon: Lock },
+  ] as const;
+
+  const decisionCounts = selectedLogs.reduce((counts, log) => {
+    counts.total += 1;
+    if (log.decision === "Allowed") counts.allowed += 1;
+    if (log.decision === "Blocked") counts.blocked += 1;
+    if (log.decision === "Review Required") counts.review += 1;
+    return counts;
+  }, { total: 0, allowed: 0, blocked: 0, review: 0 });
+
+  const selectedCapabilities = selectedAgent
+    ? normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type)
+    : [];
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-            Connected Agents
-          </h1>
-          <p className="text-[#94A3B8] text-sm mt-1 max-w-3xl">
-            Register external agents that are allowed to call Magen3. Agent identity is Agent ID plus API key; the execution wallet is submitted later by the external agent and can be any Casper Wallet.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              apiOnline
+                ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]"
+                : "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} /> Gateway {apiOnline ? "Live" : "Unavailable"}
+            </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
               <ShieldCheck size={13} /> Casper Testnet
             </span>
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-              apiOnline
-                ? "border-[#22C55E]/20 bg-[#22C55E]/10 text-[#22C55E]"
-                : "border-[#F59E0B]/20 bg-[#F59E0B]/10 text-[#F59E0B]"
-            }`}>
-              <Server size={13} /> {apiOnline ? "Gateway Live" : "Gateway Unavailable"}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE]">
-              <Lock size={13} /> Wallet Scoped
+            <span className="inline-flex rounded-full border border-[#1E293B] bg-[#0B1220] px-2.5 py-1 text-xs font-semibold text-[#94A3B8]">
+              {activeAgentsCount} active {activeAgentsCount === 1 ? "agent" : "agents"}
             </span>
           </div>
+          <h1 className="mt-3 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Connected Agents</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">
+            Register and manage external agents authorised to call Magen3 before wallet signing or blockchain execution.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8]">
-            Owner wallet: <span className="font-mono text-[#F8FAFC]">{truncate(walletAddress, 22)}</span>
-          </div>
-          <Btn variant="primary" onClick={() => setShowRegister(true)}>
-            <Plus size={16} /> Register Agent
-          </Btn>
+          <details className="relative group">
+            <summary className="list-none cursor-pointer rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8] hover:text-[#F8FAFC]">
+              Owner wallet <ChevronDown size={13} className="ml-1 inline transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 shadow-2xl">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Registration owner</div>
+              <div className="mt-2 break-all font-mono text-xs text-[#F8FAFC]">{walletAddress || "Wallet not available"}</div>
+            </div>
+          </details>
+          <Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>
         </div>
       </div>
 
-      {latestCredentials?.apiKey && (
-        <div className={`${CARD_GLOW} p-5 border-[#22C55E]/30`}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/30 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E] mb-3">
-                <CheckCircle size={13} /> External Agent Registered
+      {latestCredentials?.apiKey && !credentialAcknowledged && (
+        <div className={`${CARD_GLOW} border-[#22C55E]/30 p-5`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/30 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E]">
+                <CheckCircle size={13} /> One-time credential
               </div>
-              <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-                New API key generated
-              </h2>
-              <p className="text-sm text-[#94A3B8] mt-1">
-                This is the only time Magen3 can show the full raw key. Copy it into the external agent now; after refresh, only the preview remains.
-              </p>
-            </div>
-            <Btn
-              variant="secondary"
-              size="sm"
-              onClick={() => copyText("all details", `Agent ID: ${latestCredentials.id}\nGateway URL: ${gatewayUrl}\nVerify URL: ${gatewayVerifyUrl}?agentId=${latestCredentials.id}\nAPI Key: ${latestCredentials.apiKey}`)}
-            >
-              <Copy size={14} /> {copied === "all details" ? "Copied" : "Copy Details"}
-            </Btn>
-          </div>
-          <div className="mt-4 grid lg:grid-cols-2 xl:grid-cols-4 gap-3">
-            {[
-              ["Agent ID", latestCredentials.id],
-              ["Gateway URL", gatewayUrl],
-              ["Verify URL", `${gatewayVerifyUrl}?agentId=${latestCredentials.id}`],
-              ["API Key", latestCredentials.apiKey],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
-                  <button
-                    type="button"
-                    aria-label={`Copy ${label}`}
-                    className="text-[#22D3EE] hover:text-[#F8FAFC]"
-                    onClick={() => copyText(label, value)}
-                  >
-                    <Copy size={13} />
-                  </button>
-                </div>
-                <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+              <h2 className="mt-3 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Save {latestCredentials.name}'s new API key</h2>
+              <p className="mt-1 text-sm text-[#94A3B8]">This raw key is shown once. Store it securely before leaving this session.</p>
+              <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
+                <code className="min-w-0 flex-1 break-all text-xs text-[#F8FAFC]">{latestCredentials.apiKey}</code>
+                <button type="button" onClick={() => copyText("new api key", latestCredentials.apiKey || "")} className="shrink-0 text-[#22D3EE] hover:text-[#F8FAFC]" aria-label="Copy new API key"><Copy size={15} /></button>
               </div>
-            ))}
-          </div>
-          {copied === "copy failed" && (
-            <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
-              Copy was blocked by the browser. Select the key text and copy it manually.
             </div>
-          )}
+            <div className="flex flex-wrap gap-2 lg:max-w-sm lg:justify-end">
+              <Btn variant="secondary" size="sm" onClick={() => copyText("new api key", latestCredentials.apiKey || "")}><Copy size={14} /> {copied === "new api key" ? "Copied" : "Copy API Key"}</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => downloadText(`magen3-${latestCredentials.id.toLowerCase()}.env`, envTemplate(latestCredentials, latestCredentials.apiKey))}><FileText size={14} /> Download .env</Btn>
+              <Btn variant="outline" size="sm" onClick={() => openAgent(latestCredentials.id, "setup")}><Code2 size={14} /> Open Setup</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => setCredentialAcknowledged(true)}><CheckCircle size={14} /> I have saved it</Btn>
+            </div>
+          </div>
+          {copied === "copy failed" && <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked by the browser. Select the key text and copy it manually.</div>}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {agentMetrics.map((metric) => {
-          const Icon = metric.icon;
-          return (
-            <div key={metric.label} className={`${CARD} p-4`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{metric.value}</div>
-                  <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{metric.label}</div>
-                </div>
-                <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-2 text-[#22D3EE]">
-                  <Icon size={17} />
-                </div>
+      <div className={`${CARD_GLOW} overflow-hidden bg-[#1E293B]`}>
+        <div className="grid gap-px sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "Active Agents", value: activeAgentsCount, detail: `${agents.length} registered`, icon: <Bot size={18} />, tone: "text-[#22C55E]" },
+            { label: "Need Attention", value: agentsNeedingAttention, detail: agentsNeedingAttention ? "configuration or action required" : "all active agents clear", icon: <AlertTriangle size={18} />, tone: agentsNeedingAttention ? "text-[#F59E0B]" : "text-[#22C55E]" },
+            { label: "Requests Today", value: requestsToday, detail: "gateway intents received", icon: <Activity size={18} />, tone: "text-[#22D3EE]" },
+            { label: "Unresolved", value: unresolvedExecutions.length, detail: unresolvedExecutions.length ? "execution or settlement state" : "settlement clear", icon: <RefreshCw size={18} />, tone: unresolvedExecutions.length ? "text-[#F59E0B]" : "text-[#22C55E]" },
+          ].map((metric) => (
+            <div key={metric.label} className="flex items-start justify-between gap-3 bg-[#111827] p-4 sm:p-5">
+              <div>
+                <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{metric.value}</div>
+                <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{metric.label}</div>
+                <div className="mt-1 text-[11px] text-[#64748B]">{metric.detail}</div>
               </div>
+              <div className={`rounded-xl border border-[#1E293B] bg-[#0B1220] p-2 ${metric.tone}`}>{metric.icon}</div>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      <div className="grid xl:grid-cols-[minmax(360px,0.95fr)_1.35fr] gap-6">
-        <div className={`${CARD} overflow-hidden`}>
-          <div className="border-b border-[#1E293B] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className={SECTION_TITLE}>Agents</h2>
-              <span className="rounded-full bg-[#0B1220] px-2.5 py-1 text-xs text-[#94A3B8]">
-                {filteredAgents.length}/{agents.length}
-              </span>
-            </div>
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-              <input
-                className={`${INPUT_CLS} pl-9`}
-                value={agentSearch}
-                onChange={(e) => setAgentSearch(e.target.value)}
-                placeholder="Search by name, ID, or capability"
-              />
-            </div>
+      <section className={`${CARD} p-5`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2"><AlertTriangle size={17} className={attentionItems.length ? "text-[#F59E0B]" : "text-[#22C55E]"} /><h2 className={SECTION_TITLE}>Agents Needing Attention</h2></div>
+            <p className="mt-1 text-xs text-[#94A3B8]">Only operational or configuration issues that require action appear here.</p>
+          </div>
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${attentionItems.length ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]" : "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]"}`}>{attentionItems.length ? `${attentionItems.length} open` : "All clear"}</span>
+        </div>
+        {attentionItems.length === 0 ? (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4">
+            <CheckCircle size={18} className="shrink-0 text-[#22C55E]" />
+            <div><div className="text-sm font-semibold text-[#F8FAFC]">All active agents are operating normally</div><div className="mt-1 text-xs text-[#94A3B8]">No missing policy, paused scope, unresolved execution, pending review, low coverage, or credential issue was detected.</div></div>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {attentionItems.slice(0, 6).map((item) => (
+              <div key={item.id} className={`rounded-xl border p-4 ${item.severity === "critical" ? "border-[#EF4444]/25 bg-[#EF4444]/5" : "border-[#F59E0B]/25 bg-[#F59E0B]/5"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div><div className="text-sm font-semibold text-[#F8FAFC]">{item.title}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{item.description}</div></div>
+                  <button type="button" onClick={() => handleAttentionAction(item)} className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold ${item.severity === "critical" ? "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#FCA5A5]" : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#FCD34D]"}`}>{item.actionLabel}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {attentionItems.length > 6 && <div className="mt-3 text-xs text-[#64748B]">{attentionItems.length - 6} additional items are available through the affected agent and Audit Logs.</div>}
+      </section>
+
+      <div className={`${CARD} p-4 xl:hidden`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <select className={`${INPUT_CLS} appearance-none pr-10`} value={selectedAgent?.id || ""} onChange={(event) => openAgent(event.target.value, "overview")}>
+              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.status}</option>)}
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+          </div>
+          <Btn variant="secondary" size="sm" onClick={() => setShowMobileDirectory((current) => !current)}><Search size={14} /> {showMobileDirectory ? "Hide directory" : "Browse agents"}</Btn>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.82fr)_1.5fr]">
+        <div className={`${CARD} ${showMobileDirectory ? "block" : "hidden"} overflow-hidden xl:block`}>
+          <div className="space-y-3 border-b border-[#1E293B] p-4">
+            <div className="flex items-center justify-between gap-3"><div><h2 className={SECTION_TITLE}>Agent Directory</h2><div className="mt-1 text-xs text-[#64748B]">Select an agent to open its control centre.</div></div><span className="rounded-full bg-[#0B1220] px-2.5 py-1 text-xs text-[#94A3B8]">{filteredAgents.length}/{agents.length}</span></div>
+            <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" /><input className={`${INPUT_CLS} pl-9`} value={agentSearch} onChange={(event) => setAgentSearch(event.target.value)} placeholder="Search name, ID, or capability" /></div>
             <div className="flex flex-wrap gap-2">
               {(["All", "Active", "Revoked", "No Policy"] as const).map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(status)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    statusFilter === status
-                      ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
-                      : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
-                  }`}
-                >
-                  {status}
-                </button>
+                <button key={status} onClick={() => setStatusFilter(status)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${statusFilter === status ? "border-[#22D3EE]/30 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8] hover:text-[#F8FAFC]"}`}>{status}</button>
               ))}
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2">
               <Filter size={14} className="text-[#94A3B8]" />
-              <select
-                className="min-w-0 flex-1 bg-transparent text-xs text-[#F8FAFC] outline-none"
-                value={policyFilter}
-                onChange={(e) => setPolicyFilter(e.target.value)}
-              >
+              <select className="min-w-0 flex-1 bg-transparent text-xs text-[#F8FAFC] outline-none" value={policyFilter} onChange={(event) => setPolicyFilter(event.target.value)}>
                 <option className="bg-[#0B1220]" value="All">All policies</option>
-                {policies
-                  .filter((policy) => policy.status === "Active")
-                  .map((policy) => (
-                    <option className="bg-[#0B1220]" key={policy.id} value={policy.id}>
-                      {policy.name}
-                    </option>
-                  ))}
+                {policies.filter((policy) => policy.status === "Active").map((policy) => <option className="bg-[#0B1220]" key={policy.id} value={policy.id}>{policy.name}</option>)}
               </select>
             </div>
           </div>
-
-          <div className="max-h-[620px] overflow-y-auto p-3 space-y-2">
+          <div className="max-h-[720px] space-y-2 overflow-y-auto p-3">
             {filteredAgents.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center">
-                <Bot size={28} className="mx-auto mb-3 text-[#94A3B8]" />
-                <p className="text-sm text-[#94A3B8]">No agents match this view.</p>
-              </div>
+              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center"><Bot size={28} className="mx-auto mb-3 text-[#94A3B8]" /><p className="text-sm text-[#94A3B8]">No agents match this view.</p></div>
             ) : filteredAgents.map((agent) => {
-              const assignedPolicy = getActivePolicy(policies, agent.id);
-              const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
-              const latestLog = agentLogs[0];
-              const coverage = calculateSecurityCoverage(agent, assignedPolicy, agentLogs);
-              const activePauseCount = emergencyPauses.filter((pause) => (pause.active === true || pause.status === "Active") && (!pause.agentId || pause.agentId === agent.id)).length;
+              const snapshot = snapshotById.get(agent.id);
+              if (!snapshot) return null;
               const active = selectedAgent?.id === agent.id;
+              const capabilities = normalizeCapabilities(agent.executionCapabilities, agent.type);
+              const coverageTone = snapshot.coverage.score >= 80 ? "bg-[#22C55E]" : snapshot.coverage.score >= 60 ? "bg-[#22D3EE]" : "bg-[#F59E0B]";
               return (
-                <button
-                  key={agent.id}
-                  onClick={() => {
-                    setSelectedAgentId(agent.id);
-                    setActiveTab("overview");
-                  }}
-                  className={`w-full rounded-xl border p-4 text-left transition-all ${
-                    active
-                      ? "border-[#22D3EE]/40 bg-[#22D3EE]/10"
-                      : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"
-                  }`}
-                >
+                <button key={agent.id} onClick={() => openAgent(agent.id, "overview")} className={`w-full rounded-xl border p-3.5 text-left transition-all ${active ? "border-[#22D3EE]/40 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate font-semibold text-[#F8FAFC] font-['Space_Grotesk']">{agent.name}</h3>
-                        <StatusBadge status={agent.status} />
-                        {activePauseCount > 0 && <span className="rounded-full border border-[#EF4444]/30 bg-[#EF4444]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FCA5A5]">Paused · {activePauseCount}</span>}
-                      </div>
-                      <div className="mt-1 truncate text-xs text-[#94A3B8]">{agent.id}</div>
-                    </div>
-                    <StatusBadge status={assignedPolicy ? "Active" : "Inactive"} />
+                    <div className="min-w-0"><div className="flex items-center gap-2"><h3 className="truncate font-semibold font-['Space_Grotesk'] text-[#F8FAFC]">{agent.name}</h3>{snapshot.issues.length > 0 && <AlertTriangle size={14} className={snapshot.issues.some((issue) => issue.severity === "critical") ? "shrink-0 text-[#EF4444]" : "shrink-0 text-[#F59E0B]"} />}</div><div className="mt-1 truncate text-xs text-[#94A3B8]">{agent.status === "Active" ? "Agent Active" : "Agent Revoked"} · {snapshot.policy ? snapshot.policy.name : "No Active Policy"}</div></div>
+                    {snapshot.activePauses.length > 0 && <span className="shrink-0 rounded-full border border-[#EF4444]/30 bg-[#EF4444]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FCA5A5]">Paused</span>}
                   </div>
-                  <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(agent.executionCapabilities, agent.type)} compact /></div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-[#050B14] p-2">
-                      <div className="text-[#94A3B8]">Security Coverage</div>
-                      <div className="truncate font-semibold text-[#F8FAFC]">{coverage.score}%</div>
-                    </div>
-                    <div className="rounded-lg bg-[#050B14] p-2">
-                      <div className="text-[#94A3B8]">Last Decision</div>
-                      <div className="truncate text-[#F8FAFC]">{latestLog?.decision || "None"}</div>
-                    </div>
+                  <div className="mt-3">{compactCapabilities(capabilities, 3)}</div>
+                  <div className="mt-3 flex items-end justify-between gap-4">
+                    <div className="min-w-0 flex-1"><div className="flex items-center justify-between text-[10px]"><span className="font-semibold uppercase tracking-wider text-[#64748B]">Coverage</span><span className="font-semibold text-[#F8FAFC]">{snapshot.coverage.score}%</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#050B14]"><div className={`h-full rounded-full ${coverageTone}`} style={{ width: `${snapshot.coverage.score}%` }} /></div></div>
+                    <div className="shrink-0 text-right"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Last active</div><div className="mt-1 text-[10px] text-[#94A3B8]">{snapshot.latestLog ? fmtTs(snapshot.latestLog.timestamp) : "Never"}</div></div>
                   </div>
                 </button>
               );
@@ -4282,315 +4445,132 @@ ${snippet}
           </div>
         </div>
 
-        <div className={`${CARD_GLOW} p-5 min-h-[520px]`}>
-          {!selectedAgent ? (
-            <EmptyState
-              title="Select an agent"
-              description="Choose a connected agent to view integration details, API status, audit activity, and the agent skill kit."
-              action={<Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>}
-            />
-          ) : (() => {
-            const latestLog = auditLogs.find((log) => log.agentId === selectedAgent.id);
-            const unresolvedAgentExecutions = auditLogs.filter((log) => log.agentId === selectedAgent.id && executionNeedsAttention(log));
-            const rawKey = latestCredentials?.id === selectedAgent.id
-              ? latestCredentials.apiKey
-              : selectedAgent.apiKey;
-            const snippet = integrationSnippet(selectedAgent, rawKey);
-            const skill = agentSkillKit(selectedAgent, rawKey, skillTarget, snippet);
-            const skillFilename =
-              skillTarget === ".env"
-                ? `magen3-${selectedAgent.id.toLowerCase()}.env`
-                : skillTarget === "API Snippet"
-                ? `magen3-${selectedAgent.id.toLowerCase()}-gateway.js`
-                : "SKILL.md";
-            const detailTabs = [
-              { id: "overview", label: "Overview", icon: Eye },
-              { id: "integration", label: "Integration", icon: Code2 },
-              { id: "activity", label: "Activity", icon: Activity },
-              { id: "security", label: "Credentials", icon: Lock },
-            ] as const;
-            return (
-              <div className="space-y-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{selectedAgent.name}</h2>
-                      <StatusBadge status={selectedAgent.status} />
-                      <StatusBadge status={selectedPolicy ? "Active" : "Inactive"} />
-                    </div>
-                    <p className="text-sm text-[#94A3B8]">{selectedAgent.purpose || "No purpose added yet."}</p>
-                    <div className="mt-2 text-xs text-[#94A3B8]">{selectedAgent.permissionLevel}</div>
-                    <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type)} /></div>
+        <div className={`${CARD_GLOW} min-h-[560px] p-5`}>
+          {!selectedAgent || !selectedSnapshot ? (
+            <EmptyState title="Select an agent" description="Choose a connected agent to view operational status, setup, activity, and access controls." action={<Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>} />
+          ) : (
+            <div className="space-y-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{selectedAgent.name}</h2>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${selectedAgent.status === "Active" ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]"}`}>Agent {selectedAgent.status}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${selectedPolicy ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#F59E0B]/25 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>{selectedPolicy ? "Policy Active" : "No Active Policy"}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${apiOnline ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]"}`}>Gateway {apiOnline ? "Connected" : "Unavailable"}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Btn variant="secondary" size="sm" onClick={() => copyText("agent id", selectedAgent.id)}>
-                      <Copy size={14} /> {copied === "agent id" ? "Copied" : "Copy Agent ID"}
-                    </Btn>
-                  </div>
+                  <p className="mt-2 max-w-2xl text-sm text-[#94A3B8]">{selectedAgent.purpose || "No purpose added yet."}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#94A3B8]"><span>Coverage <strong className="text-[#F8FAFC]">{selectedSnapshot.coverage.score}%</strong></span><span>Last active <strong className="text-[#F8FAFC]">{selectedSnapshot.latestLog ? fmtTs(selectedSnapshot.latestLog.timestamp) : "No activity yet"}</strong></span><span>{selectedCapabilities.length} execution {selectedCapabilities.length === 1 ? "capability" : "capabilities"}</span></div>
+                  <div className="mt-3">{compactCapabilities(selectedCapabilities, 4)}</div>
                 </div>
-
-                <div className="flex flex-wrap gap-2 border-b border-[#1E293B] pb-3">
-                  {detailTabs.map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
-                          activeTab === tab.id
-                            ? "border-[#22D3EE]/40 bg-[#22D3EE]/10 text-[#22D3EE]"
-                            : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8] hover:text-[#F8FAFC]"
-                        }`}
-                      >
-                        <Icon size={14} /> {tab.label}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  <Btn variant="secondary" size="sm" onClick={() => onNavigate("intent-playground")}><Send size={14} /> Test Intent</Btn>
+                  <Btn variant="secondary" size="sm" onClick={() => copyText("agent id", selectedAgent.id)}><Copy size={14} /> {copied === "agent id" ? "Copied" : "Copy Agent ID"}</Btn>
+                  <details className="relative group">
+                    <summary className="list-none cursor-pointer rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-1.5 text-xs font-semibold text-[#94A3B8] hover:text-[#F8FAFC]">More actions <ChevronDown size={13} className="ml-1 inline transition-transform group-open:rotate-180" /></summary>
+                    <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-[#1E293B] bg-[#0B1220] p-1.5 shadow-2xl">
+                      <button type="button" onClick={() => onNavigate("policies")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><FileText size={14} /> Manage policy</button>
+                      <button type="button" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC] disabled:opacity-50"><Lock size={14} /> Rotate API key</button>
+                      <button type="button" onClick={() => setActiveTab("access")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><ShieldAlert size={14} /> Emergency controls</button>
+                      <button type="button" onClick={() => setActiveTab("access")} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[#FCA5A5] hover:bg-[#EF4444]/10"><XCircle size={14} /> Revoke access</button>
+                    </div>
+                  </details>
                 </div>
-
-                {activeTab === "overview" && (
-                  <div className="space-y-4">
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} onNavigate={onNavigate} />
-                      <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} emergencyPauses={emergencyPauses.filter((pause) => !pause.agentId || pause.agentId === selectedAgent.id)} />
-                    </div>
-                    {unresolvedAgentExecutions.length > 0 && (
-                      <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
-                        <div className="flex items-start justify-between gap-3">
-                          <div><div className="text-sm font-semibold text-[#F8FAFC]">Unresolved execution · {unresolvedAgentExecutions.length}</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Review pending, uncertain, replacement, delivery, or refund state before submitting another attempt.</div></div>
-                          <ArrowRight size={18} className="shrink-0 text-[#F59E0B]" />
-                        </div>
-                      </button>
-                    )}
-                    <AgentInsightsPanel agent={selectedAgent} logs={auditLogs} />
-                    <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} selectedAgentId={selectedAgent.id} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
-                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div><h3 className="text-sm font-semibold text-[#F8FAFC]">Execution Capabilities</h3><p className="mt-1 text-xs text-[#94A3B8]">Capabilities shape recommendations and relevant module coverage; the active policy remains the authorization source.</p></div>
-                        <Btn variant="secondary" size="sm" onClick={() => onNavigate("policies")}><FileText size={14} /> Manage Policy</Btn>
-                      </div>
-                      <div className="mt-3"><CapabilityChips capabilities={normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type)} /></div>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-3">
-                      {[
-                        ["Agent ID", selectedAgent.id],
-                        ["Agent Type", selectedAgent.type],
-                        ["Wallet Owner", selectedAgent.ownerWalletAddress || walletAddress || "Unknown"],
-                        ["Assigned Policy", selectedPolicy?.name || "No active policy"],
-                        ["Last Request", latestLog ? fmtTs(latestLog.timestamp) : "No requests yet"],
-                        ["Last Decision", latestLog?.decision || "No decision yet"],
-                        ["API Key", selectedAgent.apiKeyPreview ? selectedAgent.apiKeyPreview : "Rotate key to issue"],
-                        ["Created", fmtTs(selectedAgent.createdAt)],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
-                          <div className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
-                          <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                      <h3 className="text-sm font-semibold text-[#F8FAFC]">How this agent is identified</h3>
-                      <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                        Magen3 identifies this external agent with Agent ID plus API key. The Casper wallet supplied in each gateway request is the execution wallet and does not need to match the owner wallet that registered this agent.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "integration" && (
-                  <div className="space-y-4">
-                    <div className="grid md:grid-cols-2 gap-3">
-                      {[
-                        ["Gateway URL", gatewayUrl],
-                        ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`],
-                        ["Agent ID", selectedAgent.id],
-                        ["API Key", rawKey || selectedAgent.apiKeyPreview || "Rotate key to issue"],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</span>
-                            <button
-                              type="button"
-                              aria-label={`Copy ${label}`}
-                              className="text-[#22D3EE] hover:text-[#F8FAFC]"
-                              onClick={() => copyText(label, value)}
-                            >
-                              <Copy size={13} />
-                            </button>
-                          </div>
-                          <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
-                          {label === "API Key" && !rawKey && selectedAgent.apiKeyPreview && (
-                            <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">
-                              This is only the stored preview. Rotate the key to generate a new full key.
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-4">
-                        <div>
-                          <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/10 px-2.5 py-1 text-xs font-semibold text-[#22D3EE] mb-3">
-                            <Code2 size={13} /> Agent Skill Kit
-                          </div>
-                          <h3 className="text-sm font-semibold text-[#F8FAFC]">Export instructions for external AI tools</h3>
-                          <p className="text-xs text-[#94A3B8] mt-1 max-w-2xl">
-                            Give Claude, Codex, YieldBot AI, or a custom agent the exact rules for calling Magen3 before wallet signing. Agent identity is Agent ID plus API key; the execution wallet is supplied by the external agent.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Btn variant="outline" size="sm" onClick={() => copyText("agent skill", skill)}>
-                            <Copy size={14} /> {copied === "agent skill" ? "Copied" : `Copy ${skillTarget}`}
-                          </Btn>
-                          <Btn variant="secondary" size="sm" onClick={() => downloadText(skillFilename, skill)}>
-                            <FileText size={14} /> Download {skillFilename}
-                          </Btn>
-                        </div>
-                      </div>
-                      <div className="mb-4 flex flex-wrap gap-2">
-                        {(["Claude", "Codex", "Custom Agent", ".env", "API Snippet"] as const).map((target) => (
-                          <button
-                            key={target}
-                            onClick={() => setSkillTarget(target)}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                              skillTarget === target
-                                ? "bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30"
-                                : "bg-[#0B1220] text-[#94A3B8] border border-[#1E293B] hover:text-[#F8FAFC]"
-                            }`}
-                          >
-                            {target}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="mb-4 grid md:grid-cols-3 gap-3 text-xs">
-                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                          <div className="text-[#94A3B8] uppercase tracking-wider">Use in</div>
-                          <div className="mt-1 text-[#F8FAFC]">
-                            {skillTarget === "Claude" ? "Claude Project / chat" : skillTarget === "Codex" ? "Codex SKILL.md" : skillTarget === "Custom Agent" ? "System instructions" : skillTarget === ".env" ? "Agent secrets" : "Agent source code"}
-                          </div>
-                        </div>
-                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                          <div className="text-[#94A3B8] uppercase tracking-wider">Policy status</div>
-                          <div className="mt-1 text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</div>
-                        </div>
-                        <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-                          <div className="text-[#94A3B8] uppercase tracking-wider">API key</div>
-                          <div className="mt-1 text-[#F8FAFC]">{rawKey ? "Full key included" : "Preview only"}</div>
-                        </div>
-                      </div>
-                      {copied === "copy failed" && (
-                        <div className="mb-4 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
-                          Copy was blocked by the browser. Select the text and copy it manually.
-                        </div>
-                      )}
-                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{skill}</code></pre>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === "activity" && (
-                  <div className="space-y-3">
-                    {agentAuditLogs.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center">
-                        <Activity size={28} className="mx-auto mb-3 text-[#94A3B8]" />
-                        <p className="text-sm text-[#94A3B8]">No gateway activity for this agent yet.</p>
-                      </div>
-                    ) : agentAuditLogs.map((log) => {
-                      const proof = decisionProofStatus(log);
-                      const execution = executionProofStatus(log.executionStatus, log.executionTxHash);
-                      return (
-                        <div key={log.id} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <DecisionBadge decision={log.decision} />
-                                <RiskBadge risk={log.risk} />
-                                <span className="text-xs text-[#94A3B8]">{fmtTs(log.timestamp)}</span>
-                              </div>
-                              <div className="mt-2 text-sm font-semibold text-[#F8FAFC]">
-                                {log.action} · {log.amount} {auditAsset(log)}
-                              </div>
-                              <div className="mt-1 break-all text-xs text-[#94A3B8]">Target: {log.target}</div>
-                              <div className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{log.reason}</div>
-                            </div>
-                            <div className="grid min-w-[220px] gap-2 text-xs">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${proof.className}`}>
-                                Decision: {proof.label}
-                              </span>
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${execution.className}`}>
-                                Execution: {execution.label}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {activeTab === "security" && (
-                  <div className="space-y-4">
-                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-[#F8FAFC]">API credential</h3>
-                          <p className="mt-1 text-xs text-[#94A3B8]">
-                            Raw API keys are shown once after registration or rotation. Magen3 stores and displays only the key preview later.
-                          </p>
-                          <div className="mt-3 break-all font-mono text-xs text-[#F8FAFC]">
-                            {rawKey || selectedAgent.apiKeyPreview || "No active API key preview"}
-                          </div>
-                          {rawKey && (
-                            <button
-                              type="button"
-                              onClick={() => copyText("raw api key", rawKey)}
-                              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-3 py-1.5 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]"
-                            >
-                              <Copy size={13} /> {copied === "raw api key" ? "Copied" : "Copy Full API Key"}
-                            </button>
-                          )}
-                          {copied === "copy failed" && (
-                            <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
-                              Copy was blocked by the browser. Select the key text and copy it manually.
-                            </div>
-                          )}
-                        </div>
-                        <Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
-                          <Lock size={14} /> Rotate API Key
-                        </Btn>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                      <h3 className="text-sm font-semibold text-[#F8FAFC]">Policy binding</h3>
-                      <p className="mt-1 text-xs text-[#94A3B8]">
-                        Gateway requests use this agent identity to find the assigned active policy. The submitted execution wallet is audited separately.
-                      </p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <StatusBadge status={selectedPolicy ? "Active" : "No Policy"} />
-                        <span className="text-sm text-[#F8FAFC]">{selectedPolicy?.name || "No active policy assigned"}</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-[#F8FAFC]">Revoke agent access</h3>
-                          <p className="mt-1 text-xs text-[#94A3B8]">
-                            Revoked agents can no longer use the gateway with their Agent ID and API key.
-                          </p>
-                        </div>
-                        <Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}>
-                          <XCircle size={14} /> Revoke Agent
-                        </Btn>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
-            );
-          })()}
+
+              <div className="flex gap-2 overflow-x-auto border-b border-[#1E293B] pb-3">
+                {detailTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${activeTab === tab.id ? "border-[#22D3EE]/40 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8] hover:text-[#F8FAFC]"}`}><Icon size={14} /> {tab.label}</button>;
+                })}
+              </div>
+
+              {activeTab === "overview" && (
+                <div className="space-y-4">
+                  {selectedSnapshot.issues.length > 0 ? (
+                    <div className="rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-4">
+                      <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Attention required · {selectedSnapshot.issues.length}</div><div className="mt-1 text-xs text-[#94A3B8]">Resolve these items to improve this agent's operational readiness.</div></div><AlertTriangle size={18} className="text-[#F59E0B]" /></div>
+                      <div className="mt-3 space-y-2">{selectedSnapshot.issues.slice(0, 3).map((issue) => <button key={issue.id} type="button" onClick={() => handleAttentionAction({ ...issue, agentId: selectedAgent.id })} className="flex w-full items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-left"><span className="text-xs text-[#F8FAFC]">{issue.title}</span><span className="shrink-0 text-[10px] font-semibold text-[#F59E0B]">{issue.actionLabel} →</span></button>)}</div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4"><CheckCircle size={18} className="text-[#22C55E]" /><div><div className="text-sm font-semibold text-[#F8FAFC]">No action required</div><div className="mt-1 text-xs text-[#94A3B8]">Policy, credential, coverage, approval, pause, and execution state are clear for this agent.</div></div></div>
+                  )}
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} onNavigate={onNavigate} />
+                    <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} apiOnline={apiOnline} emergencyPauses={selectedSnapshot.activePauses} />
+                  </div>
+
+                  {selectedSnapshot.unresolvedExecutions.length > 0 && <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Unresolved execution · {selectedSnapshot.unresolvedExecutions.length}</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Review reconciliation state before submitting another execution attempt.</div></div><ArrowRight size={18} className="shrink-0 text-[#F59E0B]" /></div></button>}
+
+                  <div className={`${CARD} p-4`}>
+                    <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Decision Insights</div><div className="mt-1 text-sm text-[#94A3B8]">Observed Gateway decisions for this agent.</div></div><TrendingUp size={18} className="text-[#22D3EE]" /></div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Total", decisionCounts.total], ["Allowed", decisionCounts.allowed], ["Review", decisionCounts.review], ["Blocked", decisionCounts.blocked]].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5"><div className="text-lg font-bold text-[#F8FAFC]">{String(value)}</div><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{String(label)}</div></div>)}</div>
+                  </div>
+
+                  <div className={`${CARD} p-4`}>
+                    <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Recent Activity</div><div className="mt-1 text-xs text-[#94A3B8]">Latest decisions and execution state.</div></div><Btn variant="ghost" size="sm" onClick={() => setActiveTab("activity")}>View activity <ChevronRight size={13} /></Btn></div>
+                    <div className="mt-3 divide-y divide-[#1E293B]">{agentAuditLogs.length === 0 ? <div className="py-5 text-center text-xs text-[#94A3B8]">No Gateway activity yet.</div> : agentAuditLogs.slice(0, 3).map((log) => <div key={log.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={log.decision} /><span className="truncate text-xs font-semibold text-[#F8FAFC]">{log.action}{log.amount > 0 ? ` · ${log.amount} ${auditAsset(log)}` : ""}</span></div><div className="mt-1 truncate text-[11px] text-[#64748B]">{fmtTs(log.timestamp)} · {executionProofStatus(log.executionStatus, log.executionTxHash).label}</div></div><ChevronRight size={14} className="shrink-0 text-[#64748B]" /></div>)}</div>
+                  </div>
+
+                  <details className={`${CARD} group p-4`} open={showAgentDetails} onToggle={(event) => setShowAgentDetails((event.currentTarget as HTMLDetailsElement).open)}>
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Agent details</div><div className="mt-1 text-xs text-[#94A3B8]">Identity, ownership, capabilities, policy, and creation metadata.</div></div><ChevronDown size={15} className="text-[#64748B] transition-transform group-open:rotate-180" /></summary>
+                    <div className="mt-4 border-t border-[#1E293B] pt-4"><div className="grid gap-3 md:grid-cols-2">{[["Agent ID", selectedAgent.id], ["Agent Type", selectedAgent.type], ["Permission Level", selectedAgent.permissionLevel], ["Owner Wallet", selectedAgent.ownerWalletAddress || walletAddress || "Unknown"], ["Assigned Policy", selectedPolicy?.name || "No active policy"], ["Created", fmtTs(selectedAgent.createdAt)]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-xs text-[#F8FAFC]">{value}</div></div>)}</div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Execution capabilities</div><div className="mt-2"><CapabilityChips capabilities={selectedCapabilities} compact /></div></div><p className="mt-4 text-xs leading-relaxed text-[#94A3B8]">Magen3 identifies the external agent with Agent ID plus API key. The execution wallet submitted with each Gateway request is audited separately and does not need to match the owner wallet.</p></div>
+                  </details>
+                </div>
+              )}
+
+              {activeTab === "setup" && (
+                <div className="space-y-4">
+                  <div className={`${CARD} p-4`}>
+                    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Integration Readiness</div><div className="mt-1 text-xs text-[#94A3B8]">Complete these steps before the external agent requests execution.</div></div><Code2 size={18} className="text-[#22D3EE]" /></div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">{[
+                      { label: "Agent registered", detail: selectedAgent.id, complete: true },
+                      { label: "API credential active", detail: selectedSnapshot.hasCredential ? "Credential available" : "Rotate to issue a key", complete: selectedSnapshot.hasCredential && selectedAgent.status === "Active" },
+                      { label: "Policy assigned", detail: selectedPolicy?.name || "No active policy", complete: Boolean(selectedPolicy) },
+                      { label: "Gateway prerequisites ready", detail: apiOnline && selectedAgent.status === "Active" && selectedSnapshot.hasCredential && Boolean(selectedPolicy) ? "Ready for verification" : "Resolve missing prerequisite", complete: apiOnline && selectedAgent.status === "Active" && selectedSnapshot.hasCredential && Boolean(selectedPolicy) },
+                      { label: "First intent received", detail: selectedLogs.length ? fmtTs(selectedLogs[0].timestamp) : "No intent observed", complete: selectedLogs.length > 0 },
+                    ].map((item) => <div key={item.label} className="flex items-start gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">{item.complete ? <CheckCircle size={16} className="mt-0.5 shrink-0 text-[#22C55E]" /> : <Clock size={16} className="mt-0.5 shrink-0 text-[#F59E0B]" />}<div className="min-w-0"><div className="text-xs font-semibold text-[#F8FAFC]">{item.label}</div><div className="mt-1 break-all text-[11px] text-[#64748B]">{item.detail}</div></div></div>)}</div>
+                    {!selectedPolicy && <div className="mt-3"><Btn variant="outline" size="sm" onClick={() => onNavigate("policies")}><FileText size={14} /> Configure Policy</Btn></div>}
+                  </div>
+
+                  <div className={`${CARD} p-4`}>
+                    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Connection Details</div><div className="mt-1 text-xs text-[#94A3B8]">Use the Agent ID and one-time API key from a secure server-side environment.</div></div><Server size={18} className="text-[#22D3EE]" /></div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">{[["Agent ID", selectedAgent.id], ["API Key", rawKey || selectedAgent.apiKeyPreview || "Rotate key to issue"], ["Gateway URL", gatewayUrl], ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="flex items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</span><button type="button" aria-label={`Copy ${label}`} className="text-[#22D3EE] hover:text-[#F8FAFC]" onClick={() => copyText(label, value)}><Copy size={13} /></button></div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>{label === "API Key" && !rawKey && selectedAgent.apiKeyPreview && <div className="mt-2 text-[11px] text-[#64748B]">Stored preview only. Rotate the key to generate a new full key.</div>}</div>)}</div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4">
+                    <button type="button" onClick={() => setShowSkillKit((current) => !current)} className="flex w-full items-start justify-between gap-4 text-left"><div><div className="inline-flex items-center gap-2 text-sm font-semibold text-[#F8FAFC]"><Code2 size={16} className="text-[#22D3EE]" /> Agent Skill Kit</div><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Export instructions for Claude, Codex, custom agents, environment configuration, or direct API integration.</p></div><span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#22D3EE]">{showSkillKit ? "Close" : "Open Skill Kit"}<ChevronDown size={14} className={showSkillKit ? "rotate-180" : ""} /></span></button>
+                    {showSkillKit && <div className="mt-4 border-t border-[#1E293B] pt-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div className="flex flex-wrap gap-2">{(["Claude", "Codex", "Custom Agent", ".env", "API Snippet"] as const).map((target) => <button key={target} onClick={() => setSkillTarget(target)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${skillTarget === target ? "border-[#22D3EE]/30 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8] hover:text-[#F8FAFC]"}`}>{target}</button>)}</div><div className="flex flex-wrap gap-2"><Btn variant="outline" size="sm" onClick={() => copyText("agent skill", selectedSkill)}><Copy size={14} /> {copied === "agent skill" ? "Copied" : `Copy ${skillTarget}`}</Btn><Btn variant="secondary" size="sm" onClick={() => downloadText(skillFilename, selectedSkill)}><FileText size={14} /> Download</Btn></div></div><div className="mt-4 grid gap-2 sm:grid-cols-3 text-xs"><div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Use in</div><div className="mt-1 text-[#F8FAFC]">{skillTarget === "Claude" ? "Claude Project / chat" : skillTarget === "Codex" ? "Codex SKILL.md" : skillTarget === "Custom Agent" ? "System instructions" : skillTarget === ".env" ? "Agent secrets" : "Agent source code"}</div></div><div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Policy</div><div className="mt-1 text-[#F8FAFC]">{selectedPolicy?.name || "Not assigned"}</div></div><div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Credential</div><div className="mt-1 text-[#F8FAFC]">{rawKey ? "Full one-time key included" : "Preview or placeholder only"}</div></div></div><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{selectedSkill}</code></pre></div>}
+                  </div>
+                  {copied === "copy failed" && <div className="rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked by the browser. Select the text and copy it manually.</div>}
+                </div>
+              )}
+
+              {activeTab === "activity" && (
+                <div className="space-y-3">
+                  {agentAuditLogs.length === 0 ? <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center"><Activity size={28} className="mx-auto mb-3 text-[#94A3B8]" /><p className="text-sm text-[#94A3B8]">No Gateway activity for this agent yet.</p></div> : agentAuditLogs.map((log) => {
+                    const proof = decisionProofStatus(log);
+                    const execution = executionProofStatus(log.executionStatus, log.executionTxHash);
+                    return <div key={log.id} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={log.decision} /><span className="text-xs text-[#64748B]">{fmtTs(log.timestamp)}</span></div><div className="mt-2 truncate text-sm font-semibold text-[#F8FAFC]">{log.action}{log.amount > 0 ? ` · ${log.amount} ${auditAsset(log)}` : ""}</div><div className="mt-1 truncate text-xs text-[#94A3B8]">{log.target}</div></div><div className="flex flex-wrap gap-2 text-[10px]"><span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${proof.className}`}>Proof: {proof.label}</span><span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${execution.className}`}>Execution: {execution.label}</span></div></div></div>;
+                  })}
+                  <div className="flex justify-end border-t border-[#1E293B] pt-4"><Btn variant="secondary" size="sm" onClick={() => onNavigate("audit-log")}><Scroll size={14} /> View Complete Audit Log</Btn></div>
+                </div>
+              )}
+
+              {activeTab === "access" && (
+                <div className="space-y-4">
+                  <div className={`${CARD} p-4`}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2"><h3 className="text-sm font-semibold text-[#F8FAFC]">API Credential</h3><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${selectedSnapshot.hasCredential && selectedAgent.status === "Active" ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#F59E0B]/25 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>{selectedSnapshot.hasCredential ? "Credential Active" : "Credential Missing"}</span></div><p className="mt-1 text-xs text-[#94A3B8]">Raw keys are shown once after registration or rotation. Magen3 displays only the stored preview later.</p><div className="mt-3 break-all font-mono text-xs text-[#F8FAFC]">{rawKey || selectedAgent.apiKeyPreview || "No active API key preview"}</div>{rawKey && <button type="button" onClick={() => copyText("raw api key", rawKey)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[#22D3EE]/30 bg-[#22D3EE]/10 px-3 py-1.5 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]"><Copy size={13} /> {copied === "raw api key" ? "Copied" : "Copy Full API Key"}</button>}</div><Btn variant="secondary" size="sm" onClick={() => rotateKey(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}><Lock size={14} /> Rotate API Key</Btn></div>
+                  </div>
+
+                  <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} selectedAgentId={selectedAgent.id} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
+
+                  <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-sm font-semibold text-[#F8FAFC]">Revoke agent access</h3><p className="mt-1 text-xs text-[#94A3B8]">Revoked agents can no longer use the Gateway with their Agent ID and API key. Existing audit records remain available.</p></div><Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}><XCircle size={14} /> Revoke Agent</Btn></div></div>
+                  {copied === "copy failed" && <div className="rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked by the browser. Select the key text and copy it manually.</div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -4602,6 +4582,7 @@ ${snippet}
         onCreatePolicy={onCreatePolicy}
         onCreated={(agent) => {
           setLatestCredentials(agent);
+          setCredentialAcknowledged(false);
           setSelectedAgentId(agent.id);
           setActiveTab("overview");
         }}
@@ -4609,6 +4590,7 @@ ${snippet}
     </div>
   );
 }
+
 
 // ──────────────────────────────────────────────────────────
 // Policies Page
