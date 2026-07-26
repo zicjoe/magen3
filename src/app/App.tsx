@@ -2354,7 +2354,7 @@ function DashboardPage({
         </button>
       )}
       {unresolvedExecutions.length > 0 && (
-        <button type="button" onClick={() => onNavigate("audit")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
+        <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
           <div className="flex items-start gap-3"><RefreshCw className="mt-0.5 text-[#F59E0B]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{unresolvedExecutions.length} execution{unresolvedExecutions.length === 1 ? "" : "s"} need reconciliation</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Pending, uncertain, replaced, delivery-pending, or refund-pending records require attention. Open Audit Logs before retrying.</div></div></div>
         </button>
       )}
@@ -3858,7 +3858,7 @@ ${snippet}
                       <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={auditLogs.filter((log) => log.agentId === selectedAgent.id)} apiOnline={apiOnline} emergencyPauses={emergencyPauses.filter((pause) => !pause.agentId || pause.agentId === selectedAgent.id)} />
                     </div>
                     {unresolvedAgentExecutions.length > 0 && (
-                      <button type="button" onClick={() => onNavigate("audit")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
+                      <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
                         <div className="flex items-start justify-between gap-3">
                           <div><div className="text-sm font-semibold text-[#F8FAFC]">Unresolved execution · {unresolvedAgentExecutions.length}</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Review pending, uncertain, replacement, delivery, or refund state before submitting another attempt.</div></div>
                           <ArrowRight size={18} className="shrink-0 text-[#F59E0B]" />
