@@ -1193,28 +1193,136 @@ function FindingsPanel({ findings }: { findings?: ModuleFinding[] }) {
   );
 }
 
-function IntegrationHealthPanel({ agent, policy, logs, apiOnline, emergencyPauses = [] }: { agent: Agent; policy?: Policy; logs: AuditLog[]; apiOnline: boolean; emergencyPauses?: EmergencyPause[] }) {
+function IntegrationHealthPanel({ agent, policy, logs, apiOnline, emergencyPauses = [], compact = false }: { agent: Agent; policy?: Policy; logs: AuditLog[]; apiOnline: boolean; emergencyPauses?: EmergencyPause[]; compact?: boolean }) {
   const health = deriveIntegrationHealth(agent, policy, logs, apiOnline, emergencyPauses);
+  const attentionStatuses = new Set(["attention", "unavailable", "pending"]);
+  const counts = health.checks.reduce((summary, check) => {
+    if (check.status === "healthy") summary.healthy += 1;
+    else if (attentionStatuses.has(check.status)) summary.attention += 1;
+    else if (check.status === "observed") summary.observed += 1;
+    else summary.notObserved += 1;
+    return summary;
+  }, { healthy: 0, attention: 0, observed: 0, notObserved: 0 });
+  const attentionChecks = health.checks.filter((check) => attentionStatuses.has(check.status));
+  const essentialLabels = ["Gateway connectivity", "API credential", "Active policy", "Audit synchronization", "Casper proof service"];
+  const healthyEssentials = essentialLabels
+    .map((label) => health.checks.find((check) => check.label === label))
+    .filter((check): check is (typeof health.checks)[number] => Boolean(check));
+  const visibleChecks = attentionChecks.length > 0 ? attentionChecks.slice(0, 4) : healthyEssentials.slice(0, 5);
+  const statusMeta = (status: string) => {
+    if (status === "healthy") return { label: "Healthy", dot: "bg-[#22C55E]", text: "text-[#22C55E]" };
+    if (status === "attention") return { label: "Attention", dot: "bg-[#F59E0B]", text: "text-[#F59E0B]" };
+    if (status === "unavailable") return { label: "Unavailable", dot: "bg-[#F59E0B]", text: "text-[#F59E0B]" };
+    if (status === "pending") return { label: "Pending", dot: "bg-[#F59E0B]", text: "text-[#F59E0B]" };
+    if (status === "observed") return { label: "Observed", dot: "bg-[#22D3EE]", text: "text-[#22D3EE]" };
+    return { label: "Not observed", dot: "bg-[#64748B]", text: "text-[#64748B]" };
+  };
+
+  if (!compact) {
+    return (
+      <div className={`${CARD} p-4`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Integration Health</div>
+            <div className="mt-1 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{health.overall}</div>
+          </div>
+          <Activity size={20} className={health.overall === "Healthy" ? "text-[#22C55E]" : "text-[#F59E0B]"} />
+        </div>
+        <div className="mt-3 space-y-2">
+          {health.checks.map((check) => {
+            const meta = statusMeta(check.status);
+            return (
+              <div key={check.label} className="flex items-start justify-between gap-3 rounded-lg bg-[#0B1220] p-2.5">
+                <div>
+                  <div className="text-xs font-medium text-[#F8FAFC]">{check.label}</div>
+                  <div className="mt-0.5 text-[11px] text-[#94A3B8]">{check.detail}</div>
+                </div>
+                <span className={`mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${meta.dot}`} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`${CARD} p-4`}>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Integration Health</div>
           <div className="mt-1 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{health.overall}</div>
+          <div className="mt-1 text-xs text-[#94A3B8]">Operational checks are summarised here. Full evidence remains available below.</div>
         </div>
         <Activity size={20} className={health.overall === "Healthy" ? "text-[#22C55E]" : "text-[#F59E0B]"} />
       </div>
-      <div className="mt-3 space-y-2">
-        {health.checks.map((check) => (
-          <div key={check.label} className="flex items-start justify-between gap-3 rounded-lg bg-[#0B1220] p-2.5">
-            <div>
-              <div className="text-xs font-medium text-[#F8FAFC]">{check.label}</div>
-              <div className="mt-0.5 text-[11px] text-[#94A3B8]">{check.detail}</div>
-            </div>
-            <span className={`mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${check.status === "healthy" ? "bg-[#22C55E]" : check.status === "attention" || check.status === "unavailable" ? "bg-[#F59E0B]" : "bg-[#64748B]"}`} />
+
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          ["Healthy", counts.healthy, "text-[#22C55E]"],
+          ["Attention", counts.attention, counts.attention > 0 ? "text-[#F59E0B]" : "text-[#94A3B8]"],
+          ["Observed", counts.observed, "text-[#22D3EE]"],
+          ["Not observed", counts.notObserved, "text-[#64748B]"],
+        ].map(([label, value, colour]) => (
+          <div key={String(label)} className="rounded-lg border border-[#1E293B] bg-[#0B1220] px-2.5 py-2">
+            <div className={`text-base font-bold ${String(colour)}`}>{String(value)}</div>
+            <div className="text-[9px] font-semibold uppercase tracking-wider text-[#64748B]">{String(label)}</div>
           </div>
         ))}
       </div>
+
+      <div className="mt-4">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">
+          {attentionChecks.length > 0 ? "Needs attention" : "Core services"}
+        </div>
+        <div className="divide-y divide-[#1E293B] rounded-xl border border-[#1E293B] bg-[#0B1220]">
+          {visibleChecks.map((check) => {
+            const meta = statusMeta(check.status);
+            return (
+              <div key={check.label} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
+                    <span className="truncate text-xs font-semibold text-[#F8FAFC]">{check.label}</span>
+                  </div>
+                  {attentionChecks.length > 0 && <div className="mt-1 line-clamp-2 pl-4 text-[11px] leading-relaxed text-[#94A3B8]">{check.detail}</div>}
+                </div>
+                <span className={`shrink-0 text-[10px] font-semibold ${meta.text}`}>{meta.label}</span>
+              </div>
+            );
+          })}
+        </div>
+        {attentionChecks.length > visibleChecks.length && (
+          <div className="mt-2 text-[11px] text-[#F59E0B]">+{attentionChecks.length - visibleChecks.length} additional health {attentionChecks.length - visibleChecks.length === 1 ? "item needs" : "items need"} attention.</div>
+        )}
+      </div>
+
+      <details className="group mt-4 border-t border-[#1E293B] pt-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[#22D3EE]">
+          <span>View all {health.checks.length} health checks</span>
+          <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-3 divide-y divide-[#1E293B] rounded-xl border border-[#1E293B] bg-[#050B14]">
+          {health.checks.map((check) => {
+            const meta = statusMeta(check.status);
+            return (
+              <details key={check.label} className="group/check px-3 py-2.5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
+                    <span className="truncate text-xs font-medium text-[#F8FAFC]">{check.label}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={`text-[10px] font-semibold ${meta.text}`}>{meta.label}</span>
+                    <ChevronDown size={12} className="text-[#64748B] transition-transform group-open/check:rotate-180" />
+                  </div>
+                </summary>
+                <div className="mt-2 pl-4 text-[11px] leading-relaxed text-[#94A3B8]">{check.detail}</div>
+              </details>
+            );
+          })}
+        </div>
+      </details>
     </div>
   );
 }
@@ -4495,27 +4603,32 @@ ${snippet}
                     <div className="flex items-center gap-3 rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4"><CheckCircle size={18} className="text-[#22C55E]" /><div><div className="text-sm font-semibold text-[#F8FAFC]">No action required</div><div className="mt-1 text-xs text-[#94A3B8]">Policy, credential, coverage, approval, pause, and execution state are clear for this agent.</div></div></div>
                   )}
 
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} onNavigate={onNavigate} />
-                    <IntegrationHealthPanel agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} apiOnline={apiOnline} emergencyPauses={selectedSnapshot.activePauses} />
-                  </div>
-
                   {selectedSnapshot.unresolvedExecutions.length > 0 && <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Unresolved execution · {selectedSnapshot.unresolvedExecutions.length}</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Review reconciliation state before submitting another execution attempt.</div></div><ArrowRight size={18} className="shrink-0 text-[#F59E0B]" /></div></button>}
 
-                  <div className={`${CARD} p-4`}>
-                    <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Decision Insights</div><div className="mt-1 text-sm text-[#94A3B8]">Observed Gateway decisions for this agent.</div></div><TrendingUp size={18} className="text-[#22D3EE]" /></div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Total", decisionCounts.total], ["Allowed", decisionCounts.allowed], ["Review", decisionCounts.review], ["Blocked", decisionCounts.blocked]].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5"><div className="text-lg font-bold text-[#F8FAFC]">{String(value)}</div><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{String(label)}</div></div>)}</div>
-                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                    <div className="space-y-4">
+                      <CoverageCard agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} onNavigate={onNavigate} />
 
-                  <div className={`${CARD} p-4`}>
-                    <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Recent Activity</div><div className="mt-1 text-xs text-[#94A3B8]">Latest decisions and execution state.</div></div><Btn variant="ghost" size="sm" onClick={() => setActiveTab("activity")}>View activity <ChevronRight size={13} /></Btn></div>
-                    <div className="mt-3 divide-y divide-[#1E293B]">{agentAuditLogs.length === 0 ? <div className="py-5 text-center text-xs text-[#94A3B8]">No Gateway activity yet.</div> : agentAuditLogs.slice(0, 3).map((log) => <div key={log.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={log.decision} /><span className="truncate text-xs font-semibold text-[#F8FAFC]">{log.action}{log.amount > 0 ? ` · ${log.amount} ${auditAsset(log)}` : ""}</span></div><div className="mt-1 truncate text-[11px] text-[#64748B]">{fmtTs(log.timestamp)} · {executionProofStatus(log.executionStatus, log.executionTxHash).label}</div></div><ChevronRight size={14} className="shrink-0 text-[#64748B]" /></div>)}</div>
-                  </div>
+                      <div className={`${CARD} p-4`}>
+                        <div className="flex items-start justify-between gap-3"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Decision Insights</div><div className="mt-1 text-sm text-[#94A3B8]">Observed Gateway decisions for this agent.</div></div><TrendingUp size={18} className="text-[#22D3EE]" /></div>
+                        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">{[["Total", decisionCounts.total], ["Allowed", decisionCounts.allowed], ["Review", decisionCounts.review], ["Blocked", decisionCounts.blocked]].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5"><div className="text-lg font-bold text-[#F8FAFC]">{String(value)}</div><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{String(label)}</div></div>)}</div>
+                      </div>
 
-                  <details className={`${CARD} group p-4`} open={showAgentDetails} onToggle={(event) => setShowAgentDetails((event.currentTarget as HTMLDetailsElement).open)}>
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Agent details</div><div className="mt-1 text-xs text-[#94A3B8]">Identity, ownership, capabilities, policy, and creation metadata.</div></div><ChevronDown size={15} className="text-[#64748B] transition-transform group-open:rotate-180" /></summary>
-                    <div className="mt-4 border-t border-[#1E293B] pt-4"><div className="grid gap-3 md:grid-cols-2">{[["Agent ID", selectedAgent.id], ["Agent Type", selectedAgent.type], ["Permission Level", selectedAgent.permissionLevel], ["Owner Wallet", selectedAgent.ownerWalletAddress || walletAddress || "Unknown"], ["Assigned Policy", selectedPolicy?.name || "No active policy"], ["Created", fmtTs(selectedAgent.createdAt)]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-xs text-[#F8FAFC]">{value}</div></div>)}</div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Execution capabilities</div><div className="mt-2"><CapabilityChips capabilities={selectedCapabilities} compact /></div></div><p className="mt-4 text-xs leading-relaxed text-[#94A3B8]">Magen3 identifies the external agent with Agent ID plus API key. The execution wallet submitted with each Gateway request is audited separately and does not need to match the owner wallet.</p></div>
-                  </details>
+                      <details className={`${CARD} group p-4`} open={showAgentDetails} onToggle={(event) => setShowAgentDetails((event.currentTarget as HTMLDetailsElement).open)}>
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Agent details</div><div className="mt-1 text-xs text-[#94A3B8]">Identity, ownership, capabilities, policy, and creation metadata.</div></div><ChevronDown size={15} className="text-[#64748B] transition-transform group-open:rotate-180" /></summary>
+                        <div className="mt-4 border-t border-[#1E293B] pt-4"><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">{[["Agent ID", selectedAgent.id], ["Agent Type", selectedAgent.type], ["Permission Level", selectedAgent.permissionLevel], ["Owner Wallet", selectedAgent.ownerWalletAddress || walletAddress || "Unknown"], ["Assigned Policy", selectedPolicy?.name || "No active policy"], ["Created", fmtTs(selectedAgent.createdAt)]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-xs text-[#F8FAFC]">{value}</div></div>)}</div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Execution capabilities</div><div className="mt-2"><CapabilityChips capabilities={selectedCapabilities} compact /></div></div><p className="mt-4 text-xs leading-relaxed text-[#94A3B8]">Magen3 identifies the external agent with Agent ID plus API key. The execution wallet submitted with each Gateway request is audited separately and does not need to match the owner wallet.</p></div>
+                      </details>
+                    </div>
+
+                    <div className="space-y-4">
+                      <IntegrationHealthPanel compact agent={selectedAgent} policy={selectedPolicy} logs={selectedLogs} apiOnline={apiOnline} emergencyPauses={selectedSnapshot.activePauses} />
+
+                      <div className={`${CARD} p-4`}>
+                        <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Recent Activity</div><div className="mt-1 text-xs text-[#94A3B8]">Latest decisions and execution state.</div></div><Btn variant="ghost" size="sm" onClick={() => setActiveTab("activity")}>View activity <ChevronRight size={13} /></Btn></div>
+                        <div className="mt-3 divide-y divide-[#1E293B]">{agentAuditLogs.length === 0 ? <div className="py-5 text-center text-xs text-[#94A3B8]">No Gateway activity yet.</div> : agentAuditLogs.slice(0, 3).map((log) => <div key={log.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={log.decision} /><span className="truncate text-xs font-semibold text-[#F8FAFC]">{log.action}{log.amount > 0 ? ` · ${log.amount} ${auditAsset(log)}` : ""}</span></div><div className="mt-1 truncate text-[11px] text-[#64748B]">{fmtTs(log.timestamp)} · {executionProofStatus(log.executionStatus, log.executionTxHash).label}</div></div><ChevronRight size={14} className="shrink-0 text-[#64748B]" /></div>)}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
