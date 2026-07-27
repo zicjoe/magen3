@@ -894,6 +894,14 @@ function executionProofExplanation(log: AuditLog) {
   return "Execution proof is not required for this record.";
 }
 
+async function sha256Hex(value: string) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("This browser cannot create the required Instruction Integrity goal hash. Use a secure browser context and retry.");
+  }
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function writeClipboard(value: string) {
   if (!value) return false;
   try {
@@ -4230,15 +4238,18 @@ function AgentRegistrationWizard({
     setTestResult(null);
     try {
       const executionWalletAddress = draft.executionWalletAddress.trim() || walletAddress;
+      const onboardingGoal = "Verify that Magen3 evaluates a small synthetic transfer before any wallet signing or blockchain execution.";
+      const originalUserGoalHash = await sha256Hex(onboardingGoal);
       const result = await onSubmitGatewayIntent({
         source: draft.demoConfiguration ? "Magen3 Guided Demo" : `${createdAgent.name} onboarding`,
         agentId: createdAgent.id,
         walletAddress,
         executionWalletAddress,
-        goal: "Verify that Magen3 evaluates a small synthetic transfer before any wallet signing or blockchain execution.",
+        goal: onboardingGoal,
         reason: "Guided onboarding safety check. This request creates a decision and audit evidence only; it does not sign or submit a transaction.",
         instructionIntegrity: {
           goalId: `onboarding:${createdAgent.id}`,
+          originalUserGoalHash,
           initiatedBy: "user",
           intentSource: "Magen3 Guided Setup",
           sourceDomains: [],
