@@ -2377,6 +2377,8 @@ function DashboardPage({
   emergencyPauses: EmergencyPause[];
   onNavigate: (p: Page) => void;
 }) {
+  const [showAllServices, setShowAllServices] = useState(false);
+
   if (!walletConnected) {
     return (
       <WalletConnectionRequired
@@ -2389,266 +2391,413 @@ function DashboardPage({
 
   const dashboardStats = deriveDashboardStats(auditLogs, policies);
   const recentLogs = auditLogs.slice(0, 5);
-  const activePolicy = policies.find((p) => p.status === "Active");
-  const activePolicyAgent = activePolicy
-    ? agents.find((a) => a.id === activePolicy.agentId)
-    : null;
-  const riskOverviewBase = ["Low", "Medium", "High"].map((risk) => ({
-    label: `${risk} Risk`,
-    count: auditLogs.filter((log) =>
-      risk === "High" ? log.risk === "High" || log.risk === "Critical" : log.risk === risk
-    ).length,
-    color: risk === "Low" ? "#22C55E" : risk === "Medium" ? "#F59E0B" : "#EF4444",
-  }));
-  const totalRiskRecords = Math.max(1, riskOverviewBase.reduce((sum, item) => sum + item.count, 0));
-  const riskOverview = riskOverviewBase.map((item) => ({
-    ...item,
-    pct: Math.round((item.count / totalRiskRecords) * 100),
-  }));
   const today = new Date();
   const decisionsToday = auditLogs.filter((log) => isSameDay(new Date(log.timestamp), today));
-  const agentCoverage = agents.map((agent) => {
-    const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
-    return { agent, coverage: calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), agentLogs) };
-  });
-  const averageCoverage = agentCoverage.length ? Math.round(agentCoverage.reduce((sum, item) => sum + item.coverage.score, 0) / agentCoverage.length) : 0;
-  const agentsNeedingAttention = [...agentCoverage].filter((item) => item.coverage.score < 85).sort((a, b) => a.coverage.score - b.coverage.score).slice(0, 3);
-
-  const threatFeedOperational = threatIntelligenceStatus.status === "available";
-  const activeThreatIndicators = threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0;
-  const threatFeedLabel = threatFeedOperational
-    ? `${activeThreatIndicators} active indicators`
-    : threatIntelligenceStatus.status === "stale"
-      ? "Stale"
-      : "Unavailable";
-  const oracleFeedOperational = oracleValidationStatus.status === "available";
-  const oracleFeedLabel = oracleFeedOperational
-    ? `${oracleValidationStatus.pairCount || 0} pairs`
-    : oracleValidationStatus.status === "stale"
-      ? "Stale"
-      : "Unavailable";
-  const x402FoundationAvailable = x402PaymentControlsStatus.status === "foundation-available";
-  const x402PaymentsToday = decisionsToday.filter((log) => log.action === "x402 Payment");
+  const allowedToday = decisionsToday.filter((log) => log.decision === "Allowed").length;
+  const blockedToday = decisionsToday.filter((log) => log.decision === "Blocked").length;
+  const reviewToday = decisionsToday.filter((log) => log.decision === "Review Required").length;
+  const activeAgents = agents.filter((agent) => agent.status === "Active");
+  const activePolicies = policies.filter((policy) => policy.status === "Active");
   const pendingApprovals = approvals.filter((approval) => approval.reviewStatus === "Pending" || approval.reviewStatus === "Configuration Required");
   const activeEmergencyPauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
   const unresolvedExecutions = auditLogs.filter(executionNeedsAttention);
-  const complianceFeedOperational = complianceControlsStatus.status === "available";
-  const complianceFeedLabel = complianceFeedOperational
-    ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators · ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions`
-    : complianceControlsStatus.status === "stale"
-      ? "Stale"
-      : "Unavailable";
+  const failedProofs = auditLogs.filter((log) => log.decisionProofStatus === "failed");
+  const queuedProofs = auditLogs.filter((log) => log.decisionProofStatus === "queued");
+  const agentsWithoutPolicy = activeAgents.filter((agent) => !getActivePolicy(policies, agent.id));
 
-  const operationalItems = [
-    { label: "Connected wallet", value: "Active", done: walletConnected },
-    { label: "Registered agents", value: String(agents.length), done: agents.length > 0 },
-    { label: "Active policies", value: String(policies.filter((policy) => policy.status === "Active").length), done: Boolean(activePolicy) },
-    { label: "Audit records", value: String(auditLogs.length), done: auditLogs.length > 0 },
-    { label: "Casper proofs", value: String(dashboardStats.casperAuditRecords), done: dashboardStats.casperAuditRecords > 0 },
-    { label: "Threat feed", value: threatFeedLabel, done: threatFeedOperational },
-    { label: "Oracle feed", value: oracleFeedLabel, done: oracleFeedOperational },
-    { label: "Compliance feed", value: complianceFeedLabel, done: complianceFeedOperational },
-    { label: "x402 controls", value: x402PaymentsToday.length ? `${x402PaymentsToday.length} today` : "Ready", done: x402FoundationAvailable },
-    { label: "Approval queue", value: String(pendingApprovals.length), done: pendingApprovals.length === 0 },
-    { label: "Emergency pauses", value: String(activeEmergencyPauses.length), done: activeEmergencyPauses.length === 0 },
-    { label: "Unresolved execution", value: String(unresolvedExecutions.length), done: unresolvedExecutions.length === 0 },
+  const agentCoverage = activeAgents.map((agent) => {
+    const agentLogs = auditLogs.filter((log) => log.agentId === agent.id);
+    return { agent, coverage: calculateSecurityCoverage(agent, getActivePolicy(policies, agent.id), agentLogs) };
+  });
+  const averageCoverage = agentCoverage.length
+    ? Math.round(agentCoverage.reduce((sum, item) => sum + item.coverage.score, 0) / agentCoverage.length)
+    : 0;
+
+  const coverageAttention = agentCoverage
+    .filter(({ agent, coverage }) => getActivePolicy(policies, agent.id) && coverage.score < 85 && coverage.recommendations.length > 0)
+    .sort((a, b) => a.coverage.score - b.coverage.score);
+
+  const agentsNeedingAttention = activeAgents
+    .map((agent) => {
+      const coverage = agentCoverage.find((item) => item.agent.id === agent.id)?.coverage;
+      const unresolved = unresolvedExecutions.filter((log) => log.agentId === agent.id);
+      const proofFailure = failedProofs.find((log) => log.agentId === agent.id);
+      const activePolicy = getActivePolicy(policies, agent.id);
+      let issue = "";
+      let priority = 4;
+      if (!activePolicy) {
+        issue = "No active policy is assigned.";
+        priority = 0;
+      } else if (unresolved.length > 0) {
+        issue = `${unresolved.length} unresolved execution${unresolved.length === 1 ? "" : "s"} require reconciliation.`;
+        priority = 1;
+      } else if (proofFailure) {
+        issue = "The latest Casper decision proof submission failed.";
+        priority = 2;
+      } else if (coverage && coverage.score < 85 && coverage.recommendations[0]) {
+        issue = coverage.recommendations[0].recommendation;
+        priority = 3;
+      }
+      return { agent, coverage, issue, priority };
+    })
+    .filter((item) => item.issue)
+    .sort((a, b) => a.priority - b.priority || (a.coverage?.score || 0) - (b.coverage?.score || 0))
+    .slice(0, 3);
+
+  const attentionItems: Array<{
+    id: string;
+    title: string;
+    description: string;
+    action: string;
+    page: Page;
+    tone: "critical" | "warning";
+    icon: ReactElement;
+  }> = [];
+
+  if (!apiOnline) {
+    attentionItems.push({
+      id: "gateway",
+      title: "Magen3 Gateway is unavailable",
+      description: "Live intent verification cannot be confirmed. Check the deployed backend before allowing agent execution.",
+      action: "Open settings",
+      page: "settings",
+      tone: "critical",
+      icon: <Server size={18} />,
+    });
+  }
+  if (activeEmergencyPauses.length > 0) {
+    attentionItems.push({
+      id: "pauses",
+      title: `${activeEmergencyPauses.length} active emergency pause${activeEmergencyPauses.length === 1 ? "" : "s"}`,
+      description: "One or more execution scopes are blocked or routed to review until an authorised resume completes.",
+      action: "Review pauses",
+      page: "settings",
+      tone: "critical",
+      icon: <ShieldAlert size={18} />,
+    });
+  }
+  if (pendingApprovals.length > 0) {
+    attentionItems.push({
+      id: "approvals",
+      title: `${pendingApprovals.length} approval request${pendingApprovals.length === 1 ? " is" : "s are"} waiting`,
+      description: "Exact-bound execution requests must remain gated until the required reviewers and quorum resolve them.",
+      action: "Open Approval Queue",
+      page: "policies",
+      tone: "warning",
+      icon: <Clock size={18} />,
+    });
+  }
+  if (unresolvedExecutions.length > 0) {
+    attentionItems.push({
+      id: "executions",
+      title: `${unresolvedExecutions.length} execution${unresolvedExecutions.length === 1 ? " needs" : "s need"} reconciliation`,
+      description: "Pending, uncertain, replaced, delivery-pending, or refund-pending records should be resolved before another submission.",
+      action: "Review executions",
+      page: "audit-log",
+      tone: unresolvedExecutions.some((log) => canonicalExecutionStatus(log.executionStatus || "") === "uncertain") ? "critical" : "warning",
+      icon: <RefreshCw size={18} />,
+    });
+  }
+  if (failedProofs.length > 0) {
+    attentionItems.push({
+      id: "proofs",
+      title: `${failedProofs.length} Casper decision proof${failedProofs.length === 1 ? "" : "s"} failed`,
+      description: "The audit decisions remain stored, but their on-chain proof submissions were not confirmed by the relayer.",
+      action: "Inspect Audit Logs",
+      page: "audit-log",
+      tone: "critical",
+      icon: <Database size={18} />,
+    });
+  }
+  if (agentsWithoutPolicy.length > 0) {
+    attentionItems.push({
+      id: "policy-gap",
+      title: `${agentsWithoutPolicy.length} active agent${agentsWithoutPolicy.length === 1 ? " has" : "s have"} no active policy`,
+      description: "Execution should remain limited until deterministic policy rules are assigned to every active agent.",
+      action: "Manage policies",
+      page: "policies",
+      tone: "critical",
+      icon: <FileText size={18} />,
+    });
+  } else if (coverageAttention.length > 0) {
+    attentionItems.push({
+      id: "coverage",
+      title: `${coverageAttention.length} agent${coverageAttention.length === 1 ? " needs" : "s need"} stronger configured coverage`,
+      description: `${coverageAttention[0].agent.name} is currently at ${coverageAttention[0].coverage.score}% and has an actionable configuration recommendation.`,
+      action: "Review agents",
+      page: "connected-agents",
+      tone: "warning",
+      icon: <ShieldCheck size={18} />,
+    });
+  }
+  if (threatIntelligenceStatus.status !== "available" || oracleValidationStatus.status !== "available" || complianceControlsStatus.status !== "available") {
+    const unavailableProviders = [
+      threatIntelligenceStatus.status !== "available" ? "threat" : "",
+      oracleValidationStatus.status !== "available" ? "oracle" : "",
+      complianceControlsStatus.status !== "available" ? "compliance" : "",
+    ].filter(Boolean);
+    attentionItems.push({
+      id: "providers",
+      title: `${unavailableProviders.length} provider-backed control${unavailableProviders.length === 1 ? " needs" : "s need"} attention`,
+      description: `${unavailableProviders.join(", ")} evidence is stale or unavailable. Policy-specific unavailable behaviour continues to apply and never counts as a pass.`,
+      action: "Review services",
+      page: "settings",
+      tone: "warning",
+      icon: <Globe size={18} />,
+    });
+  }
+
+  const latestRpcFinding = auditLogs
+    .flatMap((log) => (log.moduleFindings || []).map((finding) => ({ finding, timestamp: log.timestamp })))
+    .find(({ finding }) => finding.module === "RPC & Chain Integrity");
+
+  type ServiceHealth = "operational" | "attention" | "unavailable" | "not-observed";
+  const serviceItems: Array<{ label: string; detail: string; status: ServiceHealth; essential?: boolean }> = [
+    {
+      label: "Gateway",
+      detail: apiOnline ? "Intent verification endpoint is reachable." : "The deployed Gateway could not be confirmed.",
+      status: apiOnline ? "operational" : "unavailable",
+      essential: true,
+    },
+    {
+      label: "Audit persistence",
+      detail: auditLogs.length > 0 ? `${auditLogs.length} audit record${auditLogs.length === 1 ? " is" : "s are"} available.` : "No stored audit record has been observed yet.",
+      status: auditLogs.length > 0 ? "operational" : "not-observed",
+      essential: true,
+    },
+    {
+      label: "Casper proof service",
+      detail: failedProofs.length > 0 ? `${failedProofs.length} proof submission${failedProofs.length === 1 ? " has" : "s have"} failed.` : dashboardStats.casperAuditRecords > 0 ? `${dashboardStats.casperAuditRecords} decision proof${dashboardStats.casperAuditRecords === 1 ? " is" : "s are"} recorded on Casper.` : "No confirmed Casper decision proof has been observed yet.",
+      status: failedProofs.length > 0 ? "attention" : dashboardStats.casperAuditRecords > 0 ? "operational" : "not-observed",
+      essential: true,
+    },
+    {
+      label: "Proof relayer",
+      detail: failedProofs.length > 0 ? "A recent relayer submission failed." : queuedProofs.length > 0 ? `${queuedProofs.length} proof${queuedProofs.length === 1 ? " is" : "s are"} queued for the relayer.` : dashboardStats.casperAuditRecords > 0 ? "Confirmed proof activity has been observed." : "No relayer activity has been observed yet.",
+      status: failedProofs.length > 0 || queuedProofs.length > 0 ? "attention" : dashboardStats.casperAuditRecords > 0 ? "operational" : "not-observed",
+    },
+    {
+      label: "RPC providers",
+      detail: latestRpcFinding ? latestRpcFinding.finding.message : "No RPC & Chain Integrity finding has been observed yet.",
+      status: !latestRpcFinding ? "not-observed" : latestRpcFinding.finding.status === "pass" ? "operational" : latestRpcFinding.finding.status === "unavailable" ? "unavailable" : latestRpcFinding.finding.status === "skipped" ? "not-observed" : "attention",
+    },
+    {
+      label: "Threat feed",
+      detail: threatIntelligenceStatus.status === "available" ? `${threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0} active indicators are available.` : threatIntelligenceStatus.status === "stale" ? "The configured threat feed is stale." : "No fresh threat feed is available.",
+      status: threatIntelligenceStatus.status === "available" ? "operational" : threatIntelligenceStatus.status === "stale" ? "attention" : "unavailable",
+    },
+    {
+      label: "Oracle feed",
+      detail: oracleValidationStatus.status === "available" ? `${oracleValidationStatus.pairCount || 0} market pair${oracleValidationStatus.pairCount === 1 ? " is" : "s are"} available.` : oracleValidationStatus.status === "stale" ? "The configured oracle feed is stale." : "No fresh oracle feed is available.",
+      status: oracleValidationStatus.status === "available" ? "operational" : oracleValidationStatus.status === "stale" ? "attention" : "unavailable",
+    },
+    {
+      label: "Compliance feed",
+      detail: complianceControlsStatus.status === "available" ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators across ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions.` : complianceControlsStatus.status === "stale" ? "The configured compliance feed is stale." : "No fresh compliance feed is available.",
+      status: complianceControlsStatus.status === "available" ? "operational" : complianceControlsStatus.status === "stale" ? "attention" : "unavailable",
+    },
   ];
+
+  const serviceCounts = {
+    operational: serviceItems.filter((item) => item.status === "operational").length,
+    attention: serviceItems.filter((item) => item.status === "attention").length,
+    unavailable: serviceItems.filter((item) => item.status === "unavailable").length,
+    notObserved: serviceItems.filter((item) => item.status === "not-observed").length,
+  };
+  const compactServiceItems = [
+    ...serviceItems.filter((item) => item.status === "attention" || item.status === "unavailable"),
+    ...serviceItems.filter((item) => item.essential && item.status !== "attention" && item.status !== "unavailable"),
+  ].filter((item, index, all) => all.findIndex((candidate) => candidate.label === item.label) === index).slice(0, 4);
+  const visibleServiceItems = showAllServices ? serviceItems : compactServiceItems;
+
+  const agentsWithActivePolicy = activeAgents.filter((agent) => Boolean(getActivePolicy(policies, agent.id))).length;
+  const inactivePolicyCount = policies.filter((policy) => policy.status !== "Active").length;
+  const x402Ready = x402PaymentControlsStatus.status === "foundation-available";
+
+  const executionLabel = (log: AuditLog) => {
+    const execution = canonicalExecutionStatus(log.executionStatus || "");
+    if (execution && execution !== "not-submitted") return execution.replace(/-/g, " ");
+    if (log.resourceDeliveryStatus) return String(log.resourceDeliveryStatus).replace(/-/g, " ");
+    if (log.settlementStatus) return String(log.settlementStatus).replace(/-/g, " ");
+    return "not submitted";
+  };
+
+  const openApprovalQueue = () => {
+    try { window.sessionStorage.setItem("magen3:policies-tab", "approvals"); } catch {}
+    onNavigate("policies");
+  };
 
   return (
     <div className="space-y-6">
-      {activeEmergencyPauses.length > 0 && (
-        <button type="button" onClick={() => onNavigate("settings")} className="w-full rounded-xl border border-[#EF4444]/35 bg-[#EF4444]/10 p-4 text-left">
-          <div className="flex items-start gap-3"><ShieldAlert className="mt-0.5 text-[#EF4444]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{activeEmergencyPauses.length} active emergency pause{activeEmergencyPauses.length === 1 ? "" : "s"}</div><div className="mt-1 text-xs leading-relaxed text-[#FCA5A5]">Execution is currently blocked or routed to review for one or more scopes. Open Settings to investigate and use the authorized resume workflow.</div></div></div>
-        </button>
-      )}
-      {unresolvedExecutions.length > 0 && (
-        <button type="button" onClick={() => onNavigate("audit-log")} className="w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-4 text-left">
-          <div className="flex items-start gap-3"><RefreshCw className="mt-0.5 text-[#F59E0B]" size={20} /><div><div className="text-sm font-semibold text-[#F8FAFC]">{unresolvedExecutions.length} execution{unresolvedExecutions.length === 1 ? "" : "s"} need reconciliation</div><div className="mt-1 text-xs leading-relaxed text-[#FCD34D]">Pending, uncertain, replaced, delivery-pending, or refund-pending records require attention. Open Audit Logs before retrying.</div></div></div>
-        </button>
-      )}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="Connected Agents" value={agents.length} icon={<Bot size={20} />} color="cyan" />
-        <StatCard label="Decisions Today" value={decisionsToday.length} icon={<Activity size={20} />} color="purple" />
-        <StatCard label="Allowed" value={decisionsToday.filter((log) => log.decision === "Allowed").length} icon={<ShieldCheck size={20} />} color="green" />
-        <StatCard label="Blocked" value={decisionsToday.filter((log) => log.decision === "Blocked").length} icon={<ShieldX size={20} />} color="red" />
-        <StatCard label="Review Required" value={decisionsToday.filter((log) => log.decision === "Review Required").length} icon={<Clock size={20} />} color="amber" />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${apiOnline ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} /> Gateway {apiOnline ? "Online" : "Unavailable"}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22D3EE]/20 bg-[#22D3EE]/8 px-2.5 py-1 text-xs font-semibold text-[#67E8F9]">
+              <Globe size={12} /> Casper Testnet
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#22C55E]/20 bg-[#22C55E]/8 px-2.5 py-1 text-xs font-semibold text-[#86EFAC]">
+              <Wallet size={12} /> Wallet Connected
+            </span>
+          </div>
+          <h1 className="mt-3 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Dashboard</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">
+            Operational overview of protected agents, deterministic decisions, approvals, proofs, and execution state.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Btn variant="secondary" onClick={openApprovalQueue}><Clock size={16} /> Review Approvals</Btn>
+          <Btn variant="primary" onClick={() => onNavigate("intent-playground")}><Send size={16} /> Test Intent</Btn>
+        </div>
       </div>
 
-      <div className={`${CARD_GLOW} p-5`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-[#22D3EE] text-xs font-semibold uppercase tracking-wider mb-2">
-              <Activity size={14} />
-              Platform Status
-            </div>
-            <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-              {apiOnline ? "Magen3 Gateway online" : "Magen3 Gateway unavailable"}
-            </h2>
-            <p className="text-sm text-[#94A3B8] mt-1 max-w-3xl">
-              Dashboard numbers come from the connected wallet, registered agents, active policies, saved audit records, and confirmed Casper decision proofs.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Btn variant="secondary" size="sm" onClick={() => onNavigate("connected-agents")}>
-              Open Connected Agents
-            </Btn>
-            <Btn variant="primary" size="sm" onClick={() => onNavigate("audit-log")}>
-              Open Decision Proof
-            </Btn>
-          </div>
-        </div>
-        <div className="mt-4 grid md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8 gap-2">
-          {operationalItems.map((item) => (
-            <div key={item.label} className={`rounded-lg border px-3 py-2 text-xs ${
-              item.done
-                ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"
-                : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8]"
-            }`}>
-              <div className="flex items-center justify-between gap-2">
-                <span>{item.label}</span>
-                <span className="font-semibold text-[#F8FAFC]">{item.value}</span>
+      <div className={`${CARD_GLOW} overflow-hidden bg-[#1E293B]`}>
+        <div className="grid gap-px sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "Active Agents", value: activeAgents.length, detail: `${agents.length} registered`, icon: <Bot size={18} />, tone: "text-[#22D3EE]" },
+            { label: "Decisions Today", value: decisionsToday.length, detail: `${allowedToday} allowed · ${reviewToday} review · ${blockedToday} blocked`, icon: <Activity size={18} />, tone: "text-[#A78BFA]" },
+            { label: "Need Attention", value: attentionItems.length, detail: attentionItems.length ? "operational items to review" : "no immediate action", icon: <AlertTriangle size={18} />, tone: attentionItems.length ? "text-[#F59E0B]" : "text-[#22C55E]" },
+            { label: "Unresolved", value: unresolvedExecutions.length, detail: unresolvedExecutions.length ? "execution or settlement" : "no unresolved execution", icon: <RefreshCw size={18} />, tone: unresolvedExecutions.length ? "text-[#F59E0B]" : "text-[#22C55E]" },
+          ].map((item) => (
+            <div key={item.label} className="bg-[#0F172A] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><div className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">{item.label}</div><div className="mt-2 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{item.value}</div><div className="mt-1 text-xs text-[#94A3B8]">{item.detail}</div></div>
+                <div className={item.tone}>{item.icon}</div>
               </div>
             </div>
           ))}
         </div>
-        <div className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
-          threatFeedOperational
-            ? "border-[#22C55E]/25 bg-[#22C55E]/5 text-[#BBF7D0]"
-            : "border-[#F59E0B]/25 bg-[#F59E0B]/5 text-[#FCD34D]"
-        }`}>
-          <span className="font-semibold">Threat Intelligence Foundation:</span>{" "}
-          {threatFeedOperational
-            ? `${threatIntelligenceStatus.sourceName || "Configured feed"} is fresh and exposes ${activeThreatIndicators} active exact-match indicator${activeThreatIndicators === 1 ? "" : "s"}.`
-            : `${threatIntelligenceStatus.status === "stale" ? "The configured feed is stale" : "No fresh feed is available"}. Each policy decides whether that condition warns, requires review, or blocks; it never counts as a pass.`}
-        </div>
-        {pendingApprovals.length > 0 && (
-          <button type="button" onClick={() => onNavigate("policies")} className="mt-3 flex w-full items-start justify-between gap-4 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-left text-xs text-[#FCD34D] transition-colors hover:border-[#F59E0B]/45">
-            <span><span className="font-semibold">Human approval required:</span> {pendingApprovals.length} exact-bound request{pendingApprovals.length === 1 ? " is" : "s are"} waiting in Policy & Approval Controls.</span>
-            <ArrowRight size={15} className="mt-0.5 shrink-0" />
-          </button>
-        )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
+      <div className={`${CARD} p-5`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2"><AlertTriangle size={17} className={attentionItems.length ? "text-[#F59E0B]" : "text-[#22C55E]"} /><h2 className={SECTION_TITLE}>Attention Required</h2></div>
+            <p className="mt-1 text-xs text-[#94A3B8]">Only conditions that require operational action appear here.</p>
+          </div>
+          {attentionItems.length > 0 && <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2.5 py-1 text-xs font-semibold text-[#FCD34D]">{attentionItems.length} open</span>}
+        </div>
+        <div className="mt-4 space-y-2">
+          {attentionItems.length === 0 ? (
+            <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4 text-sm text-[#BBF7D0]">
+              All protected agents and critical services are operating normally.
+            </div>
+          ) : attentionItems.map((item) => (
+            <button key={item.id} type="button" onClick={() => item.id === "approvals" ? openApprovalQueue() : onNavigate(item.page)} className={`flex w-full flex-col gap-3 rounded-xl border p-4 text-left transition-colors sm:flex-row sm:items-center sm:justify-between ${item.tone === "critical" ? "border-[#EF4444]/25 bg-[#EF4444]/5 hover:border-[#EF4444]/45" : "border-[#F59E0B]/25 bg-[#F59E0B]/5 hover:border-[#F59E0B]/45"}`}>
+              <div className="flex min-w-0 items-start gap-3">
+                <div className={`mt-0.5 shrink-0 ${item.tone === "critical" ? "text-[#EF4444]" : "text-[#F59E0B]"}`}>{item.icon}</div>
+                <div className="min-w-0"><div className="text-sm font-semibold text-[#F8FAFC]">{item.title}</div><div className={`mt-1 text-xs leading-relaxed ${item.tone === "critical" ? "text-[#FCA5A5]" : "text-[#FCD34D]"}`}>{item.description}</div></div>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#F8FAFC]">{item.action} <ChevronRight size={14} /></span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.32fr_0.68fr]">
         <div className={`${CARD_GLOW} p-5`}>
-          <div className="flex items-start justify-between gap-4">
-            <div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Coverage</div><div className="mt-2 text-4xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{averageCoverage}%</div><div className="mt-1 text-sm text-[#94A3B8]">Average configured protection across registered agents.</div></div>
-            <ShieldCheck size={25} className="text-[#22D3EE]" />
+          <div className="flex items-center justify-between gap-3">
+            <div><h2 className={SECTION_TITLE}>Recent Decisions</h2><p className="mt-1 text-xs text-[#94A3B8]">Latest Gateway outcomes, proof state, and execution state.</p></div>
+            <Btn variant="ghost" size="sm" onClick={() => onNavigate("audit-log")}>View all Audit Logs <ChevronRight size={13} /></Btn>
           </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#1E293B]"><div className="h-full rounded-full bg-[#22D3EE] transition-all" style={{ width: `${averageCoverage}%` }} /></div>
-          <p className="mt-3 text-xs leading-relaxed text-[#64748B]">Coverage measures configured controls and observed integration state. It is not a guarantee against every exploit.</p>
-        </div>
-        <div className={`${CARD} p-5`}>
-          <div className="flex items-center justify-between gap-3"><div><h2 className={SECTION_TITLE}>Agents Needing Attention</h2><p className="mt-1 text-xs text-[#94A3B8]">Highest-impact configuration improvements.</p></div><Btn variant="secondary" size="sm" onClick={() => onNavigate("connected-agents")}>Manage Agents</Btn></div>
           <div className="mt-4 space-y-2">
-            {agentsNeedingAttention.length === 0 ? <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4 text-sm text-[#BBF7D0]">All registered agents have a strong configuration foundation.</div> : agentsNeedingAttention.map(({ agent, coverage }) => (
-              <div key={agent.id} className="flex flex-col gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0"><div className="font-semibold text-[#F8FAFC]">{agent.name}</div><div className="mt-1 truncate text-xs text-[#94A3B8]">{coverage.recommendations[0]?.recommendation || "Review the agent configuration."}</div></div>
-                <div className="shrink-0 text-right"><div className="text-lg font-bold text-[#F8FAFC]">{coverage.score}%</div><div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">coverage</div></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className={`${CARD_GLOW} p-5 lg:col-span-2`}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className={SECTION_TITLE}>Recent Activity</h2>
-            <span className="text-xs text-[#94A3B8]">Latest records</span>
-          </div>
-          <div className="space-y-2">
             {recentLogs.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center text-sm text-[#94A3B8]">
-                No audit activity yet. Register an agent, create a policy, then let the external agent call the gateway.
+              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center text-sm text-[#94A3B8]">
+                No decisions yet. Register an agent, assign a policy, and test an intent through the Gateway.
               </div>
-            ) : recentLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex items-center gap-3 p-3 rounded-lg bg-[#0B1220] hover:bg-[#0D1626] transition-colors"
-              >
-                <div className="flex-shrink-0">
-                  <DecisionBadge decision={log.decision} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-[#F8FAFC] font-medium truncate">
-                    {log.agentName} · {log.action}
+            ) : recentLogs.map((log) => {
+              const proof = decisionProofStatus(log);
+              const execution = executionLabel(log);
+              return (
+                <button key={log.id} type="button" onClick={() => onNavigate("audit-log")} className="flex w-full flex-col gap-3 rounded-xl border border-transparent bg-[#0B1220] p-3 text-left transition-colors hover:border-[#1E293B] hover:bg-[#0D1626] sm:flex-row sm:items-center">
+                  <div className="shrink-0"><DecisionBadge decision={log.decision} /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-[#F8FAFC]">{log.agentName} · {log.action}</div>
+                    <div className="mt-1 text-xs text-[#94A3B8]">{log.amount} {auditAsset(log)} · {truncate(log.target)}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${proof.className}`}>{proof.label}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${executionNeedsAttention(log) ? "border-[#F59E0B]/25 bg-[#F59E0B]/10 text-[#FCD34D]" : "border-[#1E293B] bg-[#0F172A] text-[#94A3B8]"}`}>{execution}</span>
+                    </div>
                   </div>
-                  <div className="text-xs text-[#94A3B8]">
-                    {log.amount} {auditAsset(log)} · {truncate(log.target)}
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <RiskBadge risk={log.risk} />
-                  <div className="text-xs text-[#94A3B8] mt-1">
-                    {fmtTs(log.timestamp)}
-                  </div>
-                </div>
-              </div>
-            ))}
+                  <div className="shrink-0 text-xs text-[#64748B]">{fmtTs(log.timestamp)}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Risk Overview + Policy Summary */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className={`${CARD} p-5`}>
-            <h2 className={`${SECTION_TITLE} mb-4`}>Risk Overview</h2>
-            {riskOverview.map((r) => (
-              <div key={r.label} className="mb-3">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-[#94A3B8]">{r.label}</span>
-                  <span style={{ color: r.color }} className="font-semibold">
-                    {r.count}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-[#1E293B] rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${r.pct}%`, backgroundColor: r.color }}
-                  />
-                </div>
-              </div>
-            ))}
+            <div className="flex items-start justify-between gap-4">
+              <div><div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Posture</div><div className="mt-2 text-4xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{averageCoverage}%</div><div className="mt-1 text-sm text-[#94A3B8]">Average configured protection across active agents.</div></div>
+              <ShieldCheck size={25} className="text-[#22D3EE]" />
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#1E293B]"><div className="h-full rounded-full bg-[#22D3EE] transition-all" style={{ width: `${averageCoverage}%` }} /></div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[#64748B]">Policy protected</div><div className="mt-1 font-semibold text-[#F8FAFC]">{agentsWithActivePolicy} of {activeAgents.length}</div></div>
+              <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[#64748B]">Active policies</div><div className="mt-1 font-semibold text-[#F8FAFC]">{activePolicies.length}</div></div>
+              <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[#64748B]">Need configuration</div><div className={`mt-1 font-semibold ${agentsNeedingAttention.length ? "text-[#FCD34D]" : "text-[#BBF7D0]"}`}>{agentsNeedingAttention.length}</div></div>
+              <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[#64748B]">Policy warnings</div><div className={`mt-1 font-semibold ${inactivePolicyCount ? "text-[#FCD34D]" : "text-[#BBF7D0]"}`}>{inactivePolicyCount}</div></div>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-[#64748B]">Coverage measures configured controls and observed integration state. It is not a guarantee against every exploit.</p>
+            <div className="mt-4 flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => onNavigate("shields")}>View Agent Shield</Btn><Btn variant="ghost" size="sm" onClick={() => onNavigate("policies")}>Manage Policies</Btn></div>
           </div>
 
           <div className={`${CARD} p-5`}>
-            <h2 className={`${SECTION_TITLE} mb-4`}>Active Policy</h2>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[#94A3B8]">Policy</span>
-                <span className="text-[#F8FAFC] font-medium">
-                  {activePolicy?.name || "No active policy"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#94A3B8]">Agent</span>
-                <span className="text-[#F8FAFC]">{activePolicyAgent?.name || "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#94A3B8]">Max Tx</span>
-                <span className="text-[#F8FAFC]">{activePolicy ? `${activePolicy.maxTransaction} CSPR` : "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#94A3B8]">Daily Limit</span>
-                <span className="text-[#F8FAFC]">{activePolicy ? `${activePolicy.dailyLimit} CSPR` : "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#94A3B8]">Risk Mode</span>
-                <span className="text-[#F59E0B] font-medium">{activePolicy?.riskMode || "—"}</span>
-              </div>
-              <div className="pt-2 border-t border-[#1E293B] flex justify-between">
-                <span className="text-[#94A3B8]">Status</span>
-                <StatusBadge status={activePolicy?.status || "Inactive"} />
-              </div>
+            <div className="flex items-center justify-between gap-3"><div><h2 className={SECTION_TITLE}>Agents Needing Attention</h2><p className="mt-1 text-xs text-[#94A3B8]">Highest-impact agent configuration gaps.</p></div><Btn variant="ghost" size="sm" onClick={() => onNavigate("connected-agents")}>View all</Btn></div>
+            <div className="mt-4 space-y-2">
+              {agentsNeedingAttention.length === 0 ? (
+                <div className="rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 p-4 text-sm text-[#BBF7D0]">No active agent currently needs configuration attention.</div>
+              ) : agentsNeedingAttention.map(({ agent, coverage, issue }) => (
+                <button key={agent.id} type="button" onClick={() => onNavigate("connected-agents")} className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 text-left transition-colors hover:border-[#334155]">
+                  <div className="min-w-0"><div className="font-semibold text-[#F8FAFC]">{agent.name}</div><div className="mt-1 line-clamp-2 text-xs leading-relaxed text-[#94A3B8]">{issue}</div></div>
+                  <div className="shrink-0 text-right"><div className="text-lg font-bold text-[#F8FAFC]">{coverage?.score ?? 0}%</div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">coverage</div></div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
+      <div className={`${CARD} p-5`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2"><Server size={17} className={serviceCounts.attention || serviceCounts.unavailable ? "text-[#F59E0B]" : "text-[#22C55E]"} /><h2 className={SECTION_TITLE}>System Health</h2></div>
+            <p className="mt-1 text-xs text-[#94A3B8]">Critical infrastructure and provider-backed services only.</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
+            <span className="rounded-full border border-[#22C55E]/20 bg-[#22C55E]/10 px-2 py-1 text-[#BBF7D0]">{serviceCounts.operational} Operational</span>
+            {serviceCounts.attention > 0 && <span className="rounded-full border border-[#F59E0B]/20 bg-[#F59E0B]/10 px-2 py-1 text-[#FCD34D]">{serviceCounts.attention} Attention</span>}
+            {serviceCounts.unavailable > 0 && <span className="rounded-full border border-[#EF4444]/20 bg-[#EF4444]/10 px-2 py-1 text-[#FCA5A5]">{serviceCounts.unavailable} Unavailable</span>}
+            {serviceCounts.notObserved > 0 && <span className="rounded-full border border-[#1E293B] bg-[#0B1220] px-2 py-1 text-[#94A3B8]">{serviceCounts.notObserved} Not observed</span>}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {visibleServiceItems.map((item) => {
+            const statusLabel = item.status === "not-observed" ? "Not observed" : item.status.charAt(0).toUpperCase() + item.status.slice(1);
+            const statusClass = item.status === "operational" ? "text-[#22C55E]" : item.status === "attention" ? "text-[#F59E0B]" : item.status === "unavailable" ? "text-[#EF4444]" : "text-[#94A3B8]";
+            const dotClass = item.status === "operational" ? "bg-[#22C55E]" : item.status === "attention" ? "bg-[#F59E0B]" : item.status === "unavailable" ? "bg-[#EF4444]" : "bg-[#64748B]";
+            return (
+              <div key={item.label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">
+                <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${dotClass}`} /><span className="text-sm font-semibold text-[#F8FAFC]">{item.label}</span></div><span className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</span></div>
+                <div className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{item.detail}</div>
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" onClick={() => setShowAllServices((value) => !value)} className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-[#67E8F9] hover:text-[#A5F3FC]">
+          {showAllServices ? "Show essential services" : `View all ${serviceItems.length} services`} <ChevronDown size={14} className={`transition-transform ${showAllServices ? "rotate-180" : ""}`} />
+        </button>
+        <div className="mt-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#64748B]">
+          x402 Payment Controls: {x402Ready ? "Foundation Available" : "Not currently confirmed"}. Provider availability never counts as a security pass by itself.
+        </div>
+      </div>
     </div>
   );
 }
+
 
 // ──────────────────────────────────────────────────────────
 // Agent Shield Page
@@ -6912,7 +7061,15 @@ function PoliciesPage({
 
   const pendingApprovals = approvals.filter((approval) => ["Pending", "Configuration Required"].includes(approval.reviewStatus));
   const resolvedApprovals = approvals.filter((approval) => !["Pending", "Configuration Required"].includes(approval.reviewStatus));
-  const [policiesTab, setPoliciesTab] = useState<"policies" | "approvals">("policies");
+  const [policiesTab, setPoliciesTab] = useState<"policies" | "approvals">(() => {
+    try {
+      const requestedTab = window.sessionStorage.getItem("magen3:policies-tab");
+      window.sessionStorage.removeItem("magen3:policies-tab");
+      return requestedTab === "approvals" ? "approvals" : "policies";
+    } catch {
+      return "policies";
+    }
+  });
   const [selectedPolicyId, setSelectedPolicyId] = useState(policies[0]?.id || "");
   const [policyDetailTab, setPolicyDetailTab] = useState<"overview" | "controls" | "approval">("overview");
   const [createPolicyOpen, setCreatePolicyOpen] = useState(false);
