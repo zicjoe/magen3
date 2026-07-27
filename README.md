@@ -958,6 +958,10 @@ The existing `vercel.json` remains valid.
 | Casper Wallet unavailable | Install, unlock, and approve Casper Wallet in the browser. |
 | Intent Playground rejects JSON | Match the selected Agent ID and include a supported `action` object. |
 
+## Cross-panel information architecture
+
+The authenticated application now uses one clear primary home for each kind of information: Dashboard for cross-platform operations, Agent Shield for protection posture, Connected Agents for agent lifecycle and integration, Policies for deterministic rules and approvals, Audit Logs for complete historical evidence, Intent Playground for authenticated testing, Settings for environment and administration, and Docs for tutorials and reference. Global network, Gateway, and wallet state are centralized in the application top bar. Contextual summaries remain only where they help the current workflow. See [`CROSS_PANEL_INFORMATION_ARCHITECTURE_IMPLEMENTATION_REPORT.md`](CROSS_PANEL_INFORMATION_ARCHITECTURE_IMPLEMENTATION_REPORT.md).
+
 ## Repository structure
 
 ```text
