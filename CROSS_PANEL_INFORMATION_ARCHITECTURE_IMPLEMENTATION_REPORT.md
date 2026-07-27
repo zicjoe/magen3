@@ -46,34 +46,17 @@ Removed the no-longer-rendered `AgentInsightsPanel` implementation.
 
 ### Audit Logs
 
-- Removed the redundant Shield filter and Shield table column while Agent Shield is the only live shield.
-- Replaced the wide table with six operational columns:
-  - Time
-  - Agent and action
-  - Decision
-  - Risk
-  - Proof
-  - Execution
-- Added filters for agent, decision, execution state, proof state, and date range.
-- Full hashes are hidden from the table and remain in the record details.
-- Replaced the narrow all-in-one record view with a wider five-tab evidence drawer:
-  1. Overview
-  2. Security Evaluation
-  3. Approval
-  4. Proofs & Execution
-  5. Technical Evidence
-- Preserved decision explanation, policy context, complete pipeline, structured findings, original intent, raw record evidence, decision-proof controls, execution-proof controls, reconciliation history, and manual proof confirmation.
-- Added complete read-only Human Approval evidence where the Approval Queue record is available:
-  - Exact binding
-  - Quorum
-  - Cryptographic verification state
-  - Reviewer groups
-  - Reviewer responses and comments
-  - Signature hashes and domains
-  - Resolved tier
-  - Escalation history
-  - Execution delay and window
-- Added exact-record deep-linking through session storage so Dashboard, Connected Agents, and Intent Playground open the correct audit record.
+The later six-column, five-tab Audit Logs redesign was intentionally reverted after product review. The preferred former Audit Logs panel has been restored from the Settings UI polish release.
+
+The restored panel includes:
+
+- Search plus Shield, decision, and risk filters.
+- The former detailed table with time, Shield, agent, action, amount, decision, risk, decision proof, and execution proof.
+- The former full audit record drawer with policy context, decision explanation, pipeline stages, structured findings, original intent, technical evidence, Casper proof controls, execution proof controls, and settlement reconciliation.
+- Developer Mode behaviour from the former implementation.
+- Exact-record deep-linking retained from the cross-panel release so Dashboard, Connected Agents, and Intent Playground still open the matching audit record.
+
+See `AUDIT_LOGS_PANEL_RESTORE_REPORT.md` for the restoration details.
 
 ### Intent Playground
 
@@ -189,12 +172,11 @@ The workspace and lockfile were not changed by this release.
 
 ### Audit Logs
 
-- Test every filter independently and in combination.
-- Open each of the five drawer tabs.
-- Confirm reviewer evidence is read-only and matches Approval Queue data.
+- Test search plus Shield, decision, and risk filters.
+- Open records from the table and from Dashboard, Connected Agents, and Intent Playground deep links.
 - Confirm decision and execution proof actions remain functional.
-- Confirm long hashes do not expand the table.
-- Test the drawer at desktop and mobile widths.
+- Confirm pipeline, findings, original intent, technical evidence, and reconciliation history remain available.
+- Test the restored table and drawer at desktop and mobile widths.
 
 ### Intent Playground
 

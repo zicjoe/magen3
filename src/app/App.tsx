@@ -7667,8 +7667,6 @@ function PoliciesPage({
 function AuditLogPage({
   auditLogs,
   policies,
-  approvals,
-  onNavigate,
   onRecordAuditLog,
   onPrepareCasperPayload,
   onConfirmCasperDeploy,
@@ -7677,34 +7675,23 @@ function AuditLogPage({
 }: {
   auditLogs: AuditLog[];
   policies: Policy[];
-  approvals: ApprovalRequest[];
-  onNavigate: (page: Page) => void;
   onRecordAuditLog: (id: string) => Promise<AuditLog> | AuditLog;
   onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
   onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
   developerMode: boolean;
 }) {
-  type AuditTab = "overview" | "security" | "approval" | "proofs" | "technical";
   const [search, setSearch] = useState("");
-  const [filterAgent, setFilterAgent] = useState("All");
+  const [filterShield, setFilterShield] = useState("All");
   const [filterDecision, setFilterDecision] = useState("All");
-  const [filterExecution, setFilterExecution] = useState("All");
-  const [filterProof, setFilterProof] = useState("All");
-  const [filterDate, setFilterDate] = useState("All time");
+  const [filterRisk, setFilterRisk] = useState("All");
   const [selected, setSelected] = useState<AuditLog | null>(null);
-  const [auditTab, setAuditTab] = useState<AuditTab>("overview");
   const [casperPrepared, setCasperPrepared] = useState<CasperPreparedPayload | null>(null);
   const [casperLoading, setCasperLoading] = useState(false);
   const [casperError, setCasperError] = useState("");
   const [deployHash, setDeployHash] = useState("");
   const [executionHash, setExecutionHash] = useState("");
   const [copiedPayload, setCopiedPayload] = useState(false);
-
-  const agentOptions = useMemo(
-    () => Array.from(new Set(auditLogs.map((log) => log.agentName))).sort((left, right) => left.localeCompare(right)),
-    [auditLogs]
-  );
 
   useEffect(() => {
     try {
@@ -7713,55 +7700,27 @@ function AuditLogPage({
       const requested = auditLogs.find((log) => log.id === requestedId);
       if (requested) {
         setSelected(requested);
-        setAuditTab("overview");
         window.sessionStorage.removeItem("magen3:audit-record-id");
       }
     } catch {}
   }, [auditLogs]);
 
-  const proofMeta = useCallback((log: AuditLog) => {
-    if (log.txHash && isRealCasperDeployHash(log.txHash)) return { key: "Confirmed", label: "Confirmed", tone: "success" as const };
-    if (log.decisionProofStatus === "failed") return { key: "Failed", label: "Failed", tone: "danger" as const };
-    if (log.decisionProofStatus === "queued") return { key: "Queued", label: "Queued", tone: "warning" as const };
-    return { key: "Not recorded", label: decisionProofStatus(log).label, tone: "neutral" as const };
-  }, []);
-
-  const executionMeta = useCallback((log: AuditLog) => {
-    const canonical = canonicalExecutionStatus(log.executionStatus || "") || "not-submitted";
-    const label = canonical.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-    if (executionNeedsAttention(log)) return { key: canonical, label, tone: canonical === "uncertain" || canonical === "failed" ? "danger" as const : "warning" as const };
-    if (["confirmed", "delivered", "refunded"].includes(canonical)) return { key: canonical, label, tone: "success" as const };
-    if (["submitted", "pending", "replaced"].includes(canonical)) return { key: canonical, label, tone: "info" as const };
-    return { key: canonical, label: "Not submitted", tone: "neutral" as const };
-  }, []);
-
-  const dateMatches = useCallback((timestamp: string) => {
-    if (filterDate === "All time") return true;
-    const value = new Date(timestamp).getTime();
-    const now = Date.now();
-    if (!Number.isFinite(value)) return false;
-    if (filterDate === "Today") return isSameDay(new Date(value), new Date(now));
-    const days = filterDate === "Last 7 days" ? 7 : 30;
-    return value >= now - days * 24 * 60 * 60 * 1000;
-  }, [filterDate]);
-
-  const filtered = auditLogs.filter((log) => {
-    const normalizedSearch = search.trim().toLowerCase();
-    if (normalizedSearch && ![log.agentName, log.action, log.id, log.target].some((value) => String(value || "").toLowerCase().includes(normalizedSearch))) return false;
-    if (filterAgent !== "All" && log.agentName !== filterAgent) return false;
-    if (filterDecision !== "All" && log.decision !== filterDecision) return false;
-    if (filterExecution === "Unresolved" && !executionNeedsAttention(log)) return false;
-    if (filterExecution !== "All" && filterExecution !== "Unresolved" && executionMeta(log).key !== filterExecution) return false;
-    if (filterProof !== "All" && proofMeta(log).key !== filterProof) return false;
-    if (!dateMatches(log.timestamp)) return false;
+  const filtered = auditLogs.filter((l) => {
+    if (
+      search &&
+      !l.agentName.toLowerCase().includes(search.toLowerCase()) &&
+      !l.action.toLowerCase().includes(search.toLowerCase()) &&
+      !l.id.toLowerCase().includes(search.toLowerCase())
+    )
+      return false;
+    if (filterShield !== "All" && l.shield !== filterShield) return false;
+    if (filterDecision !== "All" && l.decision !== filterDecision) return false;
+    if (filterRisk !== "All" && l.risk !== filterRisk) return false;
     return true;
   });
-
   const selectedPolicy = selected
-    ? policies.find((policy) => policy.agentId === selected.agentId && policy.name === selected.policyUsed) || policies.find((policy) => policy.agentId === selected.agentId)
-    : undefined;
-  const selectedApproval = selected
-    ? approvals.find((approval) => approval.id === selected.approvalRequestId || approval.auditLogId === selected.id)
+    ? policies.find((policy) => policy.agentId === selected.agentId && policy.name === selected.policyUsed) ||
+      policies.find((policy) => policy.agentId === selected.agentId)
     : undefined;
 
   useEffect(() => {
@@ -7776,7 +7735,6 @@ function AuditLogPage({
     setDeployHash(selected?.txHash && isRealCasperDeployHash(selected.txHash) ? normalizeCasperDeployHash(selected.txHash) : "");
     setExecutionHash(selected?.executionTxHash && isRealCasperDeployHash(selected.executionTxHash) ? normalizeCasperDeployHash(selected.executionTxHash) : "");
     setCopiedPayload(false);
-    setAuditTab("overview");
   }, [selected?.id, selected?.txHash, selected?.executionTxHash]);
 
   const prepareCasperPayload = useCallback(async (logId: string) => {
@@ -7784,7 +7742,8 @@ function AuditLogPage({
     setCasperError("");
     setCopiedPayload(false);
     try {
-      setCasperPrepared(await onPrepareCasperPayload(logId));
+      const prepared = await onPrepareCasperPayload(logId);
+      setCasperPrepared(prepared);
     } catch (error) {
       setCasperError(error instanceof Error ? error.message : "Unable to prepare Casper payload");
     } finally {
@@ -7794,7 +7753,8 @@ function AuditLogPage({
 
   const copyCasperPayload = useCallback(async () => {
     if (!casperPrepared) return;
-    const copiedOk = await writeClipboard(JSON.stringify(casperPrepared, null, 2));
+    const body = JSON.stringify(casperPrepared, null, 2);
+    const copiedOk = await writeClipboard(body);
     if (copiedOk) {
       setCopiedPayload(true);
       setTimeout(() => setCopiedPayload(false), 1500);
@@ -7805,15 +7765,15 @@ function AuditLogPage({
 
   const confirmDeployHash = useCallback(async () => {
     if (!selected) return;
-    const normalized = normalizeCasperDeployHash(deployHash);
-    if (!isRealCasperDeployHash(normalized)) {
+    const normalizedDeployHash = normalizeCasperDeployHash(deployHash);
+    if (!isRealCasperDeployHash(normalizedDeployHash)) {
       setCasperError("Paste the 64-character Casper deploy hash returned by casper-client, without the hash- prefix.");
       return;
     }
     setCasperLoading(true);
     setCasperError("");
     try {
-      const updated = await onConfirmCasperDeploy(selected.id, normalized);
+      const updated = await onConfirmCasperDeploy(selected.id, normalizedDeployHash);
       setSelected(updated);
       setDeployHash(normalizeCasperDeployHash(updated.txHash));
     } catch (error) {
@@ -7825,15 +7785,20 @@ function AuditLogPage({
 
   const confirmExecutionHash = useCallback(async () => {
     if (!selected) return;
-    const normalized = normalizeCasperDeployHash(executionHash);
-    if (!isRealCasperDeployHash(normalized)) {
+    const normalizedDeployHash = normalizeCasperDeployHash(executionHash);
+    if (!isRealCasperDeployHash(normalizedDeployHash)) {
       setCasperError("Paste the 64-character Casper execution deploy hash returned after wallet signing.");
       return;
     }
     setCasperLoading(true);
     setCasperError("");
     try {
-      const updated = await onConfirmExecutionDeploy(selected.id, normalized, selected.executionWalletAddress || selected.walletAddress, "Execution transaction signed after Magen3 approval.");
+      const updated = await onConfirmExecutionDeploy(
+        selected.id,
+        normalizedDeployHash,
+        selected.executionWalletAddress || selected.walletAddress,
+        "Execution transaction signed after Magen3 approval."
+      );
       setSelected(updated);
       setExecutionHash(normalizeCasperDeployHash(updated.executionTxHash || ""));
     } catch (error) {
@@ -7845,195 +7810,733 @@ function AuditLogPage({
 
   const recordAuditOnChain = useCallback(async (logId: string) => {
     const updated = await onRecordAuditLog(logId);
-    setSelected((previous) => previous?.id === logId ? updated : previous);
+    setSelected((prev) => (prev && prev.id === logId ? updated : prev));
   }, [onRecordAuditLog]);
-
-  const openRecord = (log: AuditLog) => {
-    setSelected(log);
-    setAuditTab("overview");
-  };
-
-  const drawerTabs = [
-    { id: "overview", label: "Overview" },
-    { id: "security", label: "Security Evaluation" },
-    { id: "approval", label: "Approval" },
-    { id: "proofs", label: "Proofs & Execution" },
-    { id: "technical", label: "Technical Evidence" },
-  ];
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Audit Logs"
-        description="Complete historical evidence for Magen3 decisions, approvals, Casper proofs, execution, and settlement state."
-        meta={<span className="inline-flex rounded-full border border-[#1E293B] bg-[#0B1220] px-2.5 py-1 text-xs font-semibold text-[#94A3B8]">{auditLogs.length} records</span>}
-      />
-
-      <div className={`${CARD} p-4`}>
-        <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(130px,auto))]">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-            <input className={`${INPUT_CLS} pl-9`} placeholder="Search agent, action, target, or record ID" value={search} onChange={(event) => setSearch(event.target.value)} />
-          </div>
-          <select className={INPUT_CLS} value={filterAgent} onChange={(event) => setFilterAgent(event.target.value)}><option className="bg-[#0B1220]">All</option>{agentOptions.map((agent) => <option key={agent} className="bg-[#0B1220]">{agent}</option>)}</select>
-          <select className={INPUT_CLS} value={filterDecision} onChange={(event) => setFilterDecision(event.target.value)}><option className="bg-[#0B1220]">All</option><option className="bg-[#0B1220]">Allowed</option><option className="bg-[#0B1220]">Blocked</option><option className="bg-[#0B1220]">Review Required</option></select>
-          <select className={INPUT_CLS} value={filterExecution} onChange={(event) => setFilterExecution(event.target.value)}><option className="bg-[#0B1220]">All</option><option className="bg-[#0B1220]">Unresolved</option>{["not-submitted", "submitted", "pending", "confirmed", "failed", "uncertain", "replaced", "refunded", "delivered"].map((state) => <option key={state} value={state} className="bg-[#0B1220]">{state.replace(/-/g, " ")}</option>)}</select>
-          <select className={INPUT_CLS} value={filterProof} onChange={(event) => setFilterProof(event.target.value)}><option className="bg-[#0B1220]">All</option><option className="bg-[#0B1220]">Confirmed</option><option className="bg-[#0B1220]">Queued</option><option className="bg-[#0B1220]">Failed</option><option className="bg-[#0B1220]">Not recorded</option></select>
-          <select className={INPUT_CLS} value={filterDate} onChange={(event) => setFilterDate(event.target.value)}><option className="bg-[#0B1220]">All time</option><option className="bg-[#0B1220]">Today</option><option className="bg-[#0B1220]">Last 7 days</option><option className="bg-[#0B1220]">Last 30 days</option></select>
-        </div>
-        <div className="mt-3 text-xs text-[#64748B]">Showing {filtered.length} of {auditLogs.length} records. Agent Shield is the current live shield, so a redundant shield filter is intentionally omitted.</div>
+      <div>
+        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
+          Audit Log
+        </h1>
+        <p className="text-[#94A3B8] text-sm mt-1">
+          Every Magen3 security decision, ready for Casper Testnet recording.
+        </p>
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-48">
+          <Search
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]"
+          />
+          <input
+            className={`${INPUT_CLS} pl-9`}
+            placeholder="Search logs..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <select
+          className={`${INPUT_CLS} w-auto min-w-36`}
+          value={filterShield}
+          onChange={(e) => setFilterShield(e.target.value)}
+        >
+          <option className="bg-[#0B1220]">All</option>
+          <option className="bg-[#0B1220]">Agent Shield</option>
+        </select>
+        <select
+          className={`${INPUT_CLS} w-auto min-w-36`}
+          value={filterDecision}
+          onChange={(e) => setFilterDecision(e.target.value)}
+        >
+          <option className="bg-[#0B1220]">All</option>
+          <option className="bg-[#0B1220]">Allowed</option>
+          <option className="bg-[#0B1220]">Blocked</option>
+          <option className="bg-[#0B1220]">Review Required</option>
+        </select>
+        <select
+          className={`${INPUT_CLS} w-auto min-w-32`}
+          value={filterRisk}
+          onChange={(e) => setFilterRisk(e.target.value)}
+        >
+          <option className="bg-[#0B1220]">All</option>
+          <option className="bg-[#0B1220]">Low</option>
+          <option className="bg-[#0B1220]">Medium</option>
+          <option className="bg-[#0B1220]">High</option>
+        </select>
+      </div>
+
+      {/* Table */}
       <div className={`${CARD} overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-[#1E293B] bg-[#0B1220]">{["Time", "Agent and action", "Decision", "Risk", "Proof", "Execution", ""].map((heading) => <th key={heading} className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{heading}</th>)}</tr></thead>
+            <thead>
+              <tr className="border-b border-[#1E293B] bg-[#0B1220]">
+                {[
+                  "Time",
+                  "Shield",
+                  "Agent",
+                  "Action",
+                  "Amount",
+                  "Decision",
+                  "Risk",
+                  "Decision Proof Hash",
+                  "Execution Proof",
+                  "",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold text-[#94A3B8] uppercase tracking-wider whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {filtered.map((log) => {
-                const proof = proofMeta(log);
-                const execution = executionMeta(log);
-                return (
-                  <tr key={log.id} className="border-b border-[#1E293B]/50 transition-colors hover:bg-[#0B1220]/60">
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-[#94A3B8]">{fmtTs(log.timestamp)}</td>
-                    <td className="min-w-[260px] px-4 py-3"><button type="button" onClick={() => openRecord(log)} className="block w-full text-left"><div className="font-semibold text-[#F8FAFC]">{log.agentName} · {log.action}</div><div className="mt-1 text-xs text-[#94A3B8]">{log.amount} {auditAsset(log)} · {truncate(log.target, 34)}</div></button></td>
-                    <td className="whitespace-nowrap px-4 py-3"><DecisionBadge decision={log.decision} /></td>
-                    <td className="whitespace-nowrap px-4 py-3"><RiskBadge risk={log.risk} /></td>
-                    <td className="whitespace-nowrap px-4 py-3"><CompactStatusRow label="Proof" status={proof.label} tone={proof.tone} compact /></td>
-                    <td className="whitespace-nowrap px-4 py-3"><CompactStatusRow label="Execution" status={execution.label} tone={execution.tone} compact /></td>
-                    <td className="px-4 py-3"><button type="button" aria-label={`Open audit record ${log.id}`} onClick={() => openRecord(log)} className="rounded p-1.5 text-[#94A3B8] transition-colors hover:bg-[#22D3EE]/10 hover:text-[#22D3EE]"><Eye size={14} /></button></td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-[#94A3B8]">No audit records match the selected filters.</td></tr>}
+              {filtered.map((log) => (
+                <tr
+                  key={log.id}
+                  className="border-b border-[#1E293B]/50 hover:bg-[#0B1220]/60 transition-colors"
+                >
+                  <td className="px-4 py-3 text-[#94A3B8] whitespace-nowrap text-xs">
+                    {fmtTs(log.timestamp)}
+                  </td>
+                  <td className="px-4 py-3 text-[#94A3B8] whitespace-nowrap">
+                    {log.shield}
+                  </td>
+                  <td className="px-4 py-3 text-[#F8FAFC] font-medium whitespace-nowrap">
+                    {log.agentName}
+                  </td>
+                  <td className="px-4 py-3 text-[#94A3B8] whitespace-nowrap">
+                    {log.action}
+                  </td>
+                  <td className="px-4 py-3 text-[#F8FAFC] whitespace-nowrap font-mono">
+                    {log.amount} {auditAsset(log)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <DecisionBadge decision={log.decision} />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <RiskBadge risk={log.risk} />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-[#94A3B8] whitespace-nowrap">
+                    {log.txHash ? (
+                      isRealCasperDeployHash(log.txHash) ? (
+                        <a
+                          href={casperDeployUrl(log.txHash)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                        >
+                          <span>{truncate(normalizeCasperDeployHash(log.txHash))}</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[#F59E0B]">
+                          <span>Unconfirmed</span>
+                          <span className="text-[#94A3B8]">{truncate(log.txHash)}</span>
+                        </div>
+                      )
+                    ) : (
+                      <span className="text-[#94A3B8]/70">{decisionProofStatus(log).label}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
+                    {log.executionTxHash && isRealCasperDeployHash(log.executionTxHash) && log.action !== "x402 Payment" ? (
+                      <a
+                        href={casperDeployUrl(log.executionTxHash)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-[#22C55E] hover:text-[#F8FAFC]"
+                      >
+                        <span>{truncate(normalizeCasperDeployHash(log.executionTxHash))}</span>
+                        <ExternalLink size={11} />
+                      </a>
+                    ) : log.action === "x402 Payment" && log.executionTxHash ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[#22C55E]">{executionProofStatus(log.executionStatus || "", log.executionTxHash).label}</span>
+                        <span className="text-[#94A3B8]">{truncate(log.executionTxHash)}</span>
+                      </div>
+                    ) : (
+                      <span className="text-[#94A3B8]/70">{executionProofStatus(log.executionStatus || "", log.executionTxHash || "").label}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setSelected(log)}
+                      className="p-1.5 text-[#94A3B8] hover:text-[#22D3EE] hover:bg-[#22D3EE]/10 rounded transition-colors"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center text-[#94A3B8]">
+                    No audit records match your filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {selected && (() => {
-        const proof = proofMeta(selected);
-        const execution = executionMeta(selected);
-        const realDecisionProof = Boolean(selected.txHash && isRealCasperDeployHash(selected.txHash));
-        const realExecutionProof = Boolean(selected.executionTxHash && isRealCasperDeployHash(selected.executionTxHash));
-        const canAttachExecution = selected.decision === "Allowed" && selected.action !== "x402 Payment";
-        return (
-          <DetailDrawer title="Audit Record" subtitle={selected.id} onClose={() => setSelected(null)} tabs={drawerTabs} activeTab={auditTab} onTabChange={(id) => setAuditTab(id as AuditTab)}>
-            {auditTab === "overview" && (
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={selected.decision} /><RiskBadge risk={selected.risk} /><span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2.5 py-1 text-xs text-[#94A3B8]">Risk score {selected.riskScore}/100</span></div>
-                <div className={`${CARD} p-5`}><div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Primary reason</div><h4 className="mt-2 text-lg font-semibold text-[#F8FAFC]">{selected.primaryReason || selected.reason}</h4><p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{selected.suggestedResolution || (selected.decision === "Allowed" ? "Confirm the exact execution parameters before wallet signing." : "Resolve the triggered rule before retrying the intent.")}</p></div>
-                <div className="grid gap-3 md:grid-cols-2">
+      {/* Detail Drawer */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setSelected(null)}
+          />
+          <div className="relative bg-[#0B1220] border-l border-[#1E293B] w-full max-w-lg overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-[#1E293B] sticky top-0 bg-[#0B1220]">
+              <div>
+                <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
+                  Audit Record
+                </h3>
+                <div className="text-xs text-[#94A3B8] font-mono mt-0.5">
+                  {selected.id}
+                </div>
+              </div>
+              <button
+                onClick={() => setSelected(null)}
+                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-3">
+                <DecisionBadge decision={selected.decision} />
+                <RiskBadge risk={selected.risk} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-3">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Decision Proof Hash</div>
+                  <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">
+                    {selected.txHash ? normalizeCasperDeployHash(selected.txHash) : selected.decisionProofStatus === "failed" ? "Relayer failed" : "Queued for relayer"}
+                  </div>
+                  <div className="mt-2 text-xs text-[#94A3B8]">
+                    Exists for Allowed, Blocked, and Review Required decisions.
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-3">
+                  <div className="text-xs text-[#94A3B8] uppercase tracking-wider">Execution Hash</div>
+                  <div className="mt-1 font-mono text-xs text-[#F8FAFC] break-all">
+                    {selected.executionTxHash ? normalizeCasperDeployHash(selected.executionTxHash) : "None"}
+                  </div>
+                  <div className="mt-2 text-xs text-[#94A3B8]">
+                    Only appears after an approved action is actually signed and submitted.
+                  </div>
+                </div>
+              </div>
+              {[
+                ["Decision ID", selected.id],
+                ["Agent Owner Wallet", selected.agentOwnerWalletAddress || selected.walletAddress],
+                ["Execution Wallet", selected.executionWalletAddress || selected.walletAddress],
+                ["Agent ID", selected.agentId],
+                ["Policy Used", selected.policyUsed],
+                ["Policy ID", selectedPolicy?.id || "Not available on this audit record"],
+                ["Policy Hash", selectedPolicy?.policyHash || "Not available on this audit record"],
+                ["Shield Type", selected.shield],
+                ["Action Type", selected.action],
+                ["Target", selected.target],
+                ["Amount", `${selected.amount} ${auditAsset(selected)}`],
+                ["Risk Score", `${selected.riskScore}/100`],
+                ["Timestamp", fmtTs(selected.timestamp)],
+                [
+                  "Decision Proof Hash",
+                  selected.txHash || "Not yet recorded on-chain",
+                ],
+              ].map(([k, v]) => (
+                <div key={k} className="flex flex-col gap-0.5">
+                  <span className="text-xs text-[#94A3B8] uppercase tracking-wider">
+                    {k}
+                  </span>
+                  <span className="text-sm text-[#F8FAFC] font-mono break-all">
+                    {v}
+                  </span>
+                </div>
+              ))}
+              <div>
+                <span className="text-xs text-[#94A3B8] uppercase tracking-wider">
+                  Reason
+                </span>
+                <p className="text-sm text-[#F8FAFC] mt-1 leading-relaxed">
+                  {selected.reason}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Security Guidance</div>
+                <div className="mt-3 space-y-3 text-sm">
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Why this happened</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.primaryReason || selected.reason || "Magen3 returned this decision from the active deterministic policy."}</p></div>
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Policy rule</span><p className="mt-1 text-[#F8FAFC]">{selected.triggeredRule || "No single blocking rule was recorded."}</p></div>
+                  <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Suggested resolution</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.suggestedResolution || (selected.decision === "Allowed" ? "Proceed to wallet signing only after confirming the displayed execution parameters." : "Review the active policy and change only authorized request parameters before retrying.")}</p></div>
+                </div>
+              </div>
+
+              {(selected.approvalRequestId || selected.approvalStatus) && selected.approvalStatus !== "not_required" && (
+                <div className="rounded-xl border border-[#A78BFA]/25 bg-[#A78BFA]/5 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wider text-[#A78BFA]">Human Approval Workflow</div>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">The approval is bound to this exact intent hash. Parameter changes require a new Magen3 decision and approval.</p>
+                    </div>
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${selected.approvalStatus === "Approved" ? "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]" : selected.approvalStatus === "Rejected" || selected.approvalStatus === "Expired" ? "border-[#EF4444]/30 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"}`}>{selected.approvalStatus || "Pending"}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Approval request</span><div className="mt-1 break-all font-mono text-[#F8FAFC]">{selected.approvalRequestId || "Not configured"}</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Quorum</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalReceivedCount || 0}/{selected.approvalRequiredCount || 0} approvals</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Expires</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalExpiresAt ? new Date(selected.approvalExpiresAt).toLocaleString() : "Not available"}</div></div>
+                    <div><span className="text-[#64748B] uppercase tracking-wider">Resolved</span><div className="mt-1 text-[#F8FAFC]">{selected.approvalResolvedAt ? new Date(selected.approvalResolvedAt).toLocaleString() : "Not yet"}</div></div>
+                  </div>
+                  <div className="mt-3">
+                    <span className="text-xs uppercase tracking-wider text-[#64748B]">Exact-intent binding hash</span>
+                    <div className="mt-1 break-all rounded-lg border border-[#1E293B] bg-[#020617] p-2 font-mono text-xs text-[#A78BFA]">{selected.approvalBindingHash || "Unavailable"}</div>
+                  </div>
+                  <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">Signature-enabled policies require a one-time Casper Wallet message signature from each counted reviewer. The backend verifies exact binding, signer, response, nonce, chain, domain, and expiry, while storing hashes rather than raw signatures.</p>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Execution Capabilities</div>
+                <div className="mt-2"><CapabilityChips capabilities={normalizeCapabilities(selected.capabilityContext)} /></div>
+              </div>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Pipeline</div>
+                <div className="mt-4"><PipelineTimeline stages={selected.pipelineStages} developerMode={developerMode} /></div>
+              </div>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Protection Findings</div>
+                <div className="mt-3"><FindingsPanel findings={selected.moduleFindings} developerMode={developerMode} /></div>
+              </div>
+
+              {selected.originalIntent && (
+                <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4" open={developerMode}>
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Original Intent{developerMode ? " · Developer Mode" : ""}</summary>
+                  <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify(selected.originalIntent, null, 2)}</pre>
+                </details>
+              )}
+              <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4" open={developerMode}>
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Technical audit evidence{developerMode ? " · Expanded" : ""}</summary>
+                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify({
+                  auditId: selected.id,
+                  policyUsed: selected.policyUsed,
+                  triggeredRule: selected.triggeredRule,
+                  capabilityContext: selected.capabilityContext,
+                  pipelineStages: selected.pipelineStages,
+                  moduleFindings: selected.moduleFindings,
+                  approvalBindingHash: selected.approvalBindingHash,
+                  decisionProofStatus: selected.decisionProofStatus,
+                  executionReconciliation: selected.executionReconciliation,
+                }, null, 2)}</pre>
+              </details>
+
+              <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+                <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-3">Proof Timeline</div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
                   {[
-                    ["Agent", `${selected.agentName} · ${selected.agentId}`],
-                    ["Action", `${selected.action} · ${selected.amount} ${auditAsset(selected)}`],
-                    ["Target", selected.target],
-                    ["Policy", selected.policyUsed || "No policy recorded"],
-                    ["Owner wallet", selected.agentOwnerWalletAddress || selected.walletAddress],
-                    ["Execution wallet", selected.executionWalletAddress || selected.walletAddress],
-                    ["Recorded", fmtTs(selected.timestamp)],
-                    ["Triggered rule", selected.triggeredRule || "No single rule recorded"],
-                  ].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-sm text-[#F8FAFC]">{value}</div></div>)}
+                    ["Intent received", "Complete", "text-[#22C55E]"],
+                    ["Magen3 decision", selected.decision, selected.decision === "Blocked" ? "text-[#EF4444]" : selected.decision === "Review Required" ? "text-[#F59E0B]" : "text-[#22C55E]"],
+                    ["Casper decision proof", decisionProofStatus(selected).label, isRealCasperDeployHash(selected.txHash) ? "text-[#22C55E]" : selected.decisionProofStatus === "failed" ? "text-[#EF4444]" : "text-[#F59E0B]"],
+                    [selected.action === "x402 Payment" ? "Payment settlement" : "Execution proof", executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "").label, (isRealCasperDeployHash(selected.executionTxHash || "") || selected.executionStatus === "x402_confirmed") ? "text-[#22C55E]" : selected.executionStatus === "x402_failed" ? "text-[#EF4444]" : "text-[#94A3B8]"],
+                  ].map(([label, value, color]) => (
+                    <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                      <div className="text-[#94A3B8]">{label}</div>
+                      <div className={`mt-1 font-semibold ${color}`}>{value}</div>
+                    </div>
+                  ))}
                 </div>
-                <div className="grid gap-3 md:grid-cols-2"><CompactStatusRow label="Casper decision proof" status={proof.label} tone={proof.tone} detail={realDecisionProof ? "Confirmed on Casper Testnet." : selected.decisionProofError || "Proof state is stored with the audit record."} /><CompactStatusRow label="Execution and settlement" status={execution.label} tone={execution.tone} detail={selected.executionFailureReason || selected.executionNote || "No additional execution note is recorded."} /></div>
               </div>
-            )}
 
-            {auditTab === "security" && (
-              <div className="space-y-5">
-                <div className={`${CARD} p-5`}><h4 className={SECTION_TITLE}>Decision explanation</h4><div className="mt-4 grid gap-4 md:grid-cols-3"><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Why this happened</div><p className="mt-1 text-sm leading-relaxed text-[#F8FAFC]">{selected.primaryReason || selected.reason}</p></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Policy rule</div><p className="mt-1 text-sm leading-relaxed text-[#F8FAFC]">{selected.triggeredRule || "No single rule was recorded."}</p></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Suggested resolution</div><p className="mt-1 text-sm leading-relaxed text-[#F8FAFC]">{selected.suggestedResolution || "Review the policy and protected parameters before retrying."}</p></div></div></div>
-                <div className={`${CARD} p-5`}><h4 className={SECTION_TITLE}>Security Pipeline</h4><div className="mt-4"><PipelineTimeline stages={selected.pipelineStages} developerMode={developerMode} /></div></div>
-                <div className={`${CARD} p-5`}><div className="flex items-center justify-between gap-3"><div><h4 className={SECTION_TITLE}>Structured Findings</h4><p className="mt-1 text-xs text-[#94A3B8]">Control evidence that contributed to this deterministic result.</p></div><span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2.5 py-1 text-xs text-[#94A3B8]">{selected.moduleFindings?.length || 0} findings</span></div><div className="mt-4"><FindingsPanel findings={selected.moduleFindings} developerMode={developerMode} /></div></div>
-              </div>
-            )}
-
-            {auditTab === "approval" && (
-              <div className="space-y-5">
-                {selected.approvalRequestId || selected.approvalStatus || selectedApproval ? (
-                  <>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <CompactStatusRow
-                        label="Approval status"
-                        status={selectedApproval?.reviewStatus || selected.approvalStatus || "Pending"}
-                        tone={(selectedApproval?.reviewStatus || selected.approvalStatus) === "Approved" ? "success" : ["Rejected", "Expired"].includes(selectedApproval?.reviewStatus || selected.approvalStatus || "") ? "danger" : "warning"}
-                        detail="Only exact-bound, authorised reviewer responses count toward quorum."
-                      />
-                      <CompactStatusRow
-                        label="Quorum"
-                        status={`${selectedApproval?.approvalsReceived ?? selected.approvalReceivedCount ?? 0} / ${selectedApproval?.requiredApprovals ?? selected.approvalRequiredCount ?? 0}`}
-                        tone={(selectedApproval?.approvalsReceived ?? selected.approvalReceivedCount ?? 0) >= (selectedApproval?.requiredApprovals ?? selected.approvalRequiredCount ?? 1) ? "success" : "warning"}
-                        detail={selectedApproval?.signatureRequired ? `${selectedApproval.verifiedResponses ?? selectedApproval.verifiedApprovalsReceived ?? 0} cryptographically verified responses` : "Policy-authorised reviewer responses"}
-                      />
+              {(() => {
+                const proof = decisionProofStatus(selected);
+                const realDeploy = isRealCasperDeployHash(selected.txHash);
+                const normalizedTxHash = normalizeCasperDeployHash(selected.txHash);
+                return (
+                  <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
+                          <ShieldCheck size={16} className="text-[#22D3EE]" />
+                          Decision Proof on Casper
+                        </div>
+                        <p className="text-xs text-[#94A3B8] mt-1">
+                          Verifies that Magen3 reviewed this intent and anchored the decision to Casper Testnet.
+                        </p>
+                      </div>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${proof.className}`}>
+                        {proof.label}
+                      </span>
                     </div>
 
-                    <div className={`${CARD} p-5`}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div><h4 className={SECTION_TITLE}>Approval binding</h4><p className="mt-1 text-xs text-[#94A3B8]">Exact intent, reviewer authority, expiry, and execution-window evidence.</p></div>
-                        {selectedApproval && <Btn variant="secondary" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:policies-tab", "approvals"); window.sessionStorage.setItem("magen3:approval-request-id", selectedApproval.id); } catch {} onNavigate("policies"); }}><Clock size={14} /> Open Approval Queue</Btn>}
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Network</span>
+                        <div className="text-[#F8FAFC] mt-1">Casper Testnet</div>
                       </div>
-                      <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        {[
-                          ["Approval request ID", selectedApproval?.id || selected.approvalRequestId || "Not recorded"],
-                          ["Binding hash", selectedApproval?.bindingHash || selected.approvalBindingHash || "Not recorded"],
-                          ["Resolved tier", selectedApproval?.resolvedTier?.name || "No organisational tier recorded"],
-                          ["Signature requirement", selectedApproval?.signatureRequired ? `${selectedApproval.signatureChainName || "Casper"} signature required` : "Policy-authorised response"],
-                          ["Expires", selectedApproval?.expiresAt ? fmtTs(selectedApproval.expiresAt) : selected.approvalExpiresAt ? fmtTs(selected.approvalExpiresAt) : "Not recorded"],
-                          ["Resolved", selectedApproval?.resolvedAt ? fmtTs(selectedApproval.resolvedAt) : selected.approvalResolvedAt ? fmtTs(selected.approvalResolvedAt) : "Not resolved"],
-                          ["Execution window", selectedApproval?.executionWindowStatus ? selectedApproval.executionWindowStatus.replace(/_/g, " ") : "Not configured"],
-                          ["May proceed to signing", selectedApproval?.mayProceedToSigning ? "Yes" : "No"],
-                        ].map(([label, value]) => <div key={label}><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-sm text-[#F8FAFC]">{value}</div></div>)}
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Entrypoint</span>
+                        <div className="text-[#F8FAFC] mt-1">record_decision</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Decision Deploy Hash</span>
+                        <div className={`font-mono mt-1 break-all ${realDeploy ? "text-[#22D3EE]" : "text-[#F8FAFC]"}`}>
+                          {selected.txHash ? normalizedTxHash : "Not confirmed yet"}
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Relayer Status</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.decisionProofStatus || "queued"}</div>
+                      </div>
+                      {selected.decisionProofError && (
+                        <div className="col-span-2 rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/10 p-3">
+                          <span className="text-[#FCA5A5] uppercase tracking-wider">Relayer Note</span>
+                          <div className="text-[#FCA5A5] mt-1">{selected.decisionProofError}</div>
+                        </div>
+                      )}
+                      {casperPrepared?.payloadHash && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">Decision Payload Hash</span>
+                          <div className="text-[#22D3EE] font-mono mt-1 break-all">{casperPrepared.payloadHash}</div>
+                        </div>
+                      )}
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
+                        <div className="text-[#F8FAFC] font-mono mt-1 break-all">
+                          {casperPrepared?.casper.contractHash || DEPLOYED_MAGEN3_CONTRACT_HASH}
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
+                        {realDeploy ? (
+                          <a
+                            href={casperDeployUrl(selected.txHash)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex items-center gap-1.5 text-[#22D3EE] hover:text-[#F8FAFC]"
+                          >
+                            View decision proof on CSPR.live
+                            <ExternalLink size={12} />
+                          </a>
+                        ) : (
+                          <div className="text-[#94A3B8] mt-1">Magen3 automatically queues every recordable decision for the relayer. The link appears after Casper returns a real decision deploy hash.</div>
+                        )}
                       </div>
                     </div>
 
-                    {selectedApproval && (selectedApproval.groupProgress || []).length > 0 && (
-                      <div className={`${CARD} p-5`}>
-                        <h4 className={SECTION_TITLE}>Reviewer groups</h4>
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">{(selectedApproval.groupProgress || []).map((group) => <div key={group.groupId} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">{group.groupName}</div>{group.role && <div className="mt-0.5 text-xs text-[#64748B]">{group.role}</div>}</div><span className={`text-xs font-semibold ${group.satisfied ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{group.received} / {group.required}</span></div><div className="mt-2 text-xs text-[#94A3B8]">{group.satisfied ? "Quorum satisfied" : `${group.remaining} response${group.remaining === 1 ? "" : "s"} remaining`}</div></div>)}</div>
+                    <details className="border-t border-[#1E293B] pt-3">
+                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22D3EE]">
+                        Advanced manual decision proof fallback
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        <InputField
+                          label={realDeploy ? "Replace Decision Deploy Hash" : "Decision Deploy Hash"}
+                          value={deployHash}
+                          onChange={setDeployHash}
+                          placeholder="Paste 64-character record_decision deploy hash from Casper"
+                        />
+                        <Btn
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center"
+                          onClick={confirmDeployHash}
+                          disabled={!deployHash.trim() || casperLoading}
+                        >
+                          <CheckCircle size={14} />
+                          {realDeploy ? "Update Decision Proof" : "Confirm Decision Proof Hash"}
+                        </Btn>
+                      </div>
+                    </details>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const executionStatus = executionProofStatus(selected.executionStatus || "", selected.executionTxHash || "");
+                const isX402Payment = selected.action === "x402 Payment";
+                const settlement = isX402Payment ? auditX402Settlement(selected) : null;
+                const realExecution = isRealCasperDeployHash(selected.executionTxHash || "");
+                const canAttachExecution = selected.decision === "Allowed" && !isX402Payment;
+                const settlementReference = typeof settlement?.facilitatorReference === "string" ? settlement.facilitatorReference : "Not reported";
+                const resourceDelivered = settlement?.resourceDelivered === true;
+                return (
+                  <div className="rounded-xl border border-[#22C55E]/20 bg-[#050B14] p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-[#F8FAFC] font-semibold font-['Space_Grotesk']">
+                          <Send size={16} className="text-[#22C55E]" />
+                          {isX402Payment ? "Payment Settlement" : "Execution Proof"}
+                        </div>
+                        <p className="text-xs text-[#94A3B8] mt-1">
+                          {isX402Payment
+                            ? "Shows the settlement and paid-resource delivery state reported by the authenticated external x402 adapter."
+                            : "Shows whether the execution wallet actually signed and submitted the approved action."}
+                        </p>
+                      </div>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${executionStatus.className}`}>
+                        {executionStatus.label}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Status" : "Execution Status"}</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionStatus || "not_submitted"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Payment Wallet" : "Signed By"}</span>
+                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.executionSignedBy || selected.executionWalletAddress || (isX402Payment ? "Not reported" : "Waiting for wallet signature")}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Transaction Hash" : "Execution Deploy Hash"}</span>
+                        <div className={`font-mono mt-1 break-all ${(realExecution || selected.executionStatus === "x402_confirmed") ? "text-[#22C55E]" : "text-[#F8FAFC]"}`}>
+                          {selected.executionTxHash ? (isX402Payment ? selected.executionTxHash : normalizeCasperDeployHash(selected.executionTxHash)) : "None"}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Submission Attempt</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionAttemptCount || 0}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Confirmations</span>
+                        <div className="text-[#F8FAFC] mt-1">{selected.executionConfirmations || 0} / {selected.executionRequiredConfirmations || 1}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Finality</span>
+                        <div className={`mt-1 font-semibold ${selected.executionFinalizedAt ? "text-[#22C55E]" : selected.executionFinalityDeadline ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>
+                          {selected.executionFinalizedAt ? `Finalized ${fmtTs(selected.executionFinalizedAt)}` : selected.executionFinalityDeadline ? `Due ${fmtTs(selected.executionFinalityDeadline)}` : "Not reported"}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Reconciliation Provider</span>
+                        <div className="text-[#F8FAFC] mt-1 break-all">{selected.reconciliationProvider || "Not reported"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Resource Delivery</span>
+                        <div className={`mt-1 font-semibold ${selected.resourceDeliveryStatus === "delivered" ? "text-[#22C55E]" : selected.resourceDeliveryStatus === "pending" ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>{selected.resourceDeliveryStatus || "not_required"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Refund</span>
+                        <div className={`mt-1 font-semibold ${selected.refundStatus === "refunded" ? "text-[#22C55E]" : selected.refundStatus === "pending" ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>{selected.refundStatus || "not_applicable"}</div>
+                      </div>
+                      {(selected.executionReplacedBy || selected.executionReplacementOf) && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">Replacement Link</span>
+                          <div className="text-[#C4B5FD] font-mono mt-1 break-all">{selected.executionReplacedBy || selected.executionReplacementOf}</div>
+                          {(selected.executionReplacedByAuditId || selected.executionReplacementAuditId) && <div className="mt-1 text-[#94A3B8]">Audit: {selected.executionReplacedByAuditId || selected.executionReplacementAuditId}</div>}
+                        </div>
+                      )}
+                      {selected.executionFailureReason && (
+                        <div className="col-span-2 rounded-lg border border-[#EF4444]/20 bg-[#EF4444]/10 p-3">
+                          <span className="text-[#FCA5A5] uppercase tracking-wider">Failure Reason</span>
+                          <div className="text-[#FCA5A5] mt-1">{selected.executionFailureReason}</div>
+                        </div>
+                      )}
+                      {isX402Payment && (
+                        <>
+                          <div>
+                            <span className="text-[#94A3B8] uppercase tracking-wider">Facilitator Reference</span>
+                            <div className="text-[#F8FAFC] mt-1 break-all">{settlementReference}</div>
+                          </div>
+                          <div>
+                            <span className="text-[#94A3B8] uppercase tracking-wider">Resource Delivered</span>
+                            <div className={`mt-1 font-semibold ${resourceDelivered ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{resourceDelivered ? "Confirmed" : "Not confirmed"}</div>
+                          </div>
+                        </>
+                      )}
+                      <div className="col-span-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Why</span>
+                        <div className="text-[#F8FAFC] mt-1">{executionProofExplanation(selected)}</div>
+                      </div>
+                      {selected.executionNote && (
+                        <div className="col-span-2">
+                          <span className="text-[#94A3B8] uppercase tracking-wider">{isX402Payment ? "Settlement Note" : "Execution Note"}</span>
+                          <div className="text-[#F8FAFC] mt-1">{selected.executionNote}</div>
+                        </div>
+                      )}
+                      {Array.isArray(selected.executionHistory) && selected.executionHistory.length > 0 && (
+                        <details className="col-span-2 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
+                          <summary className="cursor-pointer text-[#94A3B8] uppercase tracking-wider">Reconciliation History · {selected.executionHistory.length} event{selected.executionHistory.length === 1 ? "" : "s"}</summary>
+                          <div className="mt-3 space-y-2">
+                            {[...selected.executionHistory].reverse().map((event, index) => (
+                              <div key={`${String(event.fingerprint || event.observedAt || index)}-${index}`} className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-semibold text-[#F8FAFC]">{String(event.status || "unknown")}</span>
+                                  <span className="text-[#94A3B8]">{event.observedAt ? fmtTs(String(event.observedAt)) : "Timestamp unavailable"}</span>
+                                </div>
+                                <div className="mt-2 grid gap-2 md:grid-cols-3 text-[#94A3B8]">
+                                  <span>Attempt {String(event.attempt ?? 0)}</span>
+                                  <span>{String(event.confirmations ?? 0)} confirmations</span>
+                                  <span>{event.provider ? `Provider ${String(event.provider)}` : "Provider not reported"}</span>
+                                </div>
+                                {event.transactionHash && <div className="mt-2 break-all font-mono text-[#22D3EE]">{String(event.transactionHash)}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Explorer</span>
+                        {realExecution && !isX402Payment ? (
+                          <a
+                            href={casperDeployUrl(selected.executionTxHash || "")}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex items-center gap-1.5 text-[#22C55E] hover:text-[#F8FAFC]"
+                          >
+                            View execution on CSPR.live
+                            <ExternalLink size={12} />
+                          </a>
+                        ) : isX402Payment ? (
+                          <div className="text-[#94A3B8] mt-1">
+                            Magen3 stores the reported settlement transaction hash without guessing a network explorer. Verify it through the explorer or facilitator appropriate to the payment network.
+                          </div>
+                        ) : (
+                          <div className="text-[#94A3B8] mt-1">
+                            {selected.decision === "Allowed"
+                              ? "Available after the execution wallet signs and submits the approved Casper transaction."
+                              : "No execution explorer link is expected because this action was not approved for execution."}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {isX402Payment ? (
+                      <div className="rounded-lg border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
+                        Settlement state must be reported through the authenticated <span className="font-mono text-[#F8FAFC]">/api/agent-gateway/x402/settlements</span> endpoint using the authorized request fingerprint. Magen3 does not accept PAYMENT-SIGNATURE or signed payment payloads.
+                      </div>
+                    ) : canAttachExecution ? (
+                      <details className="border-t border-[#1E293B] pt-3">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#22C55E]">
+                          Advanced manual execution hash fallback
+                        </summary>
+                        <div className="mt-3 space-y-2">
+                          <InputField
+                            label={realExecution ? "Replace Execution Deploy Hash" : "Execution Deploy Hash"}
+                            value={executionHash}
+                            onChange={setExecutionHash}
+                            placeholder="Paste the real transaction/deploy hash after wallet signing"
+                          />
+                          <Btn
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-center"
+                            onClick={confirmExecutionHash}
+                            disabled={!executionHash.trim() || casperLoading}
+                          >
+                            <ShieldCheck size={14} />
+                            {realExecution ? "Update Execution Proof" : "Attach Execution Hash"}
+                          </Btn>
+                        </div>
+                      </details>
+                    ) : (
+                      <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">
+                        Execution is disabled because Magen3 did not approve this action.
                       </div>
                     )}
+                  </div>
+                );
+              })()}
 
-                    {selectedApproval && selectedApproval.responses.length > 0 && (
-                      <div className={`${CARD} p-5`}>
-                        <div className="flex items-center justify-between gap-3"><div><h4 className={SECTION_TITLE}>Reviewer responses</h4><p className="mt-1 text-xs text-[#94A3B8]">Historical reviewer and cryptographic verification evidence.</p></div><span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2.5 py-1 text-xs text-[#94A3B8]">{selectedApproval.responses.length} responses</span></div>
-                        <div className="mt-4 space-y-3">{selectedApproval.responses.map((response, index) => <div key={`${response.walletAddress}-${response.timestamp}-${index}`} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="break-all font-mono text-xs text-[#F8FAFC]">{response.walletAddress}</div><div className="mt-1 text-xs text-[#64748B]">{fmtTs(response.timestamp)}</div></div><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${response.response === "Approved" ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]"}`}>{response.response}</span></div>{response.comment && <div className="mt-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-sm leading-relaxed text-[#94A3B8]">{response.comment}</div>}<div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{[["Signature", response.signatureRequired ? response.signatureVerified ? "Verified" : "Not verified" : "Not required"], ["Algorithm", response.signatureAlgorithm || "Not recorded"], ["Domain", response.signatureDomain || "Not recorded"], ["Chain", response.signatureChainName || "Not recorded"], ["Signature hash", response.signatureHash || "Not stored"], ["Groups", (response.memberGroupIds || response.groupIds || []).join(", ") || "No group recorded"]].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-2.5"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all text-xs text-[#F8FAFC]">{value}</div></div>)}</div></div>)}</div>
-                      </div>
-                    )}
-
-                    {selectedApproval && ((selectedApproval.escalationHistory || []).length > 0 || selectedApproval.nextEscalation || selectedApproval.executionNotBefore || selectedApproval.executionWindowEndsAt) && (
-                      <div className={`${CARD} p-5`}><h4 className={SECTION_TITLE}>Escalation and execution timing</h4><div className="mt-4 grid gap-3 md:grid-cols-2">{[["Execution not before", selectedApproval.executionNotBefore ? fmtTs(selectedApproval.executionNotBefore) : "No delay"], ["Execution window ends", selectedApproval.executionWindowEndsAt ? fmtTs(selectedApproval.executionWindowEndsAt) : "No window end"], ["Next escalation", selectedApproval.nextEscalation?.name || "None scheduled"], ["Escalation history", `${selectedApproval.escalationHistory?.length || 0} events`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-sm text-[#F8FAFC]">{value}</div></div>)}</div>{(selectedApproval.escalationHistory || []).length > 0 && <details className="mt-4 rounded-xl border border-[#1E293B] bg-[#050B14] p-3" open={developerMode}><summary className="cursor-pointer text-xs font-semibold text-[#94A3B8]">Escalation events</summary><pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-[10px] text-[#94A3B8]">{JSON.stringify(selectedApproval.escalationHistory, null, 2)}</pre></details>}</div>
-                    )}
-
-                    {!selectedApproval && <div className="rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-4 text-sm leading-relaxed text-[#FDE68A]">The audit record contains approval binding and final-state fields, but the full Approval Queue record is no longer available in the current response.</div>}
-                  </>
-                ) : <EmptyState title="No Human Approval workflow" description="This decision did not create or bind to a Human Approval request." />}
-              </div>
-            )}
-
-            {auditTab === "proofs" && (
-              <div className="space-y-5">
-                {casperError && <div className="rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{casperError}</div>}
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className={`${CARD} p-5`}><div className="flex items-center justify-between gap-3"><h4 className={SECTION_TITLE}>Casper Decision Proof</h4><span className={`text-xs font-semibold ${proof.tone === "success" ? "text-[#22C55E]" : proof.tone === "danger" ? "text-[#EF4444]" : proof.tone === "warning" ? "text-[#F59E0B]" : "text-[#94A3B8]"}`}>{proof.label}</span></div><div className="mt-4 break-all font-mono text-xs text-[#F8FAFC]">{selected.txHash ? normalizeCasperDeployHash(selected.txHash) : "No confirmed deploy hash"}</div>{realDecisionProof && <a href={casperDeployUrl(selected.txHash)} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]">View on CSPR.live <ExternalLink size={12} /></a>}<div className="mt-4 flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => prepareCasperPayload(selected.id)} disabled={casperLoading}><Code2 size={14} /> {casperLoading ? "Preparing…" : "Prepare payload"}</Btn>{!realDecisionProof && <Btn variant="primary" size="sm" onClick={() => void recordAuditOnChain(selected.id)} disabled={casperLoading}><Database size={14} /> Retry proof</Btn>}</div>{!realDecisionProof && <div className="mt-4 space-y-2"><InputField label="Manual decision deploy hash" value={deployHash} onChange={setDeployHash} placeholder="64-character Casper deploy hash" /><Btn variant="outline" size="sm" className="w-full justify-center" onClick={confirmDeployHash} disabled={!deployHash.trim() || casperLoading}><ShieldCheck size={14} /> Confirm deploy hash</Btn></div>}</div>
-                  <div className={`${CARD} p-5`}><div className="flex items-center justify-between gap-3"><h4 className={SECTION_TITLE}>Execution Proof</h4><span className={`text-xs font-semibold ${execution.tone === "success" ? "text-[#22C55E]" : execution.tone === "danger" ? "text-[#EF4444]" : execution.tone === "warning" ? "text-[#F59E0B]" : execution.tone === "info" ? "text-[#22D3EE]" : "text-[#94A3B8]"}`}>{execution.label}</span></div><div className="mt-4 break-all font-mono text-xs text-[#F8FAFC]">{selected.executionTxHash || "No execution transaction hash"}</div>{realExecutionProof && selected.action !== "x402 Payment" && <a href={casperDeployUrl(selected.executionTxHash || "")} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#22C55E] hover:text-[#F8FAFC]">View execution on CSPR.live <ExternalLink size={12} /></a>}{canAttachExecution && <div className="mt-4 space-y-2"><InputField label={realExecutionProof ? "Replace execution deploy hash" : "Execution deploy hash"} value={executionHash} onChange={setExecutionHash} placeholder="Real transaction hash after wallet signing" /><Btn variant="outline" size="sm" className="w-full justify-center" onClick={confirmExecutionHash} disabled={!executionHash.trim() || casperLoading}><ShieldCheck size={14} /> {realExecutionProof ? "Update execution proof" : "Attach execution hash"}</Btn></div>}{selected.action === "x402 Payment" && <div className="mt-4 text-xs leading-relaxed text-[#94A3B8]">x402 settlement must be reported through the authenticated settlement endpoint. Magen3 never stores the signed payment payload.</div>}</div>
+              <div className="border-t border-[#1E293B] pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-[#94A3B8] uppercase tracking-wider">
+                      Decision Proof Recorder
+                    </div>
+                    <p className="text-xs text-[#94A3B8] mt-1">
+                      Magen3 automatically tries to record every recordable decision. Use this section to inspect the payload, retry the relayer, or manually confirm a deploy hash if needed.
+                    </p>
+                  </div>
+                  {selected.txHash && <StatusBadge status="Active" />}
                 </div>
-                <div className={`${CARD} p-5`}><h4 className={SECTION_TITLE}>Execution & Settlement Reconciliation</h4><div className="mt-4 grid gap-3 md:grid-cols-3">{[["Attempts", String(selected.executionAttemptCount ?? 0)], ["Confirmations", `${selected.executionConfirmations ?? 0} / ${selected.executionRequiredConfirmations ?? 0}`], ["Provider", selected.reconciliationProvider || "Not reported"], ["Settlement", selected.settlementStatus || "Not reported"], ["Delivery", selected.resourceDeliveryStatus || "Not reported"], ["Refund", selected.refundStatus || "Not reported"]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-sm text-[#F8FAFC]">{value}</div></div>)}</div>{selected.executionFailureReason && <div className="mt-4 rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-3 text-sm text-[#FCA5A5]">{selected.executionFailureReason}</div>}{selected.executionHistory && selected.executionHistory.length > 0 && <details className="mt-4 rounded-xl border border-[#1E293B] bg-[#050B14] p-3" open={developerMode}><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Execution history · {selected.executionHistory.length} events</summary><div className="mt-3 space-y-2">{selected.executionHistory.map((event, index) => <pre key={index} className="overflow-auto rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-[10px] text-[#94A3B8]">{JSON.stringify(event, null, 2)}</pre>)}</div></details>}</div>
-                {casperPrepared && <div className={`${CARD} p-5`}><div className="flex items-center justify-between gap-3"><h4 className={SECTION_TITLE}>Prepared Casper Payload</h4><button type="button" onClick={copyCasperPayload} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]"><Copy size={12} /> {copiedPayload ? "Copied" : "Copy JSON"}</button></div><div className="mt-3 grid gap-3 md:grid-cols-2"><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Network</div><div className="mt-1 text-sm text-[#F8FAFC]">{casperPrepared.casper.network || "casper-testnet"}</div></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Entrypoint</div><div className="mt-1 text-sm text-[#F8FAFC]">{casperPrepared.contractEntrypoint}</div></div><div className="md:col-span-2"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Payload hash</div><div className="mt-1 break-all font-mono text-xs text-[#22D3EE]">{casperPrepared.payloadHash}</div></div></div><pre className="mt-4 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(casperPrepared.runtimeArgs, null, 2)}</pre></div>}
-              </div>
-            )}
 
-            {auditTab === "technical" && (
-              <div className="space-y-5">
-                <div className={`${CARD} p-5`}><h4 className={SECTION_TITLE}>Record identifiers</h4><div className="mt-4 grid gap-4 md:grid-cols-2">{[["Shield", selected.shield], ["Agent ID", selected.agentId], ["Policy ID", selectedPolicy?.id || "Not available"], ["Policy hash", selectedPolicy?.policyHash || "Not available"], ["Decision payload hash", selected.decisionProofPayloadHash || "Not recorded"], ["Proof mode", selected.decisionProofMode || "Not recorded"]].map(([label, value]) => <div key={label}><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div></div>)}</div></div>
-                <details className={`${CARD} p-5`} open={developerMode}><summary className="cursor-pointer text-sm font-semibold text-[#F8FAFC]">Original intent{developerMode ? " · Developer Mode" : ""}</summary><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(selected.originalIntent || {}, null, 2)}</pre></details>
-                <details className={`${CARD} p-5`} open={developerMode}><summary className="cursor-pointer text-sm font-semibold text-[#F8FAFC]">Complete audit record{developerMode ? " · Developer Mode" : ""}</summary><pre className="mt-4 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(selected, null, 2)}</pre></details>
+                {casperError && (
+                  <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-xs text-[#EF4444]">
+                    {casperError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Btn
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => prepareCasperPayload(selected.id)}
+                    disabled={casperLoading}
+                  >
+                    <Code2 size={14} />
+                    {casperLoading ? "Preparing..." : "Prepare Decision Payload"}
+                  </Btn>
+                  {!selected.txHash && (
+                    <Btn
+                      variant="primary"
+                      size="sm"
+                      onClick={() => recordAuditOnChain(selected.id)}
+                      disabled={casperLoading}
+                    >
+                      <Database size={14} />
+                      Retry Decision Proof
+                    </Btn>
+                  )}
+                </div>
+
+                {casperPrepared && (
+                  <div className="space-y-3 rounded-lg bg-[#050B14] border border-[#1E293B] p-3">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Network</span>
+                        <div className="text-[#F8FAFC] mt-1">{casperPrepared.casper.network || "casper-testnet"}</div>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Entrypoint</span>
+                        <div className="text-[#F8FAFC] mt-1">{casperPrepared.contractEntrypoint}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Decision Payload Hash</span>
+                        <div className="text-[#22D3EE] font-mono mt-1 break-all">{casperPrepared.payloadHash}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8] uppercase tracking-wider">Contract Hash</span>
+                        <div className="text-[#F8FAFC] font-mono mt-1 break-all">
+                          {casperPrepared.casper.contractHash || "Not configured yet"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-[#94A3B8] uppercase tracking-wider">Runtime Args</span>
+                        <button
+                          onClick={copyCasperPayload}
+                          className="inline-flex items-center gap-1 text-xs text-[#22D3EE] hover:text-[#F8FAFC]"
+                        >
+                          <Copy size={12} />
+                          {copiedPayload ? "Copied" : "Copy JSON"}
+                        </button>
+                      </div>
+                      <pre className="max-h-44 overflow-auto rounded-lg bg-[#0B1220] border border-[#1E293B] p-3 text-xs text-[#94A3B8]">
+                        {JSON.stringify(casperPrepared.runtimeArgs, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </DetailDrawer>
-        );
-      })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 // ──────────────────────────────────────────────────────────
 // Docs Page
@@ -8055,16 +8558,18 @@ const docsSidebar = [
     items: [
       { id: "agent-shield-doc", label: "Agent Shield Overview" },
       { id: "shield-modules-doc", label: "Protection Modules" },
-      { id: "agent-flow-doc", label: "Agent Shield & Gateway Flow" },
       { id: "emergency-controls-doc", label: "Emergency Circuit Breaker" },
       { id: "threat-intelligence-doc", label: "Threat Intelligence" },
+      { id: "agent-flow-doc", label: "Security Pipeline" },
+      { id: "connected-agents-doc", label: "Execution Capabilities" },
     ],
   },
   {
     group: "Agent Management",
     items: [
-      { id: "connected-agents-doc", label: "Connected Agents & Capabilities" },
+      { id: "connected-agents-doc", label: "Connected Agents" },
       { id: "api-keys-doc", label: "Agent API Keys" },
+      { id: "agent-flow-doc", label: "Agent Gateway Flow" },
       { id: "api-request-doc", label: "Integration Examples" },
       { id: "case-study-doc", label: "Case Study: Lobstar Wilde" },
     ],
@@ -8083,7 +8588,9 @@ const docsSidebar = [
   {
     group: "Audit & Proofs",
     items: [
-      { id: "proofs-doc", label: "Decision and Execution Proofs" },
+      { id: "proofs-doc", label: "Casper Decision Proof" },
+      { id: "proofs-doc", label: "Execution Proof" },
+      { id: "proofs-doc", label: "Decision vs Execution Hash" },
     ],
   },
   {
@@ -8103,8 +8610,8 @@ const docsOnThisPage = [
   { id: "shield-modules-doc", label: "Protection Modules" },
   { id: "emergency-controls-doc", label: "Emergency Circuit Breaker" },
   { id: "threat-intelligence-doc", label: "Threat Intelligence" },
-  { id: "agent-flow-doc", label: "Agent Shield & Gateway Flow" },
-  { id: "connected-agents-doc", label: "Connected Agents & Capabilities" },
+  { id: "agent-flow-doc", label: "Agent Shield Flow" },
+  { id: "connected-agents-doc", label: "Connected Agents" },
   { id: "api-keys-doc", label: "Agent API Keys" },
   { id: "api-request-doc", label: "Gateway API" },
   { id: "developer-portal-doc", label: "Developer Portal" },
@@ -8115,7 +8622,7 @@ const docsOnThisPage = [
   { id: "integration-test-doc", label: "Real Agent Test" },
   { id: "security-doc", label: "Security Model" },
   { id: "case-study-doc", label: "Case Study" },
-  { id: "proofs-doc", label: "Decision and Execution Proofs" },
+  { id: "proofs-doc", label: "Casper Proofs" },
   { id: "troubleshooting-doc", label: "Troubleshooting" },
   { id: "faq-doc", label: "FAQ" },
 ];
@@ -11060,8 +11567,6 @@ export default function App() {
       <AuditLogPage
         auditLogs={auditLogs}
         policies={policies}
-        approvals={approvals}
-        onNavigate={navigate}
         onRecordAuditLog={onRecordAuditLog}
         onPrepareCasperPayload={onPrepareCasperPayload}
         onConfirmCasperDeploy={onConfirmCasperDeploy}
