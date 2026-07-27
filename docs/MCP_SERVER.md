@@ -47,7 +47,7 @@ When `magen3_check_intent` returns `Review Required`, the agent must stop. If th
 ```text
 Review Required
 → Do not sign or broadcast
-→ Human resolves the exact-bound request in Policies → Human Approval Queue
+→ Human resolves the exact-bound request in Policies → Approval Queue
 → Call magen3_get_approval
 → Continue only when mayProceedToSigning is true
 ```
@@ -127,7 +127,7 @@ Test with `Approved privileged mint`, `Ownership transfer requiring review`, `Un
 
 Every MCP intent is evaluated against active scoped pause state. `magen3_require_allowed` remains fail-closed: an Emergency Circuit Breaker `Blocked` or `Review Required` result stops execution. Surface the matching scope, trigger, reason, expiry, and remediation; do not retry through a different tool, action label, route, provider, or idempotency key to bypass the pause.
 
-Pause activation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP tool. Approval-gated resume is resolved in the existing Human Approval Queue.
+Pause activation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP tool. Approval-gated resume is resolved in the existing Approval Queue.
 
 ## Organizational approval boundary
 

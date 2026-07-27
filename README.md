@@ -240,7 +240,7 @@ Policies can configure:
 
 The workflow states are `Pending`, `Approved`, `Rejected`, `Expired`, and `Configuration Required`. One authorized rejection ends the request. Duplicate responses, unauthorized approvers, execution-wallet self-approval under separation of duties, and execution after expiry are rejected. Changing a protected intent parameter changes the binding hash and requires a new decision.
 
-Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Human Approval Queue**. Signature-enabled policies issue a one-time domain-separated and chain-bound challenge that the authorized Casper Wallet account signs before its response counts toward quorum. Magen3 verifies Ed25519 and Secp256k1 signatures, prevents challenge replay, and stores signature hashes plus verification evidence rather than raw signatures. An approved request still permits progression only to the separate human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The control remains Foundation Available until the deployed browser flow is verified end to end. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md) and [`docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`](docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md).
+Agents can poll the request with their existing agent credential, while reviewers resolve it from **Policies → Approval Queue**. Signature-enabled policies issue a one-time domain-separated and chain-bound challenge that the authorized Casper Wallet account signs before its response counts toward quorum. Magen3 verifies Ed25519 and Secp256k1 signatures, prevents challenge replay, and stores signature hashes plus verification evidence rather than raw signatures. An approved request still permits progression only to the separate human-controlled wallet-signing boundary; it does not sign or broadcast a transaction. The control remains Foundation Available until the deployed browser flow is verified end to end. See [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md) and [`docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md`](docs/CRYPTOGRAPHIC_REVIEWER_SIGNATURES.md).
 
 ### Approval Escalation & Organizational Quorum
 
@@ -913,7 +913,7 @@ The existing `vercel.json` remains valid.
 5. Copy one-time credentials.
 6. Submit the bounded token-approval example and inspect the Token Permission Controls finding and fingerprint.
 7. Submit the unknown-spender or unlimited-approval example and inspect Review Required or Blocked according to policy.
-8. Submit a Review Required intent, open Policies → Human Approval Queue, and resolve the exact-bound request.
+8. Submit a Review Required intent, open Policies → Approval Queue, and resolve the exact-bound request.
 9. Poll the approval as the external agent, then show that execution confirmation remains blocked until quorum is complete and unexpired.
 10. Submit the permit-replay example twice and show the second request being blocked.
 11. When a fresh demonstration feed is configured, submit the synthetic Threat Intelligence match and inspect the exact indicator evidence.

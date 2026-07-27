@@ -13,7 +13,7 @@ The backend, PostgreSQL and memory stores, Casper Wallet UI flow, audit evidence
 For a signature-enabled policy, the reviewer flow is:
 
 ```text
-Open Human Approval Queue
+Open the Approval Queue
 → Choose Approve or Reject
 → Magen3 issues a one-time challenge
 → Casper Wallet signs the exact UTF-8 message

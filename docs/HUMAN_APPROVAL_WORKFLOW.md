@@ -184,7 +184,7 @@ Authorized reviewers use:
 
 ```text
 Policies
-→ Human Approval Queue
+→ Approval Queue
 ```
 
 The queue shows:

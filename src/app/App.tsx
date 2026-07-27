@@ -5893,7 +5893,7 @@ function PoliciesPage({
   });
 
   const createPolicy = useCallback(async () => {
-    if (!form.name.trim() || !form.agentId) return;
+    if (!form.name.trim() || !form.agentId) return false;
     setPolicyFormError("");
     let organizationalFields: ReturnType<typeof parseOrganizationalApprovalFields>;
     let contractArgumentRules: unknown[];
@@ -5902,9 +5902,9 @@ function PoliciesPage({
       contractArgumentRules = parseContractArgumentRules(form.contractArgumentRules);
     } catch (error) {
       setPolicyFormError(error instanceof Error ? error.message : "The organizational approval configuration is invalid.");
-      return;
+      return false;
     }
-    await onCreatePolicy({
+    const createdPolicy = await onCreatePolicy({
       name: form.name,
       agentId: form.agentId,
       maxTransaction: Number(form.maxTransaction) || 50,
@@ -6387,6 +6387,7 @@ function PoliciesPage({
       blockedActions: [],
       riskMode: "Balanced",
     });
+    return Boolean(createdPolicy);
   }, [agents, form, onCreatePolicy, walletAddress]);
 
   const openPolicyEditor = useCallback((policy: Policy) => {
@@ -6910,588 +6911,573 @@ function PoliciesPage({
   }, [approvalComments, onRespondApproval]);
 
   const pendingApprovals = approvals.filter((approval) => ["Pending", "Configuration Required"].includes(approval.reviewStatus));
+  const resolvedApprovals = approvals.filter((approval) => !["Pending", "Configuration Required"].includes(approval.reviewStatus));
+  const [policiesTab, setPoliciesTab] = useState<"policies" | "approvals">("policies");
+  const [selectedPolicyId, setSelectedPolicyId] = useState(policies[0]?.id || "");
+  const [policyDetailTab, setPolicyDetailTab] = useState<"overview" | "controls" | "approval">("overview");
+  const [createPolicyOpen, setCreatePolicyOpen] = useState(false);
+  const [createPolicyStep, setCreatePolicyStep] = useState(1);
+  const [createTemplate, setCreateTemplate] = useState("Custom");
+  const [createAdvancedArea, setCreateAdvancedArea] = useState("agent-trust-access");
+  const [editSection, setEditSection] = useState("basics");
+  const [selectedApprovalId, setSelectedApprovalId] = useState("");
+  const [showApprovalHistory, setShowApprovalHistory] = useState(false);
+  const [policySearch, setPolicySearch] = useState("");
+  const [mobilePolicyDirectoryOpen, setMobilePolicyDirectoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!policies.length) {
+      setSelectedPolicyId("");
+      return;
+    }
+    if (!policies.some((policy) => policy.id === selectedPolicyId)) {
+      setSelectedPolicyId(policies[0].id);
+    }
+  }, [policies, selectedPolicyId]);
+
+  useEffect(() => {
+    if (!form.agentId && agents[0]?.id) {
+      setForm((current) => ({ ...current, agentId: agents[0].id }));
+    }
+  }, [agents, form.agentId]);
+
+  const selectedPolicy = policies.find((policy) => policy.id === selectedPolicyId) || policies[0] || null;
+  const selectedApproval = approvals.find((approval) => approval.id === selectedApprovalId) || null;
+  const activePolicies = policies.filter((policy) => policy.status === "Active");
+  const protectedAgentIds = new Set(activePolicies.map((policy) => policy.agentId));
+  const agentsWithoutPolicy = agents.filter((agent) => agent.status === "Active" && !protectedAgentIds.has(agent.id));
+  const orphanPolicies = policies.filter((policy) => !agents.some((agent) => agent.id === policy.agentId));
+  const policiesNeedingAttention = policies.filter((policy) => policy.status !== "Active" || !agents.some((agent) => agent.id === policy.agentId));
+  const attentionCount = policiesNeedingAttention.length + agentsWithoutPolicy.length;
+
+  const filteredPolicies = policies.filter((policy) => {
+    const agent = agents.find((item) => item.id === policy.agentId);
+    const haystack = `${policy.name} ${policy.id} ${agent?.name || policy.agentId}`.toLowerCase();
+    return haystack.includes(policySearch.trim().toLowerCase());
+  });
+
+  const applyPolicyTemplate = useCallback((templateName: string) => {
+    const template = POLICY_TEMPLATES[templateName] || POLICY_TEMPLATES.Custom;
+    setCreateTemplate(templateName);
+    setForm((current) => ({
+      ...current,
+      maxTransaction: String(template.maxTransaction),
+      dailyLimit: String(template.dailyLimit),
+      approvalThreshold: String(template.approvalThreshold),
+      trustedContracts: template.trustedContracts.join("\n"),
+      blockedActions: template.blockedActions,
+      riskMode: template.riskMode,
+    }));
+  }, []);
+
+  const beginCreatePolicy = useCallback(() => {
+    const selectedAgent = agents.find((agent) => agent.id === form.agentId) || agents[0];
+    const recommendation = selectedAgent
+      ? recommendedPolicyTemplate(normalizeCapabilities(selectedAgent.executionCapabilities, selectedAgent.type))
+      : "Custom";
+    applyPolicyTemplate(recommendation);
+    setCreatePolicyStep(1);
+    setCreateAdvancedArea("agent-trust-access");
+    setPolicyFormError("");
+    setCreatePolicyOpen(true);
+  }, [agents, applyPolicyTemplate, form.agentId]);
+
+  const activatePolicyFromDrawer = useCallback(async () => {
+    if (!form.name.trim() || !form.agentId) {
+      setPolicyFormError("Policy name and agent are required before activation.");
+      setCreatePolicyStep(1);
+      return;
+    }
+    const created = await createPolicy();
+    if (created) {
+      setCreatePolicyOpen(false);
+      setCreatePolicyStep(1);
+    }
+  }, [createPolicy, form.agentId, form.name]);
+
+  const policyRuleEnabled = useCallback((policy: Policy, key: string, fallback = false) => {
+    const value = policy.structuredRules?.[key];
+    return typeof value === "boolean" ? value : fallback;
+  }, []);
+
+  const getPolicyAreaSummaries = useCallback((policy: Policy) => {
+    const rules = policy.structuredRules || {};
+    const modeEnabled = (key: string, fallback = "Disabled") => {
+      const value = rules[key];
+      return typeof value === "string" && value !== "Disabled" ? true : fallback !== "Disabled";
+    };
+    return [
+      {
+        id: "agent-trust-access",
+        name: "Agent Trust & Access",
+        icon: ShieldCheck,
+        enabled: [
+          policyRuleEnabled(policy, "instructionIntegrityEnabled", true),
+          policyRuleEnabled(policy, "toolIntegrityEnabled", true),
+          policyRuleEnabled(policy, "delegationControlsEnabled", true),
+        ].filter(Boolean).length,
+        total: 3,
+        detail: "Instruction provenance, approved tooling, credentials and delegated authority.",
+      },
+      {
+        id: "policy-approval-controls",
+        name: "Policy & Approval Controls",
+        icon: Lock,
+        enabled: [true, policyRuleEnabled(policy, "approvalWorkflowEnabled", true), policyRuleEnabled(policy, "emergencyControlsEnabled", true)].filter(Boolean).length,
+        total: 3,
+        detail: "Deterministic limits, Human Approval, quorum and emergency controls.",
+      },
+      {
+        id: "wallet-asset-safety",
+        name: "Wallet & Asset Safety",
+        icon: Wallet,
+        enabled: [policy.maxTransaction > 0, policy.dailyLimit > 0, policy.trustedContracts.length > 0].filter(Boolean).length,
+        total: 3,
+        detail: "Transaction limits, daily spend and approved destinations or assets.",
+      },
+      {
+        id: "contract-permission-safety",
+        name: "Contract & Permission Safety",
+        icon: Code2,
+        enabled: [
+          policyRuleEnabled(policy, "tokenPermissionControlsEnabled", true),
+          policyRuleEnabled(policy, "privilegedActionControlsEnabled", true),
+          policyRuleEnabled(policy, "contractUpgradeControlsEnabled", true),
+          policyRuleEnabled(policy, "contractArgumentControlsEnabled", false),
+        ].filter(Boolean).length,
+        total: 4,
+        detail: "Contract allowlists, token permissions, privileged calls, upgrades and arguments.",
+      },
+      {
+        id: "execution-integrity",
+        name: "Execution Integrity",
+        icon: Activity,
+        enabled: [
+          policyRuleEnabled(policy, "lifecycleControlsEnabled", true),
+          policyRuleEnabled(policy, "reconciliationEnabled", true),
+          policyRuleEnabled(policy, "rpcIntegrityEnabled", false),
+          policyRuleEnabled(policy, "feeSafetyEnabled", false),
+        ].filter(Boolean).length,
+        total: 4,
+        detail: "Lifecycle, replay, chain integrity, fee safety and reconciliation.",
+      },
+      {
+        id: "market-oracle-integrity",
+        name: "Market & Oracle Integrity",
+        icon: TrendingUp,
+        enabled: [modeEnabled("oracleValidationMode", "Review")].filter(Boolean).length,
+        total: 1,
+        detail: "Oracle freshness, source agreement and execution-price validation.",
+      },
+      {
+        id: "cross-chain-payment-controls",
+        name: "Cross-chain & Payment Controls",
+        icon: Globe,
+        enabled: [policyRuleEnabled(policy, "x402ControlsEnabled", true), modeEnabled("bridgeControlMode", "Review")].filter(Boolean).length,
+        total: 2,
+        detail: "Bridge routes, machine payments and settlement boundaries.",
+      },
+      {
+        id: "threat-compliance",
+        name: "Threat & Compliance",
+        icon: ShieldAlert,
+        enabled: [modeEnabled("threatIntelligenceMode", "Review"), policyRuleEnabled(policy, "complianceControlsEnabled", true)].filter(Boolean).length,
+        total: 2,
+        detail: "Threat feeds, screening, attestations and jurisdiction controls.",
+      },
+    ];
+  }, [policyRuleEnabled]);
+
+  const selectedPolicyAreas = selectedPolicy ? getPolicyAreaSummaries(selectedPolicy) : [];
+  const selectedPolicyEnabledControls = selectedPolicyAreas.reduce((total, area) => total + area.enabled, 0);
+  const selectedPolicyControlTotal = selectedPolicyAreas.reduce((total, area) => total + area.total, 0);
+  const selectedPolicyAgent = selectedPolicy ? agents.find((agent) => agent.id === selectedPolicy.agentId) : undefined;
+  const selectedPolicyCapabilities = selectedPolicyAgent
+    ? normalizeCapabilities(selectedPolicyAgent.executionCapabilities, selectedPolicyAgent.type)
+    : selectedPolicy?.capabilityScope || [];
+
+  const renderThreatFields = (values: typeof form | typeof editForm, onChange: (patch: Record<string, string>) => void) => (
+    <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Choose how exact provider indicators affect authorization when threat data is present or unavailable.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Match Handling" value={values.threatIntelligenceMode} onChange={(value) => onChange({ threatIntelligenceMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <InputField label="Minimum Confidence (%)" value={values.threatIntelligenceMinConfidence} onChange={(value) => onChange({ threatIntelligenceMinConfidence: value })} type="number" />
+        <SelectField label="Feed Unavailable" value={values.threatIntelligenceUnavailableAction} onChange={(value) => onChange({ threatIntelligenceUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+      </div>
+    </div>
+  );
+
+  const renderOracleFields = (values: typeof form | typeof editForm, onChange: (patch: Record<string, string>) => void) => (
+    <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Oracle Validation</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Set feed freshness, confidence, source quorum and allowed execution deviation.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Validation Mode" value={values.oracleValidationMode} onChange={(value) => onChange({ oracleValidationMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <InputField label="Max Quote Age (sec)" value={values.oracleValidationMaxAgeSeconds} onChange={(value) => onChange({ oracleValidationMaxAgeSeconds: value })} type="number" />
+        <InputField label="Max Deviation (bps)" value={values.oracleValidationMaxDeviationBps} onChange={(value) => onChange({ oracleValidationMaxDeviationBps: value })} type="number" />
+        <InputField label="Max Source Spread (bps)" value={values.oracleValidationMaxSourceSpreadBps} onChange={(value) => onChange({ oracleValidationMaxSourceSpreadBps: value })} type="number" />
+        <InputField label="Minimum Confidence (%)" value={values.oracleValidationMinConfidence} onChange={(value) => onChange({ oracleValidationMinConfidence: value })} type="number" />
+        <InputField label="Minimum Sources" value={values.oracleValidationMinSources} onChange={(value) => onChange({ oracleValidationMinSources: value })} type="number" />
+        <SelectField label="Feed Unavailable" value={values.oracleValidationUnavailableAction} onChange={(value) => onChange({ oracleValidationUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+      </div>
+    </div>
+  );
+
+  const renderBridgeFields = (values: typeof form | typeof editForm, onChange: (patch: Record<string, string>) => void) => (
+    <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Bridge Controls</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Validate approved providers, chain boundaries, route fees, quote age and confirmation requirements.</p>
+        </div>
+        <StatusBadge status="Foundation Available" />
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Control Mode" value={values.bridgeControlMode} onChange={(value) => onChange({ bridgeControlMode: value })} options={["Observe", "Review", "Enforce"]} />
+        <SelectField label="Route Metadata Unavailable" value={values.bridgeControlUnavailableAction} onChange={(value) => onChange({ bridgeControlUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Require Quote Expiry" value={values.bridgeRequireQuoteExpiry} onChange={(value) => onChange({ bridgeRequireQuoteExpiry: value })} options={["Yes", "No"]} />
+        <TextareaField label="Allowed Providers" value={values.bridgeAllowedProviders} onChange={(value) => onChange({ bridgeAllowedProviders: value })} />
+        <TextareaField label="Allowed Source Chains" value={values.bridgeAllowedSourceChains} onChange={(value) => onChange({ bridgeAllowedSourceChains: value })} />
+        <TextareaField label="Allowed Destination Chains" value={values.bridgeAllowedDestinationChains} onChange={(value) => onChange({ bridgeAllowedDestinationChains: value })} />
+        <TextareaField label="Blocked Destination Chains" value={values.bridgeBlockedDestinationChains} onChange={(value) => onChange({ bridgeBlockedDestinationChains: value })} />
+        <TextareaField label="Allowed Assets" value={values.bridgeAllowedAssets} onChange={(value) => onChange({ bridgeAllowedAssets: value })} />
+        <InputField label="Maximum Bridge Amount" value={values.bridgeMaxAmount} onChange={(value) => onChange({ bridgeMaxAmount: value })} type="number" />
+        <InputField label="Maximum Fee (bps)" value={values.bridgeMaxFeeBps} onChange={(value) => onChange({ bridgeMaxFeeBps: value })} type="number" />
+        <InputField label="Maximum Quote Age (sec)" value={values.bridgeMaxQuoteAgeSeconds} onChange={(value) => onChange({ bridgeMaxQuoteAgeSeconds: value })} type="number" />
+        <InputField label="Source Confirmations" value={values.bridgeMinSourceConfirmations} onChange={(value) => onChange({ bridgeMinSourceConfirmations: value })} type="number" />
+        <InputField label="Destination Confirmations" value={values.bridgeMinDestinationConfirmations} onChange={(value) => onChange({ bridgeMinDestinationConfirmations: value })} type="number" />
+      </div>
+    </div>
+  );
+
+  const renderCreateAdvancedArea = () => {
+    const patch = (values: Record<string, string>) => setForm((current) => ({ ...current, ...values }));
+    switch (createAdvancedArea) {
+      case "agent-trust-access":
+        return <div className="space-y-4"><InstructionIntegrityPolicyFields values={form} onChange={patch} /><ToolMcpIntegrityPolicyFields values={form} onChange={patch} /><DelegationSafetyPolicyFields values={form} onChange={patch} /></div>;
+      case "policy-approval-controls":
+        return <div className="space-y-4"><ApprovalPolicyFields values={form} onChange={patch} /><EmergencyControlsPolicyFields values={form} onChange={patch} /></div>;
+      case "wallet-asset-safety":
+        return <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><p className="text-xs leading-relaxed text-[#94A3B8]">Wallet and asset safety uses the essential transaction, daily-spend and destination controls configured in Step 2. Asset identity and contract-risk providers remain governed by their existing backend availability.</p></div>;
+      case "contract-permission-safety":
+        return <div className="space-y-4"><TokenPermissionPolicyFields values={form} onChange={patch} /><PrivilegedActionPolicyFields values={form} onChange={patch} /><ContractUpgradePolicyFields values={form} onChange={patch} /><ContractArgumentPolicyFields values={form} onChange={patch} /></div>;
+      case "execution-integrity":
+        return <div className="space-y-4"><ExecutionIntegrityPolicyFields values={form} onChange={patch} /><RpcChainIntegrityPolicyFields values={form} onChange={patch} /><GasSponsorshipFeeSafetyPolicyFields values={form} onChange={patch} /></div>;
+      case "market-oracle-integrity":
+        return renderOracleFields(form, (values) => patch(values));
+      case "cross-chain-payment-controls":
+        return <div className="space-y-4"><X402PolicyFields values={form} onChange={patch} />{renderBridgeFields(form, (values) => patch(values))}</div>;
+      case "threat-compliance":
+        return <div className="space-y-4">{renderThreatFields(form, (values) => patch(values))}<CompliancePolicyFields values={form} onChange={patch} /></div>;
+      default:
+        return null;
+    }
+  };
+
+  const editSections = [
+    { id: "basics", label: "Policy Basics" },
+    { id: "limits", label: "Limits & Destinations" },
+    { id: "agent-trust", label: "Agent Trust & Access" },
+    { id: "approval", label: "Policy & Approval" },
+    { id: "contract", label: "Contract & Permission" },
+    { id: "execution", label: "Execution Integrity" },
+    { id: "market", label: "Market & Oracle" },
+    { id: "cross-chain", label: "Cross-chain & Payments" },
+    { id: "threat", label: "Threat & Compliance" },
+  ];
+
+  const renderEditSection = () => {
+    const patch = (values: Record<string, string>) => setEditForm((current) => ({ ...current, ...values }));
+    switch (editSection) {
+      case "basics":
+        return (
+          <div className="space-y-4">
+            <InputField label="Policy Name" value={editForm.name} onChange={(value) => setEditForm((current) => ({ ...current, name: value }))} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <SelectField label="Risk Mode" value={editForm.riskMode} onChange={(value) => setEditForm((current) => ({ ...current, riskMode: value as RiskMode }))} options={["Conservative", "Balanced", "Aggressive"]} />
+              <SelectField label="Status" value={editForm.status} onChange={(value) => setEditForm((current) => ({ ...current, status: value as "Active" | "Inactive" }))} options={["Active", "Inactive"]} />
+            </div>
+          </div>
+        );
+      case "limits":
+        return (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <InputField label="Max Tx (CSPR)" value={editForm.maxTransaction} onChange={(value) => setEditForm((current) => ({ ...current, maxTransaction: value }))} type="number" />
+              <InputField label="Daily Limit (CSPR)" value={editForm.dailyLimit} onChange={(value) => setEditForm((current) => ({ ...current, dailyLimit: value }))} type="number" />
+              <InputField label="Approval Above" value={editForm.approvalThreshold} onChange={(value) => setEditForm((current) => ({ ...current, approvalThreshold: value }))} type="number" />
+            </div>
+            <TextareaField label="Trusted Targets" value={editForm.trustedContracts} onChange={(value) => setEditForm((current) => ({ ...current, trustedContracts: value }))} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <TextareaField label="Blocked Contracts" value={editForm.blockedContracts} onChange={(value) => setEditForm((current) => ({ ...current, blockedContracts: value }))} />
+              <TextareaField label="Allowed Entry Points" value={editForm.allowedEntryPoints} onChange={(value) => setEditForm((current) => ({ ...current, allowedEntryPoints: value }))} />
+            </div>
+          </div>
+        );
+      case "agent-trust":
+        return <div className="space-y-4"><InstructionIntegrityPolicyFields values={editForm} onChange={patch} /><ToolMcpIntegrityPolicyFields values={editForm} onChange={patch} /><DelegationSafetyPolicyFields values={editForm} onChange={patch} /></div>;
+      case "approval":
+        return <div className="space-y-4"><ApprovalPolicyFields values={editForm} onChange={patch} /><EmergencyControlsPolicyFields values={editForm} onChange={patch} /></div>;
+      case "contract":
+        return <div className="space-y-4"><TokenPermissionPolicyFields values={editForm} onChange={patch} /><PrivilegedActionPolicyFields values={editForm} onChange={patch} /><ContractUpgradePolicyFields values={editForm} onChange={patch} /><ContractArgumentPolicyFields values={editForm} onChange={patch} /></div>;
+      case "execution":
+        return <div className="space-y-4"><ExecutionIntegrityPolicyFields values={editForm} onChange={patch} /><RpcChainIntegrityPolicyFields values={editForm} onChange={patch} /><GasSponsorshipFeeSafetyPolicyFields values={editForm} onChange={patch} /></div>;
+      case "market":
+        return renderOracleFields(editForm, (values) => patch(values));
+      case "cross-chain":
+        return <div className="space-y-4"><X402PolicyFields values={editForm} onChange={patch} />{renderBridgeFields(editForm, (values) => patch(values))}</div>;
+      case "threat":
+        return <div className="space-y-4">{renderThreatFields(editForm, (values) => patch(values))}<CompliancePolicyFields values={editForm} onChange={patch} /></div>;
+      default:
+        return null;
+    }
+  };
+
+  const openEditor = useCallback((policy: Policy) => {
+    setEditSection("basics");
+    openPolicyEditor(policy);
+  }, [openPolicyEditor]);
+
+  const renderApprovalCompactRow = (approval: ApprovalRequest) => {
+    const eligible = approval.approverWallets.some((item) => item.toLowerCase() === walletAddress.toLowerCase());
+    const alreadyResponded = approval.responses.some((item) => item.walletAddress.toLowerCase() === walletAddress.toLowerCase());
+    const actionable = approval.reviewStatus === "Pending" && eligible && !alreadyResponded;
+    const statusTone = approval.reviewStatus === "Approved" ? "text-[#22C55E]" : approval.reviewStatus === "Rejected" || approval.reviewStatus === "Expired" ? "text-[#EF4444]" : "text-[#F59E0B]";
+    return (
+      <div key={approval.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`text-sm font-semibold ${statusTone}`}>{approval.reviewStatus}</span>
+              <span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{approval.actionType}</span>
+              {actionable && <span className="rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-2 py-0.5 text-[10px] text-[#22D3EE]">You can review</span>}
+            </div>
+            <div className="mt-2 text-sm font-medium text-[#F8FAFC]">{approval.amount} · {approval.target || "No target"}</div>
+            <div className="mt-1 text-xs text-[#94A3B8]">{approval.policyName || "Unknown policy"} · {approval.approvalsReceived}/{approval.requiredApprovals} approvals · expires {approval.expiresAt ? fmtTs(approval.expiresAt) : "not set"}</div>
+          </div>
+          <Btn variant={actionable ? "primary" : "secondary"} size="sm" onClick={() => setSelectedApprovalId(approval.id)}>
+            Review request
+            <ChevronRight size={14} />
+          </Btn>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-          Policies
-        </h1>
-        <p className="text-[#94A3B8] text-sm mt-1">
-          Create deterministic rules and resolve Review Required requests through exact-intent approval workflows.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Policies</h1>
+            <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#22C55E]">{activePolicies.length} active</span>
+            {attentionCount > 0 && <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#F59E0B]">{attentionCount} need attention</span>}
+          </div>
+          <p className="mt-1 max-w-3xl text-sm text-[#94A3B8]">Control what each agent may execute and when exact-intent Human Approval is required.</p>
+        </div>
+        <Btn variant="primary" onClick={beginCreatePolicy}>
+          <Plus size={16} />
+          Create Policy
+        </Btn>
       </div>
 
-      <div className={`${CARD} p-5`}>
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <Clock size={17} className="text-[#A78BFA]" />
-              <h2 className={SECTION_TITLE}>Human Approval Queue</h2>
-              <StatusBadge status="Foundation Available" />
+      <div className="inline-flex rounded-xl border border-[#1E293B] bg-[#0B1220] p-1">
+        <button type="button" onClick={() => setPoliciesTab("policies")} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${policiesTab === "policies" ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:text-[#F8FAFC]"}`}>Policies</button>
+        <button type="button" onClick={() => setPoliciesTab("approvals")} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${policiesTab === "approvals" ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:text-[#F8FAFC]"}`}>
+          Approval Queue
+          {pendingApprovals.length > 0 && <span className="rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10px] text-[#F59E0B]">{pendingApprovals.length}</span>}
+        </button>
+      </div>
+
+      <div className={`${CARD} overflow-hidden`}>
+        <div className="grid divide-y divide-[#1E293B] sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          {[
+            ["Active policies", activePolicies.length, "Currently enforceable"],
+            ["Agents protected", protectedAgentIds.size, `${agents.length} registered agents`],
+            ["Need attention", attentionCount, attentionCount ? "Configuration action required" : "No policy gaps"],
+            ["Pending approvals", pendingApprovals.length, "Exact-intent reviews"],
+          ].map(([label, value, detail]) => (
+            <div key={String(label)} className="px-5 py-4">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#64748B]">{label}</div>
+              <div className="mt-1 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{value}</div>
+              <div className="mt-0.5 text-xs text-[#94A3B8]">{detail}</div>
             </div>
-            <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked until the configured wallet quorum approves the exact binding hash. Signature-enabled policies require each reviewer to sign a one-time Casper Wallet challenge before the response counts.</p>
-          </div>
-          <div className="flex gap-2 text-xs">
-            <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span>
-            <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{approvals.filter((item) => item.reviewStatus === "Approved").length} approved</span>
-          </div>
+          ))}
         </div>
-        {approvalError && <div className="mt-4 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{approvalError}</div>}
-        <div className="mt-4 space-y-3">
-          {approvals.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#334155] bg-[#0B1220] p-5 text-center">
-              <div className="text-sm font-medium text-[#F8FAFC]">No approval requests yet</div>
-              <p className="mt-1 text-xs text-[#94A3B8]">Enable Human Approval & Quorum on a policy, then submit an intent that returns Review Required.</p>
+      </div>
+
+      {policiesTab === "policies" ? (
+        <>
+          {attentionCount > 0 && (
+            <div className="rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#F8FAFC]"><AlertTriangle size={16} className="text-[#F59E0B]" />Policies needing attention</div>
+              <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                {agentsWithoutPolicy.map((agent) => (
+                  <button key={agent.id} type="button" onClick={() => { setForm((current) => ({ ...current, agentId: agent.id, name: `${agent.name} Policy` })); beginCreatePolicy(); }} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-3 text-left hover:border-[#22D3EE]/40">
+                    <div><div className="text-xs font-medium text-[#F8FAFC]">{agent.name} has no active policy</div><div className="mt-0.5 text-[11px] text-[#94A3B8]">Create a deterministic policy before production execution.</div></div>
+                    <ChevronRight size={15} className="text-[#22D3EE]" />
+                  </button>
+                ))}
+                {orphanPolicies.map((policy) => (
+                  <button key={policy.id} type="button" onClick={() => { setSelectedPolicyId(policy.id); setPolicyDetailTab("overview"); }} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-3 text-left hover:border-[#22D3EE]/40">
+                    <div><div className="text-xs font-medium text-[#F8FAFC]">{policy.name} is not linked to a registered agent</div><div className="mt-0.5 text-[11px] text-[#94A3B8]">Review the legacy agent binding before using this policy.</div></div>
+                    <ChevronRight size={15} className="text-[#22D3EE]" />
+                  </button>
+                ))}
+                {policiesNeedingAttention.filter((policy) => policy.status !== "Active").map((policy) => (
+                  <button key={policy.id} type="button" onClick={() => { setSelectedPolicyId(policy.id); setPolicyDetailTab("overview"); }} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-3 text-left hover:border-[#22D3EE]/40">
+                    <div><div className="text-xs font-medium text-[#F8FAFC]">{policy.name} is inactive</div><div className="mt-0.5 text-[11px] text-[#94A3B8]">Review and activate it if the assigned agent still needs protection.</div></div>
+                    <ChevronRight size={15} className="text-[#22D3EE]" />
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : approvals.slice(0, 12).map((approval) => {
-            const eligible = approval.approverWallets.some((item) => item.toLowerCase() === walletAddress.toLowerCase());
-            const alreadyResponded = approval.responses.some((item) => item.walletAddress.toLowerCase() === walletAddress.toLowerCase());
-            const actionable = approval.reviewStatus === "Pending" && eligible && !alreadyResponded;
-            const statusTone = approval.reviewStatus === "Approved" ? "text-[#22C55E]" : approval.reviewStatus === "Rejected" || approval.reviewStatus === "Expired" ? "text-[#EF4444]" : "text-[#F59E0B]";
-            return (
-              <div key={approval.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`text-sm font-semibold ${statusTone}`}>{approval.reviewStatus}</span>
-                      <span className="text-xs text-[#64748B]">{approval.approvalsReceived}/{approval.requiredApprovals} {approval.signatureRequired ? "verified approvals" : "approvals"}</span>
-                      {approval.signatureRequired && <span className="rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-2 py-0.5 text-[10px] text-[#22D3EE]">Casper signature required</span>}
-                      <span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{approval.actionType}</span>
+          )}
+
+          {policies.length === 0 ? (
+            <div className={`${CARD} p-10 text-center`}>
+              <FileText size={30} className="mx-auto text-[#22D3EE]" />
+              <div className="mt-3 text-base font-semibold text-[#F8FAFC]">No policies created yet</div>
+              <p className="mx-auto mt-1 max-w-md text-sm text-[#94A3B8]">Create a policy to bind transaction limits, approval rules and Agent Shield controls to a connected agent.</p>
+              <Btn variant="primary" className="mt-5" onClick={beginCreatePolicy}><Plus size={16} />Create Policy</Btn>
+            </div>
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <div className={`${CARD} h-fit overflow-hidden`}>
+                <div className="border-b border-[#1E293B] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div><div className="text-sm font-semibold text-[#F8FAFC]">Policy directory</div><div className="mt-0.5 text-xs text-[#94A3B8]">{filteredPolicies.length} policies</div></div>
+                    <button type="button" onClick={() => setMobilePolicyDirectoryOpen((current) => !current)} className="rounded-lg border border-[#1E293B] p-2 text-[#94A3B8] xl:hidden"><Menu size={16} /></button>
+                  </div>
+                  <div className="relative mt-3">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+                    <input value={policySearch} onChange={(event) => setPolicySearch(event.target.value)} placeholder="Search policies" className={`${INPUT_CLS} pl-9 text-xs`} />
+                  </div>
+                </div>
+                <div className={`${mobilePolicyDirectoryOpen ? "block" : "hidden"} max-h-[640px] overflow-y-auto p-2 xl:block`}>
+                  {filteredPolicies.map((policy) => {
+                    const agent = agents.find((item) => item.id === policy.agentId);
+                    const isSelected = selectedPolicy?.id === policy.id;
+                    const areas = getPolicyAreaSummaries(policy);
+                    const enabledCount = areas.reduce((total, area) => total + area.enabled, 0);
+                    const totalCount = areas.reduce((total, area) => total + area.total, 0);
+                    return (
+                      <button key={policy.id} type="button" onClick={() => { setSelectedPolicyId(policy.id); setPolicyDetailTab("overview"); setMobilePolicyDirectoryOpen(false); }} className={`mb-2 w-full rounded-xl border p-3 text-left transition-colors ${isSelected ? "border-[#22D3EE]/45 bg-[#22D3EE]/8" : "border-transparent bg-[#0B1220] hover:border-[#334155]"}`}>
+                        <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#F8FAFC]">{policy.name}</div><div className="mt-0.5 truncate text-xs text-[#94A3B8]">{agent?.name || policy.agentId}</div></div><span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${policy.status === "Active" ? "bg-[#22C55E]" : "bg-[#64748B]"}`} /></div>
+                        <div className="mt-3 flex flex-wrap gap-1.5"><span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{policy.riskMode}</span><span className="rounded-full border border-[#334155] px-2 py-0.5 text-[10px] text-[#94A3B8]">{enabledCount}/{totalCount} controls</span></div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]"><div><div className="text-[#64748B]">Max</div><div className="mt-0.5 text-[#F8FAFC]">{policy.maxTransaction} CSPR</div></div><div><div className="text-[#64748B]">Daily</div><div className="mt-0.5 text-[#F8FAFC]">{policy.dailyLimit} CSPR</div></div><div><div className="text-[#64748B]">Review</div><div className="mt-0.5 text-[#F8FAFC]">{policy.approvalThreshold} CSPR</div></div></div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {selectedPolicy && (
+                <div className={`${CARD} min-w-0 overflow-hidden`}>
+                  <div className="border-b border-[#1E293B] p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{selectedPolicy.name}</h2><StatusBadge status={selectedPolicy.status} /></div>
+                        <div className="mt-1 text-sm text-[#94A3B8]">{selectedPolicyAgent?.name || selectedPolicy.agentId} · {selectedPolicy.riskMode} mode</div>
+                        <div className="mt-3 flex flex-wrap gap-1.5">{selectedPolicyCapabilities.slice(0, 3).map((capability) => <span key={capability} className="rounded-full border border-[#334155] bg-[#0B1220] px-2 py-1 text-[10px] text-[#94A3B8]">{capability}</span>)}{selectedPolicyCapabilities.length > 3 && <span className="rounded-full border border-[#334155] bg-[#0B1220] px-2 py-1 text-[10px] text-[#94A3B8]">+{selectedPolicyCapabilities.length - 3}</span>}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => copyPolicyHash(selectedPolicy.policyHash)}><Copy size={14} />Copy hash</Btn><Btn variant="primary" size="sm" onClick={() => openEditor(selectedPolicy)}>Edit Policy</Btn></div>
                     </div>
-                    <div className="mt-2 text-sm text-[#F8FAFC]">{approval.amount} · {approval.target || "No target"}</div>
-                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{approval.reason}</p>
-                    <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
-                      <div><span className="text-[#64748B]">Policy</span><div className="mt-0.5 text-[#F8FAFC]">{approval.policyName || "Unknown policy"}</div></div>
-                      <div><span className="text-[#64748B]">Expires</span><div className="mt-0.5 text-[#F8FAFC]">{approval.expiresAt ? new Date(approval.expiresAt).toLocaleString() : "Not set"}</div></div>
-                      <div><span className="text-[#64748B]">Binding</span><div className="mt-0.5 truncate font-mono text-[#22D3EE]" title={approval.bindingHash}>{approval.bindingHash || "Unavailable"}</div></div>
+                  </div>
+                  <div className="border-b border-[#1E293B] px-5">
+                    <div className="flex gap-5 overflow-x-auto">
+                      {[{ id: "overview", label: "Overview" }, { id: "controls", label: "Controls" }, { id: "approval", label: "Approval Rules" }].map((tab) => <button key={tab.id} type="button" onClick={() => setPolicyDetailTab(tab.id as typeof policyDetailTab)} className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium ${policyDetailTab === tab.id ? "border-[#22D3EE] text-[#22D3EE]" : "border-transparent text-[#94A3B8] hover:text-[#F8FAFC]"}`}>{tab.label}</button>)}
                     </div>
-                    {approval.resolvedTier && (
-                      <div className="mt-3 rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] uppercase tracking-wider text-[#22D3EE]">Resolved tier</span>
-                          <span className="text-xs font-semibold text-[#F8FAFC]">{approval.resolvedTier.name}</span>
-                          {approval.executionWindowStatus === "delay" && <span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] text-[#F59E0B]">Execution delay · {approval.executionDelayRemainingSeconds || 0}s remaining</span>}
-                          {approval.executionWindowStatus === "open" && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Execution window open</span>}
-                          {approval.executionWindowStatus === "expired" && <span className="rounded-full border border-[#EF4444]/25 bg-[#EF4444]/10 px-2 py-0.5 text-[10px] text-[#EF4444]">Execution window expired</span>}
+                  </div>
+                  <div className="p-5">
+                    {copiedPolicyHash === selectedPolicy.policyHash && <div className="mb-4 rounded-lg border border-[#22C55E]/30 bg-[#22C55E]/10 px-3 py-2 text-xs text-[#BBF7D0]">Policy hash copied.</div>}
+                    {copiedPolicyHash === "copy failed" && <div className="mb-4 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked. Select the policy hash and copy it manually.</div>}
+                    {policyDetailTab === "overview" && (
+                      <div className="space-y-5">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Max transaction", `${selectedPolicy.maxTransaction} CSPR`], ["Daily limit", `${selectedPolicy.dailyLimit} CSPR`], ["Review above", `${selectedPolicy.approvalThreshold} CSPR`], ["Controls enabled", `${selectedPolicyEnabledControls}/${selectedPolicyControlTotal}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-base font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Policy posture</div><div className="mt-3 space-y-3 text-xs"><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Risk mode</span><span className="text-[#F8FAFC]">{selectedPolicy.riskMode}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Status</span><span className={selectedPolicy.status === "Active" ? "text-[#22C55E]" : "text-[#94A3B8]"}>{selectedPolicy.status}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Created</span><span className="text-[#F8FAFC]">{fmtTs(selectedPolicy.createdAt)}</span></div><div className="flex items-start justify-between gap-4"><span className="text-[#94A3B8]">Policy hash</span><span className="max-w-[220px] truncate font-mono text-[#22D3EE]" title={selectedPolicy.policyHash}>{selectedPolicy.policyHash}</span></div></div></div>
+                          <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Configuration status</div><div className="mt-3 space-y-2">{selectedPolicyAreas.filter((area) => area.enabled < area.total).slice(0, 4).map((area) => <div key={area.id} className="flex items-center justify-between gap-3 rounded-lg bg-[#050B14] px-3 py-2"><div className="text-xs text-[#F8FAFC]">{area.name}</div><div className="text-[10px] text-[#F59E0B]">{area.total - area.enabled} available</div></div>)}{selectedPolicyAreas.every((area) => area.enabled === area.total) && <div className="rounded-lg border border-[#22C55E]/20 bg-[#22C55E]/5 px-3 py-3 text-xs text-[#BBF7D0]">All currently represented policy controls are configured.</div>}</div></div>
                         </div>
-                        {(approval.groupProgress || []).length > 0 && (
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                            {(approval.groupProgress || []).map((group) => (
-                              <div key={group.groupId} className="rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs">
-                                <div className="flex items-center justify-between gap-2"><span className="text-[#F8FAFC]">{group.groupName}</span><span className={group.satisfied ? "text-[#22C55E]" : "text-[#F59E0B]"}>{group.received}/{group.required}</span></div>
-                                {group.role && <div className="mt-0.5 text-[10px] text-[#64748B]">{group.role}</div>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {(approval.escalationHistory || []).length > 0 && <div className="mt-2 text-[10px] text-[#F59E0B]">Escalated: {(approval.escalationHistory || []).map((item) => item.name || item.id).join(", ")}</div>}
-                        {approval.nextEscalation && approval.reviewStatus === "Pending" && <div className="mt-1 text-[10px] text-[#64748B]">Next escalation: {approval.nextEscalation.name || approval.nextEscalation.id} after {approval.nextEscalation.afterSeconds || 0}s</div>}
-                        {approval.executionNotBefore && <div className="mt-2 text-[10px] text-[#64748B]">Not before {new Date(approval.executionNotBefore).toLocaleString()} · window ends {approval.executionWindowEndsAt ? new Date(approval.executionWindowEndsAt).toLocaleString() : "with approval expiry"}</div>}
+                        <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="flex items-center justify-between"><div><div className="text-sm font-semibold text-[#F8FAFC]">Trusted targets</div><div className="mt-1 text-xs text-[#94A3B8]">Destinations and contracts allowed by this policy.</div></div><span className="text-xs text-[#64748B]">{selectedPolicy.trustedContracts.length}</span></div>{selectedPolicy.trustedContracts.length > 0 ? <div className="mt-3 flex flex-wrap gap-2">{selectedPolicy.trustedContracts.slice(0, 6).map((target) => <span key={target} className="max-w-full truncate rounded-lg border border-[#334155] bg-[#050B14] px-2.5 py-1.5 font-mono text-[10px] text-[#94A3B8]" title={target}>{target}</span>)}</div> : <div className="mt-3 text-xs text-[#F59E0B]">No trusted targets configured. Unknown destinations will follow the active validation and review rules.</div>}</div>
+                      </div>
+                    )}
+                    {policyDetailTab === "controls" && <div className="space-y-3">{selectedPolicyAreas.map((area) => { const Icon = area.icon; return <button key={area.id} type="button" onClick={() => { setEditSection(area.id === "agent-trust-access" ? "agent-trust" : area.id === "policy-approval-controls" ? "approval" : area.id === "contract-permission-safety" ? "contract" : area.id === "execution-integrity" ? "execution" : area.id === "market-oracle-integrity" ? "market" : area.id === "cross-chain-payment-controls" ? "cross-chain" : area.id === "threat-compliance" ? "threat" : "limits"); openPolicyEditor(selectedPolicy); }} className="flex w-full items-center gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4 text-left hover:border-[#22D3EE]/35"><div className="rounded-lg border border-[#334155] bg-[#050B14] p-2 text-[#22D3EE]"><Icon size={17} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><div className="text-sm font-semibold text-[#F8FAFC]">{area.name}</div><span className={`text-xs ${area.enabled === area.total ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{area.enabled}/{area.total} enabled</span></div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{area.detail}</div></div><ChevronRight size={16} className="text-[#64748B]" /></button>; })}</div>}
+                    {policyDetailTab === "approval" && (
+                      <div className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">{[["Workflow", policyRuleEnabled(selectedPolicy, "approvalWorkflowEnabled", true) ? "Enabled" : "Disabled"], ["Required approvals", String(selectedPolicy.structuredRules?.approvalRequiredCount ?? 1)], ["Expiry", `${String(selectedPolicy.structuredRules?.approvalExpiryMinutes ?? 60)} min`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-base font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>
+                        <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Reviewer protection</div><div className="mt-3 grid gap-2 sm:grid-cols-2"><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Cryptographic signatures</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "requireCryptographicReviewerSignature", true) ? "Required" : "Not required"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Separation of duties</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "approvalSeparationOfDuties", false) ? "Required" : "Not required"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Organizational quorum</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "approvalOrganizationalQuorumEnabled", false) ? "Enabled" : "Single-list quorum"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Execution delay</div><div className="mt-1 text-[#F8FAFC]">{String(selectedPolicy.structuredRules?.approvalExecutionDelaySeconds ?? 0)} sec</div></div></div></div>
+                        <Btn variant="secondary" onClick={() => { setEditSection("approval"); openPolicyEditor(selectedPolicy); }}>Configure approval rules<ChevronRight size={14} /></Btn>
                       </div>
                     )}
                   </div>
-                  <div className="w-full shrink-0 lg:w-72">
-                    {actionable ? (
-                      <>
-                        <textarea className={`${INPUT_CLS} min-h-20 resize-none text-xs`} value={approvalComments[approval.id] || ""} onChange={(event) => setApprovalComments((current) => ({ ...current, [approval.id]: event.target.value }))} placeholder="Optional approval note; required for rejection" />
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <Btn variant="primary" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Approve")}><CheckCircle size={14} /> {approval.signatureRequired ? "Sign & Approve" : "Approve"}</Btn>
-                          <Btn variant="danger" size="sm" disabled={approvalBusy === approval.id} onClick={() => void submitApprovalResponse(approval, "Reject")}><XCircle size={14} /> {approval.signatureRequired ? "Sign & Reject" : "Reject"}</Btn>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="rounded-lg border border-[#1E293B] bg-[#050B14] p-3 text-xs text-[#94A3B8]">
-                        {alreadyResponded ? "This wallet already responded." : eligible ? `This request is ${approval.reviewStatus.toLowerCase()}.` : "The connected wallet is not an authorized approver."}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {approval.responses.length > 0 && (
-                  <div className="mt-3 border-t border-[#1E293B] pt-3">
-                    <div className="text-[10px] uppercase tracking-wider text-[#64748B]">Responses</div>
-                    <div className="mt-2 space-y-1">
-                      {approval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-[#94A3B8]"><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span><span className="font-mono">{response.walletAddress.length > 18 ? `${response.walletAddress.slice(0, 10)}...${response.walletAddress.slice(-6)}` : response.walletAddress}</span>{response.signatureVerified && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-0.5 text-[10px] text-[#22C55E]">Verified {response.signatureAlgorithm || "signature"}</span>}{(response.groupIds || []).map((groupId) => <span key={groupId} className="rounded-full border border-[#A78BFA]/25 bg-[#A78BFA]/10 px-2 py-0.5 text-[10px] text-[#C4B5FD]">{groupId}</span>)}<span>{response.comment || "No comment"}</span><span className="text-[#64748B]">{new Date(response.timestamp).toLocaleString()}</span>{response.signatureHash && <span className="font-mono text-[10px] text-[#64748B]" title={response.signatureHash}>sig {response.signatureHash.slice(0, 12)}…</span>}</div>)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-5 gap-6">
-        {/* Form */}
-        <div className={`${CARD} p-6 lg:col-span-2`}>
-          <h2 className={`${SECTION_TITLE} mb-5`}>New Policy</h2>
-          <div className="space-y-4">
-            <InputField
-              label="Policy Name"
-              value={form.name}
-              onChange={(v) => setForm((p) => ({ ...p, name: v }))}
-              placeholder="e.g. Safe DeFi Policy"
-            />
-            <SelectField
-              label="Agent"
-              value={form.agentId}
-              onChange={(v) => setForm((p) => ({ ...p, agentId: v }))}
-              options={agents.map((a) => a.id)}
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <InputField
-                label="Max Tx (CSPR)"
-                value={form.maxTransaction}
-                onChange={(v) => setForm((p) => ({ ...p, maxTransaction: v }))}
-                placeholder="50"
-                type="number"
-              />
-              <InputField
-                label="Daily Limit (CSPR)"
-                value={form.dailyLimit}
-                onChange={(v) => setForm((p) => ({ ...p, dailyLimit: v }))}
-                placeholder="200"
-                type="number"
-              />
-            </div>
-            <InputField
-              label="Approval Required Above (CSPR)"
-              value={form.approvalThreshold}
-              onChange={(v) =>
-                setForm((p) => ({ ...p, approvalThreshold: v }))
-              }
-              placeholder="100"
-              type="number"
-            />
-            <div>
-              <label className={LABEL_CLS}>Trusted Targets</label>
-              <textarea
-                className={`${INPUT_CLS} resize-none`}
-                rows={3}
-                value={form.trustedContracts}
-                onChange={(e) =>
-                  setForm((p) => ({
-                    ...p,
-                    trustedContracts: e.target.value,
-                  }))
-                }
-                placeholder="One contract or wallet address per line"
-              />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className={LABEL_CLS}>Blocked Contracts</label>
-                <textarea
-                  className={`${INPUT_CLS} resize-none font-mono text-xs`}
-                  rows={3}
-                  value={form.blockedContracts}
-                  onChange={(event) => setForm((current) => ({ ...current, blockedContracts: event.target.value }))}
-                  placeholder="One Contract Hash or Package Hash per line"
-                />
-                <p className="mt-1 text-xs text-[#64748B]">Exact policy blocklist. A match always produces Blocked.</p>
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Allowed Contract Entry Points</label>
-                <textarea
-                  className={`${INPUT_CLS} resize-none font-mono text-xs`}
-                  rows={3}
-                  value={form.allowedEntryPoints}
-                  onChange={(event) => setForm((current) => ({ ...current, allowedEntryPoints: event.target.value }))}
-                  placeholder={"swap\ndeposit\nwithdraw"}
-                />
-                <p className="mt-1 text-xs text-[#64748B]">Optional global allowlist. Leave empty for structural entry-point validation only.</p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence Foundation</div>
-                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Controls how exact matches from a configured fresh feed affect authorization. Feed absence never counts as a pass.</p>
-                </div>
-                <StatusBadge status="Foundation Available" />
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <SelectField label="Match Handling" value={form.threatIntelligenceMode} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                <InputField label="Minimum Confidence (%)" value={form.threatIntelligenceMinConfidence} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceMinConfidence: value }))} type="number" />
-                <SelectField label="Feed Unavailable" value={form.threatIntelligenceUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-              </div>
-            </div>
-            <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[#F8FAFC]">Oracle Validation Foundation</div>
-                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Controls freshness, source quorum, confidence, cross-source spread, and maximum price deviation for priced intents. An unavailable feed never counts as a pass.</p>
-                </div>
-                <StatusBadge status="Foundation Available" />
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <SelectField label="Validation Mode" value={form.oracleValidationMode} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                <InputField label="Max Quote Age (sec)" value={form.oracleValidationMaxAgeSeconds} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxAgeSeconds: value }))} type="number" />
-                <InputField label="Max Deviation (bps)" value={form.oracleValidationMaxDeviationBps} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxDeviationBps: value }))} type="number" />
-                <InputField label="Max Source Spread (bps)" value={form.oracleValidationMaxSourceSpreadBps} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMaxSourceSpreadBps: value }))} type="number" />
-                <InputField label="Minimum Confidence (%)" value={form.oracleValidationMinConfidence} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMinConfidence: value }))} type="number" />
-                <InputField label="Minimum Sources" value={form.oracleValidationMinSources} onChange={(value) => setForm((current) => ({ ...current, oracleValidationMinSources: value }))} type="number" />
-                <SelectField label="Feed Unavailable" value={form.oracleValidationUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, oracleValidationUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-              </div>
-            </div>
-            <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[#F8FAFC]">Bridge Controls Foundation</div>
-                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Validate provider-supplied routes, chain boundaries, destination formats, quote freshness, fees, assets, amounts, and confirmation requirements before signing.</p>
-                </div>
-                <StatusBadge status="Foundation Available" />
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <SelectField label="Control Mode" value={form.bridgeControlMode} onChange={(value) => setForm((current) => ({ ...current, bridgeControlMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                <SelectField label="Route Metadata Unavailable" value={form.bridgeControlUnavailableAction} onChange={(value) => setForm((current) => ({ ...current, bridgeControlUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-                <SelectField label="Require Quote Expiry" value={form.bridgeRequireQuoteExpiry} onChange={(value) => setForm((current) => ({ ...current, bridgeRequireQuoteExpiry: value }))} options={["Yes", "No"]} />
-                <TextareaField label="Allowed Providers (one per line)" value={form.bridgeAllowedProviders} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedProviders: value }))} />
-                <TextareaField label="Allowed Source Chains" value={form.bridgeAllowedSourceChains} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedSourceChains: value }))} />
-                <TextareaField label="Allowed Destination Chains" value={form.bridgeAllowedDestinationChains} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedDestinationChains: value }))} />
-                <TextareaField label="Blocked Destination Chains" value={form.bridgeBlockedDestinationChains} onChange={(value) => setForm((current) => ({ ...current, bridgeBlockedDestinationChains: value }))} />
-                <TextareaField label="Allowed Assets" value={form.bridgeAllowedAssets} onChange={(value) => setForm((current) => ({ ...current, bridgeAllowedAssets: value }))} />
-                <InputField label="Maximum Bridge Amount" value={form.bridgeMaxAmount} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxAmount: value }))} type="number" />
-                <InputField label="Maximum Fee (bps)" value={form.bridgeMaxFeeBps} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxFeeBps: value }))} type="number" />
-                <InputField label="Maximum Quote Age (sec)" value={form.bridgeMaxQuoteAgeSeconds} onChange={(value) => setForm((current) => ({ ...current, bridgeMaxQuoteAgeSeconds: value }))} type="number" />
-                <InputField label="Minimum Source Confirmations" value={form.bridgeMinSourceConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinSourceConfirmations: value }))} type="number" />
-                <InputField label="Minimum Destination Confirmations" value={form.bridgeMinDestinationConfirmations} onChange={(value) => setForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
-              </div>
-            </div>
-            <InstructionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <ToolMcpIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <DelegationSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <RpcChainIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <GasSponsorshipFeeSafetyPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <ApprovalPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <EmergencyControlsPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <ExecutionIntegrityPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <TokenPermissionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <PrivilegedActionPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <ContractUpgradePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <ContractArgumentPolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <X402PolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <CompliancePolicyFields values={form} onChange={(patch) => setForm((current) => ({ ...current, ...patch }))} />
-            <SelectField
-              label="Risk Mode"
-              value={form.riskMode}
-              onChange={(v) =>
-                setForm((p) => ({ ...p, riskMode: v as RiskMode }))
-              }
-              options={["Conservative", "Balanced", "Aggressive"]}
-            />
-            {policyFormError && (
-              <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs leading-relaxed text-[#FCA5A5]">
-                {policyFormError}
-              </div>
-            )}
-            <Btn
-              variant="primary"
-              className="w-full justify-center"
-              onClick={createPolicy}
-            >
-              <Plus size={16} />
-              Activate Policy
-            </Btn>
-          </div>
-        </div>
-
-        {/* Policy Cards */}
-        <div className="lg:col-span-3 space-y-4">
-          <h2 className={SECTION_TITLE}>Active Policies</h2>
-          {policies.map((pol) => {
-            const agent = agents.find((a) => a.id === pol.agentId);
-            return (
-              <div key={pol.id} className={`${CARD_GLOW} p-5`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-[#F8FAFC] font-['Space_Grotesk']">
-                        {pol.name}
-                      </h3>
-                      <StatusBadge status={pol.status} />
-                    </div>
-                    <div className="text-xs text-[#94A3B8]">
-                      {pol.id} · Agent: {agent?.name || pol.agentId}
-                    </div>
-                  </div>
-                  <Btn
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openPolicyEditor(pol)}
-                  >
-                    Edit
-                  </Btn>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm mb-4">
-                  <div className="bg-[#0B1220] rounded-lg p-3">
-                    <div className="text-xs text-[#94A3B8] mb-1">Max Tx</div>
-                    <div className="text-[#F8FAFC] font-semibold">
-                      {pol.maxTransaction} CSPR
-                    </div>
-                  </div>
-                  <div className="bg-[#0B1220] rounded-lg p-3">
-                    <div className="text-xs text-[#94A3B8] mb-1">
-                      Daily Limit
-                    </div>
-                    <div className="text-[#F8FAFC] font-semibold">
-                      {pol.dailyLimit} CSPR
-                    </div>
-                  </div>
-                  <div className="bg-[#0B1220] rounded-lg p-3">
-                    <div className="text-xs text-[#94A3B8] mb-1">Risk Mode</div>
-                    <div
-                      className={`font-semibold ${
-                        pol.riskMode === "Conservative"
-                          ? "text-[#22C55E]"
-                          : pol.riskMode === "Balanced"
-                          ? "text-[#F59E0B]"
-                          : "text-[#EF4444]"
-                      }`}
-                    >
-                      {pol.riskMode}
-                    </div>
-                  </div>
-                </div>
-                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
-                  <span className="font-semibold text-[#F8FAFC]">Threat Intelligence</span>
-                  <span>{typeof pol.structuredRules?.threatIntelligenceMode === "string" ? pol.structuredRules.threatIntelligenceMode : "Observe"}</span>
-                  <span>·</span>
-                  <span>{typeof pol.structuredRules?.threatIntelligenceMinConfidence === "number" ? pol.structuredRules.threatIntelligenceMinConfidence : 70}% confidence</span>
-                  <span>· unavailable: {typeof pol.structuredRules?.threatIntelligenceUnavailableAction === "string" ? pol.structuredRules.threatIntelligenceUnavailableAction : "Warn"}</span>
-                </div>
-                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
-                  <span className="font-semibold text-[#F8FAFC]">Oracle Validation</span>
-                  <span>{typeof pol.structuredRules?.oracleValidationMode === "string" ? pol.structuredRules.oracleValidationMode : "Observe"}</span>
-                  <span>·</span>
-                  <span>max {typeof pol.structuredRules?.oracleValidationMaxDeviationBps === "number" ? pol.structuredRules.oracleValidationMaxDeviationBps : 300} bps deviation</span>
-                  <span>·</span>
-                  <span>{typeof pol.structuredRules?.oracleValidationMinSources === "number" ? pol.structuredRules.oracleValidationMinSources : 1} source minimum</span>
-                  <span>· unavailable: {typeof pol.structuredRules?.oracleValidationUnavailableAction === "string" ? pol.structuredRules.oracleValidationUnavailableAction : "Warn"}</span>
-                </div>
-                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
-                  <span className="font-semibold text-[#F8FAFC]">Privileged Actions</span>
-                  <span>{typeof pol.structuredRules?.privilegedActionMode === "string" ? pol.structuredRules.privilegedActionMode : "Disabled"}</span>
-                  <span>·</span>
-                  <span>{Array.isArray(pol.structuredRules?.privilegedActionsRequiringReview) ? pol.structuredRules.privilegedActionsRequiringReview.length : 0} review classes</span>
-                  <span>·</span>
-                  <span>{Array.isArray(pol.structuredRules?.privilegedActionsBlocked) ? pol.structuredRules.privilegedActionsBlocked.length : 0} blocked classes</span>
-                  <span>· unknown: {typeof pol.structuredRules?.unknownPrivilegedAction === "string" ? pol.structuredRules.unknownPrivilegedAction : "Review"}</span>
-                </div>
-                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] px-3 py-2 text-xs text-[#94A3B8]">
-                  <span className="font-semibold text-[#F8FAFC]">Bridge Controls</span>
-                  <span>{typeof pol.structuredRules?.bridgeControlMode === "string" ? pol.structuredRules.bridgeControlMode : "Observe"}</span>
-                  <span>·</span>
-                  <span>{Array.isArray(pol.structuredRules?.bridgeAllowedProviders) ? pol.structuredRules.bridgeAllowedProviders.length : 0} approved providers</span>
-                  <span>·</span>
-                  <span>{Array.isArray(pol.structuredRules?.bridgeAllowedDestinationChains) ? pol.structuredRules.bridgeAllowedDestinationChains.length : 0} approved destinations</span>
-                  <span>· max {typeof pol.structuredRules?.bridgeMaxFeeBps === "number" ? pol.structuredRules.bridgeMaxFeeBps : 100} bps fee</span>
-                  <span>· unavailable: {typeof pol.structuredRules?.bridgeControlUnavailableAction === "string" ? pol.structuredRules.bridgeControlUnavailableAction : "Review"}</span>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-[#1E293B] text-xs text-[#94A3B8]">
-                  <span>Created {fmtTs(pol.createdAt)}</span>
-                  <div className="flex items-center gap-1.5 font-mono">
-                    <span>{pol.policyHash}</span>
-                    <button
-                      type="button"
-                      aria-label="Copy policy hash"
-                      title="Copy policy hash"
-                      onClick={() => copyPolicyHash(pol.policyHash)}
-                      className="hover:text-[#F8FAFC] transition-colors"
-                    >
-                      <Copy size={11} />
-                    </button>
-                  </div>
-                </div>
-                {copiedPolicyHash === pol.policyHash && (
-                  <div className="mt-2 rounded-lg border border-[#22C55E]/30 bg-[#22C55E]/10 px-3 py-2 text-xs text-[#BBF7D0]">
-                    Policy hash copied.
-                  </div>
-                )}
-                {copiedPolicyHash === "copy failed" && (
-                  <div className="mt-2 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">
-                    Copy was blocked by the browser. Select the policy hash and copy it manually.
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {editingPolicy && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setEditingPolicy(null)} />
-          <div className={`${CARD_GLOW} relative w-full max-w-2xl p-6`}>
-            <div className="flex items-start justify-between gap-4 mb-5">
-              <div>
-                <h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Edit Policy</h2>
-                <p className="text-sm text-[#94A3B8] mt-1">
-                  Update limits and policy posture for the connected external agent.
-                </p>
-              </div>
-              <button
-                onClick={() => setEditingPolicy(null)}
-                className="p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-lg"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <InputField
-                label="Policy Name"
-                value={editForm.name}
-                onChange={(v) => setEditForm((p) => ({ ...p, name: v }))}
-              />
-              <div className="grid md:grid-cols-3 gap-3">
-                <InputField
-                  label="Max Tx (CSPR)"
-                  value={editForm.maxTransaction}
-                  onChange={(v) => setEditForm((p) => ({ ...p, maxTransaction: v }))}
-                  type="number"
-                />
-                <InputField
-                  label="Daily Limit (CSPR)"
-                  value={editForm.dailyLimit}
-                  onChange={(v) => setEditForm((p) => ({ ...p, dailyLimit: v }))}
-                  type="number"
-                />
-                <InputField
-                  label="Approval Above"
-                  value={editForm.approvalThreshold}
-                  onChange={(v) => setEditForm((p) => ({ ...p, approvalThreshold: v }))}
-                  type="number"
-                />
-              </div>
-              <div>
-                <label className={LABEL_CLS}>Trusted Targets</label>
-                <textarea
-                  className={`${INPUT_CLS} resize-none`}
-                  rows={3}
-                  value={editForm.trustedContracts}
-                  onChange={(e) => setEditForm((p) => ({ ...p, trustedContracts: e.target.value }))}
-                  placeholder="One contract or wallet address per line"
-                />
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className={LABEL_CLS}>Blocked Contracts</label>
-                  <textarea
-                    className={`${INPUT_CLS} resize-none font-mono text-xs`}
-                    rows={3}
-                    value={editForm.blockedContracts}
-                    onChange={(event) => setEditForm((current) => ({ ...current, blockedContracts: event.target.value }))}
-                    placeholder="One Contract Hash or Package Hash per line"
-                  />
-                </div>
-                <div>
-                  <label className={LABEL_CLS}>Allowed Contract Entry Points</label>
-                  <textarea
-                    className={`${INPUT_CLS} resize-none font-mono text-xs`}
-                    rows={3}
-                    value={editForm.allowedEntryPoints}
-                    onChange={(event) => setEditForm((current) => ({ ...current, allowedEntryPoints: event.target.value }))}
-                    placeholder={"swap\ndeposit\nwithdraw"}
-                  />
-                </div>
-              </div>
-              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence Foundation</div>
-                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Exact indicator matches are deterministic. Choose whether matches are observed, routed to review, or enforced as blocks.</p>
-                  </div>
-                  <StatusBadge status="Foundation Available" />
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <SelectField label="Match Handling" value={editForm.threatIntelligenceMode} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                  <InputField label="Minimum Confidence (%)" value={editForm.threatIntelligenceMinConfidence} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceMinConfidence: value }))} type="number" />
-                  <SelectField label="Feed Unavailable" value={editForm.threatIntelligenceUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, threatIntelligenceUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-                </div>
-              </div>
-              <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-[#F8FAFC]">Oracle Validation Foundation</div>
-                    <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Compare priced intents with a fresh reference feed and choose whether integrity violations are observed, reviewed, or enforced.</p>
-                  </div>
-                  <StatusBadge status="Foundation Available" />
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <SelectField label="Validation Mode" value={editForm.oracleValidationMode} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                  <InputField label="Max Quote Age (sec)" value={editForm.oracleValidationMaxAgeSeconds} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxAgeSeconds: value }))} type="number" />
-                  <InputField label="Max Deviation (bps)" value={editForm.oracleValidationMaxDeviationBps} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxDeviationBps: value }))} type="number" />
-                  <InputField label="Max Source Spread (bps)" value={editForm.oracleValidationMaxSourceSpreadBps} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMaxSourceSpreadBps: value }))} type="number" />
-                  <InputField label="Minimum Confidence (%)" value={editForm.oracleValidationMinConfidence} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMinConfidence: value }))} type="number" />
-                  <InputField label="Minimum Sources" value={editForm.oracleValidationMinSources} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationMinSources: value }))} type="number" />
-                  <SelectField label="Feed Unavailable" value={editForm.oracleValidationUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, oracleValidationUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-                </div>
-              </div>
-              <div className="grid md:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-[#38BDF8]/20 bg-[#38BDF8]/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[#F8FAFC]">Bridge Controls Foundation</div>
-                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Validate provider-supplied routes, chain boundaries, destination formats, quote freshness, fees, assets, amounts, and confirmation requirements before signing.</p>
-                </div>
-                <StatusBadge status="Foundation Available" />
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <SelectField label="Control Mode" value={editForm.bridgeControlMode} onChange={(value) => setEditForm((current) => ({ ...current, bridgeControlMode: value }))} options={["Observe", "Review", "Enforce"]} />
-                <SelectField label="Route Metadata Unavailable" value={editForm.bridgeControlUnavailableAction} onChange={(value) => setEditForm((current) => ({ ...current, bridgeControlUnavailableAction: value }))} options={["Warn", "Review", "Block"]} />
-                <SelectField label="Require Quote Expiry" value={editForm.bridgeRequireQuoteExpiry} onChange={(value) => setEditForm((current) => ({ ...current, bridgeRequireQuoteExpiry: value }))} options={["Yes", "No"]} />
-                <TextareaField label="Allowed Providers (one per line)" value={editForm.bridgeAllowedProviders} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedProviders: value }))} />
-                <TextareaField label="Allowed Source Chains" value={editForm.bridgeAllowedSourceChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedSourceChains: value }))} />
-                <TextareaField label="Allowed Destination Chains" value={editForm.bridgeAllowedDestinationChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedDestinationChains: value }))} />
-                <TextareaField label="Blocked Destination Chains" value={editForm.bridgeBlockedDestinationChains} onChange={(value) => setEditForm((current) => ({ ...current, bridgeBlockedDestinationChains: value }))} />
-                <TextareaField label="Allowed Assets" value={editForm.bridgeAllowedAssets} onChange={(value) => setEditForm((current) => ({ ...current, bridgeAllowedAssets: value }))} />
-                <InputField label="Maximum Bridge Amount" value={editForm.bridgeMaxAmount} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxAmount: value }))} type="number" />
-                <InputField label="Maximum Fee (bps)" value={editForm.bridgeMaxFeeBps} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxFeeBps: value }))} type="number" />
-                <InputField label="Maximum Quote Age (sec)" value={editForm.bridgeMaxQuoteAgeSeconds} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMaxQuoteAgeSeconds: value }))} type="number" />
-                <InputField label="Minimum Source Confirmations" value={editForm.bridgeMinSourceConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinSourceConfirmations: value }))} type="number" />
-                <InputField label="Minimum Destination Confirmations" value={editForm.bridgeMinDestinationConfirmations} onChange={(value) => setEditForm((current) => ({ ...current, bridgeMinDestinationConfirmations: value }))} type="number" />
-              </div>
-            </div>
-                <InstructionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <ToolMcpIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <DelegationSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <RpcChainIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <GasSponsorshipFeeSafetyPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <ApprovalPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <EmergencyControlsPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <ExecutionIntegrityPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <TokenPermissionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <PrivilegedActionPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <ContractUpgradePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <ContractArgumentPolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <X402PolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <CompliancePolicyFields values={editForm} onChange={(patch) => setEditForm((current) => ({ ...current, ...patch }))} />
-                <SelectField
-                  label="Risk Mode"
-                  value={editForm.riskMode}
-                  onChange={(v) => setEditForm((p) => ({ ...p, riskMode: v as RiskMode }))}
-                  options={["Conservative", "Balanced", "Aggressive"]}
-                />
-                <SelectField
-                  label="Status"
-                  value={editForm.status}
-                  onChange={(v) => setEditForm((p) => ({ ...p, status: v as "Active" | "Inactive" }))}
-                  options={["Active", "Inactive"]}
-                />
-              </div>
-              {policyFormError && (
-                <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs leading-relaxed text-[#FCA5A5]">
-                  {policyFormError}
                 </div>
               )}
-              <div className="flex justify-end gap-2 pt-2">
-                <Btn variant="secondary" onClick={() => { setPolicyFormError(""); setEditingPolicy(null); }}>
-                  Cancel
-                </Btn>
-                <Btn variant="primary" onClick={savePolicyEdit}>
-                  Save Policy
-                </Btn>
-              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="space-y-4">
+          <div className={`${CARD} p-5`}>
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><div className="flex items-center gap-2"><Clock size={17} className="text-[#A78BFA]" /><h2 className={SECTION_TITLE}>Approval Queue</h2><StatusBadge status="Foundation Available" /></div><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked until the configured wallet quorum approves the exact binding hash. Detailed cryptographic evidence remains available inside each request.</p></div><div className="flex gap-2 text-xs"><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{approvals.filter((item) => item.reviewStatus === "Approved").length} approved</span></div></div>
+            {approvalError && <div className="mt-4 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{approvalError}</div>}
+          </div>
+          {pendingApprovals.length === 0 ? <div className={`${CARD} p-8 text-center`}><CheckCircle size={28} className="mx-auto text-[#22C55E]" /><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">No pending approvals</div><p className="mt-1 text-xs text-[#94A3B8]">Review Required decisions will appear here when Human Approval is enabled.</p></div> : <div className="space-y-3">{pendingApprovals.map(renderApprovalCompactRow)}</div>}
+          {resolvedApprovals.length > 0 && <div className={`${CARD} overflow-hidden`}><button type="button" onClick={() => setShowApprovalHistory((current) => !current)} className="flex w-full items-center justify-between p-4 text-left"><div><div className="text-sm font-semibold text-[#F8FAFC]">Approval history</div><div className="mt-0.5 text-xs text-[#94A3B8]">{resolvedApprovals.length} resolved requests</div></div><ChevronDown size={16} className={`text-[#64748B] transition-transform ${showApprovalHistory ? "rotate-180" : ""}`} /></button>{showApprovalHistory && <div className="space-y-3 border-t border-[#1E293B] p-4">{resolvedApprovals.map(renderApprovalCompactRow)}</div>}</div>}
+        </div>
+      )}
+
+      {createPolicyOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/65" onClick={() => setCreatePolicyOpen(false)} />
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-5xl flex-col border-l border-[#1E293B] bg-[#050B14] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[#1E293B] px-5 py-4"><div><div className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Create Policy</div><div className="mt-1 text-sm text-[#94A3B8]">Build a deterministic policy with recommended controls first and advanced settings only when needed.</div></div><button type="button" onClick={() => setCreatePolicyOpen(false)} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><X size={18} /></button></div>
+            <div className="border-b border-[#1E293B] px-5 py-3"><div className="flex min-w-max gap-2 overflow-x-auto">{["Foundation", "Essential limits", "Recommended controls", "Advanced controls", "Review & activate"].map((label, index) => { const step = index + 1; return <button key={label} type="button" onClick={() => setCreatePolicyStep(step)} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${createPolicyStep === step ? "bg-[#22D3EE]/12 text-[#22D3EE]" : step < createPolicyStep ? "text-[#22C55E]" : "text-[#64748B]"}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${createPolicyStep === step ? "border-[#22D3EE]" : step < createPolicyStep ? "border-[#22C55E]" : "border-[#334155]"}`}>{step < createPolicyStep ? <CheckCircle size={12} /> : step}</span>{label}</button>; })}</div></div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {createPolicyStep === 1 && <div className="mx-auto max-w-3xl space-y-4"><div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Policy foundation</div><p className="mt-1 text-xs text-[#94A3B8]">Choose the agent and a starter posture. Templates only prefill existing enforceable fields.</p></div><InputField label="Policy Name" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} placeholder="e.g. YieldBot Balanced Policy" /><div><label className={LABEL_CLS}>Connected Agent</label><select className={`${INPUT_CLS} cursor-pointer`} value={form.agentId} onChange={(event) => { const value = event.target.value; const agent = agents.find((item) => item.id === value); setForm((current) => ({ ...current, agentId: value })); if (agent) applyPolicyTemplate(recommendedPolicyTemplate(normalizeCapabilities(agent.executionCapabilities, agent.type))); }}>{agents.map((agent) => <option key={agent.id} value={agent.id} className="bg-[#0B1220]">{agent.name}</option>)}</select></div><SelectField label="Starter Template" value={createTemplate} onChange={applyPolicyTemplate} options={Object.keys(POLICY_TEMPLATES)} /><SelectField label="Risk Mode" value={form.riskMode} onChange={(value) => setForm((current) => ({ ...current, riskMode: value as RiskMode }))} options={["Conservative", "Balanced", "Aggressive"]} /></div>}
+              {createPolicyStep === 2 && <div className="mx-auto max-w-4xl space-y-4"><div className="grid gap-3 md:grid-cols-3"><InputField label="Max Tx (CSPR)" value={form.maxTransaction} onChange={(value) => setForm((current) => ({ ...current, maxTransaction: value }))} type="number" /><InputField label="Daily Limit (CSPR)" value={form.dailyLimit} onChange={(value) => setForm((current) => ({ ...current, dailyLimit: value }))} type="number" /><InputField label="Review Above (CSPR)" value={form.approvalThreshold} onChange={(value) => setForm((current) => ({ ...current, approvalThreshold: value }))} type="number" /></div><TextareaField label="Trusted Targets" value={form.trustedContracts} onChange={(value) => setForm((current) => ({ ...current, trustedContracts: value }))} /><div className="grid gap-3 md:grid-cols-2"><TextareaField label="Blocked Contracts" value={form.blockedContracts} onChange={(value) => setForm((current) => ({ ...current, blockedContracts: value }))} /><TextareaField label="Allowed Contract Entry Points" value={form.allowedEntryPoints} onChange={(value) => setForm((current) => ({ ...current, allowedEntryPoints: value }))} /></div></div>}
+              {createPolicyStep === 3 && <div className="mx-auto max-w-4xl space-y-4"><div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Recommended for this agent</div><p className="mt-1 text-xs text-[#94A3B8]">Recommendations are derived from the selected agent’s execution capabilities and do not replace policy enforcement.</p></div><div className="grid gap-3 md:grid-cols-2">{recommendedModules(normalizeCapabilities(agents.find((agent) => agent.id === form.agentId)?.executionCapabilities, agents.find((agent) => agent.id === form.agentId)?.type)).map((module) => <div key={module.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">{module.name}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{module.description}</div></div><CheckCircle size={16} className="shrink-0 text-[#22C55E]" /></div><div className="mt-3 text-[10px] uppercase tracking-wider text-[#64748B]">{module.controls.filter((control) => control.configurable).length} configurable controls</div></div>)}</div></div>}
+              {createPolicyStep === 4 && <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)]"><div className={`${CARD} h-fit p-2`}>{PROTECTION_MODULE_CATALOG.map((area) => <button key={area.id} type="button" onClick={() => setCreateAdvancedArea(area.id)} className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left text-xs ${createAdvancedArea === area.id ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:bg-[#0B1220] hover:text-[#F8FAFC]"}`}>{area.name}</button>)}</div><div className="min-w-0">{renderCreateAdvancedArea()}</div></div>}
+              {createPolicyStep === 5 && <div className="mx-auto max-w-4xl space-y-4"><div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Review before activation</div><p className="mt-1 text-xs text-[#94A3B8]">Magen3 will create the policy using the exact fields below. Existing agents, keys and Gateway contracts remain unchanged.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Agent", agents.find((agent) => agent.id === form.agentId)?.name || "Not selected"], ["Template", createTemplate], ["Max transaction", `${form.maxTransaction || 0} CSPR`], ["Daily limit", `${form.dailyLimit || 0} CSPR`], ["Review above", `${form.approvalThreshold || 0} CSPR`], ["Risk mode", form.riskMode], ["Approval workflow", form.approvalWorkflowEnabled], ["Lifecycle controls", form.lifecycleControlsEnabled]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-sm font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>{policyFormError && <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{policyFormError}</div>}</div>}
+            </div>
+            <div className="flex items-center justify-between border-t border-[#1E293B] bg-[#050B14] px-5 py-4"><Btn variant="secondary" onClick={() => createPolicyStep === 1 ? setCreatePolicyOpen(false) : setCreatePolicyStep((step) => Math.max(1, step - 1))}>{createPolicyStep === 1 ? "Cancel" : "Back"}</Btn>{createPolicyStep < 5 ? <Btn variant="primary" onClick={() => setCreatePolicyStep((step) => Math.min(5, step + 1))}>Continue<ArrowRight size={15} /></Btn> : <Btn variant="primary" onClick={activatePolicyFromDrawer}><ShieldCheck size={15} />Activate Policy</Btn>}</div>
+          </div>
+        </div>
+      )}
+
+      {editingPolicy && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/65" onClick={() => setEditingPolicy(null)} />
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-6xl flex-col border-l border-[#1E293B] bg-[#050B14] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[#1E293B] px-5 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Edit Policy</h2><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] text-[#F59E0B]">Unsaved changes remain local until saved</span></div><p className="mt-1 text-sm text-[#94A3B8]">{editingPolicy.name} · adjust one protection area at a time.</p></div><button type="button" onClick={() => setEditingPolicy(null)} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><X size={18} /></button></div>
+            <div className="grid min-h-0 flex-1 lg:grid-cols-[250px_minmax(0,1fr)]"><div className="hidden overflow-y-auto border-r border-[#1E293B] p-3 lg:block">{editSections.map((section) => <button key={section.id} type="button" onClick={() => setEditSection(section.id)} className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left text-xs ${editSection === section.id ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:bg-[#0B1220] hover:text-[#F8FAFC]"}`}>{section.label}</button>)}</div><div className="min-w-0 overflow-y-auto p-5"><div className="mb-4 lg:hidden"><div><label className={LABEL_CLS}>Policy section</label><select className={`${INPUT_CLS} cursor-pointer`} value={editSection} onChange={(event) => setEditSection(event.target.value)}>{editSections.map((section) => <option key={section.id} value={section.id} className="bg-[#0B1220]">{section.label}</option>)}</select></div></div><div className="mx-auto max-w-4xl">{renderEditSection()}</div>{policyFormError && <div className="mx-auto mt-4 max-w-4xl rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{policyFormError}</div>}</div></div>
+            <div className="flex items-center justify-end gap-3 border-t border-[#1E293B] bg-[#050B14] px-5 py-4"><Btn variant="secondary" onClick={() => setEditingPolicy(null)}>Cancel</Btn><Btn variant="primary" onClick={savePolicyEdit}>Save Policy</Btn></div>
+          </div>
+        </div>
+      )}
+
+      {selectedApproval && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/65" onClick={() => setSelectedApprovalId("")} />
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#1E293B] bg-[#050B14] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-[#1E293B] px-5 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Review Request</h2><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-2 py-0.5 text-[10px] text-[#F59E0B]">{selectedApproval.reviewStatus}</span></div><p className="mt-1 text-sm text-[#94A3B8]">Exact intent and quorum evidence for {selectedApproval.actionType}.</p></div><button type="button" onClick={() => setSelectedApprovalId("")} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]"><X size={18} /></button></div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="grid gap-3 sm:grid-cols-2"><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Action</div><div className="mt-1 text-sm text-[#F8FAFC]">{selectedApproval.actionType}</div></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Amount</div><div className="mt-1 text-sm text-[#F8FAFC]">{selectedApproval.amount}</div></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Target</div><div className="mt-1 break-all text-sm text-[#F8FAFC]">{selectedApproval.target || "No target"}</div></div><div><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Policy</div><div className="mt-1 text-sm text-[#F8FAFC]">{selectedApproval.policyName || "Unknown policy"}</div></div></div><div className="mt-4 border-t border-[#1E293B] pt-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Why review is required</div><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{selectedApproval.reason}</p></div></div>
+              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Approval binding</div><div className="mt-3 break-all font-mono text-xs text-[#22D3EE]">{selectedApproval.bindingHash || "Unavailable"}</div><div className="mt-3 grid gap-3 sm:grid-cols-3"><div><div className="text-[10px] text-[#64748B]">Quorum</div><div className="mt-1 text-xs text-[#F8FAFC]">{selectedApproval.approvalsReceived}/{selectedApproval.requiredApprovals}</div></div><div><div className="text-[10px] text-[#64748B]">Signature</div><div className="mt-1 text-xs text-[#F8FAFC]">{selectedApproval.signatureRequired ? "Casper required" : "Policy response"}</div></div><div><div className="text-[10px] text-[#64748B]">Expires</div><div className="mt-1 text-xs text-[#F8FAFC]">{selectedApproval.expiresAt ? fmtTs(selectedApproval.expiresAt) : "Not set"}</div></div></div></div>
+              {(selectedApproval.groupProgress || []).length > 0 && <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Reviewer groups</div><div className="mt-3 grid gap-2 sm:grid-cols-2">{(selectedApproval.groupProgress || []).map((group) => <div key={group.groupId} className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="text-[#F8FAFC]">{group.groupName}</span><span className={group.satisfied ? "text-[#22C55E]" : "text-[#F59E0B]"}>{group.received}/{group.required}</span></div>{group.role && <div className="mt-0.5 text-[10px] text-[#64748B]">{group.role}</div>}</div>)}</div></div>}
+              {selectedApproval.responses.length > 0 && <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Reviewer responses</div><div className="mt-3 space-y-2">{selectedApproval.responses.map((response, index) => <div key={`${response.walletAddress}-${index}`} className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="truncate font-mono text-[#94A3B8]">{response.walletAddress}</span><span className={response.response === "Approved" ? "text-[#22C55E]" : "text-[#EF4444]"}>{response.response}</span></div>{response.comment && <div className="mt-1 text-[#94A3B8]">{response.comment}</div>}</div>)}</div></div>}
+              {selectedApproval.reviewStatus === "Pending" && selectedApproval.approverWallets.some((item) => item.toLowerCase() === walletAddress.toLowerCase()) && !selectedApproval.responses.some((item) => item.walletAddress.toLowerCase() === walletAddress.toLowerCase()) && <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><label className={LABEL_CLS}>Reviewer note</label><textarea className={`${INPUT_CLS} min-h-24 resize-none text-xs`} value={approvalComments[selectedApproval.id] || ""} onChange={(event) => setApprovalComments((current) => ({ ...current, [selectedApproval.id]: event.target.value }))} placeholder="Optional approval note; required for rejection" /><div className="mt-3 grid grid-cols-2 gap-2"><Btn variant="secondary" className="justify-center border-[#EF4444]/30 text-[#FCA5A5] hover:bg-[#EF4444]/10" disabled={approvalBusy === selectedApproval.id} onClick={() => submitApprovalResponse(selectedApproval, "Reject")}>Sign and reject</Btn><Btn variant="primary" className="justify-center" disabled={approvalBusy === selectedApproval.id} onClick={() => submitApprovalResponse(selectedApproval, "Approve")}>Sign and approve</Btn></div></div>}
             </div>
           </div>
         </div>
@@ -7499,10 +7485,6 @@ function PoliciesPage({
     </div>
   );
 }
-
-// ──────────────────────────────────────────────────────────
-// Audit Log Page
-// ──────────────────────────────────────────────────────────
 
 function AuditLogPage({
   auditLogs,
@@ -10595,7 +10577,7 @@ function IntentPlaygroundPage({
                       <div className="sm:col-span-3">Exact-intent binding <span className="block break-all font-mono text-[#A78BFA]">{result.approval.bindingHash}</span></div>
                     </div>
                     <div className="mt-3 flex flex-col gap-2 rounded-lg border border-[#1E293B] bg-[#050B14] p-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-xs leading-relaxed text-[#94A3B8]">Authorized reviewers respond from Policies → Human Approval Queue. The agent can poll this request by approval ID or audit ID but cannot approve itself.</div>
+                      <div className="text-xs leading-relaxed text-[#94A3B8]">Authorized reviewers respond from Policies → Approval Queue. The agent can poll this request by approval ID or audit ID but cannot approve itself.</div>
                       <Btn variant="secondary" size="sm" onClick={() => onNavigate("policies")}>Open approval queue</Btn>
                     </div>
                   </div>
