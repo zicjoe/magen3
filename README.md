@@ -369,9 +369,24 @@ pnpm compliance:refresh-example-feed
 
 See [`docs/COMPLIANCE_CONTROLS.md`](docs/COMPLIANCE_CONTROLS.md) for the evidence schema, policy controls, feed format, privacy boundary, and deployment guidance.
 
-## Guided agent registration
+## First Agent Setup
 
-The Connected Agents flow uses a six-step wizard:
+Magen3 now offers two onboarding paths from Dashboard, Agent Shield, Connected Agents, Intent Playground, Policies, and Settings.
+
+### Guided Setup — default
+
+Guided Setup reduces the first protected-agent journey to four product decisions:
+
+1. Choose what Magen3 should protect: Trading, Wallet, Treasury, DeFi/dApp, Enterprise, or Custom.
+2. Name the agent and choose Codex, MCP, JavaScript, Python, Custom API, or integrate later.
+3. Select Standard, Strict, or Custom protection. Magen3 infers capabilities, relevant protection areas, limits, review thresholds, and starter-policy rules.
+4. Save the one-time API key and run a synthetic protected Gateway test.
+
+The onboarding test uses the real authenticated Gateway and creates a real decision and audit record. It never requests a wallet signature or submits a blockchain transaction. A clearly labelled demo configuration is also available for product exploration.
+
+### Advanced Setup
+
+The original six-step registration workflow remains available:
 
 1. Agent Details
 2. Execution Capabilities
@@ -380,9 +395,13 @@ The Connected Agents flow uses a six-step wizard:
 5. Review
 6. Integration Credentials and Quick Start
 
-At least one capability is required. The wizard recommends relevant protection areas, control packs, and an enforceable starter policy. Existing policies can be used as templates without rebinding the original record.
+Advanced Setup exposes the full capability, protection, policy-template, and configuration flow. Existing policies can still be used as templates without rebinding the original record.
+
+The Dashboard shows a browser-scoped completion checklist for agents created through the new onboarding flow: agent, policy, credential acknowledgement, first intent, and confirmed Casper proof. Existing agents are not forced into the checklist.
 
 Raw API keys are shown only after registration or rotation. Magen3 stores the key digest and preview, not the recoverable raw secret.
+
+See [`docs/FIRST_AGENT_SETUP.md`](docs/FIRST_AGENT_SETUP.md) and [`FIRST_AGENT_ONBOARDING_IMPLEMENTATION_REPORT.md`](FIRST_AGENT_ONBOARDING_IMPLEMENTATION_REPORT.md).
 
 ## Policies
 

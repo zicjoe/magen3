@@ -149,6 +149,22 @@ type AgentRegistrationDraft = Pick<Agent, "name" | "type" | "purpose" | "permiss
   onboardingStatus?: string;
 };
 
+type OnboardingSetupMode = "guided" | "advanced";
+type GuidedUseCaseId = "trading" | "wallet" | "treasury" | "dapp" | "enterprise" | "custom";
+type IntegrationTarget = "Codex" | "MCP" | "JavaScript" | "Python" | "Custom API" | "Integrate later";
+type ProtectionLevel = "Standard" | "Strict" | "Custom";
+interface OnboardingLaunchRequest { mode: OnboardingSetupMode; nonce: number; }
+
+interface GuidedUseCase {
+  id: GuidedUseCaseId;
+  title: string;
+  description: string;
+  purpose: string;
+  capabilities: ExecutionCapability[];
+  template: string;
+  icon: ReactElement;
+}
+
 interface Policy {
   id: string;
   name: string;
@@ -1861,6 +1877,11 @@ interface PageHeaderProps {
   actions?: ReactNode;
 }
 
+function requestAgentOnboarding(onNavigate: (page: Page) => void, mode: OnboardingSetupMode = "guided") {
+  try { window.sessionStorage.setItem("magen3:onboarding-mode", mode); } catch {}
+  onNavigate("connected-agents");
+}
+
 function PageHeader({ title, description, meta, actions }: PageHeaderProps) {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -2431,6 +2452,7 @@ function DashboardPage({
   approvals,
   emergencyPauses,
   onNavigate,
+  onStartOnboarding,
 }: {
   walletConnected: boolean;
   onConnectWallet: () => void;
@@ -2447,6 +2469,7 @@ function DashboardPage({
   approvals: ApprovalRequest[];
   emergencyPauses: EmergencyPause[];
   onNavigate: (p: Page) => void;
+  onStartOnboarding: (mode: OnboardingSetupMode) => void;
 }) {
   const [showAllServices, setShowAllServices] = useState(false);
 
@@ -2696,6 +2719,25 @@ function DashboardPage({
   const agentsWithActivePolicy = activeAgents.filter((agent) => Boolean(getActivePolicy(policies, agent.id))).length;
   const inactivePolicyCount = policies.filter((policy) => policy.status !== "Active").length;
   const x402Ready = x402PaymentControlsStatus.status === "foundation-available";
+  const trackedOnboardingAgents = activeAgents.filter((agent) => ["guided", "advanced"].includes(String(agent.capabilityConfiguration?.setupMode || "")));
+  let onboardingCredentialSaved = false;
+  try {
+    onboardingCredentialSaved = trackedOnboardingAgents.some((agent) => window.localStorage.getItem(`magen3.onboarding.credentialsSaved.${agent.id}`) === "true");
+  } catch {
+    onboardingCredentialSaved = false;
+  }
+  const onboardingHasPolicy = trackedOnboardingAgents.some((agent) => Boolean(getActivePolicy(policies, agent.id)));
+  const onboardingHasIntent = auditLogs.some((log) => trackedOnboardingAgents.some((agent) => agent.id === log.agentId));
+  const onboardingHasProof = auditLogs.some((log) => trackedOnboardingAgents.some((agent) => agent.id === log.agentId) && isRealCasperDeployHash(log.txHash));
+  const onboardingItems = [
+    { id: "wallet", label: "Wallet connected", complete: walletConnected, action: "Connect wallet", page: "dashboard" as Page },
+    { id: "agent", label: "First agent protected", complete: activeAgents.length > 0, action: "Start guided setup", page: "connected-agents" as Page },
+    { id: "policy", label: "Starter policy active", complete: onboardingHasPolicy, action: "Configure policy", page: "policies" as Page },
+    { id: "credential", label: "Integration credentials saved", complete: onboardingCredentialSaved, action: "Open agent access", page: "connected-agents" as Page },
+    { id: "intent", label: "First protected intent received", complete: onboardingHasIntent, action: "Run a protected test", page: "intent-playground" as Page },
+    { id: "proof", label: "First Casper proof confirmed", complete: onboardingHasProof, action: "View proof status", page: "audit-log" as Page },
+  ];
+  const onboardingCompleted = onboardingItems.filter((item) => item.complete).length;
 
   const executionLabel = (log: AuditLog) => {
     const execution = canonicalExecutionStatus(log.executionStatus || "");
@@ -2710,6 +2752,38 @@ function DashboardPage({
     onNavigate("policies");
   };
 
+  if (activeAgents.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Dashboard" description="Start with one protected agent. Magen3 will guide you from use case to the first verifiable decision." />
+        <section className={`${CARD_GLOW} overflow-hidden`}>
+          <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+            <div className="p-6 sm:p-8">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold text-[#22D3EE]"><ShieldCheck size={13} /> Guided first-agent setup</div>
+              <h2 className="mt-5 max-w-2xl text-3xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Protect your first autonomous agent without learning every Magen3 control first.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">Choose what the agent does, select Standard or Strict protection, save one credential, and run a synthetic protected test. Advanced policy and control settings remain available after setup.</p>
+              <div className="mt-6 flex flex-wrap gap-3"><Btn variant="primary" onClick={() => onStartOnboarding("guided")}><ShieldCheck size={16} /> Start Guided Setup</Btn><Btn variant="secondary" onClick={() => onStartOnboarding("advanced")}><Settings size={16} /> Advanced Setup</Btn></div>
+              <div className="mt-6 text-xs text-[#64748B]">The onboarding test never signs or submits a blockchain transaction.</div>
+            </div>
+            <div className="border-t border-[#1E293B] bg-[#0B1220] p-6 lg:border-l lg:border-t-0">
+              <div className="text-sm font-semibold text-[#F8FAFC]">Your first success path</div>
+              <div className="mt-4 space-y-3">{[
+                ["1", "Choose what to protect", "Trading, wallet, treasury, dApp, enterprise, or custom."],
+                ["2", "Name and connect the agent", "Select Codex, MCP, JavaScript, Python, or the API."],
+                ["3", "Choose a protection level", "Magen3 creates capabilities and an active starter policy."],
+                ["4", "Save credentials and test", "See the decision, Audit Log, and Casper proof flow."],
+              ].map(([number, title, detail]) => <div key={number} className="flex items-start gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/10 text-xs font-bold text-[#22D3EE]">{number}</span><div><div className="text-sm font-semibold text-[#F8FAFC]">{title}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{detail}</div></div></div>)}</div>
+            </div>
+          </div>
+        </section>
+        <section className={`${CARD} p-5`}>
+          <div className="flex items-center justify-between gap-3"><div><h2 className={SECTION_TITLE}>Setup checklist</h2><p className="mt-1 text-xs text-[#94A3B8]">Complete these milestones to finish the first Magen3 integration.</p></div><span className="rounded-full border border-[#1E293B] bg-[#0B1220] px-2.5 py-1 text-xs font-semibold text-[#94A3B8]">{onboardingCompleted} of {onboardingItems.length}</span></div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">{onboardingItems.map((item) => <button type="button" key={item.id} onClick={() => item.id === "agent" ? onStartOnboarding("guided") : onNavigate(item.page)} className="flex items-center justify-between gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 text-left"><div className="flex items-center gap-2"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.complete ? "border-[#22C55E] bg-[#22C55E] text-[#050B14]" : "border-[#334155] text-[#64748B]"}`}>{item.complete ? <CheckCircle size={13} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}</span><span className={`text-xs font-semibold ${item.complete ? "text-[#BBF7D0]" : "text-[#F8FAFC]"}`}>{item.label}</span></div>{!item.complete && <span className="text-[10px] font-semibold text-[#22D3EE]">{item.action}</span>}</button>)}</div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -2721,6 +2795,13 @@ function DashboardPage({
           <Btn variant="primary" onClick={() => onNavigate("intent-playground")}><Send size={16} /> Test Intent</Btn>
         </>}
       />
+
+      {trackedOnboardingAgents.length > 0 && onboardingCompleted < onboardingItems.length && (
+        <section className={`${CARD} p-5`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><ShieldCheck size={17} className="text-[#22D3EE]" /><h2 className={SECTION_TITLE}>Finish setting up Magen3</h2></div><p className="mt-1 text-xs text-[#94A3B8]">Your agent is registered. Complete the remaining integration milestones to reach the first verifiable decision.</p></div><div className="min-w-[150px]"><div className="flex items-center justify-between text-[10px] font-semibold text-[#94A3B8]"><span>{onboardingCompleted} of {onboardingItems.length}</span><span>{Math.round((onboardingCompleted / onboardingItems.length) * 100)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#1E293B]"><div className="h-full rounded-full bg-[#22D3EE]" style={{ width: `${(onboardingCompleted / onboardingItems.length) * 100}%` }} /></div></div></div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{onboardingItems.map((item) => <button type="button" key={item.id} onClick={() => item.id === "agent" ? onStartOnboarding("guided") : onNavigate(item.page)} className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left ${item.complete ? "border-[#22C55E]/15 bg-[#22C55E]/5" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}><div className="flex items-center gap-2"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${item.complete ? "border-[#22C55E] bg-[#22C55E] text-[#050B14]" : "border-[#334155] text-[#64748B]"}`}>{item.complete ? <CheckCircle size={13} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}</span><span className={`text-xs font-semibold ${item.complete ? "text-[#BBF7D0]" : "text-[#F8FAFC]"}`}>{item.label}</span></div>{!item.complete && <ChevronRight size={14} className="text-[#22D3EE]" />}</button>)}</div>
+        </section>
+      )}
 
       <OperationalSummary items={[
         { label: "Active Agents", value: activeAgents.length, detail: `${agents.length} registered`, icon: <Bot size={18} />, tone: "text-[#22D3EE]" },
@@ -3150,6 +3231,24 @@ function AgentShieldPage({
     });
   }, [latestLog]);
 
+  if (agents.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Agent Shield" description="Pre-execution protection becomes operational as soon as you protect the first agent." meta={<span className="inline-flex items-center gap-2 rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#22C55E]"><ShieldCheck size={13} /> Live</span>} />
+        <EmptyState
+          title="Protect your first agent"
+          description="Choose the agent's job and protection level. Magen3 will create the capabilities, starter policy, credentials, and first protected test without requiring you to configure every control manually."
+          action={<div className="flex flex-wrap justify-center gap-2"><Btn variant="primary" onClick={() => requestAgentOnboarding(onNavigate, "guided")}><ShieldCheck size={16} /> Start Guided Setup</Btn><Btn variant="secondary" onClick={() => requestAgentOnboarding(onNavigate, "advanced")}><Settings size={16} /> Advanced Setup</Btn></div>}
+        />
+        <div className="grid gap-3 md:grid-cols-3">{[
+          ["1", "Choose what to protect", "Magen3 infers relevant capabilities and protection areas."],
+          ["2", "Apply secure defaults", "Start with Standard or Strict protection, then customise later."],
+          ["3", "Run a protected test", "See the deterministic decision, Audit Log, and Casper proof flow."],
+        ].map(([number, title, detail]) => <div key={number} className={`${CARD} p-4`}><div className="flex items-start gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#22D3EE]/20 bg-[#22D3EE]/10 text-xs font-bold text-[#22D3EE]">{number}</span><div><div className="text-sm font-semibold text-[#F8FAFC]">{title}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{detail}</div></div></div></div>)}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -3489,49 +3588,201 @@ function AgentShieldPage({
   );
 }
 
+const GUIDED_USE_CASES: GuidedUseCase[] = [
+  {
+    id: "trading",
+    title: "Trading Agent",
+    description: "Swaps, staking, routing, liquidity, and autonomous trade execution.",
+    purpose: "Prepare and execute protected swaps, staking, liquidity, and other market-sensitive blockchain actions.",
+    capabilities: ["Trading", "Wallet Management", "dApp Interactions"],
+    template: "Balanced Trading",
+    icon: <TrendingUp size={20} />,
+  },
+  {
+    id: "wallet",
+    title: "Wallet Assistant",
+    description: "Transfers, destinations, balances, and controlled wallet operations.",
+    purpose: "Prepare protected transfers and wallet operations while enforcing destination, amount, and spending controls.",
+    capabilities: ["Wallet Management"],
+    template: "Wallet Safety",
+    icon: <Wallet size={20} />,
+  },
+  {
+    id: "treasury",
+    title: "Treasury Agent",
+    description: "DAO, team, protocol, or organisation fund management.",
+    purpose: "Manage treasury payments and high-value asset movement with deterministic limits and human approval.",
+    capabilities: ["Treasury Operations", "Wallet Management", "Enterprise Automation"],
+    template: "Treasury Safe Mode",
+    icon: <Database size={20} />,
+  },
+  {
+    id: "dapp",
+    title: "DeFi or dApp Agent",
+    description: "Contract calls, vaults, borrowing, staking, and protocol workflows.",
+    purpose: "Interact with approved contracts and DeFi protocols through protected, policy-bound execution requests.",
+    capabilities: ["dApp Interactions", "Wallet Management"],
+    template: "DeFi Automation",
+    icon: <Layers size={20} />,
+  },
+  {
+    id: "enterprise",
+    title: "Enterprise Automation",
+    description: "Organisation-grade workflows, controls, and operational permissions.",
+    purpose: "Run controlled organisation workflows with approval, compliance, and execution-integrity safeguards.",
+    capabilities: ["Enterprise Automation", "Wallet Management"],
+    template: "Enterprise Controlled Automation",
+    icon: <ShieldCheck size={20} />,
+  },
+  {
+    id: "custom",
+    title: "Custom Agent",
+    description: "Developer-defined autonomous blockchain capabilities.",
+    purpose: "Protect a custom autonomous workflow through Magen3 before wallet signing or blockchain execution.",
+    capabilities: ["Custom", "Wallet Management"],
+    template: "Custom",
+    icon: <Code2 size={20} />,
+  },
+];
+
+const INTEGRATION_TARGETS: Array<{ id: IntegrationTarget; description: string }> = [
+  { id: "Codex", description: "Generate concise instructions for a Codex skill or coding workspace." },
+  { id: "MCP", description: "Connect through the official Magen3 MCP server and tool contract." },
+  { id: "JavaScript", description: "Use the official TypeScript/JavaScript SDK in a web or Node agent." },
+  { id: "Python", description: "Use the official Python SDK in an automation or agent service." },
+  { id: "Custom API", description: "Call the authenticated Agent Gateway directly over HTTP." },
+  { id: "Integrate later", description: "Create the protected agent now and finish integration later." },
+];
+
+function createInitialAgentRegistrationDraft(mode: OnboardingSetupMode = "guided") {
+  return {
+    name: "",
+    purpose: mode === "guided" ? GUIDED_USE_CASES[0].purpose : "",
+    permissionLevel: "Limited Execution" as PermissionLevel,
+    executionCapabilities: [...GUIDED_USE_CASES[0].capabilities] as ExecutionCapability[],
+    policyMode: "recommended" as "recommended" | "existing" | "custom",
+    templateType: GUIDED_USE_CASES[0].template,
+    existingPolicyId: "",
+    policyName: `${GUIDED_USE_CASES[0].template} Policy`,
+    maxTransaction: 75,
+    dailyLimit: 300,
+    approvalThreshold: 50,
+    trustedContractsText: "",
+    blockedActions: ["RWA Proof Update", "Oracle Data Update"] as string[],
+    riskMode: "Balanced" as RiskMode,
+    guidedUseCase: "trading" as GuidedUseCaseId,
+    integrationTarget: "Codex" as IntegrationTarget,
+    protectionLevel: "Strict" as ProtectionLevel,
+    executionWalletAddress: "",
+    demoConfiguration: false,
+  };
+}
+
+function guidedProtectionRules(level: ProtectionLevel): Record<string, unknown> {
+  if (level === "Strict") {
+    return {
+      instructionIntegrityMode: "Enforce",
+      lifecycleControlMode: "Enforce",
+      lifecycleUnavailableAction: "Review",
+      threatIntelligenceMode: "Review",
+      threatIntelligenceUnavailableAction: "Review",
+      oracleValidationMode: "Review",
+      oracleValidationUnavailableAction: "Review",
+      rpcIntegrityMode: "Review",
+      rpcIntegrityUnavailableAction: "Review",
+      feeSafetyMode: "Review",
+      feeSafetySponsorshipUnavailableAction: "Review",
+      bridgeControlMode: "Review",
+      bridgeControlUnavailableAction: "Review",
+      tokenPermissionMode: "Enforce",
+      tokenPermissionUnknownSpenderAction: "Review",
+      tokenPermissionUnlimitedApprovalAction: "Review",
+      privilegedActionMode: "Enforce",
+      unknownPrivilegedAction: "Review",
+      reconciliationEnabled: true,
+      pendingRetryAction: "Block",
+      uncertainRetryAction: "Block",
+    };
+  }
+  if (level === "Standard") {
+    return {
+      instructionIntegrityMode: "Review",
+      lifecycleControlMode: "Enforce",
+      lifecycleUnavailableAction: "Warn",
+      threatIntelligenceMode: "Review",
+      threatIntelligenceUnavailableAction: "Warn",
+      oracleValidationMode: "Review",
+      oracleValidationUnavailableAction: "Warn",
+      rpcIntegrityMode: "Review",
+      rpcIntegrityUnavailableAction: "Warn",
+      feeSafetyMode: "Review",
+      feeSafetySponsorshipUnavailableAction: "Warn",
+      tokenPermissionMode: "Review",
+      privilegedActionMode: "Review",
+      reconciliationEnabled: true,
+      pendingRetryAction: "Block",
+      uncertainRetryAction: "Block",
+    };
+  }
+  return {};
+}
+
 function AgentRegistrationWizard({
   open,
+  initialMode = "guided",
   policies,
+  walletAddress,
   onClose,
+  onNavigate,
   onRegisterAgent,
   onCreatePolicy,
+  onSubmitGatewayIntent,
   onCreated,
 }: {
   open: boolean;
+  initialMode?: OnboardingSetupMode;
   policies: Policy[];
+  walletAddress: string;
   onClose: () => void;
+  onNavigate: (page: Page) => void;
   onRegisterAgent: (agent: AgentRegistrationDraft) => Promise<Agent | undefined> | Agent | undefined;
   onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
   onCreated: (agent: Agent) => void;
 }) {
+  const [setupMode, setSetupMode] = useState<OnboardingSetupMode>(initialMode);
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
-  const [settling, setSettling] = useState(false);
-  const [settlementResult, setSettlementResult] = useState<Record<string, unknown> | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<AgentGatewayResponse | null>(null);
   const [error, setError] = useState("");
   const [createdAgent, setCreatedAgent] = useState<Agent | null>(null);
+  const [createdPolicy, setCreatedPolicy] = useState<Policy | null>(null);
+  const [credentialSaved, setCredentialSaved] = useState(false);
+  const [showIntegrationCode, setShowIntegrationCode] = useState(false);
   const [copied, setCopied] = useState("");
-  const [draft, setDraft] = useState({
-    name: "",
-    purpose: "",
-    permissionLevel: "Limited Execution" as PermissionLevel,
-    executionCapabilities: ["Trading"] as ExecutionCapability[],
-    policyMode: "recommended" as "recommended" | "existing" | "custom",
-    templateType: "Conservative Trading",
-    existingPolicyId: "",
-    policyName: "Conservative Trading Policy",
-    maxTransaction: 25,
-    dailyLimit: 100,
-    approvalThreshold: 15,
-    trustedContractsText: "",
-    blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update", "Bridge"] as string[],
-    riskMode: "Conservative" as RiskMode,
-  });
+  const [draft, setDraft] = useState(() => createInitialAgentRegistrationDraft(initialMode));
 
-  const steps = ["Agent Details", "Capabilities", "Protection", "Starter Policy", "Review", "Quick Start"];
+  useEffect(() => {
+    if (!open) return;
+    setSetupMode(initialMode);
+    setStep(1);
+    setError("");
+    setTestResult(null);
+    setCreatedAgent(null);
+    setCreatedPolicy(null);
+    setCredentialSaved(false);
+    setShowIntegrationCode(false);
+    setDraft(createInitialAgentRegistrationDraft(initialMode));
+  }, [open, initialMode]);
+
+  const steps = setupMode === "guided"
+    ? ["Use case", "Agent", "Protection", "Connect & test"]
+    : ["Agent Details", "Capabilities", "Protection", "Starter Policy", "Review", "Quick Start"];
   const capabilities = normalizeCapabilities(draft.executionCapabilities);
   const modules = recommendedModules(capabilities);
   const selectedExistingPolicy = policies.find((policy) => policy.id === draft.existingPolicyId);
+  const selectedUseCase = GUIDED_USE_CASES.find((useCase) => useCase.id === draft.guidedUseCase) || GUIDED_USE_CASES[0];
 
   const applyTemplate = useCallback((templateName: string) => {
     const template = POLICY_TEMPLATES[templateName] || POLICY_TEMPLATES.Custom;
@@ -3546,6 +3797,65 @@ function AgentRegistrationWizard({
       blockedActions: [...template.blockedActions],
       riskMode: template.riskMode,
     }));
+  }, []);
+
+  const applyGuidedUseCase = useCallback((useCaseId: GuidedUseCaseId, demoConfiguration = false) => {
+    const useCase = GUIDED_USE_CASES.find((item) => item.id === useCaseId) || GUIDED_USE_CASES[0];
+    const template = POLICY_TEMPLATES[useCase.template] || POLICY_TEMPLATES.Custom;
+    setDraft((current) => ({
+      ...current,
+      guidedUseCase: useCase.id,
+      demoConfiguration,
+      name: demoConfiguration ? "Magen3 Demo Trading Agent" : current.name,
+      purpose: demoConfiguration ? "Explore Magen3 with a clearly labelled synthetic trading-agent configuration. No real blockchain execution is performed by the onboarding test." : useCase.purpose,
+      executionCapabilities: [...useCase.capabilities],
+      templateType: useCase.template,
+      policyName: demoConfiguration ? "Demo Trading Protection Policy" : `${useCase.template} Policy`,
+      policyMode: "recommended",
+      maxTransaction: template.maxTransaction,
+      dailyLimit: template.dailyLimit,
+      approvalThreshold: template.approvalThreshold,
+      trustedContractsText: template.trustedContracts.join("\n"),
+      blockedActions: [...template.blockedActions],
+      riskMode: template.riskMode,
+    }));
+  }, []);
+
+  const applyProtectionLevel = useCallback((level: ProtectionLevel) => {
+    setDraft((current) => {
+      const useCase = GUIDED_USE_CASES.find((item) => item.id === current.guidedUseCase) || GUIDED_USE_CASES[0];
+      const template = POLICY_TEMPLATES[useCase.template] || POLICY_TEMPLATES.Custom;
+      if (level === "Custom") {
+        return { ...current, protectionLevel: level, policyMode: "custom" };
+      }
+      if (level === "Strict") {
+        const strictMax = Math.max(10, Math.round(template.maxTransaction * 0.6));
+        const strictDaily = Math.max(strictMax * 3, Math.round(template.dailyLimit * 0.7));
+        const strictReview = Math.max(5, Math.min(strictMax, Math.round(template.approvalThreshold * 0.6)));
+        return {
+          ...current,
+          protectionLevel: level,
+          policyMode: "recommended",
+          policyName: `Strict ${useCase.title} Policy`,
+          maxTransaction: strictMax,
+          dailyLimit: strictDaily,
+          approvalThreshold: strictReview,
+          blockedActions: [...new Set([...template.blockedActions, "Bridge"])],
+          riskMode: "Conservative",
+        };
+      }
+      return {
+        ...current,
+        protectionLevel: level,
+        policyMode: "recommended",
+        policyName: `${useCase.template} Policy`,
+        maxTransaction: template.maxTransaction,
+        dailyLimit: template.dailyLimit,
+        approvalThreshold: template.approvalThreshold,
+        blockedActions: [...template.blockedActions],
+        riskMode: template.riskMode,
+      };
+    });
   }, []);
 
   const toggleCapability = useCallback((capability: ExecutionCapability) => {
@@ -3573,41 +3883,36 @@ function AgentRegistrationWizard({
     });
   }, []);
 
-  const canContinue = step === 1
-    ? Boolean(draft.name.trim() && draft.purpose.trim())
-    : step === 2
-      ? capabilities.length > 0
-      : step === 4
-        ? draft.policyMode === "existing"
-          ? Boolean(selectedExistingPolicy)
-          : Boolean(draft.policyName.trim() && draft.maxTransaction > 0 && draft.dailyLimit > 0 && draft.approvalThreshold >= 0)
-        : true;
+  const canContinue = setupMode === "guided"
+    ? step === 1
+      ? Boolean(draft.guidedUseCase)
+      : step === 2
+        ? Boolean(draft.name.trim() && draft.purpose.trim() && draft.integrationTarget)
+        : step === 3
+          ? Boolean(draft.policyName.trim() && draft.maxTransaction > 0 && draft.dailyLimit > 0 && draft.approvalThreshold >= 0)
+          : true
+    : step === 1
+      ? Boolean(draft.name.trim() && draft.purpose.trim())
+      : step === 2
+        ? capabilities.length > 0
+        : step === 4
+          ? draft.policyMode === "existing"
+            ? Boolean(selectedExistingPolicy)
+            : Boolean(draft.policyName.trim() && draft.maxTransaction > 0 && draft.dailyLimit > 0 && draft.approvalThreshold >= 0)
+          : true;
 
   const closeWizard = useCallback(() => {
-    if (step === 6) {
-      setStep(1);
-      setCreatedAgent(null);
-      setError("");
-      setCopied("");
-      setDraft({
-        name: "",
-        purpose: "",
-        permissionLevel: "Limited Execution",
-        executionCapabilities: ["Trading"],
-        policyMode: "recommended",
-        templateType: "Conservative Trading",
-        existingPolicyId: "",
-        policyName: "Conservative Trading Policy",
-        maxTransaction: 25,
-        dailyLimit: 100,
-        approvalThreshold: 15,
-        trustedContractsText: "",
-        blockedActions: ["DAO Treasury Payment", "RWA Proof Update", "Oracle Data Update", "Bridge"],
-        riskMode: "Conservative",
-      });
-    }
+    setStep(1);
+    setCreatedAgent(null);
+    setCreatedPolicy(null);
+    setError("");
+    setCopied("");
+    setTestResult(null);
+    setCredentialSaved(false);
+    setShowIntegrationCode(false);
+    setDraft(createInitialAgentRegistrationDraft(initialMode));
     onClose();
-  }, [onClose, step]);
+  }, [onClose]);
 
   const createAgentAndPolicy = useCallback(async () => {
     setSubmitting(true);
@@ -3629,10 +3934,18 @@ function AgentRegistrationWizard({
         capabilityConfiguration: {
           recommendedModules: modules.map((module) => module.id),
           configurationVersion: 1,
+          setupMode,
+          guidedUseCase: setupMode === "guided" ? draft.guidedUseCase : undefined,
+          integrationTarget: setupMode === "guided" ? draft.integrationTarget : undefined,
+          protectionLevel: setupMode === "guided" ? draft.protectionLevel : undefined,
+          executionWalletAddress: draft.executionWalletAddress.trim() || undefined,
+          demoConfiguration: setupMode === "guided" ? draft.demoConfiguration : false,
         },
         onboardingStatus: "complete",
       });
       if (!agent) throw new Error("The agent could not be registered.");
+      setCreatedAgent(agent);
+      onCreated(agent);
 
       const existing = draft.policyMode === "existing" ? selectedExistingPolicy : undefined;
       const policyValues = existing ? {
@@ -3657,9 +3970,14 @@ function AgentRegistrationWizard({
         structuredRules: {},
       };
 
-      const sourceRules: Record<string, unknown> = policyValues.structuredRules || {};
+      const sourceRules: Record<string, unknown> = {
+        ...(policyValues.structuredRules || {}),
+        ...(setupMode === "guided" ? guidedProtectionRules(draft.protectionLevel) : {}),
+      };
 
-      const policy = await onCreatePolicy({
+      let policy: Policy | undefined;
+      try {
+        policy = await onCreatePolicy({
         ...policyValues,
         agentId: agent.id,
         status: "Active",
@@ -3847,19 +4165,24 @@ function AgentRegistrationWizard({
           enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
-      });
+        });
+      } catch (policyCause) {
+        setCreatedPolicy(null);
+        setError(policyCause instanceof Error ? `The agent was registered, but its starter policy could not be created: ${policyCause.message}` : "The agent was registered, but its starter policy could not be created. Open Policies before sending intents.");
+        setStep(setupMode === "guided" ? 4 : 6);
+        return;
+      }
       if (!policy) {
         setError("The agent was registered, but the starter policy could not be created. Create a policy from the Policies page before sending intents.");
       }
-      setCreatedAgent(agent);
-      onCreated(agent);
-      setStep(6);
+      setCreatedPolicy(policy || null);
+      setStep(setupMode === "guided" ? 4 : 6);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to complete agent registration.");
     } finally {
       setSubmitting(false);
     }
-  }, [capabilities, draft, modules, onCreatePolicy, onCreated, onRegisterAgent, selectedExistingPolicy]);
+  }, [capabilities, draft, modules, onCreatePolicy, onCreated, onRegisterAgent, selectedExistingPolicy, setupMode]);
 
   const copyValue = useCallback(async (label: string, value: string) => {
     if (!value) return;
@@ -3867,6 +4190,85 @@ function AgentRegistrationWizard({
     setCopied(ok ? label : "failed");
     setTimeout(() => setCopied(""), 1500);
   }, []);
+
+  const markCredentialSaved = useCallback(() => {
+    if (!createdAgent) return;
+    try {
+      window.localStorage.setItem(`magen3.onboarding.credentialsSaved.${createdAgent.id}`, "true");
+    } catch {
+      // Restricted browser storage does not prevent the user from continuing.
+    }
+    setCredentialSaved(true);
+  }, [createdAgent]);
+
+  const downloadEnv = useCallback(() => {
+    if (!createdAgent) return;
+    const value = `MAGEN3_AGENT_ID=${createdAgent.id}\nMAGEN3_AGENT_API_KEY=${createdAgent.apiKey || "PASTE_AGENT_API_KEY"}\nMAGEN3_GATEWAY_URL=${api.baseUrl}/api/agent-gateway/intents\n`;
+    const blob = new Blob([value], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `magen3-${createdAgent.id.toLowerCase()}.env`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    markCredentialSaved();
+  }, [createdAgent, markCredentialSaved]);
+
+  const runProtectedTest = useCallback(async () => {
+    if (!createdPolicy || createdPolicy.status !== "Active") {
+      setError("Activate a starter policy before running the protected test. The agent identity exists, but Magen3 will not present it as fully protected without an active policy.");
+      return;
+    }
+    if (!createdAgent?.apiKey) {
+      setError("The one-time API key is not available. Rotate it from Connected Agents before running the protected test.");
+      return;
+    }
+    setTesting(true);
+    setError("");
+    setTestResult(null);
+    try {
+      const executionWalletAddress = draft.executionWalletAddress.trim() || walletAddress;
+      const result = await onSubmitGatewayIntent({
+        source: draft.demoConfiguration ? "Magen3 Guided Demo" : `${createdAgent.name} onboarding`,
+        agentId: createdAgent.id,
+        walletAddress,
+        executionWalletAddress,
+        goal: "Verify that Magen3 evaluates a small synthetic transfer before any wallet signing or blockchain execution.",
+        reason: "Guided onboarding safety check. This request creates a decision and audit evidence only; it does not sign or submit a transaction.",
+        instructionIntegrity: {
+          goalId: `onboarding:${createdAgent.id}`,
+          initiatedBy: "user",
+          intentSource: "Magen3 Guided Setup",
+          sourceDomains: [],
+          externalContentUsed: false,
+          userConfirmed: true,
+          sourceTrustLevel: "trusted",
+        },
+        lifecycle: playgroundLifecycle(),
+        action: {
+          type: "Transfer",
+          amount: 1,
+          asset: "CSPR",
+          target: PLAYGROUND_DEMO_RECIPIENT,
+          targetType: "Wallet Address",
+          chainName: "casper-test",
+          preflight: playgroundPreflight(),
+        },
+      }, createdAgent.apiKey);
+      setTestResult(result);
+      try {
+        window.localStorage.setItem(`magen3.onboarding.firstTest.${createdAgent.id}`, "true");
+      } catch {
+        // Audit persistence remains the source of truth when local storage is restricted.
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The protected test could not be evaluated.");
+    } finally {
+      setTesting(false);
+    }
+  }, [createdAgent, createdPolicy, draft.demoConfiguration, draft.executionWalletAddress, onSubmitGatewayIntent, walletAddress]);
 
   if (!open) return null;
 
@@ -3889,20 +4291,47 @@ function AgentRegistrationWizard({
     }
   }'` : "";
 
+  const integrationSnippet = createdAgent ? (() => {
+    const key = createdAgent.apiKey || "PASTE_AGENT_API_KEY";
+    if (draft.integrationTarget === "Codex") return `# Magen3 protected execution\n\nBefore any blockchain signing or execution, submit the intended action to Magen3.\n\n- Agent ID: ${createdAgent.id}\n- Gateway: ${gatewayUrl}\n- Header: x-magen3-agent-key: ${key}\n- Obey only Allowed, Blocked, or Review Required.\n- Never sign when the decision is Blocked or Review Required.`;
+    if (draft.integrationTarget === "MCP") return `{
+  "mcpServers": {
+    "magen3": {
+      "command": "pnpm",
+      "args": ["--filter", "@magen3/mcp-server", "start"],
+      "env": {
+        "MAGEN3_AGENT_ID": "${createdAgent.id}",
+        "MAGEN3_AGENT_API_KEY": "${key}",
+        "MAGEN3_GATEWAY_URL": "${gatewayUrl}"
+      }
+    }
+  }
+}`;
+    if (draft.integrationTarget === "JavaScript") return `import { Magen3Client } from "@magen3/sdk";\n\nconst magen3 = new Magen3Client({\n  agentId: "${createdAgent.id}",\n  apiKey: "${key}",\n  baseUrl: "${api.baseUrl}"\n});\n\nconst decision = await magen3.checkIntent(intent);`;
+    if (draft.integrationTarget === "Python") return `from magen3 import Magen3Client\n\nmagen3 = Magen3Client(\n    agent_id="${createdAgent.id}",\n    api_key="${key}",\n    base_url="${api.baseUrl}",\n)\n\ndecision = magen3.check_intent(intent)`;
+    if (draft.integrationTarget === "Custom API") return requestExample;
+    return `MAGEN3_AGENT_ID=${createdAgent.id}\nMAGEN3_AGENT_API_KEY=${key}\nMAGEN3_GATEWAY_URL=${gatewayUrl}`;
+  })() : "";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
       <div className="absolute inset-0 bg-black/70" />
       <div className={`${CARD_GLOW} relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden`}>
         <div className="border-b border-[#1E293B] p-5">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Guided Onboarding</div>
-              <h2 className="mt-1 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Register and protect an external agent</h2>
-              <p className="mt-1 text-sm text-[#94A3B8]">Configure identity, execution capabilities, protection, policy, and integration credentials.</p>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">First Agent Setup</div>
+              <h2 className="mt-1 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Protect an autonomous agent with Magen3</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#94A3B8]">{setupMode === "guided" ? "Choose the job, protection level, and integration. Magen3 configures the capabilities and starter policy for you." : "Configure every capability, protection recommendation, and starter-policy field manually."}</p>
+              {!createdAgent && step === 1 && <div className="mt-4 inline-flex rounded-xl border border-[#1E293B] bg-[#050B14] p-1">
+                {(["guided", "advanced"] as OnboardingSetupMode[]).map((mode) => (
+                  <button key={mode} type="button" onClick={() => { setSetupMode(mode); setDraft(createInitialAgentRegistrationDraft(mode)); setStep(1); setError(""); setTestResult(null); }} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${setupMode === mode ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:text-[#F8FAFC]"}`}>{mode === "guided" ? "Guided Setup" : "Advanced Setup"}</button>
+                ))}
+              </div>}
             </div>
             <button type="button" onClick={closeWizard} className="rounded-lg p-2 text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#F8FAFC]" aria-label="Close registration wizard"><X size={18} /></button>
           </div>
-          <div className="mt-5 grid grid-cols-6 gap-2">
+          <div className={`mt-5 grid gap-2 ${steps.length === 4 ? "grid-cols-4" : "grid-cols-6"}`}>
             {steps.map((label, index) => {
               const number = index + 1;
               const active = step === number;
@@ -3918,7 +4347,131 @@ function AgentRegistrationWizard({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-          {step === 1 && (
+          {setupMode === "guided" && step === 1 && (
+            <div className="space-y-6">
+              <div className="mx-auto max-w-3xl text-center">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Step 1 of 4</div>
+                <h3 className="mt-2 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">What do you want Magen3 to protect?</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">Choose the closest job. Magen3 will select the capabilities, protection areas, and starter policy automatically. You can change everything later.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {GUIDED_USE_CASES.map((useCase) => {
+                  const selected = draft.guidedUseCase === useCase.id && !draft.demoConfiguration;
+                  return (
+                    <button type="button" key={useCase.id} onClick={() => applyGuidedUseCase(useCase.id)} className={`group rounded-2xl border p-4 text-left transition-all ${selected ? "border-[#22D3EE]/55 bg-[#22D3EE]/10 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155] hover:bg-[#0D1626]"}`}>
+                      <div className="flex items-start justify-between gap-3"><div className={`rounded-xl border p-2.5 ${selected ? "border-[#22D3EE]/25 bg-[#22D3EE]/10 text-[#22D3EE]" : "border-[#1E293B] bg-[#111827] text-[#94A3B8] group-hover:text-[#F8FAFC]"}`}>{useCase.icon}</div><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-[#22D3EE] bg-[#22D3EE] text-[#050B14]" : "border-[#334155]"}`}>{selected && <CheckCircle size={14} />}</span></div>
+                      <div className="mt-4 font-semibold text-[#F8FAFC]">{useCase.title}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{useCase.description}</p>
+                      <div className="mt-3"><CapabilityChips capabilities={useCase.capabilities} compact /></div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button type="button" onClick={() => applyGuidedUseCase("trading", true)} className={`flex w-full flex-col gap-3 rounded-2xl border p-4 text-left transition-colors sm:flex-row sm:items-center sm:justify-between ${draft.demoConfiguration ? "border-[#A78BFA]/45 bg-[#A78BFA]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#A78BFA]/35"}`}>
+                <div className="flex items-start gap-3"><div className="rounded-xl border border-[#A78BFA]/25 bg-[#A78BFA]/10 p-2.5 text-[#A78BFA]"><Zap size={20} /></div><div><div className="font-semibold text-[#F8FAFC]">Explore with a demo configuration</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Use a clearly labelled synthetic trading-agent setup and experience Allowed, Blocked, or Review Required without executing a real transaction.</div></div></div>
+                <span className="shrink-0 text-xs font-semibold text-[#A78BFA]">{draft.demoConfiguration ? "Selected" : "Use demo setup"}</span>
+              </button>
+              <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4">
+                <div className="flex items-start gap-3"><ShieldCheck size={19} className="mt-0.5 shrink-0 text-[#22D3EE]" /><div><div className="text-sm font-semibold text-[#F8FAFC]">Magen3 will configure the security foundation</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Selected: {selectedUseCase.title}. Recommended template: {selectedUseCase.template}. Advanced controls remain available after setup.</div></div></div>
+              </div>
+            </div>
+          )}
+
+          {setupMode === "guided" && step === 2 && (
+            <div className="mx-auto max-w-4xl space-y-6">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Step 2 of 4</div>
+                <h3 className="mt-2 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Tell us about the agent</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">Only provide what Magen3 cannot infer: the agent identity, optional execution wallet, and how you plan to connect it.</p>
+              </div>
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+                <div className={`${CARD} space-y-4 p-5`}>
+                  <InputField label="Agent Name" value={draft.name} onChange={(value) => setDraft((current) => ({ ...current, name: value, policyName: current.policyName.startsWith("Strict ") ? `Strict ${value || selectedUseCase.title} Policy` : current.policyName }))} placeholder={draft.demoConfiguration ? "Magen3 Demo Trading Agent" : "e.g. YieldBot AI"} />
+                  <div><label className={LABEL_CLS}>What will this agent do?</label><textarea className={`${INPUT_CLS} resize-none`} rows={4} value={draft.purpose} onChange={(event) => setDraft((current) => ({ ...current, purpose: event.target.value }))} /></div>
+                  <InputField label="Execution Wallet (optional)" value={draft.executionWalletAddress} onChange={(value) => setDraft((current) => ({ ...current, executionWalletAddress: value }))} placeholder="Casper public key used for requested execution" />
+                  <p className="text-xs leading-relaxed text-[#64748B]">The execution wallet is public identity metadata only. Never paste a private key, seed phrase, mnemonic, or wallet secret.</p>
+                </div>
+                <div className={`${CARD} p-5`}>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">How will the agent connect?</div>
+                  <div className="mt-1 text-xs text-[#94A3B8]">Your completion screen will show the matching quick-start instructions.</div>
+                  <div className="mt-4 space-y-2">{INTEGRATION_TARGETS.map((target) => {
+                    const selected = draft.integrationTarget === target.id;
+                    return <button type="button" key={target.id} onClick={() => setDraft((current) => ({ ...current, integrationTarget: target.id }))} className={`flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left ${selected ? "border-[#22D3EE]/45 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}><div><div className="text-sm font-semibold text-[#F8FAFC]">{target.id}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{target.description}</div></div><span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-[#22D3EE] bg-[#22D3EE] text-[#050B14]" : "border-[#334155]"}`}>{selected && <CheckCircle size={11} />}</span></button>;
+                  })}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {setupMode === "guided" && step === 3 && (
+            <div className="mx-auto max-w-5xl space-y-6">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">Step 3 of 4</div>
+                <h3 className="mt-2 text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Choose a protection level</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">Start with understandable security behaviour. Detailed policy and control configuration remains available after setup.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {([
+                  { id: "Standard" as ProtectionLevel, title: "Standard", description: "Secure defaults for testing and lower-risk automation.", badge: "Balanced defaults", tone: "#22D3EE" },
+                  { id: "Strict" as ProtectionLevel, title: "Strict", description: "Lower limits, conservative risk handling, and review when critical evidence is unavailable.", badge: "Recommended", tone: "#22C55E" },
+                  { id: "Custom" as ProtectionLevel, title: "Custom", description: "Set the essential limits now, then configure every advanced control later.", badge: "Full control", tone: "#A78BFA" },
+                ]).map((level) => {
+                  const selected = draft.protectionLevel === level.id;
+                  return <button type="button" key={level.id} onClick={() => applyProtectionLevel(level.id)} className={`rounded-2xl border p-5 text-left transition-colors ${selected ? "border-[#22D3EE]/50 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}><div className="flex items-center justify-between gap-3"><div className="text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{level.title}</div><span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2 py-1 text-[10px] font-semibold" style={{ color: level.tone }}>{level.badge}</span></div><p className="mt-3 text-xs leading-relaxed text-[#94A3B8]">{level.description}</p></button>;
+                })}
+              </div>
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
+                <div className={`${CARD} p-5`}>
+                  <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Plain-language protection summary</div><div className="mt-1 text-xs text-[#94A3B8]">This is what the selected policy means during execution.</div></div><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#BBF7D0]">{draft.protectionLevel}</span></div>
+                  <div className="mt-4 space-y-2">
+                    <CompactStatusRow compact label="Transaction limit" status={`${draft.maxTransaction} CSPR`} detail={`Requests above ${draft.maxTransaction} CSPR are blocked by the starter policy.`} tone="info" />
+                    <CompactStatusRow compact label="Human review" status={`Above ${draft.approvalThreshold} CSPR`} detail="Higher-value requests return Review Required before wallet signing." tone="warning" />
+                    <CompactStatusRow compact label="Daily spending" status={`${draft.dailyLimit} CSPR`} detail="The active policy tracks cumulative spending for this agent." tone="info" />
+                    <CompactStatusRow compact label="Unknown or unavailable evidence" status={draft.protectionLevel === "Strict" ? "Review" : "Policy controlled"} detail="Unavailable controls never silently count as a pass." tone={draft.protectionLevel === "Strict" ? "warning" : "neutral"} />
+                    <CompactStatusRow compact label="Unsafe retries" status="Blocked" detail="Lifecycle and reconciliation controls prevent duplicate, pending, or uncertain retries." tone="success" />
+                  </div>
+                  {draft.protectionLevel === "Custom" && <div className="mt-5 grid gap-4 sm:grid-cols-3"><InputField label="Maximum Transaction" type="number" value={String(draft.maxTransaction)} onChange={(value) => setDraft((current) => ({ ...current, maxTransaction: Number(value) }))} /><InputField label="Daily Limit" type="number" value={String(draft.dailyLimit)} onChange={(value) => setDraft((current) => ({ ...current, dailyLimit: Number(value) }))} /><InputField label="Review Threshold" type="number" value={String(draft.approvalThreshold)} onChange={(value) => setDraft((current) => ({ ...current, approvalThreshold: Number(value) }))} /></div>}
+                </div>
+                <div className={`${CARD} p-5`}>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">Magen3 configures</div>
+                  <div className="mt-1 text-xs text-[#94A3B8]">Capabilities and protection areas relevant to {selectedUseCase.title}.</div>
+                  <div className="mt-4"><CapabilityChips capabilities={capabilities} /></div>
+                  <div className="mt-4 space-y-2">{modules.slice(0, 5).map((module) => <div key={module.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2"><span className="text-xs font-semibold text-[#F8FAFC]">{module.name}</span><span className={`text-[10px] font-semibold ${module.status === "Live" ? "text-[#22C55E]" : "text-[#22D3EE]"}`}>{module.status === "Foundation Available" ? "Foundation" : module.status}</span></div>)}</div>
+                  <p className="mt-4 text-xs leading-relaxed text-[#64748B]">A 100% coverage score never guarantees safety. Magen3 reports configured protection and real evaluation evidence only.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {setupMode === "guided" && step === 4 && createdAgent && (
+            <div className="mx-auto max-w-5xl space-y-6">
+              <div className={`rounded-2xl border p-5 ${createdPolicy?.status === "Active" ? "border-[#22C55E]/30 bg-[#22C55E]/10" : "border-[#F59E0B]/30 bg-[#F59E0B]/10"}`}>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><div className={`rounded-xl p-2.5 ${createdPolicy?.status === "Active" ? "bg-[#22C55E]/15 text-[#22C55E]" : "bg-[#F59E0B]/15 text-[#F59E0B]"}`}>{createdPolicy?.status === "Active" ? <ShieldCheck size={23} /> : <AlertTriangle size={23} />}</div><div><div className={`text-xs font-semibold uppercase tracking-wider ${createdPolicy?.status === "Active" ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{createdPolicy?.status === "Active" ? "Your agent is protected" : "Agent registered — policy setup required"}</div><h3 className="mt-1 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{createdPolicy?.status === "Active" ? `${createdAgent.name} is ready for integration` : `${createdAgent.name} needs an active starter policy`}</h3><p className={`mt-1 text-sm leading-relaxed ${createdPolicy?.status === "Active" ? "text-[#BBF7D0]" : "text-[#FCD34D]"}`}>{createdPolicy?.status === "Active" ? "Magen3 created the agent identity, an active starter policy, and one-time credentials. The onboarding test evaluates a synthetic request only—it never signs or submits a transaction." : "The agent identity and one-time credential were created, but Magen3 will not describe the agent as protected until a policy is active. Open Policies to finish setup."}</p></div></div><span className={`rounded-full border bg-[#050B14]/45 px-3 py-1 text-xs font-semibold ${createdPolicy?.status === "Active" ? "border-[#22C55E]/25 text-[#BBF7D0]" : "border-[#F59E0B]/25 text-[#FCD34D]"}`}>{createdPolicy?.status === "Active" ? `${draft.protectionLevel} protection` : "Policy required"}</span></div>
+              </div>
+              {error && <div className="rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 p-3 text-sm text-[#FCD34D]">{error}</div>}
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+                <div className="space-y-5">
+                  <div className={`${CARD} p-5`}>
+                    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">1. Save the one-time API key</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Magen3 stores only its hash and preview after this session.</div></div>{credentialSaved && <span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2 py-1 text-[10px] font-semibold text-[#BBF7D0]">Saved</span>}</div>
+                    <div className="mt-4 rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">API Key</div><div className="mt-2 break-all font-mono text-xs text-[#F8FAFC]">{createdAgent.apiKey || "Not available—rotate from Access"}</div></div>
+                    <div className="mt-3 flex flex-wrap gap-2"><Btn variant="primary" size="sm" onClick={() => { copyValue("API key", createdAgent.apiKey || ""); markCredentialSaved(); }} disabled={!createdAgent.apiKey}><Copy size={14} /> {copied === "API key" ? "Copied" : "Copy API Key"}</Btn><Btn variant="secondary" size="sm" onClick={downloadEnv}><FileText size={14} /> Download .env</Btn><Btn variant="ghost" size="sm" onClick={markCredentialSaved}><CheckCircle size={14} /> I have saved it</Btn></div>
+                  </div>
+                  <div className={`${CARD} overflow-hidden`}>
+                    <button type="button" onClick={() => setShowIntegrationCode((current) => !current)} className="flex w-full items-center justify-between gap-4 p-5 text-left"><div><div className="text-sm font-semibold text-[#F8FAFC]">2. Connect with {draft.integrationTarget}</div><div className="mt-1 text-xs text-[#94A3B8]">A quick-start prepared for the integration method you selected.</div></div><ChevronDown size={16} className={`shrink-0 text-[#64748B] transition-transform ${showIntegrationCode ? "rotate-180" : ""}`} /></button>
+                    {showIntegrationCode && <div className="border-t border-[#1E293B] p-4"><div className="mb-3 flex justify-end"><Btn variant="outline" size="sm" onClick={() => copyValue("integration", integrationSnippet)}><Copy size={13} /> {copied === "integration" ? "Copied" : "Copy instructions"}</Btn></div><pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]"><code>{integrationSnippet}</code></pre></div>}
+                  </div>
+                </div>
+                <div className={`${CARD_GLOW} p-5`}>
+                  <div className="text-sm font-semibold text-[#F8FAFC]">3. Run the first protected test</div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Magen3 evaluates a 1 CSPR synthetic transfer, stores the audit record, and submits the decision proof through the existing proof flow. Nothing is signed or sent.</p>
+                  <div className="mt-4 space-y-2"><CompactStatusRow compact label="Agent identity" status="Created" tone="success" /><CompactStatusRow compact label="Starter policy" status={createdPolicy?.status || "Not active"} tone={createdPolicy?.status === "Active" ? "success" : "warning"} /><CompactStatusRow compact label="Credential" status={credentialSaved ? "Saved" : "Save now"} tone={credentialSaved ? "success" : "warning"} /><CompactStatusRow compact label="Protected test" status={testResult ? testResult.result.decision : "Not run"} tone={testResult?.result.decision === "Allowed" ? "success" : testResult ? "warning" : "neutral"} /></div>
+                  <Btn variant="primary" onClick={runProtectedTest} disabled={testing || !createdAgent.apiKey || createdPolicy?.status !== "Active"} className="mt-4 w-full justify-center"><Send size={15} /> {createdPolicy?.status !== "Active" ? "Activate policy to test" : testing ? "Evaluating…" : testResult ? "Run another protected test" : "Run protected test"}</Btn>{createdPolicy?.status !== "Active" && <Btn variant="secondary" size="sm" onClick={() => { closeWizard(); onNavigate("policies"); }} className="mt-2 w-full justify-center"><FileText size={14} /> Open Policies</Btn>}
+                  {testResult && <div className={`mt-4 rounded-xl border p-4 ${testResult.result.decision === "Allowed" ? "border-[#22C55E]/25 bg-[#22C55E]/5" : testResult.result.decision === "Blocked" ? "border-[#EF4444]/25 bg-[#EF4444]/5" : "border-[#F59E0B]/25 bg-[#F59E0B]/5"}`}><div className="flex items-center justify-between gap-3"><DecisionBadge decision={testResult.result.decision} /><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Protected decision</span></div><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">{testResult.result.primaryReason || testResult.result.reason}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{testResult.result.suggestedResolution || testResult.nextAction}</div><div className="mt-3 flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:audit-record-id", testResult.auditLog.id); } catch {} closeWizard(); onNavigate("audit-log"); }}>View Audit Record</Btn><Btn variant="ghost" size="sm" onClick={() => { closeWizard(); onNavigate("intent-playground"); }}>Open Playground</Btn></div></div>}
+                </div>
+              </div>
+            </div>
+          )}
+          {setupMode === "advanced" && step === 1 && (
             <div className="mx-auto max-w-2xl space-y-5">
               <div>
                 <h3 className={SECTION_TITLE}>Agent Details</h3>
@@ -3933,7 +4486,7 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {step === 2 && (
+          {setupMode === "advanced" && step === 2 && (
             <div className="space-y-6">
               <div>
                 <h3 className={SECTION_TITLE}>Execution Capabilities</h3>
@@ -3985,7 +4538,7 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {step === 3 && (
+          {setupMode === "advanced" && step === 3 && (
             <div className="space-y-5">
               <div>
                 <h3 className={SECTION_TITLE}>Recommended Protection</h3>
@@ -4004,7 +4557,7 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {step === 4 && (
+          {setupMode === "advanced" && step === 4 && (
             <div className="space-y-5">
               <div>
                 <h3 className={SECTION_TITLE}>Starter Policy</h3>
@@ -4061,7 +4614,7 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {step === 5 && (
+          {setupMode === "advanced" && step === 5 && (
             <div className="space-y-5">
               <div>
                 <h3 className={SECTION_TITLE}>Review Configuration</h3>
@@ -4092,7 +4645,7 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {step === 6 && createdAgent && (
+          {setupMode === "advanced" && step === 6 && createdAgent && (
             <div className="space-y-5">
               <div className="rounded-xl border border-[#22C55E]/30 bg-[#22C55E]/10 p-4">
                 <div className="flex items-start gap-3"><CheckCircle size={22} className="flex-shrink-0 text-[#22C55E]" /><div><h3 className="font-bold text-[#F8FAFC]">Agent registration complete</h3><p className="mt-1 text-sm text-[#BBF7D0]">Copy the raw API key now. Magen3 stores only its hash and preview after this session.</p></div></div>
@@ -4119,14 +4672,21 @@ function AgentRegistrationWizard({
             </div>
           )}
 
-          {error && step !== 6 && <div className="mt-5 rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
+          {error && setupMode === "advanced" && step !== 6 && <div className="mt-5 rounded-xl border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 text-sm text-[#FCA5A5]">{error}</div>}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-[#1E293B] p-4 sm:px-6">
-          <Btn variant="secondary" onClick={() => step > 1 && step < 6 ? setStep((current) => current - 1) : closeWizard()} disabled={submitting}>{step > 1 && step < 6 ? "Back" : step === 6 ? "Close" : "Cancel"}</Btn>
-          {step < 5 && <Btn variant="primary" onClick={() => setStep((current) => current + 1)} disabled={!canContinue}><ArrowRight size={15} /> Next</Btn>}
-          {step === 5 && <Btn variant="primary" onClick={createAgentAndPolicy} disabled={submitting || !canContinue}>{submitting ? "Creating…" : "Create Agent and Policy"}</Btn>}
-          {step === 6 && <Btn variant="primary" onClick={closeWizard}>Open Agent Control Center</Btn>}
+          {setupMode === "guided" ? <>
+            <Btn variant="secondary" onClick={() => step > 1 && step < 4 ? setStep((current) => current - 1) : closeWizard()} disabled={submitting || testing}>{step > 1 && step < 4 ? "Back" : step === 4 ? "Close" : "Cancel"}</Btn>
+            {step < 3 && <Btn variant="primary" onClick={() => setStep((current) => current + 1)} disabled={!canContinue}><ArrowRight size={15} /> Continue</Btn>}
+            {step === 3 && <Btn variant="primary" onClick={createAgentAndPolicy} disabled={submitting || !canContinue}><ShieldCheck size={15} /> {submitting ? "Protecting agent…" : "Protect Agent"}</Btn>}
+            {step === 4 && <Btn variant="primary" onClick={closeWizard}>Open Agent Control Centre</Btn>}
+          </> : <>
+            <Btn variant="secondary" onClick={() => step > 1 && step < 6 ? setStep((current) => current - 1) : closeWizard()} disabled={submitting}>{step > 1 && step < 6 ? "Back" : step === 6 ? "Close" : "Cancel"}</Btn>
+            {step < 5 && <Btn variant="primary" onClick={() => setStep((current) => current + 1)} disabled={!canContinue}><ArrowRight size={15} /> Next</Btn>}
+            {step === 5 && <Btn variant="primary" onClick={createAgentAndPolicy} disabled={submitting || !canContinue}>{submitting ? "Creating…" : "Create Agent and Policy"}</Btn>}
+            {step === 6 && <Btn variant="primary" onClick={closeWizard}>Open Agent Control Centre</Btn>}
+          </>}
         </div>
       </div>
     </div>
@@ -4144,7 +4704,10 @@ function ConnectedAgentsPage({
   onRotateAgentApiKey,
   onRevokeAgent,
   onCreatePolicy,
+  onSubmitGatewayIntent,
   onNavigate,
+  onboardingRequest,
+  onOnboardingRequestHandled,
   auditLogs,
   walletAddress,
   apiOnline,
@@ -4158,7 +4721,10 @@ function ConnectedAgentsPage({
   onRotateAgentApiKey: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   onRevokeAgent: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
+  onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
   onNavigate: (page: Page) => void;
+  onboardingRequest?: OnboardingLaunchRequest | null;
+  onOnboardingRequestHandled?: () => void;
   auditLogs: AuditLog[];
   walletAddress: string;
   apiOnline: boolean;
@@ -4183,6 +4749,7 @@ function ConnectedAgentsPage({
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [copied, setCopied] = useState("");
   const [showRegister, setShowRegister] = useState(false);
+  const [registrationMode, setRegistrationMode] = useState<OnboardingSetupMode>("guided");
   const [agentSearch, setAgentSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | "Active" | "Revoked" | "No Policy">("All");
   const [policyFilter, setPolicyFilter] = useState("All");
@@ -4200,6 +4767,26 @@ function ConnectedAgentsPage({
       setSelectedAgentId(agents[0].id);
     }
   }, [agents, selectedAgentId]);
+
+  useEffect(() => {
+    if (!onboardingRequest) return;
+    setRegistrationMode(onboardingRequest.mode);
+    setShowRegister(true);
+    onOnboardingRequestHandled?.();
+  }, [onboardingRequest, onOnboardingRequestHandled]);
+
+  useEffect(() => {
+    try {
+      const requestedMode = window.sessionStorage.getItem("magen3:onboarding-mode") as OnboardingSetupMode | null;
+      if (requestedMode === "guided" || requestedMode === "advanced") {
+        window.sessionStorage.removeItem("magen3:onboarding-mode");
+        setRegistrationMode(requestedMode);
+        setShowRegister(true);
+      }
+    } catch {
+      // Session storage is optional; the page still exposes the Add Agent action.
+    }
+  }, []);
 
   useEffect(() => {
     setShowSkillKit(false);
@@ -4230,6 +4817,20 @@ function ConnectedAgentsPage({
     link.remove();
     URL.revokeObjectURL(url);
   }, []);
+
+  const recordLatestCredentialSaved = useCallback(() => {
+    if (!latestCredentials?.id) return;
+    try {
+      window.localStorage.setItem(`magen3.onboarding.credentialsSaved.${latestCredentials.id}`, "true");
+    } catch {
+      // Browser storage is optional; the credential panel remains usable without it.
+    }
+  }, [latestCredentials?.id]);
+
+  const acknowledgeLatestCredential = useCallback(() => {
+    recordLatestCredentialSaved();
+    setCredentialAcknowledged(true);
+  }, [recordLatestCredentialSaved]);
 
   const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const agentId = "${agent.id}";
 const agentApiKey = process.env.MAGEN3_AGENT_KEY || "${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE"}";
@@ -4597,7 +5198,7 @@ ${snippet}
             <summary className="list-none cursor-pointer rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#94A3B8] hover:text-[#F8FAFC]">Owner wallet <ChevronDown size={13} className="ml-1 inline transition-transform group-open:rotate-180" /></summary>
             <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-[#1E293B] bg-[#0B1220] p-3 shadow-2xl"><div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Registration owner</div><div className="mt-2 break-all font-mono text-xs text-[#F8FAFC]">{walletAddress || "Wallet not available"}</div></div>
           </details>
-          <Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>
+          <Btn variant="primary" onClick={() => { setRegistrationMode("guided"); setShowRegister(true); }}><Plus size={16} /> Register Agent</Btn>
         </>}
       />
 
@@ -4616,10 +5217,10 @@ ${snippet}
               </div>
             </div>
             <div className="flex flex-wrap gap-2 lg:max-w-sm lg:justify-end">
-              <Btn variant="secondary" size="sm" onClick={() => copyText("new api key", latestCredentials.apiKey || "")}><Copy size={14} /> {copied === "new api key" ? "Copied" : "Copy API Key"}</Btn>
-              <Btn variant="secondary" size="sm" onClick={() => downloadText(`magen3-${latestCredentials.id.toLowerCase()}.env`, envTemplate(latestCredentials, latestCredentials.apiKey))}><FileText size={14} /> Download .env</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => { void copyText("new api key", latestCredentials.apiKey || ""); recordLatestCredentialSaved(); }}><Copy size={14} /> {copied === "new api key" ? "Copied" : "Copy API Key"}</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => { downloadText(`magen3-${latestCredentials.id.toLowerCase()}.env`, envTemplate(latestCredentials, latestCredentials.apiKey)); recordLatestCredentialSaved(); }}><FileText size={14} /> Download .env</Btn>
               <Btn variant="outline" size="sm" onClick={() => openAgent(latestCredentials.id, "setup")}><Code2 size={14} /> Open Setup</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => setCredentialAcknowledged(true)}><CheckCircle size={14} /> I have saved it</Btn>
+              <Btn variant="ghost" size="sm" onClick={acknowledgeLatestCredential}><CheckCircle size={14} /> I have saved it</Btn>
             </div>
           </div>
           {copied === "copy failed" && <div className="mt-3 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked by the browser. Select the key text and copy it manually.</div>}
@@ -4706,7 +5307,16 @@ ${snippet}
           </div>
           <div className="max-h-[720px] space-y-2 overflow-y-auto p-3">
             {filteredAgents.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center"><Bot size={28} className="mx-auto mb-3 text-[#94A3B8]" /><p className="text-sm text-[#94A3B8]">No agents match this view.</p></div>
+              agents.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#22D3EE]/25 bg-[#22D3EE]/5 p-6 text-center">
+                  <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-[#22D3EE]/20 bg-[#0B1220]"><Bot size={22} className="text-[#22D3EE]" /></div>
+                  <h3 className="mt-4 text-sm font-semibold text-[#F8FAFC]">Protect your first agent</h3>
+                  <p className="mx-auto mt-2 max-w-xs text-xs leading-relaxed text-[#94A3B8]">Guided Setup creates the agent, secure starter policy, credential, integration instructions, and first protected test.</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2"><Btn variant="primary" size="sm" onClick={() => { setRegistrationMode("guided"); setShowRegister(true); }}><ShieldCheck size={14} /> Start Guided Setup</Btn><Btn variant="ghost" size="sm" onClick={() => { setRegistrationMode("advanced"); setShowRegister(true); }}>Advanced Setup</Btn></div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#1E293B] bg-[#0B1220] p-8 text-center"><Search size={28} className="mx-auto mb-3 text-[#94A3B8]" /><p className="text-sm text-[#94A3B8]">No agents match these filters.</p><button type="button" onClick={() => { setAgentSearch(""); setStatusFilter("All"); setPolicyFilter("All"); }} className="mt-3 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]">Clear filters</button></div>
+              )
             ) : filteredAgents.map((agent) => {
               const snapshot = snapshotById.get(agent.id);
               if (!snapshot) return null;
@@ -4732,7 +5342,11 @@ ${snippet}
 
         <div className={`${CARD_GLOW} min-h-[560px] p-5`}>
           {!selectedAgent || !selectedSnapshot ? (
-            <EmptyState title="Select an agent" description="Choose a connected agent to view operational status, setup, activity, and access controls." action={<Btn variant="primary" onClick={() => setShowRegister(true)}><Plus size={16} /> Register Agent</Btn>} />
+            agents.length === 0 ? (
+              <EmptyState title="Your first protected agent starts here" description="Choose a use case and Magen3 will prepare secure capabilities, an active starter policy, one-time credentials, integration instructions, and a safe first Gateway test." action={<div className="flex flex-wrap justify-center gap-2"><Btn variant="primary" onClick={() => { setRegistrationMode("guided"); setShowRegister(true); }}><ShieldCheck size={16} /> Start Guided Setup</Btn><Btn variant="secondary" onClick={() => { setRegistrationMode("advanced"); setShowRegister(true); }}>Advanced Setup</Btn></div>} />
+            ) : (
+              <EmptyState title="Select an agent" description="Choose a connected agent to view operational status, setup, activity, and access controls." action={<Btn variant="primary" onClick={() => setShowMobileDirectory(true)}><Search size={16} /> Browse Agents</Btn>} />
+            )
           ) : (
             <div className="space-y-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -4866,10 +5480,14 @@ ${snippet}
 
       <AgentRegistrationWizard
         open={showRegister}
+        initialMode={registrationMode}
         policies={policies}
+        walletAddress={walletAddress}
         onClose={() => setShowRegister(false)}
+        onNavigate={onNavigate}
         onRegisterAgent={onRegisterAgent}
         onCreatePolicy={onCreatePolicy}
+        onSubmitGatewayIntent={onSubmitGatewayIntent}
         onCreated={(agent) => {
           setLatestCredentials(agent);
           setCredentialAcknowledged(false);
@@ -5570,6 +6188,7 @@ function PoliciesPage({
   walletAddress,
   approvals,
   onRespondApproval,
+  onNavigate,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -5578,6 +6197,7 @@ function PoliciesPage({
   walletAddress: string;
   approvals: ApprovalRequest[];
   onRespondApproval: (id: string, response: "Approve" | "Reject", comment?: string) => Promise<ApprovalRequest>;
+  onNavigate: (page: Page) => void;
 }) {
   const [form, setForm] = useState({
     name: "",
@@ -7524,11 +8144,11 @@ function PoliciesPage({
           )}
 
           {policies.length === 0 ? (
-            <div className={`${CARD} p-10 text-center`}>
-              <FileText size={30} className="mx-auto text-[#22D3EE]" />
-              <div className="mt-3 text-base font-semibold text-[#F8FAFC]">No policies created yet</div>
-              <p className="mx-auto mt-1 max-w-md text-sm text-[#94A3B8]">Create a policy to bind transaction limits, approval rules and Agent Shield controls to a connected agent.</p>
-              <Btn variant="primary" className="mt-5" onClick={beginCreatePolicy}><Plus size={16} />Create Policy</Btn>
+            <div className={`${CARD} p-8 text-center sm:p-10`}>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#22D3EE]/20 bg-[#22D3EE]/10 text-[#22D3EE]"><FileText size={24} /></div>
+              <div className="mt-4 text-lg font-semibold text-[#F8FAFC]">{agents.length === 0 ? "Your starter policy is created during Guided Setup" : "No policy is assigned yet"}</div>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-[#94A3B8]">{agents.length === 0 ? "Protect the first agent and Magen3 will apply capability-aware limits, review thresholds, lifecycle safety, and recommended controls automatically." : "Create a deterministic policy for the connected agent, or start Guided Setup again for a simpler capability-aware configuration."}</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">{agents.length === 0 && <Btn variant="primary" onClick={() => requestAgentOnboarding(onNavigate, "guided")}><ShieldCheck size={16} /> Start Guided Setup</Btn>}<Btn variant={agents.length === 0 ? "secondary" : "primary"} onClick={beginCreatePolicy}><Plus size={16} /> Create Policy Manually</Btn></div>
             </div>
           ) : (
             <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -7672,6 +8292,7 @@ function AuditLogPage({
   onConfirmCasperDeploy,
   onConfirmExecutionDeploy,
   developerMode,
+  onNavigate,
 }: {
   auditLogs: AuditLog[];
   policies: Policy[];
@@ -7680,6 +8301,7 @@ function AuditLogPage({
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
   onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
   developerMode: boolean;
+  onNavigate: (page: Page) => void;
 }) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
@@ -7976,8 +8598,17 @@ function AuditLogPage({
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-[#94A3B8]">
-                    No audit records match your filters.
+                  <td colSpan={10} className="px-4 py-12 text-center">
+                    {auditLogs.length === 0 ? (
+                      <div className="mx-auto max-w-md">
+                        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/10"><Scroll size={21} className="text-[#22D3EE]" /></div>
+                        <h3 className="mt-4 font-semibold text-[#F8FAFC]">Your first Magen3 decision will appear here</h3>
+                        <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">Run a protected test to create an audit record, inspect the deterministic decision, and follow its Casper proof status.</p>
+                        <div className="mt-4 flex flex-wrap justify-center gap-2"><Btn variant="primary" size="sm" onClick={() => onNavigate("intent-playground")}><Send size={14} /> Run a Protected Test</Btn><Btn variant="ghost" size="sm" onClick={() => requestAgentOnboarding(onNavigate, "guided")}>Start Guided Setup</Btn></div>
+                      </div>
+                    ) : (
+                      <div><div className="font-semibold text-[#F8FAFC]">No records match these filters</div><div className="mt-1 text-sm text-[#94A3B8]">Adjust the search or filters to view existing decisions.</div><button type="button" onClick={() => { setSearch(""); setFilterShield("All"); setFilterDecision("All"); setFilterRisk("All"); }} className="mt-3 text-xs font-semibold text-[#22D3EE] hover:text-[#F8FAFC]">Clear filters</button></div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -10666,7 +11297,7 @@ function IntentPlaygroundPage({
     return (
       <div className="space-y-6">
         <PageHeader title="Intent Playground" description="Test the real Magen3 Gateway request format before integrating an external agent." />
-        <EmptyState title="Register an active agent first" description="The Playground uses a real Agent ID, active policy, and API credential. It does not simulate a healthy integration." action={<Btn variant="primary" onClick={() => onNavigate("connected-agents")}><Plus size={16} /> Register Agent</Btn>} />
+        <EmptyState title="Run your first protected decision" description="Guided Setup creates a real Agent ID, starter policy, one-time credential, and a safe sample intent. The test evaluates the Gateway without signing or submitting a blockchain transaction." action={<div className="flex flex-wrap justify-center gap-2"><Btn variant="primary" onClick={() => requestAgentOnboarding(onNavigate, "guided")}><ShieldCheck size={16} /> Start Guided Setup</Btn><Btn variant="secondary" onClick={() => requestAgentOnboarding(onNavigate, "advanced")}>Advanced Setup</Btn></div>} />
       </div>
     );
   }
@@ -10984,6 +11615,10 @@ function SettingsPage({
           </div>
 
           <div className="space-y-5">
+            <div className={`${CARD_GLOW} p-5`}>
+              <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-semibold uppercase tracking-wider text-[#22D3EE]">First Agent Setup</div><h2 className="mt-1 text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Need help finishing onboarding?</h2><p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">Reopen Guided Setup to protect another agent, or review the Dashboard checklist for credentials, first intent, and Casper proof progress.</p></div><ShieldCheck size={21} className="shrink-0 text-[#22D3EE]" /></div>
+              <div className="mt-4 flex flex-wrap gap-2"><Btn variant="primary" size="sm" onClick={() => requestAgentOnboarding(onNavigate, "guided")}><ArrowRight size={14} /> Start Guided Setup</Btn><Btn variant="secondary" size="sm" onClick={() => onNavigate("dashboard")}>View Setup Checklist</Btn></div>
+            </div>
             <div className={`${CARD} p-5`}>
               <div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Interface Preferences</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Preferences are stored only in this browser and do not change policy enforcement.</p></div><Settings size={20} className="text-[#22D3EE]" /></div>
               <div className="mt-4 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
@@ -11072,6 +11707,7 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [emergencyPauses, setEmergencyPauses] = useState<EmergencyPause[]>([]);
+  const [onboardingRequest, setOnboardingRequest] = useState<OnboardingLaunchRequest | null>(null);
 
   useEffect(() => {
     try {
@@ -11488,6 +12124,11 @@ export default function App() {
     setPage(p);
   }, []);
 
+  const startOnboarding = useCallback((mode: OnboardingSetupMode = "guided") => {
+    setOnboardingRequest({ mode, nonce: Date.now() });
+    setPage("connected-agents");
+  }, []);
+
   if (page === "landing") {
     return (
       <LandingPage onLaunchApp={() => setPage("dashboard")} onOpenDocs={() => setPage("docs")} />
@@ -11512,6 +12153,7 @@ export default function App() {
         approvals={approvals}
         emergencyPauses={emergencyPauses}
         onNavigate={navigate}
+        onStartOnboarding={startOnboarding}
       />
     ),
     "connected-agents": (
@@ -11522,7 +12164,10 @@ export default function App() {
         onRotateAgentApiKey={onRotateAgentApiKey}
         onRevokeAgent={onRevokeAgent}
         onCreatePolicy={onCreatePolicy}
+        onSubmitGatewayIntent={onSubmitGatewayIntent}
         onNavigate={navigate}
+        onboardingRequest={onboardingRequest}
+        onOnboardingRequestHandled={() => setOnboardingRequest(null)}
         auditLogs={auditLogs}
         walletAddress={walletAddress}
         apiOnline={apiOnline}
@@ -11549,6 +12194,7 @@ export default function App() {
         walletAddress={walletAddress}
         approvals={approvals}
         onRespondApproval={onRespondApproval}
+        onNavigate={navigate}
       />
     ),
     "intent-playground": (
@@ -11572,6 +12218,7 @@ export default function App() {
         onConfirmCasperDeploy={onConfirmCasperDeploy}
         onConfirmExecutionDeploy={onConfirmExecutionDeploy}
         developerMode={developerMode}
+        onNavigate={navigate}
       />
     ),
     settings: (
