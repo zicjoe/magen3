@@ -1124,7 +1124,7 @@ function CoverageCard({
   );
 }
 
-function PipelineTimeline({ stages }: { stages?: PipelineStage[] }) {
+function PipelineTimeline({ stages, developerMode = false }: { stages?: PipelineStage[]; developerMode?: boolean }) {
   const items = Array.isArray(stages) && stages.length > 0 ? stages : [
     { id: "intent-received", label: "Intent received", status: "pending" as const },
     { id: "agent-authentication", label: "Agent authentication", status: "pending" as const },
@@ -1157,6 +1157,7 @@ function PipelineTimeline({ stages }: { stages?: PipelineStage[] }) {
             <div className="mt-0.5 text-xs capitalize text-[#94A3B8]">
               {stage.status}{stage.timestamp ? ` · ${fmtTs(stage.timestamp)}` : ""}
             </div>
+            {developerMode && <div className="mt-1 break-all font-mono text-[10px] text-[#64748B]">stage: {stage.id}</div>}
           </div>
         </div>
       ))}
@@ -1164,7 +1165,7 @@ function PipelineTimeline({ stages }: { stages?: PipelineStage[] }) {
   );
 }
 
-function FindingsPanel({ findings }: { findings?: ModuleFinding[] }) {
+function FindingsPanel({ findings, developerMode = false }: { findings?: ModuleFinding[]; developerMode?: boolean }) {
   const items = Array.isArray(findings) ? findings : [];
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-[#1E293B] bg-[#0B1220] p-4 text-sm text-[#94A3B8]">No structured module findings are available for this legacy record.</div>;
@@ -1187,6 +1188,12 @@ function FindingsPanel({ findings }: { findings?: ModuleFinding[] }) {
           <div className="mt-1 text-xs font-medium text-[#22D3EE]">{item.rule}</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{item.message}</p>
           {item.remediation && <p className="mt-2 text-xs leading-relaxed text-[#F8FAFC]"><span className="font-semibold">Resolution:</span> {item.remediation}</p>}
+          {item.evidence && Object.keys(item.evidence).length > 0 && (
+            <details className="mt-2 rounded-lg border border-[#1E293B] bg-[#020617] p-2" open={developerMode}>
+              <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Technical evidence</summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[10px] leading-relaxed text-[#94A3B8]">{JSON.stringify(item.evidence, null, 2)}</pre>
+            </details>
+          )}
         </div>
       ))}
     </div>
@@ -1456,7 +1463,7 @@ function EmergencyControlsPanel({
       )}
 
       <details className="mt-4" open={!compact && activePauses.length === 0}>
-        <summary className="cursor-pointer text-xs font-semibold text-[#22D3EE]">Activate a scoped pause</summary>
+        <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs font-semibold text-[#FCA5A5] hover:border-[#EF4444]/40"><ShieldX size={14} />Activate Emergency Pause</summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div><label className={LABEL_CLS}>Scope</label><select className={INPUT_CLS} value={scopeType} onChange={(event) => { const next = event.target.value; setScopeType(next); setScopeValue(next === "Agent" ? (selectedAgentId || scopeAgentId) : ""); }}>{scopeOptions.map((scope) => <option key={scope}>{scope}</option>)}</select></div>
           <div><label className={LABEL_CLS}>Enforcement</label><select className={INPUT_CLS} value={enforcementAction} onChange={(event) => setEnforcementAction(event.target.value as "Blocked" | "Review Required")}><option>Blocked</option><option>Review Required</option></select></div>
@@ -7650,6 +7657,7 @@ function AuditLogPage({
   onPrepareCasperPayload,
   onConfirmCasperDeploy,
   onConfirmExecutionDeploy,
+  developerMode,
 }: {
   auditLogs: AuditLog[];
   policies: Policy[];
@@ -7657,6 +7665,7 @@ function AuditLogPage({
   onPrepareCasperPayload: (id: string) => Promise<CasperPreparedPayload>;
   onConfirmCasperDeploy: (id: string, deployHash: string) => Promise<AuditLog>;
   onConfirmExecutionDeploy: (id: string, deployHash: string, signedBy?: string, note?: string) => Promise<AuditLog>;
+  developerMode: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [filterShield, setFilterShield] = useState("All");
@@ -8076,20 +8085,34 @@ function AuditLogPage({
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Security Pipeline</div>
-                <div className="mt-4"><PipelineTimeline stages={selected.pipelineStages} /></div>
+                <div className="mt-4"><PipelineTimeline stages={selected.pipelineStages} developerMode={developerMode} /></div>
               </div>
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Protection Findings</div>
-                <div className="mt-3"><FindingsPanel findings={selected.moduleFindings} /></div>
+                <div className="mt-3"><FindingsPanel findings={selected.moduleFindings} developerMode={developerMode} /></div>
               </div>
 
               {selected.originalIntent && (
-                <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
-                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Original Intent</summary>
+                <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4" open={developerMode}>
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Original Intent{developerMode ? " · Developer Mode" : ""}</summary>
                   <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify(selected.originalIntent, null, 2)}</pre>
                 </details>
               )}
+              <details className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4" open={developerMode}>
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Technical audit evidence{developerMode ? " · Expanded" : ""}</summary>
+                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-[#1E293B] bg-[#020617] p-3 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify({
+                  auditId: selected.id,
+                  policyUsed: selected.policyUsed,
+                  triggeredRule: selected.triggeredRule,
+                  capabilityContext: selected.capabilityContext,
+                  pipelineStages: selected.pipelineStages,
+                  moduleFindings: selected.moduleFindings,
+                  approvalBindingHash: selected.approvalBindingHash,
+                  decisionProofStatus: selected.decisionProofStatus,
+                  executionReconciliation: selected.executionReconciliation,
+                }, null, 2)}</pre>
+              </details>
 
               <div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
                 <div className="text-xs text-[#94A3B8] uppercase tracking-wider mb-3">Proof Timeline</div>
@@ -10505,6 +10528,7 @@ function IntentPlaygroundPage({
   walletAddress,
   onSubmitGatewayIntent,
   onNavigate,
+  developerMode,
 }: {
   agents: Agent[];
   policies: Policy[];
@@ -10512,6 +10536,7 @@ function IntentPlaygroundPage({
   walletAddress: string;
   onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
   onNavigate: (page: Page) => void;
+  developerMode: boolean;
 }) {
   const activeAgents = agents.filter((agent) => agent.status === "Active");
   const [agentId, setAgentId] = useState(activeAgents[0]?.id || "");
@@ -10870,9 +10895,9 @@ function IntentPlaygroundPage({
                   </div>
                 )}
               </div>
-              <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} /></div></div>
-              <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} />
-              <details className={`${CARD} p-5`}><summary className="cursor-pointer text-sm font-semibold text-[#F8FAFC]">Raw gateway response</summary><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(result, null, 2)}</pre></details>
+              <div className={`${CARD} p-5`}><h2 className={SECTION_TITLE}>Live Execution Timeline</h2><div className="mt-4"><PipelineTimeline stages={result.result.pipelineStages || result.auditLog.pipelineStages} developerMode={developerMode} /></div></div>
+              <FindingsPanel findings={result.result.moduleFindings || result.auditLog.moduleFindings} developerMode={developerMode} />
+              <details className={`${CARD} p-5`} open={developerMode}><summary className="cursor-pointer text-sm font-semibold text-[#F8FAFC]">Raw gateway response{developerMode ? " · Developer Mode" : ""}</summary><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs text-[#94A3B8]">{JSON.stringify(result, null, 2)}</pre></details>
             </>
           )}
         </div>
@@ -10889,34 +10914,47 @@ function SettingsPage({
   agents,
   policies,
   auditLogs,
+  apiOnline,
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
   x402PaymentControlsStatus,
   emergencyPauses,
   walletAddress,
+  developerMode,
+  onDeveloperModeChange,
+  onNavigate,
   onCreateEmergencyPause,
   onResumeEmergencyPause,
 }: {
   agents: Agent[];
   policies: Policy[];
   auditLogs: AuditLog[];
+  apiOnline: boolean;
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
   x402PaymentControlsStatus: X402PaymentControlsStatus;
   emergencyPauses: EmergencyPause[];
   walletAddress: string;
+  developerMode: boolean;
+  onDeveloperModeChange: (enabled: boolean) => void;
+  onNavigate: (page: Page) => void;
   onCreateEmergencyPause: (body: Record<string, unknown>) => Promise<unknown>;
   onResumeEmergencyPause: (id: string, reason: string) => Promise<unknown>;
 }) {
-  const [devMode, setDevMode] = useState(false);
+  type SettingsTab = "general" | "providers" | "emergency" | "developer";
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [copiedSetting, setCopiedSetting] = useState("");
+  const [expandedProvider, setExpandedProvider] = useState("");
+  const [showAdvancedEndpoints, setShowAdvancedEndpoints] = useState(false);
+
   const copySetting = useCallback(async (label: string, value: string) => {
     const copiedOk = await writeClipboard(value);
     setCopiedSetting(copiedOk ? label : "copy failed");
     setTimeout(() => setCopiedSetting(""), copiedOk ? 1400 : 1800);
   }, []);
+
   const gatewayRows = [
     ["API Base URL", api.baseUrl],
     ["Gateway Intent URL", `${api.baseUrl}/api/agent-gateway/intents`],
@@ -10940,203 +10978,217 @@ function SettingsPage({
     ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
+  const essentialGatewayRows = [gatewayRows[0], gatewayRows[1], gatewayRows[2], gatewayRows[8]];
+  const advancedGatewayRows = gatewayRows.filter((row) => !essentialGatewayRows.includes(row));
+  const backendEnvironment = api.baseUrl.includes("localhost") || api.baseUrl.includes("127.0.0.1") ? "Local backend" : "Deployed backend";
+  const activePauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
+  const proofRecords = auditLogs.filter((log) => Boolean(log.txHash || log.decisionProofStatus));
+
+  const providerServices = [
+    {
+      id: "threat",
+      label: "Threat Intelligence",
+      description: "Configured indicator-feed observations used by deterministic threat checks.",
+      status: threatIntelligenceStatus.status === "available" ? "Available" : "Unavailable",
+      icon: <ShieldAlert size={17} />,
+      details: [
+        ["Source", threatIntelligenceStatus.sourceName || "No feed configured"],
+        ["Feed state", threatIntelligenceStatus.status || "unavailable"],
+        ["Active indicators", String(threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0)],
+        ["Feed records", String(threatIntelligenceStatus.indicatorCount || 0)],
+      ],
+      error: threatIntelligenceStatus.error || "",
+      note: "Provider credentials and raw configured locations are never displayed.",
+    },
+    {
+      id: "oracle",
+      label: "Oracle Validation",
+      description: "Price-feed observations used by market-sensitive policy checks.",
+      status: oracleValidationStatus.status === "available" ? "Available" : "Unavailable",
+      icon: <Activity size={17} />,
+      details: [
+        ["Source", oracleValidationStatus.sourceName || "No feed configured"],
+        ["Feed state", oracleValidationStatus.status || "unavailable"],
+        ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
+        ["Observations", String(oracleValidationStatus.observationCount || 0)],
+      ],
+      error: oracleValidationStatus.error || "",
+      note: "Unavailable or stale observations remain explicit and are never treated as a passing check.",
+    },
+    {
+      id: "compliance",
+      label: "Compliance Controls",
+      description: "Opaque screening and jurisdiction evidence without raw personal identity data.",
+      status: complianceControlsStatus.status === "available" ? "Available" : "Unavailable",
+      icon: <ShieldCheck size={17} />,
+      details: [
+        ["Source", complianceControlsStatus.sourceName || "No feed configured"],
+        ["Feed state", complianceControlsStatus.status || "unavailable"],
+        ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
+        ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
+      ],
+      error: complianceControlsStatus.error || "",
+      note: "Magen3 stores status evidence and opaque references, not names or identity documents.",
+    },
+    {
+      id: "x402",
+      label: "x402 Payment Controls",
+      description: "Exact-payment request binding, replay protection, and settlement reporting capability.",
+      status: x402PaymentControlsStatus.status === "foundation-available" ? "Foundation" : "Unavailable",
+      icon: <Zap size={17} />,
+      details: [
+        ["Protocol", `x402 v${x402PaymentControlsStatus.protocolVersion || 2}`],
+        ["Schemes", (x402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
+        ["Request binding", x402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
+        ["Settlement reporting", x402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
+      ],
+      error: "",
+      note: "Magen3 does not receive signing keys or raw PAYMENT-SIGNATURE payloads.",
+    },
+  ];
+
+  const providerCounts = {
+    available: providerServices.filter((service) => service.status === "Available").length,
+    unavailable: providerServices.filter((service) => service.status === "Unavailable").length,
+    foundation: providerServices.filter((service) => service.status === "Foundation").length,
+  };
+
+  const providerClass = (status: string) => status === "Available"
+    ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]"
+    : status === "Foundation"
+      ? "border-[#22D3EE]/25 bg-[#22D3EE]/10 text-[#22D3EE]"
+      : "border-[#F59E0B]/25 bg-[#F59E0B]/10 text-[#F59E0B]";
+
+  const openDeveloperPortal = () => {
+    window.location.hash = "developer-portal-doc";
+    onNavigate("docs");
+    window.setTimeout(() => document.getElementById("developer-portal-doc")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  };
+
+  const EndpointRow = ({ label, value }: { label: string; value: string; key?: string }) => (
+    <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div>
+          <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
+        </div>
+        {value.startsWith("http") && <button type="button" aria-label={`Copy ${label}`} onClick={() => void copySetting(label, value)} className="shrink-0 rounded-lg border border-[#1E293B] bg-[#050B14] p-2 text-[#22D3EE] hover:border-[#22D3EE]/35 hover:text-[#F8FAFC]"><Copy size={14} /></button>}
+      </div>
+    </div>
+  );
+
+  const tabs: Array<{ id: SettingsTab; label: string; icon: ReactElement; badge?: string }> = [
+    { id: "general", label: "General", icon: <Settings size={15} /> },
+    { id: "providers", label: "Provider Services", icon: <Server size={15} />, badge: providerCounts.unavailable ? String(providerCounts.unavailable) : undefined },
+    { id: "emergency", label: "Emergency Controls", icon: <ShieldAlert size={15} />, badge: activePauses.length ? String(activePauses.length) : undefined },
+    { id: "developer", label: "Developer", icon: <Code2 size={15} /> },
+  ];
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">
-          Settings
-        </h1>
-        <p className="text-[#94A3B8] text-sm mt-1">
-          View the active Magen3 environment and adjust local dashboard preferences.
-        </p>
+    <div className="mx-auto max-w-6xl space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Settings</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#94A3B8]">Manage the active environment, provider services, emergency controls, and developer preferences.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-3 py-1 text-xs font-semibold text-[#22D3EE]"><Globe size={12} /> Casper Testnet</span>
+          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${apiOnline ? "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]" : "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]"}`}><span className={`h-1.5 w-1.5 rounded-full ${apiOnline ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} /> Gateway {apiOnline ? "Online" : "Unavailable"}</span>
+          <span className="rounded-full border border-[#1E293B] bg-[#0B1220] px-3 py-1 text-xs font-semibold text-[#94A3B8]">4 Provider Services</span>
+        </div>
       </div>
 
-      <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-[#1E293B] bg-[#0B1220] p-1">
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`inline-flex min-w-max items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${activeTab === tab.id ? "bg-[#111827] text-[#F8FAFC] shadow-sm" : "text-[#94A3B8] hover:bg-[#111827]/60 hover:text-[#F8FAFC]"}`}>
+            <span className={activeTab === tab.id ? "text-[#22D3EE]" : "text-[#64748B]"}>{tab.icon}</span>{tab.label}
+            {tab.badge && <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${tab.id === "emergency" ? "bg-[#EF4444]/15 text-[#FCA5A5]" : "bg-[#F59E0B]/15 text-[#FCD34D]"}`}>{tab.badge}</span>}
+          </button>
+        ))}
+      </div>
 
-      {/* Network */}
-      <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-4`}>Network</h2>
-        <div className="flex items-center justify-between py-3">
-          <div>
-            <div className="text-sm font-medium text-[#F8FAFC]">
-              Active Network
+      {activeTab === "general" && (
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+          <div className="space-y-5">
+            <div className={`${CARD} p-5`}>
+              <div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Active Environment</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Read-only deployment values used by the current browser session.</p></div><Globe size={20} className="text-[#22D3EE]" /></div>
+              <div className="mt-4 divide-y divide-[#1E293B]">
+                {[
+                  ["Network", "Casper Testnet"],
+                  ["API environment", backendEnvironment],
+                  ["Gateway", apiOnline ? "Connected" : "Unavailable"],
+                  ["Decision proofs", proofRecords.length > 0 ? `${proofRecords.length} observed records` : "Backend-managed"],
+                ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3"><div className="text-xs text-[#94A3B8]">{label}</div><div className="text-right text-sm font-medium text-[#F8FAFC]">{value}</div></div>)}
+              </div>
+              <div className="mt-3 rounded-lg border border-[#22D3EE]/15 bg-[#22D3EE]/5 p-3 text-[11px] leading-relaxed text-[#94A3B8]">Environment values are controlled by Railway, Vercel, and backend configuration. They cannot be changed from this browser.</div>
             </div>
-            <div className="text-xs text-[#94A3B8] mt-0.5">
-              Blockchain network for Magen3 audit records
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FF3B3B]/10 border border-[#FF3B3B]/20 rounded-full">
-            <div className="w-2 h-2 rounded-full bg-[#FF3B3B]" />
-            <span className="text-sm text-[#FF3B3B] font-semibold">
-              Casper Testnet
-            </span>
-          </div>
-        </div>
-      </div>
 
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-start justify-between gap-4">
-          <div><h2 className={SECTION_TITLE}>Threat Intelligence Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend feed status. Provider credentials and raw configured locations are never displayed.</p></div>
-          <StatusBadge status={threatIntelligenceStatus.status === "available" ? "Foundation Available" : "Inactive"} />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Feed state", threatIntelligenceStatus.status || "unavailable"],
-            ["Source", threatIntelligenceStatus.sourceName || "No feed configured"],
-            ["Active indicators", String(threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0)],
-            ["Feed records", String(threatIntelligenceStatus.indicatorCount || 0)],
-          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
-        </div>
-        {threatIntelligenceStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{threatIntelligenceStatus.error}</div>}
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-start justify-between gap-4">
-          <div><h2 className={SECTION_TITLE}>Oracle Validation Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend oracle-feed status. Provider credentials and raw configured locations are never displayed.</p></div>
-          <StatusBadge status={oracleValidationStatus.status === "available" ? "Foundation Available" : "Inactive"} />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Feed state", oracleValidationStatus.status || "unavailable"],
-            ["Source", oracleValidationStatus.sourceName || "No feed configured"],
-            ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
-            ["Observations", String(oracleValidationStatus.observationCount || 0)],
-          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
-        </div>
-        {oracleValidationStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{oracleValidationStatus.error}</div>}
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-start justify-between gap-4">
-          <div><h2 className={SECTION_TITLE}>Compliance Controls Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Actual backend screening-feed status. Magen3 accepts opaque references and status evidence, not names, identity documents, or other raw personal data.</p></div>
-          <StatusBadge status={complianceControlsStatus.status === "available" ? "Foundation Available" : "Inactive"} />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Feed state", complianceControlsStatus.status || "unavailable"],
-            ["Source", complianceControlsStatus.sourceName || "No feed configured"],
-            ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
-            ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
-          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
-        </div>
-        {complianceControlsStatus.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{complianceControlsStatus.error}</div>}
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-start justify-between gap-4">
-          <div><h2 className={SECTION_TITLE}>x402 Payment Controls Foundation</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Gateway capability status. Magen3 authorizes exact-scheme payment requirements and reconciles reported settlement without receiving signing keys or PAYMENT-SIGNATURE payloads.</p></div>
-          <StatusBadge status={x402PaymentControlsStatus.status === "foundation-available" ? "Foundation Available" : "Inactive"} />
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Protocol", `x402 v${x402PaymentControlsStatus.protocolVersion || 2}`],
-            ["Schemes", (x402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
-            ["Request binding", x402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
-            ["Settlement reporting", x402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
-          ].map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}
-        </div>
-      </div>
-
-      <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-4`}>Workspace Summary</h2>
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          {[
-            ["Agents", agents.length],
-            ["Active Policies", policies.filter((policy) => policy.status === "Active").length],
-            ["Audit Records", auditLogs.length],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-              <div className="text-2xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{value}</div>
-              <div className="mt-1 text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Gateway / Integration */}
-      <div className={`${CARD} p-5`}>
-        <h2 className={`${SECTION_TITLE} mb-1`}>Gateway / Integration</h2>
-        <p className="text-xs text-[#94A3B8] mb-4">
-          Use these endpoints with the Agent ID and API key created inside Connected Agents.
-        </p>
-        <div className="space-y-2">
-          {gatewayRows.map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-wider text-[#94A3B8]">{label}</div>
-                  <div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>
-                </div>
-                {value.startsWith("http") && (
-                  <button
-                    type="button"
-                    aria-label={`Copy ${label}`}
-                    onClick={() => copySetting(label, value)}
-                    className="shrink-0 text-[#22D3EE] hover:text-[#F8FAFC]"
-                  >
-                    <Copy size={14} />
-                  </button>
-                )}
+            <div className={`${CARD} p-5`}>
+              <div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Deployment Information</h2><p className="mt-1 text-xs text-[#94A3B8]">Safe, non-secret values for troubleshooting the active interface.</p></div><Database size={20} className="text-[#A78BFA]" /></div>
+              <div className="mt-4 space-y-3">
+                <EndpointRow label="API base URL" value={api.baseUrl} />
+                <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Magen3 version</div><div className="mt-1 text-sm font-semibold text-[#F8FAFC]">{__MAGEN3_VERSION__}</div></div><div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">Wallet scope</div><div className="mt-1 truncate text-sm font-semibold text-[#F8FAFC]" title={walletAddress}>{walletAddress ? `${walletAddress.slice(0, 10)}…${walletAddress.slice(-8)}` : "Not connected"}</div></div></div>
               </div>
             </div>
-          ))}
-          {copiedSetting && (
-            <div className={`rounded-lg border px-3 py-2 text-xs ${
-              copiedSetting === "copy failed"
-                ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]"
-                : "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"
-            }`}>
-              {copiedSetting === "copy failed" ? "Copy was blocked by the browser." : `${copiedSetting} copied.`}
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Developer Mode */}
-      <div className={`${CARD} p-5`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className={SECTION_TITLE}>Developer Mode</h2>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              Show raw decision payloads and verbose policy evaluation logs.
-            </p>
-          </div>
-          <button
-            onClick={() => setDevMode((p) => !p)}
-            className={`relative w-11 h-6 rounded-full ${
-              devMode ? "bg-[#22D3EE]" : "bg-[#1E293B]"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full ${
-                devMode ? "translate-x-5" : ""
-              }`}
-            />
-          </button>
-        </div>
-        {devMode && (
-          <div className="mt-4 p-3 bg-[#0B1220] rounded-lg border border-[#22D3EE]/20">
-            <div className="flex items-center gap-2 text-xs text-[#22D3EE] mb-2">
-              <Code2 size={13} />
-              Developer mode active
+          <div className="space-y-5">
+            <div className={`${CARD} p-5`}>
+              <div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Interface Preferences</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Preferences are stored only in this browser and do not change policy enforcement.</p></div><Settings size={20} className="text-[#22D3EE]" /></div>
+              <div className="mt-4 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div><div className="text-sm font-semibold text-[#F8FAFC]">Developer Mode</div><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Open raw Gateway responses, finding evidence, pipeline identifiers, and audit diagnostics by default.</p></div>
+                  <button type="button" role="switch" aria-checked={developerMode} aria-label="Toggle Developer Mode" onClick={() => onDeveloperModeChange(!developerMode)} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${developerMode ? "bg-[#22D3EE]" : "bg-[#1E293B]"}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${developerMode ? "translate-x-5" : ""}`} /></button>
+                </div>
+                <div className={`mt-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${developerMode ? "border-[#22D3EE]/20 bg-[#22D3EE]/5 text-[#BAE6FD]" : "border-[#1E293B] bg-[#050B14] text-[#64748B]"}`}>{developerMode ? "Technical evidence is expanded by default in Intent Playground and Audit Logs." : "Technical evidence remains available through manual expansion when Developer Mode is off."}</div>
+              </div>
             </div>
-            <pre className="text-xs text-[#94A3B8] overflow-x-auto">
-              {JSON.stringify(
-                {
-                  magen3Version: "0.1.0",
-                  network: "casper-testnet",
-                  agentCount: agents.length,
-                  policyCount: policies.length,
-                  auditCount: auditLogs.length,
-                },
-                null,
-                2
-              )}
-            </pre>
+
+            <div className={`${CARD} p-5`}>
+              <div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Diagnostics Snapshot</h2><p className="mt-1 text-xs text-[#94A3B8]">A local, non-secret summary for support and deployment verification.</p></div><Code2 size={20} className="text-[#A78BFA]" /></div>
+              <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-[#1E293B] bg-[#020617] p-4 text-xs leading-relaxed text-[#94A3B8]">{JSON.stringify({ magen3Version: __MAGEN3_VERSION__, network: "casper-testnet", gatewayOnline: apiOnline, providerServices: providerCounts, activeEmergencyPauses: activePauses.length, agentCount: agents.length, policyCount: policies.length, auditCount: auditLogs.length, developerMode }, null, 2)}</pre>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {activeTab === "providers" && (
+        <div className="space-y-5">
+          <div className={`${CARD} p-5`}>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h2 className={SECTION_TITLE}>Provider Services</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Backend-derived provider capability and feed state. Unavailable services remain explicit and never silently pass a required control.</p></div><div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{providerCounts.available} Available</span><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{providerCounts.unavailable} Unavailable</span><span className="rounded-full border border-[#22D3EE]/25 bg-[#22D3EE]/10 px-3 py-1 text-[#22D3EE]">{providerCounts.foundation} Foundation</span></div></div>
+          </div>
+          <div className={`${CARD} overflow-hidden`}>
+            {providerServices.map((service, index) => {
+              const expanded = expandedProvider === service.id;
+              return <div key={service.id} className={index > 0 ? "border-t border-[#1E293B]" : ""}><button type="button" onClick={() => setExpandedProvider(expanded ? "" : service.id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-[#111827]/45"><span className={`rounded-lg border p-2 ${providerClass(service.status)}`}>{service.icon}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-[#F8FAFC]">{service.label}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${providerClass(service.status)}`}>{service.status}</span></span><span className="mt-1 block text-xs leading-relaxed text-[#94A3B8]">{service.description}</span></span><ChevronDown size={16} className={`shrink-0 text-[#64748B] transition-transform ${expanded ? "rotate-180" : ""}`} /></button>{expanded && <div className="border-t border-[#1E293B] bg-[#050B14] p-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{service.details.map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}</div>{service.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{service.error}</div>}<div className="mt-3 text-[11px] leading-relaxed text-[#64748B]">{service.note}</div></div>}</div>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "emergency" && (
+        <div className="space-y-5">
+          <div className={`${CARD} p-5`}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className={SECTION_TITLE}>Emergency Controls</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Pause one agent, capability, action, policy, or all outgoing execution. Activations, expiry, resume approvals, and operator reasons remain audited.</p></div><span className={`rounded-full border px-3 py-1 text-xs font-semibold ${activePauses.length ? "border-[#EF4444]/25 bg-[#EF4444]/10 text-[#EF4444]" : "border-[#22C55E]/25 bg-[#22C55E]/10 text-[#22C55E]"}`}>{activePauses.length ? `${activePauses.length} Active Pause${activePauses.length === 1 ? "" : "s"}` : "No Active Pauses"}</span></div></div>
+          <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
+        </div>
+      )}
+
+      {activeTab === "developer" && (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+          <div className="space-y-5">
+            <div className={`${CARD} p-5`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className={SECTION_TITLE}>Developer Integration</h2><p className="mt-1 max-w-2xl text-xs leading-relaxed text-[#94A3B8]">Use the Agent ID and one-time API key from Connected Agents. Full SDK, MCP, and integration guidance remains in the Developer Portal.</p></div><Btn variant="secondary" size="sm" onClick={openDeveloperPortal}><ExternalLink size={14} /> Open Developer Portal</Btn></div>
+              <div className="mt-4 space-y-3">{essentialGatewayRows.map(([label, value]) => <EndpointRow key={label} label={label} value={value} />)}</div>
+              {copiedSetting && <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${copiedSetting === "copy failed" ? "border-[#F59E0B]/30 bg-[#F59E0B]/10 text-[#F59E0B]" : "border-[#22C55E]/30 bg-[#22C55E]/10 text-[#BBF7D0]"}`}>{copiedSetting === "copy failed" ? "Copy was blocked by the browser." : `${copiedSetting} copied.`}</div>}
+            </div>
+            <div className={`${CARD} overflow-hidden`}><button type="button" onClick={() => setShowAdvancedEndpoints((current) => !current)} className="flex w-full items-center justify-between p-4 text-left"><div><div className="text-sm font-semibold text-[#F8FAFC]">Advanced endpoint reference</div><div className="mt-1 text-xs text-[#94A3B8]">Provider, integrity, emergency, token-permission, and payment endpoints.</div></div><ChevronDown size={16} className={`text-[#64748B] transition-transform ${showAdvancedEndpoints ? "rotate-180" : ""}`} /></button>{showAdvancedEndpoints && <div className="space-y-3 border-t border-[#1E293B] p-4">{advancedGatewayRows.map(([label, value]) => <EndpointRow key={label} label={label} value={value} />)}</div>}</div>
+          </div>
+          <div className="space-y-5">
+            <div className={`${CARD} p-5`}><div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Developer Mode</h2><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">This browser preference changes only technical presentation, never the deterministic decision.</p></div><button type="button" role="switch" aria-checked={developerMode} aria-label="Toggle Developer Mode" onClick={() => onDeveloperModeChange(!developerMode)} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${developerMode ? "bg-[#22D3EE]" : "bg-[#1E293B]"}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${developerMode ? "translate-x-5" : ""}`} /></button></div><div className={`mt-4 rounded-xl border p-3 text-xs leading-relaxed ${developerMode ? "border-[#22D3EE]/20 bg-[#22D3EE]/5 text-[#BAE6FD]" : "border-[#1E293B] bg-[#0B1220] text-[#94A3B8]"}`}>{developerMode ? "Active. Raw responses and technical evidence open automatically." : "Off. Technical evidence stays collapsed until explicitly opened."}</div></div>
+            <div className={`${CARD} p-5`}><div className="flex items-start justify-between gap-4"><div><h2 className={SECTION_TITLE}>Runtime Diagnostics</h2><p className="mt-1 text-xs text-[#94A3B8]">Safe values only. Secrets, raw API keys, provider credentials, and wallet signatures are excluded.</p></div><Server size={20} className="text-[#A78BFA]" /></div><div className="mt-4 space-y-2 text-xs">{[["Version", __MAGEN3_VERSION__], ["Network", "casper-testnet"], ["Gateway", apiOnline ? "online" : "unavailable"], ["Provider services", `${providerCounts.available} available · ${providerCounts.unavailable} unavailable · ${providerCounts.foundation} foundation`], ["Emergency pauses", String(activePauses.length)]].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2"><span className="text-[#64748B]">{label}</span><span className="text-right font-mono text-[#F8FAFC]">{value}</span></div>)}</div></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -11157,11 +11209,26 @@ export default function App() {
   const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
   const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "foundation-available", protocolVersion: 2, supportedSchemes: ["exact"], requestBinding: true, replayProtection: true, settlementReporting: true });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(() => {
+    try {
+      return window.localStorage.getItem("magen3.developerMode") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [emergencyPauses, setEmergencyPauses] = useState<EmergencyPause[]>([]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("magen3.developerMode", String(developerMode));
+    } catch {
+      // Browser storage may be unavailable in private or restricted contexts.
+    }
+  }, [developerMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -11641,6 +11708,7 @@ export default function App() {
         walletAddress={walletAddress}
         onSubmitGatewayIntent={onSubmitGatewayIntent}
         onNavigate={navigate}
+        developerMode={developerMode}
       />
     ),
     "audit-log": (
@@ -11651,10 +11719,27 @@ export default function App() {
         onPrepareCasperPayload={onPrepareCasperPayload}
         onConfirmCasperDeploy={onConfirmCasperDeploy}
         onConfirmExecutionDeploy={onConfirmExecutionDeploy}
+        developerMode={developerMode}
       />
     ),
     settings: (
-      <SettingsPage agents={agents} policies={policies} auditLogs={auditLogs} threatIntelligenceStatus={threatIntelligenceStatus} oracleValidationStatus={oracleValidationStatus} complianceControlsStatus={complianceControlsStatus} x402PaymentControlsStatus={x402PaymentControlsStatus} emergencyPauses={emergencyPauses} walletAddress={walletAddress} onCreateEmergencyPause={onCreateEmergencyPause} onResumeEmergencyPause={onResumeEmergencyPause} />
+      <SettingsPage
+        agents={agents}
+        policies={policies}
+        auditLogs={auditLogs}
+        apiOnline={apiOnline}
+        threatIntelligenceStatus={threatIntelligenceStatus}
+        oracleValidationStatus={oracleValidationStatus}
+        complianceControlsStatus={complianceControlsStatus}
+        x402PaymentControlsStatus={x402PaymentControlsStatus}
+        emergencyPauses={emergencyPauses}
+        walletAddress={walletAddress}
+        developerMode={developerMode}
+        onDeveloperModeChange={setDeveloperMode}
+        onNavigate={navigate}
+        onCreateEmergencyPause={onCreateEmergencyPause}
+        onResumeEmergencyPause={onResumeEmergencyPause}
+      />
     ),
   };
 
