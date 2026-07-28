@@ -36,6 +36,7 @@ import {
   ChevronRight,
   Menu,
   Layers,
+  Trash2,
 } from "lucide-react";
 import { api } from "./lib/api";
 import {
@@ -4714,12 +4715,14 @@ function ConnectedAgentsPage({
   onRegisterAgent,
   onRotateAgentApiKey,
   onRevokeAgent,
+  onDeleteAgent,
   onCreatePolicy,
   onSubmitGatewayIntent,
   onNavigate,
   onboardingRequest,
   onOnboardingRequestHandled,
   auditLogs,
+  approvals,
   walletAddress,
   apiOnline,
   emergencyPauses,
@@ -4731,12 +4734,14 @@ function ConnectedAgentsPage({
   onRegisterAgent: (agent: AgentRegistrationDraft) => Promise<Agent | undefined> | Agent | undefined;
   onRotateAgentApiKey: (id: string) => Promise<Agent | undefined> | Agent | undefined;
   onRevokeAgent: (id: string) => Promise<Agent | undefined> | Agent | undefined;
+  onDeleteAgent: (id: string, confirmation: string) => Promise<{ ok: boolean; deletedAgent: { id: string; name: string }; deletedPolicyIds: string[] } | undefined>;
   onCreatePolicy: (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => Promise<Policy | undefined> | Policy | undefined;
   onSubmitGatewayIntent: (intent: Record<string, unknown>, apiKey?: string) => Promise<AgentGatewayResponse>;
   onNavigate: (page: Page) => void;
   onboardingRequest?: OnboardingLaunchRequest | null;
   onOnboardingRequestHandled?: () => void;
   auditLogs: AuditLog[];
+  approvals: ApprovalRequest[];
   walletAddress: string;
   apiOnline: boolean;
   emergencyPauses: EmergencyPause[];
@@ -4769,6 +4774,10 @@ function ConnectedAgentsPage({
   const [showSkillKit, setShowSkillKit] = useState(false);
   const [showAgentDetails, setShowAgentDetails] = useState(false);
   const [showMobileDirectory, setShowMobileDirectory] = useState(false);
+  const [deleteAgentTarget, setDeleteAgentTarget] = useState<Agent | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
   const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
@@ -4976,6 +4985,31 @@ ${snippet}
     }
   }, [onRevokeAgent]);
 
+  const deleteAgent = useCallback(async () => {
+    if (!deleteAgentTarget) return;
+    setDeleteSubmitting(true);
+    setDeleteError("");
+    try {
+      const result = await onDeleteAgent(deleteAgentTarget.id, deleteConfirmation);
+      if (!result?.ok) return;
+      setLatestCredentials((current) => current?.id === deleteAgentTarget.id ? null : current);
+      setCredentialAcknowledged(false);
+      try {
+        window.localStorage.removeItem(`magen3.onboarding.credentialsSaved.${deleteAgentTarget.id}`);
+      } catch {
+        // Local onboarding progress is optional and must not block deletion.
+      }
+      setDeleteAgentTarget(null);
+      setDeleteConfirmation("");
+      setSelectedAgentId((current) => current === deleteAgentTarget.id ? "" : current);
+      setActiveTab("overview");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Unable to delete agent.");
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  }, [deleteAgentTarget, deleteConfirmation, onDeleteAgent]);
+
   const agentSnapshots = useMemo(() => agents.map((agent) => {
     const policy = getActivePolicy(policies, agent.id);
     const logs = auditLogs.filter((log) => log.agentId === agent.id);
@@ -5081,6 +5115,15 @@ ${snippet}
   const selectedSnapshot = selectedAgent ? snapshotById.get(selectedAgent.id) : undefined;
   const selectedPolicy = selectedSnapshot?.policy;
   const selectedLogs = selectedSnapshot?.logs || [];
+  const selectedPendingApprovals = selectedAgent
+    ? approvals.filter((approval) => approval.agentId === selectedAgent.id && ["Pending", "Configuration Required"].includes(approval.reviewStatus))
+    : [];
+  const selectedDeleteBlockers = selectedAgent ? [
+    ...(selectedAgent.status !== "Revoked" ? ["Revoke the agent before deletion."] : []),
+    ...(selectedPendingApprovals.length ? [`${selectedPendingApprovals.length} approval request${selectedPendingApprovals.length === 1 ? " is" : "s are"} still pending.`] : []),
+    ...((selectedSnapshot?.activePauses.length || 0) > 0 ? [`${selectedSnapshot?.activePauses.length} emergency pause${selectedSnapshot?.activePauses.length === 1 ? " is" : "s are"} still active.`] : []),
+    ...((selectedSnapshot?.unresolvedExecutions.length || 0) > 0 ? [`${selectedSnapshot?.unresolvedExecutions.length} execution${selectedSnapshot?.unresolvedExecutions.length === 1 ? " is" : "s are"} unresolved.`] : []),
+  ] : [];
   const agentAuditLogs = selectedLogs.slice(0, 5);
   const rawKey = selectedAgent && latestCredentials?.id === selectedAgent.id
     ? latestCredentials.apiKey
@@ -5480,7 +5523,20 @@ ${snippet}
 
                   <EmergencyControlsPanel pauses={emergencyPauses} agents={agents} policies={policies} walletAddress={walletAddress} selectedAgentId={selectedAgent.id} compact onCreatePause={onCreateEmergencyPause} onResumePause={onResumeEmergencyPause} />
 
-                  <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="text-sm font-semibold text-[#F8FAFC]">Revoke agent access</h3><p className="mt-1 text-xs text-[#94A3B8]">Revoked agents can no longer use the Gateway with their Agent ID and API key. Existing audit records remain available.</p></div><Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}><XCircle size={14} /> Revoke Agent</Btn></div></div>
+                  <div className="rounded-xl border border-[#EF4444]/25 bg-[#EF4444]/5 p-4">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div><h3 className="text-sm font-semibold text-[#F8FAFC]">Revoke agent access</h3><p className="mt-1 text-xs text-[#94A3B8]">Immediately disables the Agent ID and API key. The registration remains visible and can still be reviewed.</p></div>
+                        <Btn variant="danger" size="sm" onClick={() => revokeAgent(selectedAgent.id)} disabled={selectedAgent.status === "Revoked"}><XCircle size={14} /> {selectedAgent.status === "Revoked" ? "Agent Revoked" : "Revoke Agent"}</Btn>
+                      </div>
+                      <div className="border-t border-[#EF4444]/20 pt-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div><h3 className="text-sm font-semibold text-[#F8FAFC]">Permanently delete agent</h3><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Removes the agent registration, API credential and assigned policies. Historical Audit Logs, decisions, approvals, Gateway requests and Casper proof evidence remain available.</p></div>
+                          <Btn variant="danger" size="sm" onClick={() => { setDeleteAgentTarget(selectedAgent); setDeleteConfirmation(""); setDeleteError(""); }}><Trash2 size={14} /> Delete Agent</Btn>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   {copied === "copy failed" && <div className="rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-3 py-2 text-xs text-[#F59E0B]">Copy was blocked by the browser. Select the key text and copy it manually.</div>}
                 </div>
               )}
@@ -5488,6 +5544,35 @@ ${snippet}
           )}
         </div>
       </div>
+
+      {deleteAgentTarget && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#020617]/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-agent-title">
+          <div className="w-full max-w-lg rounded-2xl border border-[#EF4444]/30 bg-[#0B1220] p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><div className="inline-flex items-center gap-2 rounded-full border border-[#EF4444]/25 bg-[#EF4444]/10 px-2.5 py-1 text-xs font-semibold text-[#FCA5A5]"><Trash2 size={13} /> Permanent deletion</div><h2 id="delete-agent-title" className="mt-3 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">Delete {deleteAgentTarget.name}?</h2><p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">This removes the agent registration, API credential and {policies.filter((policy) => policy.agentId === deleteAgentTarget.id).length} assigned {policies.filter((policy) => policy.agentId === deleteAgentTarget.id).length === 1 ? "policy" : "policies"}. Historical security evidence remains read-only.</p></div>
+              <button type="button" aria-label="Close delete agent dialog" className="rounded-lg border border-[#1E293B] p-2 text-[#94A3B8] hover:text-[#F8FAFC]" onClick={() => { setDeleteAgentTarget(null); setDeleteConfirmation(""); setDeleteError(""); }} disabled={deleteSubmitting}><X size={16} /></button>
+            </div>
+
+            {selectedDeleteBlockers.length > 0 && deleteAgentTarget.id === selectedAgent?.id && (
+              <div className="mt-4 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/10 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#FCD34D]"><AlertTriangle size={15} /> Resolve these items first</div>
+                <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-[#FDE68A]">{selectedDeleteBlockers.map((blocker) => <li key={blocker}>• {blocker}</li>)}</ul>
+              </div>
+            )}
+
+            <div className="mt-4 rounded-xl border border-[#1E293B] bg-[#050B14] p-4">
+              <label htmlFor="delete-agent-confirmation" className="text-xs font-semibold text-[#F8FAFC]">Type <span className="font-mono text-[#FCA5A5]">{deleteAgentTarget.name}</span> to confirm</label>
+              <input id="delete-agent-confirmation" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="mt-2 w-full rounded-lg border border-[#334155] bg-[#020617] px-3 py-2 text-sm text-[#F8FAFC] outline-none focus:border-[#EF4444]" autoComplete="off" disabled={deleteSubmitting} />
+            </div>
+
+            {deleteError && <div className="mt-3 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{deleteError}</div>}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Btn variant="secondary" onClick={() => { setDeleteAgentTarget(null); setDeleteConfirmation(""); setDeleteError(""); }} disabled={deleteSubmitting}>Cancel</Btn>
+              <Btn variant="danger" onClick={deleteAgent} disabled={deleteSubmitting || deleteConfirmation !== deleteAgentTarget.name || (deleteAgentTarget.id === selectedAgent?.id && selectedDeleteBlockers.length > 0)}><Trash2 size={15} /> {deleteSubmitting ? "Deleting…" : "Delete Permanently"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AgentRegistrationWizard
         open={showRegister}
@@ -11969,6 +12054,23 @@ export default function App() {
     }
   }, [walletAddress]);
 
+  const onDeleteAgent = useCallback(async (id: string, confirmation: string) => {
+    if (!walletAddress) {
+      throw new Error("Connect Casper Wallet before deleting an agent.");
+    }
+    try {
+      const response = await api.deleteAgent(id, walletAddress, confirmation);
+      const deletedPolicyIds = Array.isArray(response.deletedPolicyIds) ? response.deletedPolicyIds as string[] : [];
+      setAgents((previous) => previous.filter((agent) => agent.id !== id));
+      setPolicies((previous) => previous.filter((policy) => !deletedPolicyIds.includes(policy.id) && policy.agentId !== id));
+      setApiOnline(true);
+      return response as { ok: boolean; deletedAgent: { id: string; name: string }; deletedPolicyIds: string[] };
+    } catch (error) {
+      setApiOnline(false);
+      throw error;
+    }
+  }, [walletAddress]);
+
   const onCreatePolicy = useCallback(async (policy: Omit<Policy, "id" | "createdAt" | "policyHash">) => {
     if (!walletAddress) {
       setWalletError("Connect Casper Wallet before creating a policy.");
@@ -12174,12 +12276,14 @@ export default function App() {
         onRegisterAgent={onRegisterAgent}
         onRotateAgentApiKey={onRotateAgentApiKey}
         onRevokeAgent={onRevokeAgent}
+        onDeleteAgent={onDeleteAgent}
         onCreatePolicy={onCreatePolicy}
         onSubmitGatewayIntent={onSubmitGatewayIntent}
         onNavigate={navigate}
         onboardingRequest={onboardingRequest}
         onOnboardingRequestHandled={() => setOnboardingRequest(null)}
         auditLogs={auditLogs}
+        approvals={approvals}
         walletAddress={walletAddress}
         apiOnline={apiOnline}
         emergencyPauses={emergencyPauses}

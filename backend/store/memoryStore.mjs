@@ -15,6 +15,7 @@ import { approvalExecutionAuthorized, approvalOrganizationalFinding, approvalPub
 import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
+import { assertAgentDeletionAllowed } from "../lib/agentDeletion.mjs";
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
@@ -321,6 +322,48 @@ export function createMemoryStore() {
       const now = new Date().toISOString();
       agents = agents.map((item) => item.id === id ? { ...item, status: "Revoked", revokedAt: now } : item);
       return publicAgent(agents.find((item) => item.id === id));
+    },
+
+    async deleteAgent(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const agent = agents.find((item) => item.id === id && item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+      const confirmation = String(body?.confirmation || body?.confirmationText || "").trim();
+      if (confirmation !== agent.name) {
+        const err = new Error(`Type the exact agent name “${agent.name}” to confirm permanent deletion.`);
+        err.status = 400;
+        throw err;
+      }
+
+      const agentPolicies = policies.filter((policy) => policy.agentId === id);
+      const agentApprovals = actionReviews.filter((review) => review.agentId === id);
+      const agentLogs = auditLogs.filter((log) => log.agentId === id);
+      const agentPauses = emergencyPauses.filter((pause) => pause.agentId === id);
+      const agentRequests = gatewayRequests.filter((request) => request.agentId === id);
+      const readiness = assertAgentDeletionAllowed({
+        agent: publicAgent(agent),
+        policies: agentPolicies,
+        approvals: agentApprovals,
+        auditLogs: agentLogs,
+        emergencyPauses: agentPauses,
+      });
+
+      policies = policies.filter((policy) => policy.agentId !== id);
+      agents = agents.filter((item) => item.id !== id);
+
+      return {
+        ok: true,
+        deletedAgent: { id: agent.id, name: agent.name },
+        deletedPolicyIds: readiness.policyIds,
+        preservedEvidence: {
+          ...readiness.preservedEvidence,
+          gatewayRequests: agentRequests.length,
+        },
+      };
     },
 
     async getAgentGatewayIdentity(agentId, context = {}) {

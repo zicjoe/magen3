@@ -25,14 +25,15 @@
     "typecheck": "tsc -b",
     "test:backend": "node --test backend/**/*.test.mjs",
     "test": "pnpm test:backend",
-    "verify": "pnpm typecheck && pnpm test && pnpm sdk:test && pnpm mcp:test && vite build",
+    "verify": "pnpm security:verify && pnpm typecheck && pnpm test && pnpm sdk:test && pnpm mcp:test && vite build",
     "sdk:build": "pnpm --filter @magen3/sdk build",
     "sdk:test": "pnpm sdk:build && pnpm --filter @magen3/sdk test && PYTHONPATH=packages/sdk-python/src python3 -m unittest discover -s packages/sdk-python/tests -v",
     "mcp:build": "pnpm sdk:build && pnpm --filter @magen3/mcp-server build",
     "mcp:test": "pnpm mcp:build && pnpm --filter @magen3/mcp-server test",
     "mcp:start": "node packages/mcp-server/dist/server.js",
     "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs",
-    "compliance:refresh-example-feed": "node scripts/compliance/refresh-example-feed.mjs"
+    "compliance:refresh-example-feed": "node scripts/compliance/refresh-example-feed.mjs",
+    "security:verify": "node scripts/security/verify-security-patch.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.14",
@@ -91,5 +92,11 @@
     "tailwindcss": "4.3.1",
     "typescript": "6.0.3",
     "vite": "8.1.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.18",
+      "fast-uri": "3.1.4"
+    }
   }
 }

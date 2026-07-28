@@ -19,6 +19,7 @@ import { approvalExecutionAuthorized, approvalOrganizationalFinding, approvalPub
 import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallenge, expireApprovalSignatureChallenge, verifyApprovalSignatureChallenge } from "../lib/approvalSignatures.mjs";
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
+import { assertAgentDeletionAllowed } from "../lib/agentDeletion.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -627,6 +628,54 @@ export async function createPostgresStore() {
         .returning();
 
       return normalizeAgent(updated);
+    },
+
+    async deleteAgent(id, body) {
+      const walletAddress = requireWalletAddress(body?.walletAddress || body?.ownerWalletAddress);
+      const confirmation = String(body?.confirmation || body?.confirmationText || "").trim();
+      const rows = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+      const agent = rows.find((item) => item.ownerWalletAddress === walletAddress);
+      if (!agent) {
+        const err = new Error("Connected agent not found for this wallet.");
+        err.status = 404;
+        throw err;
+      }
+      if (confirmation !== agent.name) {
+        const err = new Error(`Type the exact agent name “${agent.name}” to confirm permanent deletion.`);
+        err.status = 400;
+        throw err;
+      }
+
+      const [agentPolicies, approvals, logs, pauses, gatewayRequests] = await Promise.all([
+        db.select().from(policiesTable).where(eq(policiesTable.agentId, id)),
+        db.select().from(actionReviewsTable).where(eq(actionReviewsTable.agentId, id)),
+        db.select().from(auditLogsTable).where(eq(auditLogsTable.agentId, id)),
+        db.select().from(emergencyPausesTable).where(eq(emergencyPausesTable.agentId, id)),
+        db.select().from(agentGatewayRequestsTable).where(eq(agentGatewayRequestsTable.agentId, id)),
+      ]);
+
+      const readiness = assertAgentDeletionAllowed({
+        agent: normalizeAgent(agent),
+        policies: agentPolicies.map(normalizePolicy),
+        approvals: approvals.map(normalizeReview),
+        auditLogs: logs.map(normalizeAuditLog),
+        emergencyPauses: pauses.map(normalizeEmergencyPause),
+      });
+
+      await db.transaction(async (tx) => {
+        await tx.delete(policiesTable).where(eq(policiesTable.agentId, id));
+        await tx.delete(agentsTable).where(and(eq(agentsTable.id, id), eq(agentsTable.ownerWalletAddress, walletAddress)));
+      });
+
+      return {
+        ok: true,
+        deletedAgent: { id: agent.id, name: agent.name },
+        deletedPolicyIds: readiness.policyIds,
+        preservedEvidence: {
+          ...readiness.preservedEvidence,
+          gatewayRequests: gatewayRequests.length,
+        },
+      };
     },
 
     async getAgentGatewayIdentity(agentId, context = {}) {

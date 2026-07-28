@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { classifyCasperWalletIdentifier } from "./walletValidation.mjs";
 import { classifyCasperContractIdentifier } from "./contractValidation.mjs";
+import { readUtf8FileLimited } from "./safeFeedFile.mjs";
 
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1_000;
@@ -213,15 +212,13 @@ function configuredSource(env = process.env) {
 
 function sourceCacheKey(source, env = process.env) {
   if (!source) return "none";
-  const credentialFingerprint = clean(env.THREAT_INTELLIGENCE_API_KEY)
-    ? createHash("sha256").update(clean(env.THREAT_INTELLIGENCE_API_KEY)).digest("hex").slice(0, 12)
-    : "none";
+  const authenticationMode = clean(env.THREAT_INTELLIGENCE_API_KEY) ? "bearer" : "none";
   return [
     source.type,
     source.value,
     clean(env.THREAT_INTELLIGENCE_MAX_AGE_MS),
     clean(env.THREAT_INTELLIGENCE_CACHE_TTL_MS),
-    credentialFingerprint,
+    authenticationMode,
   ].join("|");
 }
 
@@ -240,11 +237,7 @@ async function loadConfiguredFeed(source, { env = process.env, fetchImpl = globa
   }
 
   if (source.type === "file") {
-    const fileStats = await stat(source.value);
-    if (fileStats.size > MAX_FEED_BYTES) {
-      throw new Error(`${source.name} exceeds the ${MAX_FEED_BYTES}-byte safety limit`);
-    }
-    const raw = await readFile(source.value, "utf8");
+    const raw = await readUtf8FileLimited(source.value, { maxBytes: MAX_FEED_BYTES, sourceLabel: source.name });
     return normalizeThreatFeed(parseJson(raw, source.name), { sourceType: "file", sourceName: source.name, now });
   }
 

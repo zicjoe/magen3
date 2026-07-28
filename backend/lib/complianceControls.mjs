@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { canonicalThreatIdentity } from "./threatIntelligence.mjs";
+import { readUtf8FileLimited } from "./safeFeedFile.mjs";
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_MAX_FEED_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -253,10 +252,8 @@ function configuredSource(env = process.env) {
 
 function sourceCacheKey(source, env = process.env) {
   if (!source) return "none";
-  const credentialFingerprint = clean(env.COMPLIANCE_CONTROLS_API_KEY)
-    ? createHash("sha256").update(clean(env.COMPLIANCE_CONTROLS_API_KEY)).digest("hex").slice(0, 12)
-    : "none";
-  return [source.type, source.value, clean(env.COMPLIANCE_CONTROLS_MAX_AGE_MS), clean(env.COMPLIANCE_CONTROLS_CACHE_TTL_MS), credentialFingerprint].join("|");
+  const authenticationMode = clean(env.COMPLIANCE_CONTROLS_API_KEY) ? "bearer" : "none";
+  return [source.type, source.value, clean(env.COMPLIANCE_CONTROLS_MAX_AGE_MS), clean(env.COMPLIANCE_CONTROLS_CACHE_TTL_MS), authenticationMode].join("|");
 }
 
 function validateRemoteUrl(value, env = process.env) {
@@ -269,9 +266,8 @@ function validateRemoteUrl(value, env = process.env) {
 async function loadConfiguredFeed(source, { env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
   if (source.type === "inline") return normalizeComplianceFeed(parseJson(source.value, source.name), { sourceType: "inline", sourceName: source.name, now });
   if (source.type === "file") {
-    const fileStats = await stat(source.value);
-    if (fileStats.size > MAX_FEED_BYTES) throw new Error(`${source.name} exceeds the ${MAX_FEED_BYTES}-byte safety limit`);
-    return normalizeComplianceFeed(parseJson(await readFile(source.value, "utf8"), source.name), { sourceType: "file", sourceName: source.name, now });
+    const raw = await readUtf8FileLimited(source.value, { maxBytes: MAX_FEED_BYTES, sourceLabel: source.name });
+    return normalizeComplianceFeed(parseJson(raw, source.name), { sourceType: "file", sourceName: source.name, now });
   }
   if (typeof fetchImpl !== "function") throw new Error("Remote compliance controls require fetch support");
   const url = validateRemoteUrl(source.value, env);

@@ -195,6 +195,13 @@ export const api = {
     });
   },
 
+  deleteAgent(id: string, walletAddress: string, confirmation: string) {
+    return request<any>(`/api/agents/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ walletAddress, confirmation }),
+    });
+  },
+
   createPolicy(policy: Record<string, unknown>) {
     return request<any>("/api/policies", {
       method: "POST",

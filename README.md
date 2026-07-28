@@ -1054,3 +1054,7 @@ Gas Sponsorship & Fee Safety is Foundation Available under Execution Integrity. 
 ## Execution & Settlement Reconciliation
 
 Execution & Settlement Reconciliation is Foundation Available under Execution Integrity. After authorization, authenticated agents can report `submitted`, `pending`, `confirmed`, `failed`, `uncertain`, `replaced`, `refunded`, or `delivered` state. Magen3 binds the transaction identity, enforces attempt and retry policy, links replacements, checks confirmation/finality requirements, tracks resource delivery and refunds, and updates the existing Audit timeline. Optional Casper and EVM polling uses backend-configured RPC endpoints only; callers cannot provide provider URLs. See [`docs/EXECUTION_SETTLEMENT_RECONCILIATION.md`](docs/EXECUTION_SETTLEMENT_RECONCILIATION.md).
+
+## Agent lifecycle: revoke and delete
+
+Connected Agents now separates immediate access revocation from permanent deletion. Revoke disables the Agent ID and API key while keeping the registration visible. Permanent deletion is available in the selected agent's **Access** tab after revocation and removes the registration, API credential material, and assigned policies. Magen3 blocks deletion while approvals, emergency pauses, or executions remain unresolved, and requires the exact agent name as confirmation. Historical Audit Logs, approval evidence, Gateway requests, Casper proofs, and reconciliation records remain available. See [`docs/AGENT_LIFECYCLE.md`](docs/AGENT_LIFECYCLE.md).

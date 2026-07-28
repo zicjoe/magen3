@@ -15,7 +15,7 @@ function send(res, status, body) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, x-magen3-agent-key",
   });
   res.end(payload);
@@ -1377,6 +1377,12 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && revokeAgentMatch) {
       const body = await readJson(req);
       return send(res, 200, { agent: await store.revokeAgent(revokeAgentMatch[1], body) });
+    }
+
+    const deleteAgentMatch = url.pathname.match(/^\/api\/agents\/([^/]+)$/);
+    if (req.method === "DELETE" && deleteAgentMatch) {
+      const body = await readJson(req);
+      return send(res, 200, await store.deleteAgent(deleteAgentMatch[1], body));
     }
 
     if (route === "GET /api/emergency-pauses") {
