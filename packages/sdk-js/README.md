@@ -1,6 +1,16 @@
 # @magen3/sdk
 
-Official TypeScript SDK for Magen3, a modular Web3 execution firewall.
+> **Public beta:** This package is ready to publish under the npm `beta` tag. Its API may evolve before Magen3 SDK 1.0.
+
+Install it in a server-side JavaScript or TypeScript application:
+
+```bash
+pnpm add @magen3/sdk@beta
+```
+
+Keep the Magen3 Agent API key in the application backend. Never expose it through browser code or a `VITE_` environment variable.
+
+Official TypeScript SDK for Magen3, a modular, chain-agnostic Web3 execution firewall. The SDK checks proposed actions and reports execution state; it does not hold private keys, sign transactions, or broadcast transactions. Casper-specific examples below demonstrate supported Casper Testnet fields and do not make every protected execution a Casper execution.
 
 ## Wallet transfer
 
