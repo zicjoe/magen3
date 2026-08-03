@@ -5,7 +5,7 @@ from magen3 import Magen3Client
 client = Magen3Client(
     os.environ["MAGEN3_GATEWAY_URL"],
     os.environ["MAGEN3_AGENT_ID"],
-    os.environ["MAGEN3_AGENT_KEY"],
+    os.environ["MAGEN3_API_KEY"],
 )
 
 received_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

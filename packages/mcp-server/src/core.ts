@@ -1,4 +1,4 @@
-import { Magen3Client, Magen3Error, type Magen3Intent } from "@magen3/sdk";
+import { Magen3Client, Magen3Error, magen3ClientOptionsFromEnv, type Magen3Intent } from "@magen3/sdk";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface Magen3McpConfig {
@@ -301,23 +301,7 @@ export const INTENT_SCHEMA_DESCRIPTION = {
 } as const;
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Magen3McpConfig {
-  const gatewayUrl = env.MAGEN3_GATEWAY_URL?.trim();
-  const agentId = env.MAGEN3_AGENT_ID?.trim();
-  const apiKey = env.MAGEN3_AGENT_KEY?.trim();
-  const missing = [
-    !gatewayUrl && "MAGEN3_GATEWAY_URL",
-    !agentId && "MAGEN3_AGENT_ID",
-    !apiKey && "MAGEN3_AGENT_KEY",
-  ].filter(Boolean);
-  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
-  const timeout = Number(env.MAGEN3_TIMEOUT_MS ?? "15000");
-  return {
-    gatewayUrl: gatewayUrl!,
-    agentId: agentId!,
-    apiKey: apiKey!,
-    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 15_000,
-    authMode: env.MAGEN3_AUTH_MODE === "bearer" ? "bearer" : "header",
-  };
+  return magen3ClientOptionsFromEnv(env);
 }
 
 export function createClient(config: Magen3McpConfig): Magen3Client {

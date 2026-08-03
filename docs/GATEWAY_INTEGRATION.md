@@ -1,6 +1,18 @@
 # Magen3 Gateway Integration
 
 Magen3 is the execution-control layer. External agents remain independent applications and call Agent Shield before requesting a wallet signature or submitting a blockchain action.
+## Canonical integration configuration
+
+All official integration surfaces use the same backend-only environment contract:
+
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
+```
+
+The SDK, Python client, and MCP server derive `/api/agent-gateway/me`, `/intents`, approval, reconciliation, and settlement routes from the base URL. Legacy `MAGEN3_AGENT_KEY` and `MAGEN3_AGENT_API_KEY` values remain accepted during migration, but new downloads and documentation use `MAGEN3_API_KEY`.
+
 
 ## Integration Flow
 
@@ -22,7 +34,7 @@ Register agent
 | --- | --- |
 | Agent ID | Registration completion or Agent Control Center |
 | Agent API key | Shown once after registration or rotation |
-| Gateway URL | Registration quick start, Developer Portal, Settings, or public config |
+| API base URL (`MAGEN3_GATEWAY_URL`) | Registration quick start, Developer Portal, Settings, or public config. Use the base URL only; do not append a route. |
 | Verify URL | Registration quick start, Developer Portal, Settings, or public config |
 | Active policy | Policy assigned to the registered agent |
 | Execution wallet | Supplied by the external agent for each requested action |

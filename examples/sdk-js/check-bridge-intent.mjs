@@ -3,7 +3,7 @@ import { Magen3Client } from "../../packages/sdk-js/dist/index.js";
 const required = [
   "MAGEN3_GATEWAY_URL",
   "MAGEN3_AGENT_ID",
-  "MAGEN3_AGENT_KEY",
+  "MAGEN3_API_KEY",
   "CASPER_EXECUTION_WALLET",
   "CASPER_BRIDGE_CONTRACT",
   "BRIDGE_DESTINATION_ADDRESS",
@@ -14,7 +14,7 @@ const now = Date.now();
 const client = new Magen3Client({
   gatewayUrl: process.env.MAGEN3_GATEWAY_URL,
   agentId: process.env.MAGEN3_AGENT_ID,
-  apiKey: process.env.MAGEN3_AGENT_KEY,
+  apiKey: process.env.MAGEN3_API_KEY,
 });
 
 const response = await client.checkIntent({

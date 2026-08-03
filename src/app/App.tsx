@@ -39,6 +39,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "./lib/api";
+import { buildMagen3EnvironmentFile, getMagen3IntegrationEndpoints } from "./lib/integrationConfig";
 import {
   CAPABILITY_PACKS,
   EXECUTION_CAPABILITY_CATALOG,
@@ -4212,7 +4213,12 @@ function AgentRegistrationWizard({
 
   const downloadEnv = useCallback(() => {
     if (!createdAgent) return;
-    const value = `MAGEN3_AGENT_ID=${createdAgent.id}\nMAGEN3_AGENT_API_KEY=${createdAgent.apiKey || "PASTE_AGENT_API_KEY"}\nMAGEN3_GATEWAY_URL=${api.baseUrl}/api/agent-gateway/intents\n`;
+    const value = buildMagen3EnvironmentFile({
+      apiBaseUrl: api.baseUrl,
+      agentId: createdAgent.id,
+      apiKey: createdAgent.apiKey || "PASTE_AGENT_API_KEY",
+      agentName: createdAgent.name,
+    });
     const blob = new Blob([value], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -4284,8 +4290,10 @@ function AgentRegistrationWizard({
 
   if (!open) return null;
 
-  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
-  const verifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
+  const integrationEndpoints = getMagen3IntegrationEndpoints(api.baseUrl);
+  const gatewayBaseUrl = integrationEndpoints.baseUrl;
+  const gatewayUrl = integrationEndpoints.intentUrl;
+  const verifyUrl = integrationEndpoints.verifyUrl;
   const requestExample = createdAgent ? `curl -X POST "${gatewayUrl}" \\
   -H "Content-Type: application/json" \\
   -H "x-magen3-agent-key: ${createdAgent.apiKey || "PASTE_AGENT_API_KEY"}" \\
@@ -4305,7 +4313,7 @@ function AgentRegistrationWizard({
 
   const integrationSnippet = createdAgent ? (() => {
     const key = createdAgent.apiKey || "PASTE_AGENT_API_KEY";
-    if (draft.integrationTarget === "Codex") return `# Magen3 protected execution\n\nBefore any blockchain signing or execution, submit the intended action to Magen3.\n\n- Agent ID: ${createdAgent.id}\n- Gateway: ${gatewayUrl}\n- Header: x-magen3-agent-key: ${key}\n- Obey only Allowed, Blocked, or Review Required.\n- Never sign when the decision is Blocked or Review Required.`;
+    if (draft.integrationTarget === "Codex") return `# Magen3 protected execution\n\nBefore any blockchain signing or execution, submit the intended action to Magen3.\n\n- Agent ID: ${createdAgent.id}\n- Magen3 API base URL: ${gatewayBaseUrl}\n- Intent endpoint: ${gatewayUrl}\n- API key env var: MAGEN3_API_KEY\n- Obey only Allowed, Blocked, or Review Required.\n- Never sign when the decision is Blocked or Review Required.\n- Keep the raw API key in backend environment configuration; never place it in this instruction file.`;
     if (draft.integrationTarget === "MCP") return `{
   "mcpServers": {
     "magen3": {
@@ -4313,16 +4321,16 @@ function AgentRegistrationWizard({
       "args": ["--filter", "@magen3/mcp-server", "start"],
       "env": {
         "MAGEN3_AGENT_ID": "${createdAgent.id}",
-        "MAGEN3_AGENT_API_KEY": "${key}",
-        "MAGEN3_GATEWAY_URL": "${gatewayUrl}"
+        "MAGEN3_API_KEY": "YOUR_PRIVATE_AGENT_KEY",
+        "MAGEN3_GATEWAY_URL": "${gatewayBaseUrl}"
       }
     }
   }
 }`;
-    if (draft.integrationTarget === "JavaScript") return `import { Magen3Client } from "@magen3/sdk";\n\nconst magen3 = new Magen3Client({\n  agentId: "${createdAgent.id}",\n  apiKey: "${key}",\n  baseUrl: "${api.baseUrl}"\n});\n\nconst decision = await magen3.checkIntent(intent);`;
-    if (draft.integrationTarget === "Python") return `from magen3 import Magen3Client\n\nmagen3 = Magen3Client(\n    agent_id="${createdAgent.id}",\n    api_key="${key}",\n    base_url="${api.baseUrl}",\n)\n\ndecision = magen3.check_intent(intent)`;
+    if (draft.integrationTarget === "JavaScript") return `// Install in the external agent backend: pnpm add @magen3/sdk@beta\nimport { Magen3Client } from "@magen3/sdk";\n\nconst magen3 = Magen3Client.fromEnv(process.env);\nconst decision = await magen3.checkIntent(intent);`;
+    if (draft.integrationTarget === "Python") return `from magen3 import Magen3Client\n\nmagen3 = Magen3Client.from_env()\ndecision = magen3.check_intent(intent)`;
     if (draft.integrationTarget === "Custom API") return requestExample;
-    return `MAGEN3_AGENT_ID=${createdAgent.id}\nMAGEN3_AGENT_API_KEY=${key}\nMAGEN3_GATEWAY_URL=${gatewayUrl}`;
+    return buildMagen3EnvironmentFile({ apiBaseUrl: gatewayBaseUrl, agentId: createdAgent.id, apiKey: key, agentName: createdAgent.name });
   })() : "";
 
   return (
@@ -4667,7 +4675,7 @@ function AgentRegistrationWizard({
                 {[
                   ["Agent ID", createdAgent.id],
                   ["API Key", createdAgent.apiKey || "Not available—rotate from Credentials"],
-                  ["Gateway URL", gatewayUrl],
+                  ["Magen3 API Base URL", gatewayBaseUrl],
                   ["Verify URL", `${verifyUrl}?agentId=${createdAgent.id}`],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3">
@@ -4779,8 +4787,10 @@ function ConnectedAgentsPage({
   const [deleteError, setDeleteError] = useState("");
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
-  const gatewayUrl = `${api.baseUrl}/api/agent-gateway/intents`;
-  const gatewayVerifyUrl = `${api.baseUrl}/api/agent-gateway/me`;
+  const integrationEndpoints = getMagen3IntegrationEndpoints(api.baseUrl);
+  const gatewayBaseUrl = integrationEndpoints.baseUrl;
+  const gatewayUrl = integrationEndpoints.intentUrl;
+  const gatewayVerifyUrl = integrationEndpoints.verifyUrl;
 
   useEffect(() => {
     if (!selectedAgentId && agents[0]?.id) {
@@ -4852,8 +4862,9 @@ function ConnectedAgentsPage({
     setCredentialAcknowledged(true);
   }, [recordLatestCredentialSaved]);
 
-  const integrationSnippet = useCallback((agent: Agent, apiKeyValue?: string) => `const agentId = "${agent.id}";
-const agentApiKey = process.env.MAGEN3_AGENT_KEY || "${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE"}";
+  const integrationSnippet = useCallback((agent: Agent, _apiKeyValue?: string) => `const agentId = process.env.MAGEN3_AGENT_ID || "${agent.id}";
+const agentApiKey = process.env.MAGEN3_API_KEY;
+if (!agentApiKey) throw new Error("MAGEN3_API_KEY is required in the backend environment");
 const executionWalletAddress = await getConnectedCasperWalletPublicKey();
 
 const verify = await fetch("${gatewayVerifyUrl}?agentId=" + encodeURIComponent(agentId), {
@@ -4893,12 +4904,12 @@ if (!decision.executionApproved) {
 }
 // Only after this should the external agent request the execution wallet signature.`, [gatewayUrl, gatewayVerifyUrl]);
 
-  const envTemplate = useCallback((agent: Agent, apiKeyValue?: string) => `MAGEN3_AGENT_ID=${agent.id}
-MAGEN3_AGENT_KEY=${apiKeyValue || "PASTE_AGENT_API_KEY_ONCE_OR_ROTATE_KEY_IN_MAGEN3"}
-MAGEN3_GATEWAY_URL=${gatewayUrl}
-MAGEN3_VERIFY_URL=${gatewayVerifyUrl}
-MAGEN3_AGENT_NAME="${agent.name}"
-`, [gatewayUrl, gatewayVerifyUrl]);
+  const envTemplate = useCallback((agent: Agent, apiKeyValue?: string) => buildMagen3EnvironmentFile({
+    apiBaseUrl: gatewayBaseUrl,
+    agentId: agent.id,
+    apiKey: apiKeyValue || "PASTE_AGENT_API_KEY_ONCE_OR_ROTATE_KEY_IN_MAGEN3",
+    agentName: agent.name,
+  }), [gatewayBaseUrl]);
 
   const agentSkillKit = useCallback((agent: Agent, apiKeyValue: string | undefined, target: typeof skillTarget, snippet: string) => {
     if (target === ".env") return envTemplate(agent, apiKeyValue);
@@ -4919,8 +4930,9 @@ Use this skill when acting as the external agent "${agent.name}".
 
 ## Identity
 - Agent ID: ${agent.id}
-- API key env var: MAGEN3_AGENT_KEY
+- API key env var: MAGEN3_API_KEY
 - API key preview: ${agent.apiKeyPreview || "shown once after registration or rotation"}
+- Magen3 API base URL: ${gatewayBaseUrl}
 - Gateway verify URL: ${gatewayVerifyUrl}?agentId=${agent.id}
 - Gateway intent URL: ${gatewayUrl}
 
@@ -4953,11 +4965,11 @@ Use this skill when acting as the external agent "${agent.name}".
 }
 \`\`\`
 
-Store the raw API key securely. ${apiKeyValue ? `Current one-time key: ${apiKeyValue}` : "If the raw API key is no longer visible, rotate the key in Magen3 Connected Agents."}
+Store the raw API key securely in the external agent backend. Never place it in this skill, a prompt, source code, logs, screenshots, or a commit. Use the separate `.env` export to save the one-time key. If it is no longer visible, rotate it in Magen3 Connected Agents.
 
 ## Environment
 \`\`\`env
-${envTemplate(agent, apiKeyValue).trim()}
+${envTemplate(agent).trim()}
 \`\`\`
 
 ## JavaScript Fetch Example
@@ -4965,7 +4977,7 @@ ${envTemplate(agent, apiKeyValue).trim()}
 ${snippet}
 \`\`\`
 `;
-  }, [envTemplate, gatewayUrl, gatewayVerifyUrl]);
+  }, [envTemplate, gatewayBaseUrl, gatewayUrl, gatewayVerifyUrl]);
 
   const rotateKey = useCallback(async (agentId: string) => {
     const rotated = await onRotateAgentApiKey(agentId);
@@ -5493,7 +5505,7 @@ ${snippet}
 
                   <div className={`${CARD} p-4`}>
                     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Connection Details</div><div className="mt-1 text-xs text-[#94A3B8]">Use the Agent ID and one-time API key from a secure server-side environment.</div></div><Server size={18} className="text-[#22D3EE]" /></div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">{[["Agent ID", selectedAgent.id], ["API Key", rawKey || selectedAgent.apiKeyPreview || "Rotate key to issue"], ["Gateway URL", gatewayUrl], ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="flex items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</span><button type="button" aria-label={`Copy ${label}`} className="text-[#22D3EE] hover:text-[#F8FAFC]" onClick={() => copyText(label, value)}><Copy size={13} /></button></div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>{label === "API Key" && !rawKey && selectedAgent.apiKeyPreview && <div className="mt-2 text-[11px] text-[#64748B]">Stored preview only. Rotate the key to generate a new full key.</div>}</div>)}</div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">{[["Agent ID", selectedAgent.id], ["API Key", rawKey || selectedAgent.apiKeyPreview || "Rotate key to issue"], ["Magen3 API Base URL", gatewayBaseUrl], ["Verify URL", `${gatewayVerifyUrl}?agentId=${selectedAgent.id}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="flex items-center justify-between gap-2"><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">{label}</span><button type="button" aria-label={`Copy ${label}`} className="text-[#22D3EE] hover:text-[#F8FAFC]" onClick={() => copyText(label, value)}><Copy size={13} /></button></div><div className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{value}</div>{label === "API Key" && !rawKey && selectedAgent.apiKeyPreview && <div className="mt-2 text-[11px] text-[#64748B]">Stored preview only. Rotate the key to generate a new full key.</div>}</div>)}</div>
                   </div>
 
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#050B14] p-4">
@@ -9902,17 +9914,15 @@ Content-Type: application/json
               <section id="sdk-typescript-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Official TypeScript SDK</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  The repository package is located at <code className="text-[#22D3EE]">packages/sdk-js</code> and is named <code className="text-[#22D3EE]">@magen3/sdk</code>.
+                  Install the public beta package in the external agent backend. <code className="text-[#22D3EE]">MAGEN3_GATEWAY_URL</code> is the API base URL only.
                 </p>
-                <div className="mt-5"><DocsCodeBlock lang="bash" code={`pnpm --filter @magen3/sdk build`} /></div>
+                <div className="mt-5"><DocsCodeBlock lang="bash" code={`pnpm add @magen3/sdk@beta`} /></div>
+                <div className="mt-4"><DocsCodeBlock lang="env" code={`MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY`} /></div>
                 <div className="mt-4"><DocsCodeBlock lang="typescript" code={`import { Magen3Client } from "@magen3/sdk";
 
-const magen3 = new Magen3Client({
-  gatewayUrl: process.env.MAGEN3_GATEWAY_URL!,
-  agentId: process.env.MAGEN3_AGENT_ID!,
-  apiKey: process.env.MAGEN3_AGENT_KEY!,
-});
-
+const magen3 = Magen3Client.fromEnv(process.env);
 const result = await magen3.requireAllowed(intent);`} /></div>
                 <p className="mt-3 text-xs leading-relaxed text-[#94A3B8]">
                   Use <code className="text-[#F8FAFC]">requireAllowed</code> for fail-closed execution. It stops on Blocked, Review Required, malformed responses, authentication failures, and gateway errors.
@@ -9922,17 +9932,12 @@ const result = await magen3.requireAllowed(intent);`} /></div>
               <section id="sdk-python-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Official Python SDK</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  The repository package is located at <code className="text-[#22D3EE]">packages/sdk-python</code> and is named <code className="text-[#22D3EE]">magen3-sdk</code>.
+                  The Python SDK uses the same three canonical environment variables as the TypeScript SDK and MCP server.
                 </p>
                 <div className="mt-5"><DocsCodeBlock lang="bash" code={`python -m pip install -e packages/sdk-python`} /></div>
                 <div className="mt-4"><DocsCodeBlock lang="python" code={`from magen3 import Magen3Client
 
-client = Magen3Client(
-    gateway_url=os.environ["MAGEN3_GATEWAY_URL"],
-    agent_id=os.environ["MAGEN3_AGENT_ID"],
-    api_key=os.environ["MAGEN3_AGENT_KEY"],
-)
-
+client = Magen3Client.from_env()
 result = client.require_allowed(intent)`} /></div>
               </section>
 
@@ -9949,9 +9954,9 @@ result = client.require_allowed(intent)`} /></div>
                 <div className="mt-5"><DocsCodeBlock lang="powershell" code={`pnpm mcp:build
 
 codex mcp add magen3 \
-  --env MAGEN3_GATEWAY_URL="YOUR_GATEWAY_URL" \
+  --env MAGEN3_GATEWAY_URL="https://magen3-production.up.railway.app" \
   --env MAGEN3_AGENT_ID="MAG-AGENT-..." \
-  --env MAGEN3_AGENT_KEY="YOUR_PRIVATE_KEY" \
+  --env MAGEN3_API_KEY="YOUR_PRIVATE_KEY" \
   -- node "C:\\dev\\magen3\\packages\\mcp-server\\dist\\server.js"`} /></div>
                 <DocsCallout type="info">
                   Keep the API key in local environment configuration. Do not commit it, place it in an Agent Skills file, or include it in screenshots.

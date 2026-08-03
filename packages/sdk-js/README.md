@@ -8,6 +8,19 @@ Install it in a server-side JavaScript or TypeScript application:
 pnpm add @magen3/sdk@beta
 ```
 
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
+```
+
+`MAGEN3_GATEWAY_URL` is the API base URL only. Do not append `/api/agent-gateway/intents`; the SDK derives every route. Existing `MAGEN3_AGENT_KEY` and `MAGEN3_AGENT_API_KEY` values are accepted temporarily for migration.
+
+```ts
+import { Magen3Client } from "@magen3/sdk";
+const magen3 = Magen3Client.fromEnv(process.env);
+```
+
 Keep the Magen3 Agent API key in the application backend. Never expose it through browser code or a `VITE_` environment variable.
 
 Official TypeScript SDK for Magen3, a modular, chain-agnostic Web3 execution firewall. The SDK checks proposed actions and reports execution state; it does not hold private keys, sign transactions, or broadcast transactions. Casper-specific examples below demonstrate supported Casper Testnet fields and do not make every protected execution a Casper execution.

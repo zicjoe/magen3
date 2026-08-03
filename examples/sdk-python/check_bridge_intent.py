@@ -5,7 +5,7 @@ from magen3 import Magen3Client
 required = (
     "MAGEN3_GATEWAY_URL",
     "MAGEN3_AGENT_ID",
-    "MAGEN3_AGENT_KEY",
+    "MAGEN3_API_KEY",
     "CASPER_EXECUTION_WALLET",
     "CASPER_BRIDGE_CONTRACT",
     "BRIDGE_DESTINATION_ADDRESS",
@@ -19,7 +19,7 @@ bridge_contract = os.environ["CASPER_BRIDGE_CONTRACT"]
 client = Magen3Client(
     os.environ["MAGEN3_GATEWAY_URL"],
     os.environ["MAGEN3_AGENT_ID"],
-    os.environ["MAGEN3_AGENT_KEY"],
+    os.environ["MAGEN3_API_KEY"],
 )
 response = client.check_intent({
     "source": "Magen3 Bridge Controls Python Example",

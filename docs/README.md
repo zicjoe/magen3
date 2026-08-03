@@ -45,3 +45,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [`TOOL_MCP_INTEGRITY.md`](TOOL_MCP_INTEGRITY.md) — deterministic MCP server/tool identity, hash, transport, and permission-scope enforcement.
 
 - [Delegation & Session Key Safety](./DELEGATION_SESSION_KEY_SAFETY.md) — Casper-signed, expiring, least-privilege delegated authority and session-key enforcement.
+
+- [Integration Configuration](./INTEGRATION_CONFIGURATION.md) — canonical environment variables, base URL semantics, SDK, Python, and MCP setup.

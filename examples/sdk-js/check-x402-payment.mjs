@@ -3,7 +3,7 @@ import { Magen3Client } from "@magen3/sdk";
 const client = new Magen3Client({
   gatewayUrl: process.env.MAGEN3_GATEWAY_URL,
   agentId: process.env.MAGEN3_AGENT_ID,
-  apiKey: process.env.MAGEN3_AGENT_KEY,
+  apiKey: process.env.MAGEN3_API_KEY,
 });
 
 const requirementsReceivedAt = new Date().toISOString();

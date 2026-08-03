@@ -18,12 +18,14 @@ The server never reads browser-wallet storage, handles private keys, signs trans
 ## Environment
 
 ```text
-MAGEN3_GATEWAY_URL=https://your-backend.example
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
 MAGEN3_AGENT_ID=MAG-AGENT-...
-MAGEN3_AGENT_KEY=private-connected-agent-key
+MAGEN3_API_KEY=private-connected-agent-key
 MAGEN3_TIMEOUT_MS=15000
 MAGEN3_AUTH_MODE=header
 ```
+
+`MAGEN3_GATEWAY_URL` must be the Magen3 API base URL only. The MCP server adds the Agent Gateway routes. Existing deployments using `MAGEN3_AGENT_KEY` or `MAGEN3_AGENT_API_KEY` remain supported as temporary aliases.
 
 ## Build and run
 

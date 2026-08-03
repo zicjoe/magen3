@@ -1,7 +1,7 @@
 {
   "name": "@magen3/sdk",
-  "version": "0.4.0-beta.0",
-  "description": "Official TypeScript SDK for the Magen3 Agent Gateway API.",
+  "version": "0.4.0-beta.1",
+  "description": "Official TypeScript SDK for integrating autonomous agents with the Magen3 Agent Gateway.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,10 +29,11 @@
   },
   "keywords": [
     "magen3",
-    "casper",
     "web3",
     "ai-agent",
-    "execution-firewall"
+    "security",
+    "execution-firewall",
+    "blockchain"
   ],
   "license": "MIT",
   "engines": {

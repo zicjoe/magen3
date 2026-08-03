@@ -13,7 +13,7 @@ test("MCP server starts and exposes the expected tools", async () => {
       ...process.env,
       MAGEN3_GATEWAY_URL: "https://example.invalid",
       MAGEN3_AGENT_ID: "MAG-AGENT-TEST",
-      MAGEN3_AGENT_KEY: "test-key-not-a-real-secret",
+      MAGEN3_API_KEY: "test-key-not-a-real-secret",
     },
   });
   try {

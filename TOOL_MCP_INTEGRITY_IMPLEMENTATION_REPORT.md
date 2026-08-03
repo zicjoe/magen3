@@ -385,7 +385,7 @@ The existing MCP environment remains:
 
 - `MAGEN3_GATEWAY_URL`
 - `MAGEN3_AGENT_ID`
-- `MAGEN3_AGENT_KEY`
+- `MAGEN3_API_KEY`
 - optional `MAGEN3_TIMEOUT_MS`
 - optional `MAGEN3_AUTH_MODE`
 

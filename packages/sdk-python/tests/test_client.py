@@ -513,5 +513,45 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result["result"]["gasSponsorshipFeeSafetyContext"]["violations"], [])
 
 
+
+    def test_normalizes_legacy_full_gateway_endpoint(self):
+        captured = {}
+
+        def transport(method, url, headers, data, timeout):
+            captured["url"] = url
+            return {"ok": True}
+
+        client = Magen3Client(
+            "https://api.example/api/agent-gateway/intents",
+            "MAG-1",
+            "secret",
+            transport=transport,
+        )
+        client.verify_agent()
+        self.assertEqual(captured["url"], "https://api.example/api/agent-gateway/me?agentId=MAG-1")
+
+    def test_from_env_uses_canonical_variables(self):
+        client = Magen3Client.from_env({
+            "MAGEN3_GATEWAY_URL": "https://api.example",
+            "MAGEN3_AGENT_ID": "MAG-1",
+            "MAGEN3_API_KEY": "canonical-secret",
+        })
+        self.assertEqual(client.gateway_url, "https://api.example")
+        self.assertEqual(client.api_key, "canonical-secret")
+
+    def test_from_env_accepts_legacy_api_key_aliases(self):
+        first = Magen3Client.from_env({
+            "MAGEN3_GATEWAY_URL": "https://api.example",
+            "MAGEN3_AGENT_ID": "MAG-1",
+            "MAGEN3_AGENT_KEY": "legacy-one",
+        })
+        second = Magen3Client.from_env({
+            "MAGEN3_GATEWAY_URL": "https://api.example",
+            "MAGEN3_AGENT_ID": "MAG-1",
+            "MAGEN3_AGENT_API_KEY": "legacy-two",
+        })
+        self.assertEqual(first.api_key, "legacy-one")
+        self.assertEqual(second.api_key, "legacy-two")
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage } from "../dist/index.js";
+import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage, magen3ClientOptionsFromEnv, normalizeMagen3GatewayUrl } from "../dist/index.js";
 
 test("checkIntent authenticates and injects agent identity", async () => {
   let captured;
@@ -15,6 +15,47 @@ test("checkIntent authenticates and injects agent identity", async () => {
   const payload = JSON.parse(captured.init.body);
   assert.equal(payload.agentId, "MAG-1");
   assert.equal(payload.walletAddress, "01abc");
+});
+
+
+test("normalizes a legacy full Agent Gateway endpoint to the API base URL", async () => {
+  let capturedUrl;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example/api/agent-gateway/intents",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (url) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  });
+  await client.verifyAgent();
+  assert.equal(capturedUrl, "https://api.example/api/agent-gateway/me?agentId=MAG-1");
+});
+
+test("loads canonical environment variables", () => {
+  const options = magen3ClientOptionsFromEnv({
+    MAGEN3_GATEWAY_URL: "https://api.example",
+    MAGEN3_AGENT_ID: "MAG-1",
+    MAGEN3_API_KEY: "canonical-secret",
+  });
+  assert.equal(options.apiKey, "canonical-secret");
+  assert.equal(normalizeMagen3GatewayUrl(options.gatewayUrl), "https://api.example");
+});
+
+test("accepts legacy API-key environment aliases during migration", () => {
+  assert.equal(magen3ClientOptionsFromEnv({ MAGEN3_GATEWAY_URL: "https://api.example", MAGEN3_AGENT_ID: "MAG-1", MAGEN3_AGENT_KEY: "legacy-one" }).apiKey, "legacy-one");
+  assert.equal(magen3ClientOptionsFromEnv({ MAGEN3_GATEWAY_URL: "https://api.example", MAGEN3_AGENT_ID: "MAG-1", MAGEN3_AGENT_API_KEY: "legacy-two" }).apiKey, "legacy-two");
+});
+
+test("Magen3Client.fromEnv uses the canonical variables", () => {
+  const client = Magen3Client.fromEnv({
+    MAGEN3_GATEWAY_URL: "https://api.example/api/agent-gateway/intents",
+    MAGEN3_AGENT_ID: "MAG-1",
+    MAGEN3_API_KEY: "secret",
+  });
+  assert.equal(typeof client.verifyAgent, "function");
+  assert.equal(normalizeMagen3GatewayUrl("https://api.example/api/agent-gateway/me?agentId=MAG-1"), "https://api.example");
 });
 
 test("requireAllowed stops blocked execution", async () => {

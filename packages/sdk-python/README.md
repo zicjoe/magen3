@@ -2,6 +2,21 @@
 
 Official Python SDK for Magen3, a modular Web3 execution firewall.
 
+## Configuration
+
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
+```
+
+`MAGEN3_GATEWAY_URL` is the API base URL only. Use `Magen3Client.from_env()` to load the canonical configuration. Legacy API-key aliases remain accepted during migration.
+
+```python
+from magen3 import Magen3Client
+client = Magen3Client.from_env()
+```
+
 ## Wallet transfer
 
 ```python

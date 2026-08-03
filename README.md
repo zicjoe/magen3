@@ -64,7 +64,7 @@ Core authorization is deterministic. A language model is not used to decide whet
 | Security Coverage | **Live** | Deterministic, explainable configuration-coverage calculation. |
 | Integration Health | **Live** | Uses real gateway, credential, policy, request, audit, and proof state. |
 | Intent Playground | **Live** | Sends the real current Gateway request format using a registered agent. |
-| TypeScript SDK | **Live** | Official `@magen3/sdk` workspace package. |
+| TypeScript SDK | **Live** | Public beta package: `@magen3/sdk@beta`. |
 | Python SDK | **Live** | Official Python client under `packages/sdk-python`. |
 | MCP Server | **Live** | Official MCP tools for Codex and compatible runtimes. |
 
@@ -616,14 +616,24 @@ The upgrade does not change this contract hash or the `record_decision` entrypoi
 
 ### TypeScript
 
+Install the public beta in the external agent backend:
+
 ```bash
-pnpm sdk:build
+pnpm add @magen3/sdk@beta
 ```
+
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
+```
+
+`MAGEN3_GATEWAY_URL` is the API base URL only. The SDK adds `/api/agent-gateway/...` routes itself.
 
 ```ts
 import { Magen3Client } from "@magen3/sdk";
 
-const client = new Magen3Client({ gatewayUrl, agentId, apiKey });
+const client = Magen3Client.fromEnv(process.env);
 const response = await client.checkIntent(intent);
 ```
 
@@ -638,7 +648,7 @@ python -m pip install -e packages/sdk-python
 ```python
 from magen3 import Magen3Client
 
-client = Magen3Client(gateway_url, agent_id, api_key)
+client = Magen3Client.from_env()
 response = client.check_intent(intent)
 ```
 
@@ -787,6 +797,18 @@ DATABASE_URL=postgresql://...
 DATABASE_SSL=false
 ALLOW_MEMORY_STORE=false
 ```
+
+### External agent integration
+
+Use the same canonical variables for the TypeScript SDK, Python SDK, examples, and MCP server:
+
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
+```
+
+The Gateway value is the backend base URL, not the `/api/agent-gateway/intents` endpoint. Keep the API key in the external agent backend only.
 
 ### Casper proof service
 

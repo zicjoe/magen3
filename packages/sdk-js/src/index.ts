@@ -1182,6 +1182,73 @@ export interface Magen3IntentResponse {
   approval?: Magen3ApprovalRequest | null;
 }
 
+export const MAGEN3_ENVIRONMENT_VARIABLES = {
+  gatewayUrl: "MAGEN3_GATEWAY_URL",
+  agentId: "MAGEN3_AGENT_ID",
+  apiKey: "MAGEN3_API_KEY",
+} as const;
+
+export type Magen3Environment = Record<string, string | undefined>;
+
+/**
+ * Converts the public Gateway configuration into the API base URL expected by
+ * the SDK. The canonical value is the base URL only. Known legacy endpoint
+ * URLs are accepted and reduced to the same base URL for compatibility.
+ */
+export function normalizeMagen3GatewayUrl(value: string): string {
+  const raw = value?.trim();
+  if (!raw) throw new TypeError("gatewayUrl is required");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new TypeError("gatewayUrl must be an absolute http(s) URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new TypeError("gatewayUrl must use http or https");
+  }
+
+  parsed.search = "";
+  parsed.hash = "";
+  const marker = parsed.pathname.toLowerCase().indexOf("/api/agent-gateway");
+  if (marker >= 0) parsed.pathname = parsed.pathname.slice(0, marker) || "/";
+
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+/**
+ * Reads the canonical public environment contract. Legacy API-key aliases are
+ * accepted so existing beta integrations continue working during migration.
+ */
+export function magen3ClientOptionsFromEnv(env: Magen3Environment): Magen3ClientOptions {
+  const gatewayUrl = env.MAGEN3_GATEWAY_URL?.trim();
+  const agentId = env.MAGEN3_AGENT_ID?.trim();
+  const apiKey = (
+    env.MAGEN3_API_KEY ??
+    env.MAGEN3_AGENT_KEY ??
+    env.MAGEN3_AGENT_API_KEY
+  )?.trim();
+
+  const missing = [
+    !gatewayUrl && "MAGEN3_GATEWAY_URL",
+    !agentId && "MAGEN3_AGENT_ID",
+    !apiKey && "MAGEN3_API_KEY",
+  ].filter(Boolean);
+  if (missing.length) {
+    throw new TypeError(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+
+  const timeout = Number(env.MAGEN3_TIMEOUT_MS ?? "15000");
+  return {
+    gatewayUrl: normalizeMagen3GatewayUrl(gatewayUrl!),
+    agentId: agentId!,
+    apiKey: apiKey!,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 15_000,
+    authMode: env.MAGEN3_AUTH_MODE === "bearer" ? "bearer" : "header",
+  };
+}
+
 export interface Magen3ClientOptions {
   gatewayUrl: string;
   agentId: string;
@@ -1210,18 +1277,17 @@ export class Magen3Client {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly authMode: "header" | "bearer";
 
+  static fromEnv(env: Magen3Environment): Magen3Client {
+    return new Magen3Client(magen3ClientOptionsFromEnv(env));
+  }
+
   constructor(options: Magen3ClientOptions) {
     if (!options.gatewayUrl?.trim()) throw new TypeError("gatewayUrl is required");
     if (!options.agentId?.trim()) throw new TypeError("agentId is required");
     if (!options.apiKey?.trim()) throw new TypeError("apiKey is required");
     const fetchImpl = options.fetch ?? globalThis.fetch;
     if (!fetchImpl) throw new TypeError("A Fetch API implementation is required");
-    const gatewayUrl = options.gatewayUrl.trim();
-    let baseUrlEnd = gatewayUrl.length;
-    while (baseUrlEnd > 0 && gatewayUrl.charCodeAt(baseUrlEnd - 1) === 47) {
-      baseUrlEnd -= 1;
-    }
-    this.baseUrl = gatewayUrl.slice(0, baseUrlEnd);
+    this.baseUrl = normalizeMagen3GatewayUrl(options.gatewayUrl);
     this.agentId = options.agentId.trim();
     this.apiKey = options.apiKey.trim();
     this.timeoutMs = options.timeoutMs ?? 15_000;

@@ -6,6 +6,24 @@ test("configFromEnv fails closed when credentials are missing", () => {
   assert.throws(() => configFromEnv({}), /MAGEN3_GATEWAY_URL/);
 });
 
+
+test("configFromEnv uses the canonical public environment contract", () => {
+  const config = configFromEnv({
+    MAGEN3_GATEWAY_URL: "https://api.example/api/agent-gateway/intents",
+    MAGEN3_AGENT_ID: "MAG-1",
+    MAGEN3_API_KEY: "canonical-key",
+  });
+  assert.equal(config.gatewayUrl, "https://api.example");
+  assert.equal(config.apiKey, "canonical-key");
+});
+
+test("configFromEnv accepts legacy API-key aliases during migration", () => {
+  const first = configFromEnv({ MAGEN3_GATEWAY_URL: "https://api.example", MAGEN3_AGENT_ID: "MAG-1", MAGEN3_AGENT_KEY: "legacy-one" });
+  const second = configFromEnv({ MAGEN3_GATEWAY_URL: "https://api.example", MAGEN3_AGENT_ID: "MAG-1", MAGEN3_AGENT_API_KEY: "legacy-two" });
+  assert.equal(first.apiKey, "legacy-one");
+  assert.equal(second.apiKey, "legacy-two");
+});
+
 test("requireAllowed returns success for an Allowed decision", async () => {
   const handlers = createToolHandlers({
     verifyAgent: async () => ({ ok: true }),

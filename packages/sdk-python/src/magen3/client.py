@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -16,6 +17,29 @@ class Magen3Error(RuntimeError):
 
 
 Transport = Callable[[str, str, Dict[str, str], Optional[bytes], float], Any]
+
+
+def _normalize_gateway_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("gateway_url is required")
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("gateway_url must be an absolute http(s) URL")
+    path = parsed.path.rstrip("/")
+    marker = path.lower().find("/api/agent-gateway")
+    if marker >= 0:
+        path = path[:marker]
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
+
+
+def _api_key_from_env(env: Mapping[str, str]) -> str:
+    return str(
+        env.get("MAGEN3_API_KEY")
+        or env.get("MAGEN3_AGENT_KEY")
+        or env.get("MAGEN3_AGENT_API_KEY")
+        or ""
+    ).strip()
 
 
 def _default_transport(method: str, url: str, headers: Dict[str, str], data: Optional[bytes], timeout: float) -> Any:
@@ -46,14 +70,51 @@ class Magen3Client:
     transport: Transport = _default_transport
 
     def __post_init__(self) -> None:
-        if not self.gateway_url.strip():
-            raise ValueError("gateway_url is required")
+        object.__setattr__(self, "gateway_url", _normalize_gateway_url(self.gateway_url))
         if not self.agent_id.strip():
             raise ValueError("agent_id is required")
         if not self.api_key.strip():
             raise ValueError("api_key is required")
         if self.auth_mode not in {"header", "bearer"}:
             raise ValueError("auth_mode must be 'header' or 'bearer'")
+
+    @classmethod
+    def from_env(
+        cls,
+        env: Optional[Mapping[str, str]] = None,
+        *,
+        transport: Transport = _default_transport,
+    ) -> "Magen3Client":
+        source = os.environ if env is None else env
+        gateway_url = str(source.get("MAGEN3_GATEWAY_URL") or "").strip()
+        agent_id = str(source.get("MAGEN3_AGENT_ID") or "").strip()
+        api_key = _api_key_from_env(source)
+        missing = [
+            name
+            for name, value in (
+                ("MAGEN3_GATEWAY_URL", gateway_url),
+                ("MAGEN3_AGENT_ID", agent_id),
+                ("MAGEN3_API_KEY", api_key),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        try:
+            timeout = float(source.get("MAGEN3_TIMEOUT_MS", "15000")) / 1000.0
+        except (TypeError, ValueError):
+            timeout = 15.0
+        if timeout <= 0:
+            timeout = 15.0
+        auth_mode = "bearer" if source.get("MAGEN3_AUTH_MODE") == "bearer" else "header"
+        return cls(
+            gateway_url=gateway_url,
+            agent_id=agent_id,
+            api_key=api_key,
+            timeout=timeout,
+            auth_mode=auth_mode,
+            transport=transport,
+        )
 
     def verify_agent(self) -> Dict[str, Any]:
         return self._request("GET", f"/api/agent-gateway/me?agentId={quote(self.agent_id)}")

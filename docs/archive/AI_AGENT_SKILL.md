@@ -1,3 +1,5 @@
+> Archived reference updated to the canonical integration environment contract.
+
 # Magen3 Agent Skill
 
 Use this skill when Claude, Codex, YieldBot AI, or another external agent needs to execute Web3 actions through Magen3.
@@ -9,9 +11,8 @@ Magen3 is the safety, policy, approval, API, and audit gateway. The external age
 ## Required Integration Values
 
 - `MAGEN3_AGENT_ID`: the Agent ID from Connected Agents.
-- `MAGEN3_AGENT_KEY`: the raw API key shown after registration or key rotation.
-- `MAGEN3_GATEWAY_URL`: `/api/agent-gateway/intents` on the Magen3 backend.
-- `MAGEN3_VERIFY_URL`: `/api/agent-gateway/me` on the Magen3 backend.
+- `MAGEN3_API_KEY`: the raw API key shown after registration or key rotation.
+- `MAGEN3_GATEWAY_URL`: the Magen3 backend base URL. Derive `/api/agent-gateway/intents` in code.
 
 Store API keys in secrets or environment variables. Do not put raw API keys in prompts, logs, commits, or public docs.
 
@@ -50,9 +51,12 @@ Magen3 automatically queues or attempts decision proof recording for every Agent
 
 ```js
 const agentId = process.env.MAGEN3_AGENT_ID;
-const agentApiKey = process.env.MAGEN3_AGENT_KEY;
+const agentApiKey = process.env.MAGEN3_API_KEY;
 
-const verify = await fetch(`${process.env.MAGEN3_VERIFY_URL}?agentId=${encodeURIComponent(agentId)}`, {
+const gatewayBaseUrl = process.env.MAGEN3_GATEWAY_URL?.replace(/\/+$/, "");
+if (!gatewayBaseUrl) throw new Error("MAGEN3_GATEWAY_URL is required");
+
+const verify = await fetch(`${gatewayBaseUrl}/api/agent-gateway/me?agentId=${encodeURIComponent(agentId)}`, {
   headers: { "x-magen3-agent-key": agentApiKey },
 });
 
@@ -67,11 +71,11 @@ if (!gatewayStatus.gatewayReady) {
 ```js
 const executionWalletAddress = await getConnectedCasperWalletPublicKey();
 
-const response = await fetch(process.env.MAGEN3_GATEWAY_URL, {
+const response = await fetch(`${gatewayBaseUrl}/api/agent-gateway/intents`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "x-magen3-agent-key": process.env.MAGEN3_AGENT_KEY,
+    "x-magen3-agent-key": process.env.MAGEN3_API_KEY,
   },
   body: JSON.stringify({
     source: "YieldBot-AI",

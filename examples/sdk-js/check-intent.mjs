@@ -1,9 +1,9 @@
 import { Magen3Client } from "../../packages/sdk-js/dist/index.js";
 
-const required = ["MAGEN3_GATEWAY_URL", "MAGEN3_AGENT_ID", "MAGEN3_AGENT_KEY", "CASPER_EXECUTION_WALLET"];
+const required = ["MAGEN3_GATEWAY_URL", "MAGEN3_AGENT_ID", "MAGEN3_API_KEY", "CASPER_EXECUTION_WALLET"];
 for (const key of required) if (!process.env[key]) throw new Error(`${key} is required`);
 
-const client = new Magen3Client({ gatewayUrl: process.env.MAGEN3_GATEWAY_URL, agentId: process.env.MAGEN3_AGENT_ID, apiKey: process.env.MAGEN3_AGENT_KEY });
+const client = new Magen3Client({ gatewayUrl: process.env.MAGEN3_GATEWAY_URL, agentId: process.env.MAGEN3_AGENT_ID, apiKey: process.env.MAGEN3_API_KEY });
 const response = await client.checkIntent({
   source: "Magen3 SDK JavaScript Example",
   targetChain: "casper-testnet",

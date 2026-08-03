@@ -9,12 +9,20 @@ The SDKs only authenticate an agent and submit a structured execution intent to 
 ## TypeScript
 
 ```bash
-pnpm --filter @magen3/sdk build
+pnpm add @magen3/sdk@beta
 ```
+
+```env
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
+MAGEN3_AGENT_ID=MAG-AGENT-...
+MAGEN3_API_KEY=shown-once-agent-key
+```
+
+`MAGEN3_GATEWAY_URL` is the API base URL only. Do not append an Agent Gateway route.
 
 ```ts
 import { Magen3Client } from "@magen3/sdk";
-const client = new Magen3Client({ gatewayUrl, agentId, apiKey });
+const client = Magen3Client.fromEnv(process.env);
 const response = await client.checkIntent(intent);
 ```
 
@@ -56,7 +64,7 @@ python -m pip install -e packages/sdk-python
 
 ```python
 from magen3 import Magen3Client
-client = Magen3Client(gateway_url, agent_id, api_key)
+client = Magen3Client.from_env()
 response = client.check_intent(intent)
 ```
 
@@ -125,9 +133,9 @@ Do not place names, identity documents, dates of birth, addresses, contact infor
 ## Environment variables for examples
 
 ```text
-MAGEN3_GATEWAY_URL=https://YOUR-MAGEN3-BACKEND
+MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
 MAGEN3_AGENT_ID=MAG-AGENT-...
-MAGEN3_AGENT_KEY=shown-once-agent-key
+MAGEN3_API_KEY=shown-once-agent-key
 CASPER_EXECUTION_WALLET=public-key
 CASPER_TARGET=recipient-or-contract
 ```
