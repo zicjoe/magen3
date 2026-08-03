@@ -4965,7 +4965,7 @@ Use this skill when acting as the external agent "${agent.name}".
 }
 \`\`\`
 
-Store the raw API key securely in the external agent backend. Never place it in this skill, a prompt, source code, logs, screenshots, or a commit. Use the separate `.env` export to save the one-time key. If it is no longer visible, rotate it in Magen3 Connected Agents.
+Store the raw API key securely in the external agent backend. Never place it in this skill, a prompt, source code, logs, screenshots, or a commit. Use the separate \`.env\` export to save the one-time key. If it is no longer visible, rotate it in Magen3 Connected Agents.
 
 ## Environment
 \`\`\`env
