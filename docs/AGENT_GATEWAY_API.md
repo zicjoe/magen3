@@ -705,7 +705,7 @@ Do not submit private keys, mnemonics, wallet signatures, raw signed transaction
 
 ## Agent Instruction Integrity
 
-Submit minimal provenance under `action.instructionIntegrity`. Supported fields include `goalId`, `originalUserGoalHash`, `initiatedBy`, `intentSource`, `toolName`, `toolServer`, `sourceDomains`, `externalContentUsed`, `userConfirmed`, `sourceTrustLevel`, `parameterChangeReason`, `originalParameterHash`, `currentParameterHash`, `originalPermissionScopes`, and `currentPermissionScopes`. The response may include `instructionIntegrityContext`. Never send private prompts, email/document bodies, credentials, signatures, or wallet secrets.
+Submit minimal provenance under `action.instructionIntegrity`. Supported fields include `goalId`, `originalUserGoalHash`, `initiatedBy`, `intentSource`, `toolName`, `toolServer`, `sourceDomains`, `externalContentUsed`, `userConfirmed`, `sourceTrustLevel`, `parameterChangeReason`, `originalParameterHash`, `currentParameterHash`, optional non-secret `originalProtectedParameters`, `originalPermissionScopes`, and `currentPermissionScopes`. The response may include `instructionIntegrityContext`, a user-ready `agentMessage`, and structured `decisionExplanation` fields such as `code`, `field`, `expected`, `received`, and `mismatchFields`. Use the official SDK binding helpers where available. Never send private prompts, email/document bodies, credentials, signatures, or wallet secrets.
 
 
 ## Tool & MCP Integrity metadata

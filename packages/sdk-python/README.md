@@ -120,6 +120,29 @@ else:
     pass  # Remediate using decisionExplanation and resubmit.
 ```
 
+
+## Field-specific instruction-integrity explanations
+
+Use the official helper so the Gateway receives a canonical original snapshot and compatible hashes:
+
+```python
+from magen3 import create_instruction_integrity_binding, get_agent_message
+
+intent["action"]["instructionIntegrity"] = create_instruction_integrity_binding(
+    intent,
+    goal_id=stable_goal_id,
+    original_user_request=original_user_request,
+    initiated_by="user",
+    intent_source="user",
+    user_confirmed=True,
+)
+
+decision = client.check_intent(intent)
+print(get_agent_message(decision))
+```
+
+Preserve the original binding while retrying the same goal. The Gateway may return `decisionExplanation.code`, `field`, `expected`, `received`, and `mismatchFields` so developer tooling can identify the exact protected parameter that is missing, malformed, or changed. Show `agentMessage` to the ordinary user and keep technical hashes in developer details.
+
 ## Human approval polling
 
 Poll the exact-bound request by approval ID or audit ID only when `humanActionRequired` is true:
@@ -225,7 +248,7 @@ Python callers place public unsigned contract arguments in `action["preflight"][
 
 ## Agent Instruction Integrity
 
-Pass minimal provenance under `action["instructionIntegrity"]` for sensitive or externally influenced execution. Include a stable `goalId`, SHA-256 `originalUserGoalHash`, source labels, confirmation state, and original/current permission scopes. Do not send private prompts, raw documents, credentials, wallet secrets, or signatures. The SDK preserves this metadata and the Gateway returns `instructionIntegrityContext`; Magen3 does not claim to detect every prompt-injection attack.
+Use `create_instruction_integrity_binding()` for sensitive or externally influenced execution. It generates a stable goal hash, backend-compatible parameter hashes, and a non-secret original protected-parameter snapshot. Preserve the original binding while retrying the same user goal. The Gateway returns `instructionIntegrityContext` plus field-specific `decisionExplanation` diagnostics when available. Do not send private prompts, raw documents, credentials, wallet secrets, or signatures. Magen3 verifies supplied deterministic evidence and does not claim to detect every prompt-injection attack.
 
 
 ## Tool & MCP Integrity

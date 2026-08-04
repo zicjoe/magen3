@@ -1,9 +1,36 @@
 import json
 import unittest
-from magen3 import Magen3Client, Magen3Error, build_delegation_attestation_message, get_agent_message, hash_delegation_attestation, is_execution_approved
+from magen3 import Magen3Client, Magen3Error, build_delegation_attestation_message, build_protected_parameters, create_instruction_integrity_binding, get_agent_message, hash_delegation_attestation, hash_protected_parameters, is_execution_approved
 
 
 class ClientTests(unittest.TestCase):
+
+    def test_builds_backend_compatible_instruction_binding(self):
+        intent = {
+            "source": "YieldBot",
+            "targetChain": "base-sepolia",
+            "executionWalletAddress": "0x" + "1" * 40,
+            "action": {
+                "type": "Transfer",
+                "amount": 5,
+                "asset": "USDC",
+                "target": "0x" + "2" * 40,
+                "targetType": "Wallet Address",
+            },
+        }
+        protected = build_protected_parameters(intent)
+        self.assertEqual(protected["chainName"], "base-sepolia")
+        self.assertEqual(protected["destination"], intent["action"]["target"])
+        self.assertRegex(hash_protected_parameters(protected), r"^[0-9a-f]{64}$")
+        binding = create_instruction_integrity_binding(
+            intent,
+            goal_id="goal:yieldbot-transfer-1",
+            original_user_request="Send 5 USDC to " + intent["action"]["target"],
+        )
+        self.assertEqual(binding["originalParameterHash"], binding["currentParameterHash"])
+        self.assertEqual(binding["originalProtectedParameters"], protected)
+        self.assertRegex(binding["originalUserGoalHash"], r"^[0-9a-f]{64}$")
+
     def test_delegation_attestation_builder(self):
         delegation = {
             "delegationId": "dlg-python-builder-001", "delegatingWallet": "01" + "1" * 64, "delegate": "session-agent",

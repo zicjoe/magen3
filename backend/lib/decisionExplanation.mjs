@@ -58,6 +58,15 @@ function sentence(value) {
   return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
+function reasonClause(value) {
+  const text = sentence(value);
+  if (/^The\s/.test(text)) return `the ${text.slice(4)}`;
+  if (/^This\s/.test(text)) return `this ${text.slice(5)}`;
+  if (/^An\s/.test(text)) return `an ${text.slice(3)}`;
+  if (/^A\s/.test(text)) return `a ${text.slice(2)}`;
+  return text;
+}
+
 export function resolveReviewStrategy({ decision, policy, risk = "Medium", riskScore = 50, moduleFindings = [], primaryReason = "", triggeredRule = "", suggestedResolution = "" } = {}) {
   const structuredRules = policy?.structuredRules && typeof policy.structuredRules === "object" ? policy.structuredRules : {};
   const configuredMode = normalizeMode(structuredRules.reviewResolutionMode);
@@ -122,11 +131,21 @@ export function resolveReviewStrategy({ decision, policy, risk = "Medium", riskS
   };
 }
 
-export function buildDecisionExplanation({ decision, policy, risk = "Medium", riskScore = 50, moduleFindings = [], primaryReason = "", triggeredRule = "", suggestedResolution = "", reason = "", recommendedAction = "" } = {}) {
+export function buildDecisionExplanation({ decision, policy, risk = "Medium", riskScore = 50, moduleFindings = [], triggerFinding = null, primaryReason = "", triggeredRule = "", suggestedResolution = "", reason = "", recommendedAction = "" } = {}) {
   const effectiveReason = clean(primaryReason || reason || "Magen3 could not authorize the action.");
   const effectiveRule = clean(triggeredRule || "Policy evaluation");
   const effectiveResolution = clean(suggestedResolution || recommendedAction || "Review the policy findings before retrying.");
   const reviewResolution = resolveReviewStrategy({ decision, policy, risk, riskScore, moduleFindings, primaryReason: effectiveReason, triggeredRule: effectiveRule, suggestedResolution: effectiveResolution });
+  const evidence = triggerFinding?.evidence && typeof triggerFinding.evidence === "object" ? triggerFinding.evidence : {};
+  const diagnosticCode = clean(evidence.code || triggerFinding?.code || "");
+  const diagnosticField = clean(evidence.field || triggerFinding?.field || "");
+  const mismatchFields = Array.isArray(evidence.mismatchFields) ? evidence.mismatchFields.map(clean).filter(Boolean) : [];
+  const details = {
+    ...(Array.isArray(evidence.differences) ? { differences: evidence.differences } : {}),
+    ...(Array.isArray(evidence.missingFields) ? { missingFields: evidence.missingFields } : {}),
+    ...(Array.isArray(evidence.addedPermissionScopes) ? { addedPermissionScopes: evidence.addedPermissionScopes } : {}),
+    ...(evidence.originalSnapshotSupplied !== undefined ? { originalSnapshotSupplied: evidence.originalSnapshotSupplied === true } : {}),
+  };
 
   let userMessage;
   let agentInstruction;
@@ -134,13 +153,13 @@ export function buildDecisionExplanation({ decision, policy, risk = "Medium", ri
     userMessage = `Magen3 allowed this action. ${sentence(effectiveReason)} The exact submitted parameters may proceed to the execution layer.`;
     agentInstruction = "Proceed only with the exact parameters evaluated by Magen3. After a real submission, report the execution status and transaction hash.";
   } else if (decision === "Blocked") {
-    userMessage = `Magen3 blocked this action because ${sentence(effectiveReason)} Nothing was signed or sent. ${sentence(effectiveResolution)}`;
+    userMessage = `Magen3 blocked this action because ${reasonClause(effectiveReason)} Nothing was signed or sent. ${sentence(effectiveResolution)}`;
     agentInstruction = `Stop execution. Do not sign, submit, retry unchanged, or bypass Magen3. ${sentence(effectiveResolution)}`;
   } else if (reviewResolution.humanActionRequired) {
-    userMessage = `Magen3 paused this action because ${sentence(effectiveReason)} Human approval is required by the active policy. Nothing was signed or sent. ${sentence(effectiveResolution)}`;
+    userMessage = `Magen3 paused this action because ${reasonClause(effectiveReason)} Human approval is required by the active policy. Nothing was signed or sent. ${sentence(effectiveResolution)}`;
     agentInstruction = "Stop execution and surface the exact reason to the user. Poll the bound approval request and continue only when mayProceedToSigning is true and the protected parameters are unchanged.";
   } else {
-    userMessage = `Magen3 paused this action because ${sentence(effectiveReason)} No human approval is required yet. Nothing was signed or sent. ${sentence(effectiveResolution)}`;
+    userMessage = `Magen3 paused this action because ${reasonClause(effectiveReason)} No human approval is required yet. Nothing was signed or sent. ${sentence(effectiveResolution)}`;
     agentInstruction = `Stop this attempt, correct or supply the required evidence, and resubmit the same business goal with stable lifecycle binding. ${sentence(effectiveResolution)}`;
   }
 
@@ -158,6 +177,13 @@ export function buildDecisionExplanation({ decision, policy, risk = "Medium", ri
     reviewState: reviewResolution.state,
     canAgentRetry: reviewResolution.canAgentRetry,
     requiredActions: reviewResolution.requiredActions,
+    code: diagnosticCode || undefined,
+    module: clean(triggerFinding?.module) || undefined,
+    field: diagnosticField || undefined,
+    expected: evidence.expected,
+    received: evidence.received,
+    mismatchFields,
+    details: Object.keys(details).length > 0 ? details : undefined,
   };
 }
 

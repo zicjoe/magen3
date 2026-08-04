@@ -139,6 +139,21 @@ export interface Magen3X402Payment {
   settlementTxHash?: string;
 }
 
+
+export interface Magen3ProtectedParameters {
+  actionType: string;
+  amount: number;
+  asset: string;
+  outputAsset: string;
+  target: string;
+  targetType: string;
+  entryPoint: string;
+  chainName: string;
+  destination: string;
+  contract: string;
+  runtimeArgs: Record<string, unknown> | null;
+}
+
 export interface Magen3InstructionIntegrityMetadata {
   /** Stable identifier for the original human or application goal. */
   goalId?: string;
@@ -160,6 +175,11 @@ export interface Magen3InstructionIntegrityMetadata {
   originalParameterHash?: string;
   /** Optional adapter-computed SHA-256 fingerprint of current protected parameters. Magen3 computes its own. */
   currentParameterHash?: string;
+  /**
+   * Non-secret original protected values used only to identify the exact field
+   * that changed. Generate this with createMagen3InstructionIntegrityBinding.
+   */
+  originalProtectedParameters?: Magen3ProtectedParameters;
   /** Permission scopes present when the goal was established. */
   originalPermissionScopes?: string[];
   /** Permission scopes requested by the current tool execution. */
@@ -777,6 +797,10 @@ export interface Magen3InstructionIntegrityContext {
   originalParameterHash?: string;
   currentParameterHash?: string;
   computedCurrentParameterHash?: string;
+  originalProtectedParameters?: Magen3ProtectedParameters | null;
+  currentProtectedParameters?: Magen3ProtectedParameters;
+  parameterDifferences?: Array<{ field: string; label?: string; expected?: unknown; received?: unknown }>;
+  mismatchFields?: string[];
   parametersChanged?: boolean;
   originalPermissionScopes?: string[];
   currentPermissionScopes?: string[];
@@ -1150,6 +1174,23 @@ export interface Magen3DecisionExplanation {
   reviewState: string;
   canAgentRetry: boolean;
   requiredActions: string[];
+  /** Stable machine-readable explanation code. */
+  code?: string;
+  /** Protection module that produced the primary finding. */
+  module?: string;
+  /** Primary field responsible for the decision. */
+  field?: string;
+  expected?: unknown;
+  received?: unknown;
+  /** All protected fields known to have changed. */
+  mismatchFields?: string[];
+  details?: {
+    differences?: Array<{ field: string; label?: string; expected?: unknown; received?: unknown }>;
+    missingFields?: string[];
+    addedPermissionScopes?: string[];
+    originalSnapshotSupplied?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 export interface Magen3DecisionResult {
@@ -1237,6 +1278,123 @@ export function getMagen3AgentMessage(response: Magen3IntentResponse): string {
 /** True only when the exact evaluated action may reach signing/submission. */
 export function isMagen3ExecutionApproved(response: Magen3IntentResponse): boolean {
   return response.executionApproved === true && response.result.decision === "Allowed";
+}
+
+function canonicalizeMagen3Value(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeMagen3Value);
+  if (value && typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).sort().reduce<Record<string, unknown>>((result, key) => {
+      result[key] = canonicalizeMagen3Value((value as Record<string, unknown>)[key]);
+      return result;
+    }, {});
+  }
+  return value;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Web Crypto SHA-256 support is required to create Magen3 instruction bindings");
+  }
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Build the exact non-secret protected parameter object used by current Magen3
+ * Instruction Integrity hashing. Keep this snapshot so Magen3 can name the
+ * precise field that changed instead of returning a generic hash mismatch.
+ */
+export function buildMagen3ProtectedParameters(intent: Magen3Intent): Magen3ProtectedParameters {
+  const action = intent.action;
+  const chainName = action.chainName
+    || action.tokenPermission?.network
+    || action.bridge?.destinationChain
+    || action.x402?.network
+    || intent.targetChain
+    || "";
+  const destination = action.bridge?.destinationAddress
+    || action.x402?.payTo
+    || action.tokenPermission?.spender
+    || action.target
+    || "";
+  const contract = action.contractUpgrade?.contract
+    || action.privilegedAction?.contract
+    || action.tokenPermission?.tokenContract
+    || action.target
+    || "";
+  return {
+    actionType: String(action.type || "").trim(),
+    amount: Number(action.amount || 0),
+    asset: String(action.asset || "").trim(),
+    outputAsset: String(action.outputAsset || "").trim(),
+    target: String(action.target || "").trim(),
+    targetType: String(action.targetType || "").trim(),
+    entryPoint: String(action.entryPoint || "").trim(),
+    chainName: String(chainName).trim(),
+    destination: String(destination).trim(),
+    contract: String(contract).trim(),
+    runtimeArgs: action.preflight?.runtimeArgs && typeof action.preflight.runtimeArgs === "object"
+      ? action.preflight.runtimeArgs
+      : null,
+  };
+}
+
+/** Generate the backend-compatible SHA-256 fingerprint for protected fields. */
+export async function hashMagen3ProtectedParameters(parameters: Magen3ProtectedParameters): Promise<string> {
+  return sha256Hex(JSON.stringify(canonicalizeMagen3Value(parameters)));
+}
+
+export interface CreateMagen3InstructionBindingOptions {
+  goalId: string;
+  originalUserRequest: string;
+  initiatedBy?: string;
+  intentSource?: string;
+  toolName?: string;
+  toolServer?: string;
+  sourceDomains?: string[];
+  externalContentUsed?: boolean;
+  userConfirmed?: boolean;
+  sourceTrustLevel?: "trusted" | "review" | "untrusted" | string;
+  parameterChangeReason?: string;
+  originalProtectedParameters?: Magen3ProtectedParameters;
+  originalPermissionScopes?: string[];
+  currentPermissionScopes?: string[];
+}
+
+/**
+ * Create consistent instruction provenance and hashes for one intent. Preserve
+ * the returned goalId and original binding while retrying the same business
+ * goal. Recreate it when protected parameters legitimately change.
+ */
+export async function createMagen3InstructionIntegrityBinding(
+  intent: Magen3Intent,
+  options: CreateMagen3InstructionBindingOptions,
+): Promise<Magen3InstructionIntegrityMetadata> {
+  const currentProtectedParameters = buildMagen3ProtectedParameters(intent);
+  const originalProtectedParameters = options.originalProtectedParameters ?? currentProtectedParameters;
+  const [originalUserGoalHash, originalParameterHash, currentParameterHash] = await Promise.all([
+    sha256Hex(options.originalUserRequest),
+    hashMagen3ProtectedParameters(originalProtectedParameters),
+    hashMagen3ProtectedParameters(currentProtectedParameters),
+  ]);
+  return {
+    goalId: options.goalId,
+    originalUserGoalHash,
+    initiatedBy: options.initiatedBy ?? "user",
+    intentSource: options.intentSource ?? "user",
+    toolName: options.toolName,
+    toolServer: options.toolServer,
+    sourceDomains: options.sourceDomains ?? [],
+    externalContentUsed: options.externalContentUsed ?? false,
+    userConfirmed: options.userConfirmed ?? true,
+    sourceTrustLevel: options.sourceTrustLevel ?? "trusted",
+    parameterChangeReason: options.parameterChangeReason,
+    originalParameterHash,
+    currentParameterHash,
+    originalProtectedParameters,
+    originalPermissionScopes: options.originalPermissionScopes,
+    currentPermissionScopes: options.currentPermissionScopes,
+  };
 }
 
 export const MAGEN3_ENVIRONMENT_VARIABLES = {

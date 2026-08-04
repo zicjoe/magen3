@@ -228,7 +228,7 @@ New starter policies enable strict Lifecycle & Replay controls. Legacy policies 
 
 `Review Required` means the action cannot execute yet; it does not automatically mean a person must approve it. Policies independently configure review resolution as **Autonomous**, **Balanced**, or **Human Governed**. Ordinary uncertainty can be returned to the agent as deterministic remediation, while privileged, high-risk, or explicitly governed actions can escalate to Human Approval & Quorum.
 
-Every Blocked or Review Required Gateway response includes a safe `agentMessage`, a structured `decisionExplanation`, and `reviewResolution.humanActionRequired`. External agents can explain the exact primary reason, triggered rule, and suggested resolution without inventing generic text. Only human-escalated reviews create an approval request bound to a SHA-256 hash of the agent, action, amount, target, execution wallet, policy, and original intent.
+Every Blocked or Review Required Gateway response includes a safe `agentMessage`, a structured `decisionExplanation`, and `reviewResolution.humanActionRequired`. External agents can explain the exact primary reason, triggered rule, and suggested resolution without inventing generic text. Instruction-integrity decisions additionally expose stable codes and, when available, the exact affected field, expected value, received value, and changed-field list. Only human-escalated reviews create an approval request bound to a SHA-256 hash of the agent, action, amount, target, execution wallet, policy, and original intent.
 
 Policies can configure:
 
@@ -1048,7 +1048,7 @@ Contract Argument Policies is Live under Agent Shield → Contract & Permission 
 
 ## Agent Instruction Integrity
 
-Agent Instruction Integrity is Live under Agent Shield → Agent Trust & Access. Sensitive actions may include `action.instructionIntegrity` with a stable goal ID, original user-goal hash, source provenance, confirmation state, protected-parameter hashes, and original/current tool permission scopes. Magen3 deterministically checks goal binding, source-domain policy, parameter changes, external-content confirmation, x402 self-authorization, and tool scope expansion before signing. It stores hashes and minimal provenance evidence—not private prompts or document contents—and does not claim to detect every prompt-injection attack. See `docs/AGENT_INSTRUCTION_INTEGRITY.md`.
+Agent Instruction Integrity is Live under Agent Shield → Agent Trust & Access. Sensitive actions may include `action.instructionIntegrity` with a stable goal ID, original user-goal hash, source provenance, confirmation state, protected-parameter hashes, an optional non-secret original protected-parameter snapshot, and original/current tool permission scopes. Magen3 deterministically checks goal binding, source-domain policy, parameter changes, external-content confirmation, x402 self-authorization, and tool scope expansion before signing. The official SDK binding helpers generate compatible hashes and snapshots so Magen3 can identify exact amount, destination, asset, network, contract, method, action-type, or runtime-argument mismatches. It stores hashes and minimal provenance evidence—not private prompts or document contents—and does not claim to detect every prompt-injection attack. See `docs/AGENT_INSTRUCTION_INTEGRITY.md`.
 
 
 ## Tool & MCP Integrity

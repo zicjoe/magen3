@@ -163,7 +163,7 @@ Both official SDKs pass public unsigned contract parameters through `action.pref
 
 ## Agent Instruction Integrity
 
-Both official SDKs pass `action.instructionIntegrity` through the existing intent envelope. Use stable goal and SHA-256 evidence from a trusted adapter. The SDKs do not generate provenance automatically and do not make prompt-injection claims.
+Both official SDKs pass `action.instructionIntegrity` through the existing intent envelope and provide binding helpers that generate backend-compatible goal hashes, parameter hashes, and a non-secret `originalProtectedParameters` snapshot. Use `createMagen3InstructionIntegrityBinding` in TypeScript or `create_instruction_integrity_binding` in Python. Preserve the original binding for retries of the same user goal so Magen3 can name the exact changed field. Responses may include `decisionExplanation.code`, `field`, `expected`, `received`, and `mismatchFields`. The helpers do not certify that an adapter is honest and do not make universal prompt-injection claims.
 
 
 ## Tool & MCP Integrity

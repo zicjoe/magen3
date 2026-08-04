@@ -95,3 +95,50 @@ test("legacy requests without provenance remain compatible when the control is a
   assert.equal(response.result.decision, "Allowed");
   assert.ok(response.result.moduleFindings.some((item) => item.module === "Agent Instruction Integrity" && item.status === "skipped"));
 });
+
+test("Gateway returns a precise machine-readable explanation for adapter hash mismatch", async () => {
+  const { store, agent } = await fixture();
+  const request = boundBody(agent.id, { currentParameterHash: "b".repeat(64) });
+  const response = await store.submitAgentGatewayIntent(request, { apiKey: agent.apiKey });
+
+  assert.equal(response.result.decision, "Blocked");
+  assert.equal(response.decisionExplanation.code, "INSTRUCTION_CURRENT_PARAMETER_HASH_MISMATCH");
+  assert.equal(response.decisionExplanation.module, "Agent Instruction Integrity");
+  assert.equal(response.decisionExplanation.field, "currentParameterHash");
+  assert.match(response.agentMessage, /calculated the transaction-verification hash differently/i);
+  assert.match(response.agentMessage, /Nothing was signed or sent/i);
+});
+
+test("Gateway names the exact changed field when original protected parameters are supplied", async () => {
+  const { store, agent } = await fixture();
+  const originalRequest = boundBody(agent.id);
+  const originalNormalized = normalizeAgentGatewayIntent(originalRequest);
+  const originalProtectedParameters = {
+    actionType: originalNormalized.actionType,
+    amount: originalNormalized.amount,
+    asset: originalNormalized.asset,
+    outputAsset: originalNormalized.outputAsset,
+    target: originalNormalized.target,
+    targetType: originalNormalized.targetType,
+    entryPoint: originalNormalized.entryPoint,
+    chainName: originalNormalized.chainName,
+    destination: originalNormalized.target,
+    contract: originalNormalized.target,
+    runtimeArgs: originalNormalized.runtimeArgs,
+  };
+
+  const changed = boundBody(agent.id, {}, { action: { ...originalRequest.action, amount: 25 } });
+  const changedNormalized = normalizeAgentGatewayIntent(changed);
+  changed.action.instructionIntegrity.originalParameterHash = buildInstructionParameterFingerprint(originalNormalized);
+  changed.action.instructionIntegrity.currentParameterHash = buildInstructionParameterFingerprint(changedNormalized);
+  changed.action.instructionIntegrity.originalProtectedParameters = originalProtectedParameters;
+
+  const response = await store.submitAgentGatewayIntent(changed, { apiKey: agent.apiKey });
+  assert.equal(response.result.decision, "Review Required");
+  assert.equal(response.decisionExplanation.code, "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH");
+  assert.equal(response.decisionExplanation.field, "amount");
+  assert.deepEqual(response.decisionExplanation.mismatchFields, ["amount"]);
+  assert.equal(response.decisionExplanation.expected, 10);
+  assert.equal(response.decisionExplanation.received, 25);
+  assert.match(response.agentMessage, /amount changed from 10 to 25/i);
+});

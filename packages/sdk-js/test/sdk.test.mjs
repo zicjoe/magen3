@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage, getMagen3AgentMessage, isMagen3ExecutionApproved, magen3ClientOptionsFromEnv, normalizeMagen3GatewayUrl } from "../dist/index.js";
+import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage, buildMagen3ProtectedParameters, createMagen3InstructionIntegrityBinding, getMagen3AgentMessage, hashMagen3ProtectedParameters, isMagen3ExecutionApproved, magen3ClientOptionsFromEnv, normalizeMagen3GatewayUrl } from "../dist/index.js";
 
 test("checkIntent authenticates and injects agent identity", async () => {
   let captured;
@@ -1011,4 +1011,50 @@ test("execution helper requires both Allowed and executionApproved", () => {
   const base = { ok: true, gatewayRequest: {}, auditLog: {}, nextAction: "continue" };
   assert.equal(isMagen3ExecutionApproved({ ...base, executionApproved: true, result: { decision: "Allowed", risk: "Low", riskScore: 1, reason: "ok", recommendedAction: "continue" } }), true);
   assert.equal(isMagen3ExecutionApproved({ ...base, executionApproved: true, result: { decision: "Review Required", risk: "Medium", riskScore: 50, reason: "review", recommendedAction: "stop" } }), false);
+});
+
+
+test("builds backend-compatible protected parameters and instruction binding", async () => {
+  const intent = {
+    source: "YieldBot",
+    targetChain: "base-sepolia",
+    executionWalletAddress: "0x1111111111111111111111111111111111111111",
+    action: {
+      type: "Transfer",
+      amount: 5,
+      asset: "USDC",
+      target: "0x2222222222222222222222222222222222222222",
+      targetType: "Wallet Address",
+    },
+  };
+  const protectedParameters = buildMagen3ProtectedParameters(intent);
+  assert.equal(protectedParameters.chainName, "base-sepolia");
+  assert.equal(protectedParameters.destination, intent.action.target);
+  const hash = await hashMagen3ProtectedParameters(protectedParameters);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+
+  const binding = await createMagen3InstructionIntegrityBinding(intent, {
+    goalId: "goal:yieldbot-transfer-1",
+    originalUserRequest: "Send 5 USDC to 0x2222222222222222222222222222222222222222",
+  });
+  assert.equal(binding.originalParameterHash, binding.currentParameterHash);
+  assert.deepEqual(binding.originalProtectedParameters, protectedParameters);
+  assert.match(binding.originalUserGoalHash, /^[0-9a-f]{64}$/);
+});
+
+test("preserves precise decision explanation diagnostics", () => {
+  const response = {
+    ok: true,
+    executionApproved: false,
+    result: {
+      decision: "Blocked", risk: "High", riskScore: 90, reason: "blocked", recommendedAction: "retry",
+      decisionExplanation: {
+        decision: "Blocked", summary: "blocked", primaryReason: "The amount changed.", triggeredRule: "Protected parameter binding", suggestedResolution: "Use the original amount.", userMessage: "Magen3 blocked this action because the amount changed from 5 to 10. Nothing was signed or sent.", agentInstruction: "Stop.", humanActionRequired: false, reviewMode: "blocked", reviewState: "terminal", canAgentRetry: true, requiredActions: ["Use the original amount."], code: "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH", module: "Agent Instruction Integrity", field: "amount", expected: 5, received: 10, mismatchFields: ["amount"],
+      },
+    },
+    gatewayRequest: {}, auditLog: {}, nextAction: "retry",
+  };
+  assert.match(getMagen3AgentMessage(response), /amount changed from 5 to 10/i);
+  assert.equal(response.result.decisionExplanation.code, "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH");
+  assert.equal(response.result.decisionExplanation.field, "amount");
 });

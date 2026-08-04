@@ -141,12 +141,12 @@ The MCP intent schema accepts public unsigned `action.preflight.runtimeArgs`. Ma
 
 ## Agent Instruction Integrity
 
-The MCP intent schema supports `action.instructionIntegrity`. MCP may submit goal hashes, source labels, confirmation state, and permission scopes, but it cannot treat tool output as self-authorization or expand its own scope. Never include private prompts, tool credentials, or wallet secrets.
+The MCP intent schema supports `action.instructionIntegrity`, including goal hashes, source labels, confirmation state, permission scopes, protected-parameter hashes, and the optional non-secret `originalProtectedParameters` snapshot. The snapshot lets Magen3 identify the exact amount, destination, asset, network, contract, method, action type, or runtime arguments that changed. Responses may expose structured diagnostic fields while `agentMessage` remains the user-facing explanation. MCP cannot treat tool output as self-authorization or expand its own scope. Never include private prompts, tool credentials, document contents, or wallet secrets.
 
 
 ## Tool & MCP Integrity
 
-The official MCP server automatically adds stable Tool & MCP Integrity metadata for `magen3_check_intent` and `magen3_require_allowed` when the caller has not supplied downstream tool metadata. The metadata binds server ID `magen3-official-mcp`, package version `0.5.0`, manifest/schema/description hashes, origin, least-privilege scope, and the non-secret `agent-gateway` credential-scope label.
+The official MCP server automatically adds stable Tool & MCP Integrity metadata for `magen3_check_intent` and `magen3_require_allowed` when the caller has not supplied downstream tool metadata. The metadata binds server ID `magen3-official-mcp`, package version `0.5.1`, manifest/schema/description hashes, origin, least-privilege scope, and the non-secret `agent-gateway` credential-scope label.
 
 If a real downstream tool is the execution authority, submit its explicit `action.toolIntegrity` object; the official adapter preserves it. Configure the exact server and tool bindings in the active policy. MCP never sends API-key values, private keys, wallet signatures, or secret tool output to the intent payload.
 

@@ -115,7 +115,7 @@ The MCP tool submits public unsigned `action.preflight.runtimeArgs` only. Magen3
 
 ## Agent Instruction Integrity
 
-The intent schema accepts `action.instructionIntegrity` with a stable goal ID, original goal hash, source provenance, external-content confirmation, protected-parameter hashes, and original/current permission scopes. Tool output cannot authorize its own payment or expand its own scope. Send only hashes and minimal labels—never private prompts, tool credentials, document contents, or wallet secrets. This control verifies supplied deterministic evidence and does not claim universal prompt-injection detection.
+The intent schema accepts `action.instructionIntegrity` with a stable goal ID, original goal hash, source provenance, external-content confirmation, protected-parameter hashes, `originalProtectedParameters`, and original/current permission scopes. Supplying the non-secret original snapshot allows Magen3 to name the exact changed field instead of returning only a hash mismatch. Gateway responses may include `decisionExplanation.code`, `field`, `expected`, `received`, and `mismatchFields`; show `agentMessage` to users and keep these fields for developer diagnostics. Tool output cannot authorize its own payment or expand its own scope. Send only hashes, normalized public transaction fields, and minimal labels—never private prompts, tool credentials, document contents, or wallet secrets. This control verifies supplied deterministic evidence and does not claim universal prompt-injection detection.
 
 
 ## Tool & MCP Integrity

@@ -383,6 +383,7 @@ test("getApproval names missing organizational roles while pending", async () =>
 test("intent schema exposes the Agent Instruction Integrity security boundary", async () => {
   assert.match(INTENT_SCHEMA_DESCRIPTION.instructionIntegrity, /stable goal ID/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.instructionIntegrity.originalUserGoalHash, /SHA-256/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.instructionIntegrity.originalProtectedParameters, /original normalized snapshot/i);
   assert.match(INTENT_SCHEMA_DESCRIPTION.action.instructionIntegrity.currentPermissionScopes, /current tool execution/i);
   const handlers = createToolHandlers({
     verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); },

@@ -1,6 +1,33 @@
 const SHA256 = /^[0-9a-f]{64}$/i;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.:/ -]{0,255}$/;
 
+const TRUSTED_OFFICIAL_MCP_UPGRADES = [
+  {
+    serverId: "magen3-official-mcp",
+    origin: "@magen3/mcp-server",
+    fromManifestHash: "a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c",
+    toManifestHash: "13fa36697e6a8fc245951012bcceb80af11e3fd58bb0ea641eaf5cb9ac27924b",
+    tools: {
+      magen3_check_intent: {
+        fromVersion: "0.5.0",
+        toVersion: "0.5.1",
+        fromSchemaHash: "29b728aaa61bced4a3f533d23e52045f1f00d593f995634d83063c44fa0e18f2",
+        toSchemaHash: "bd690b9c71ac86c8b48afda761c558744437ec1e956a5b3b451df96500023eeb",
+        fromDescriptionHash: "f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2",
+        toDescriptionHash: "3a415223b22674c46c16636b28afae9e4ce21e95f1c69fff80a27785d51d6b1c",
+      },
+      magen3_require_allowed: {
+        fromVersion: "0.5.0",
+        toVersion: "0.5.1",
+        fromSchemaHash: "bfce0408d41a7656c7792bbd36d318a41f41cee2ea8bbee8e4c0b81f4a1e5359",
+        toSchemaHash: "8eccadfdf3eef9ed2b927a81e8b8b598d153bcefbb150c4bc8a2aad7f960fb9e",
+        fromDescriptionHash: "f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2",
+        toDescriptionHash: "3a415223b22674c46c16636b28afae9e4ce21e95f1c69fff80a27785d51d6b1c",
+      },
+    },
+  },
+];
+
 function clean(value) { return String(value ?? "").trim(); }
 function lower(value) { return clean(value).toLowerCase(); }
 function array(value) { return Array.isArray(value) ? value : []; }
@@ -77,13 +104,54 @@ function parseToolEntry(entry) {
     origin: parts[8] || "",
   };
 }
+function expandTrustedOfficialMcpUpgrades(approvedMcpServers, approvedTools) {
+  const servers = [...approvedMcpServers];
+  const tools = [...approvedTools];
+  for (const upgrade of TRUSTED_OFFICIAL_MCP_UPGRADES) {
+    const oldServerApproved = servers.some((entry) => same(entry.id, upgrade.serverId) && entry.manifestHash === upgrade.fromManifestHash);
+    if (oldServerApproved && !servers.some((entry) => same(entry.id, upgrade.serverId) && entry.manifestHash === upgrade.toManifestHash)) {
+      servers.push({ id: upgrade.serverId, url: "", manifestHash: upgrade.toManifestHash });
+    }
+    for (const [name, toolUpgrade] of Object.entries(upgrade.tools)) {
+      const oldTool = tools.find((entry) => same(entry.serverId, upgrade.serverId)
+        && same(entry.name, name)
+        && entry.version === toolUpgrade.fromVersion
+        && entry.manifestHash === upgrade.fromManifestHash
+        && entry.schemaHash === toolUpgrade.fromSchemaHash
+        && entry.descriptionHash === toolUpgrade.fromDescriptionHash
+        && same(entry.origin, upgrade.origin));
+      if (!oldTool) continue;
+      const newExists = tools.some((entry) => same(entry.serverId, upgrade.serverId)
+        && same(entry.name, name)
+        && entry.version === toolUpgrade.toVersion
+        && entry.manifestHash === upgrade.toManifestHash
+        && entry.schemaHash === toolUpgrade.toSchemaHash
+        && entry.descriptionHash === toolUpgrade.toDescriptionHash
+        && same(entry.origin, upgrade.origin));
+      if (!newExists) {
+        tools.push({
+          ...oldTool,
+          version: toolUpgrade.toVersion,
+          manifestHash: upgrade.toManifestHash,
+          schemaHash: toolUpgrade.toSchemaHash,
+          descriptionHash: toolUpgrade.toDescriptionHash,
+        });
+      }
+    }
+  }
+  return { servers, tools };
+}
+
 function settings(policy = {}) {
   const rules = policy?.structuredRules && typeof policy.structuredRules === "object" ? policy.structuredRules : {};
+  const configuredServers = array(rules.approvedMcpServers).map(parseServerEntry).filter((item) => item.id || item.url);
+  const configuredTools = array(rules.approvedTools).map(parseToolEntry).filter((item) => item.name);
+  const expanded = expandTrustedOfficialMcpUpgrades(configuredServers, configuredTools);
   return {
     enabled: rules.toolIntegrityEnabled === true,
     mode: normalizeMode(rules.toolIntegrityMode),
-    approvedMcpServers: array(rules.approvedMcpServers).map(parseServerEntry).filter((item) => item.id || item.url),
-    approvedTools: array(rules.approvedTools).map(parseToolEntry).filter((item) => item.name),
+    approvedMcpServers: expanded.servers,
+    approvedTools: expanded.tools,
     requireManifestHash: rules.requireManifestHash !== false,
     requireSchemaHash: rules.requireSchemaHash !== false,
     requireTls: rules.requireTls !== false,
@@ -205,7 +273,8 @@ export function evaluateToolMcpIntegrity({ request = {}, policy = {}, agent = {}
     add(state, "pass", "TLS required", "The adapter reports an approved secure HTTPS or local stdio transport.", { serverUrl, tls });
   }
 
-  const approvedServer = config.approvedMcpServers.find((entry) => serverMatches(entry, serverId, serverUrl));
+  const serverCandidates = config.approvedMcpServers.filter((entry) => serverMatches(entry, serverId, serverUrl));
+  const approvedServer = serverCandidates.find((entry) => !entry.manifestHash || !manifestHash || entry.manifestHash === manifestHash) || serverCandidates[0];
   if (!approvedServer) {
     policyViolation(state, config, config.unknownToolAction, "Approved MCP server", "The MCP server is not on the active policy allowlist.", { serverId, serverUrl }, "Approve the exact MCP server ID or URL in the policy, then retry.", "high");
   } else {
@@ -215,7 +284,13 @@ export function evaluateToolMcpIntegrity({ request = {}, policy = {}, agent = {}
     }
   }
 
-  const approvedTool = config.approvedTools.find((entry) => toolMatches(entry, serverId, toolName));
+  const toolCandidates = config.approvedTools.filter((entry) => toolMatches(entry, serverId, toolName));
+  const approvedTool = toolCandidates.find((entry) =>
+    (!entry.version || !toolVersion || entry.version === toolVersion)
+    && (!entry.manifestHash || !manifestHash || entry.manifestHash === manifestHash)
+    && (!entry.schemaHash || !schemaHash || entry.schemaHash === schemaHash)
+    && (!entry.descriptionHash || !descriptionHash || entry.descriptionHash === descriptionHash)
+  ) || toolCandidates[0];
   if (!approvedTool) {
     policyViolation(state, config, config.unknownToolAction, "Approved tool", "The requested tool is not on the active policy allowlist.", { serverId, toolName, toolVersion }, "Approve the exact server/tool pair and its trusted metadata before retrying.", "high");
   } else {

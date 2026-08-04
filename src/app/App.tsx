@@ -62,8 +62,13 @@ import {
   signCasperWalletMessage,
 } from "./lib/casperWallet";
 
-const OFFICIAL_MCP_SERVER_BINDING = "magen3-official-mcp||a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c";
+const OFFICIAL_MCP_SERVER_BINDING = [
+  "magen3-official-mcp||13fa36697e6a8fc245951012bcceb80af11e3fd58bb0ea641eaf5cb9ac27924b",
+  "magen3-official-mcp||a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c",
+].join("\n");
 const OFFICIAL_MCP_TOOL_BINDINGS = [
+  "magen3-official-mcp|magen3_check_intent|0.5.1|13fa36697e6a8fc245951012bcceb80af11e3fd58bb0ea641eaf5cb9ac27924b|bd690b9c71ac86c8b48afda761c558744437ec1e956a5b3b451df96500023eeb|3a415223b22674c46c16636b28afae9e4ce21e95f1c69fff80a27785d51d6b1c|magen3:intent:check|agent-gateway|@magen3/mcp-server",
+  "magen3-official-mcp|magen3_require_allowed|0.5.1|13fa36697e6a8fc245951012bcceb80af11e3fd58bb0ea641eaf5cb9ac27924b|8eccadfdf3eef9ed2b927a81e8b8b598d153bcefbb150c4bc8a2aad7f960fb9e|3a415223b22674c46c16636b28afae9e4ce21e95f1c69fff80a27785d51d6b1c|magen3:intent:require-allowed|agent-gateway|@magen3/mcp-server",
   "magen3-official-mcp|magen3_check_intent|0.5.0|a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c|29b728aaa61bced4a3f533d23e52045f1f00d593f995634d83063c44fa0e18f2|f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2|magen3:intent:check|agent-gateway|@magen3/mcp-server",
   "magen3-official-mcp|magen3_require_allowed|0.5.0|a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c|bfce0408d41a7656c7792bbd36d318a41f41cee2ea8bbee8e4c0b81f4a1e5359|f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2|magen3:intent:require-allowed|agent-gateway|@magen3/mcp-server",
 ].join("\n");
@@ -453,6 +458,13 @@ interface DecisionExplanation {
   reviewState: string;
   canAgentRetry: boolean;
   requiredActions: string[];
+  code?: string;
+  module?: string;
+  field?: string;
+  expected?: unknown;
+  received?: unknown;
+  mismatchFields?: string[];
+  details?: Record<string, unknown>;
 }
 
 interface DecisionResult {
@@ -4365,8 +4377,8 @@ function AgentRegistrationWizard({
     }
   }
 }`;
-    if (draft.integrationTarget === "JavaScript") return `// Install in the external agent backend: pnpm add @magen3/sdk@beta\nimport { Magen3Client } from "@magen3/sdk";\n\nconst magen3 = Magen3Client.fromEnv(process.env);\nconst decision = await magen3.checkIntent(intent);`;
-    if (draft.integrationTarget === "Python") return `from magen3 import Magen3Client\n\nmagen3 = Magen3Client.from_env()\ndecision = magen3.check_intent(intent)`;
+    if (draft.integrationTarget === "JavaScript") return `// Install in the external agent backend: pnpm add @magen3/sdk@beta\nimport {\n  Magen3Client,\n  createMagen3InstructionIntegrityBinding,\n  getMagen3AgentMessage,\n  isMagen3ExecutionApproved,\n} from "@magen3/sdk";\n\nconst magen3 = Magen3Client.fromEnv(process.env);\nintent.action.instructionIntegrity = await createMagen3InstructionIntegrityBinding(intent, {\n  goalId: stableGoalId,\n  originalUserRequest,\n});\nconst decision = await magen3.checkIntent(intent);\nif (!isMagen3ExecutionApproved(decision)) {\n  throw new Error(getMagen3AgentMessage(decision));\n}`;
+    if (draft.integrationTarget === "Python") return `from magen3 import (\n    Magen3Client,\n    create_instruction_integrity_binding,\n    get_agent_message,\n    is_execution_approved,\n)\n\nmagen3 = Magen3Client.from_env()\nintent["action"]["instructionIntegrity"] = create_instruction_integrity_binding(\n    intent,\n    goal_id=stable_goal_id,\n    original_user_request=original_user_request,\n)\ndecision = magen3.check_intent(intent)\nif not is_execution_approved(decision):\n    raise RuntimeError(get_agent_message(decision))`;
     if (draft.integrationTarget === "Custom API") return requestExample;
     return buildMagen3EnvironmentFile({ apiBaseUrl: gatewayBaseUrl, agentId: createdAgent.id, apiKey: key, agentName: createdAgent.name });
   })() : "";
@@ -4952,7 +4964,7 @@ const response = await fetch("${gatewayUrl}", {
 
 const decision = await response.json();
 if (!decision.executionApproved) {
-  throw new Error(decision.result?.reason || "Magen3 did not approve execution");
+  throw new Error(decision.agentMessage || decision.decisionExplanation?.userMessage || decision.result?.primaryReason || "Magen3 did not approve execution");
 }
 // Only after this should the external agent request the execution wallet signature.`, [gatewayUrl, gatewayVerifyUrl]);
 
@@ -4994,9 +5006,10 @@ Use this skill when acting as the external agent "${agent.name}".
 3. Treat the wallet connected inside the external agent as the execution wallet.
 4. The execution wallet does not need to match the Magen3 owner/admin wallet.
 5. Continue only when Magen3 returns Allowed and executionApproved is true.
-6. If Magen3 returns Blocked, stop and show agentMessage to the user.
+6. If Magen3 returns Blocked, stop and show agentMessage to the user. Use decisionExplanation.code, field, expected, received, and mismatchFields only for developer diagnostics.
 7. If Magen3 returns Review Required, stop and inspect reviewResolution. Remediate and resubmit when humanActionRequired is false; poll the bound approval only when it is true.
-8. After real execution, report the real execution transaction hash and status to Magen3. Casper records only the separate Magen3 decision proof.
+8. Build instructionIntegrity with the official SDK binding helper and preserve its goal ID and original protected-parameter snapshot while retrying the same user goal. This lets Magen3 name the exact amount, destination, asset, network, contract, or method that changed.
+9. After real execution, report the real execution transaction hash and status to Magen3. Casper records only the separate Magen3 decision proof.
 
 ## Example Intent
 \`\`\`json
@@ -8451,6 +8464,21 @@ function PoliciesPage({
   );
 }
 
+function auditDecisionExplanation(log: AuditLog | null): DecisionExplanation | undefined {
+  const originalIntent = log?.originalIntent;
+  if (!originalIntent || typeof originalIntent !== "object") return undefined;
+  const decisionContext = originalIntent["magen3DecisionContext"];
+  if (!decisionContext || typeof decisionContext !== "object") return undefined;
+  const explanation = (decisionContext as Record<string, unknown>)["decisionExplanation"];
+  return explanation && typeof explanation === "object" ? explanation as DecisionExplanation : undefined;
+}
+
+function diagnosticValue(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "Not available";
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
 function AuditLogPage({
   auditLogs,
   policies,
@@ -8511,6 +8539,7 @@ function AuditLogPage({
     ? policies.find((policy) => policy.agentId === selected.agentId && policy.name === selected.policyUsed) ||
       policies.find((policy) => policy.agentId === selected.agentId)
     : undefined;
+  const selectedExplanation = auditDecisionExplanation(selected);
 
   useEffect(() => {
     if (!selected) return;
@@ -8876,6 +8905,15 @@ function AuditLogPage({
                   <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Why this happened</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.primaryReason || selected.reason || "Magen3 returned this decision from the active deterministic policy."}</p></div>
                   <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Policy rule</span><p className="mt-1 text-[#F8FAFC]">{selected.triggeredRule || "No single blocking rule was recorded."}</p></div>
                   <div><span className="text-xs uppercase tracking-wider text-[#94A3B8]">Suggested resolution</span><p className="mt-1 leading-relaxed text-[#F8FAFC]">{selected.suggestedResolution || (selected.decision === "Allowed" ? "Proceed to wallet signing only after confirming the displayed execution parameters." : "Review the active policy and change only authorized request parameters before retrying.")}</p></div>
+                  {selectedExplanation?.code && (
+                    <div className="grid gap-3 rounded-lg border border-[#1E293B] bg-[#050B14] p-3 sm:grid-cols-2">
+                      <div><span className="text-xs uppercase tracking-wider text-[#64748B]">Explanation code</span><p className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{selectedExplanation.code}</p></div>
+                      <div><span className="text-xs uppercase tracking-wider text-[#64748B]">Affected field</span><p className="mt-1 font-mono text-xs text-[#F8FAFC]">{selectedExplanation.field || "General policy finding"}</p></div>
+                      {selectedExplanation.expected !== undefined && <div><span className="text-xs uppercase tracking-wider text-[#64748B]">Expected</span><p className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{diagnosticValue(selectedExplanation.expected)}</p></div>}
+                      {selectedExplanation.received !== undefined && <div><span className="text-xs uppercase tracking-wider text-[#64748B]">Received</span><p className="mt-1 break-all font-mono text-xs text-[#F8FAFC]">{diagnosticValue(selectedExplanation.received)}</p></div>}
+                      {selectedExplanation.mismatchFields && selectedExplanation.mismatchFields.length > 0 && <div className="sm:col-span-2"><span className="text-xs uppercase tracking-wider text-[#64748B]">Changed protected fields</span><p className="mt-1 text-xs text-[#F8FAFC]">{selectedExplanation.mismatchFields.join(", ")}</p></div>}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -9979,12 +10017,24 @@ Content-Type: application/json
                 <div className="mt-4"><DocsCodeBlock lang="env" code={`MAGEN3_GATEWAY_URL=https://magen3-production.up.railway.app
 MAGEN3_AGENT_ID=MAG-AGENT-...
 MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY`} /></div>
-                <div className="mt-4"><DocsCodeBlock lang="typescript" code={`import { Magen3Client } from "@magen3/sdk";
+                <div className="mt-4"><DocsCodeBlock lang="typescript" code={`import {
+  Magen3Client,
+  createMagen3InstructionIntegrityBinding,
+  getMagen3AgentMessage,
+} from "@magen3/sdk";
 
 const magen3 = Magen3Client.fromEnv(process.env);
-const result = await magen3.requireAllowed(intent);`} /></div>
+intent.action.instructionIntegrity = await createMagen3InstructionIntegrityBinding(intent, {
+  goalId: stableGoalId,
+  originalUserRequest,
+});
+
+const decision = await magen3.checkIntent(intent);
+if (decision.result.decision !== "Allowed" || decision.executionApproved !== true) {
+  throw new Error(getMagen3AgentMessage(decision));
+}`} /></div>
                 <p className="mt-3 text-xs leading-relaxed text-[#94A3B8]">
-                  Use <code className="text-[#F8FAFC]">requireAllowed</code> for fail-closed execution. It stops on Blocked, Review Required, malformed responses, authentication failures, and gateway errors.
+                  Use <code className="text-[#F8FAFC]">createMagen3InstructionIntegrityBinding</code> so Magen3 can identify the exact protected field that is missing or changed. Use <code className="text-[#F8FAFC]">requireAllowed</code> when the caller should throw automatically on Blocked, Review Required, malformed responses, authentication failures, and gateway errors.
                 </p>
               </section>
 
@@ -9994,10 +10044,21 @@ const result = await magen3.requireAllowed(intent);`} /></div>
                   The Python SDK uses the same three canonical environment variables as the TypeScript SDK and MCP server.
                 </p>
                 <div className="mt-5"><DocsCodeBlock lang="bash" code={`python -m pip install -e packages/sdk-python`} /></div>
-                <div className="mt-4"><DocsCodeBlock lang="python" code={`from magen3 import Magen3Client
+                <div className="mt-4"><DocsCodeBlock lang="python" code={`from magen3 import (
+    Magen3Client,
+    create_instruction_integrity_binding,
+    get_agent_message,
+)
 
 client = Magen3Client.from_env()
-result = client.require_allowed(intent)`} /></div>
+intent["action"]["instructionIntegrity"] = create_instruction_integrity_binding(
+    intent,
+    goal_id=stable_goal_id,
+    original_user_request=original_user_request,
+)
+decision = client.check_intent(intent)
+if decision.get("result", {}).get("decision") != "Allowed" or not decision.get("executionApproved"):
+    raise RuntimeError(get_agent_message(decision))`} /></div>
               </section>
 
               <section id="mcp-server-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -11502,7 +11563,7 @@ function IntentPlaygroundPage({
       />
 
       <div className={`${CARD} p-4`}>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{readiness.map((item) => <CompactStatusRow key={item.label} label={item.label} status={item.status} tone={item.tone} />)}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{readiness.map((item) => <div key={item.label}><CompactStatusRow label={item.label} status={item.status} tone={item.tone} /></div>)}</div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
@@ -11524,10 +11585,11 @@ function IntentPlaygroundPage({
             <>
               <div className={`${CARD_GLOW} p-5`}>
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={result.result.decision} /><RiskBadge risk={result.result.risk} /></div><h2 className="mt-3 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{result.result.primaryReason || result.result.reason}</h2><p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{result.result.suggestedResolution || result.result.recommendedAction}</p></div>
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><DecisionBadge decision={result.result.decision} /><RiskBadge risk={result.result.risk} /></div><h2 className="mt-3 text-xl font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{result.agentMessage || result.decisionExplanation?.userMessage || result.result.decisionExplanation?.userMessage || result.result.primaryReason || result.result.reason}</h2><p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">{result.result.suggestedResolution || result.result.recommendedAction}</p></div>
                   <div className="rounded-xl border border-[#1E293B] bg-[#050B14] px-3 py-2 text-right text-xs text-[#94A3B8]">Risk score<div className="mt-1 text-2xl font-bold text-[#F8FAFC]">{result.result.riskScore}</div></div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Triggered rule</div><div className="mt-1 text-sm text-[#F8FAFC]">{result.result.triggeredRule || "No blocking rule"}</div></div><div className="rounded-xl border border-[#1E293B] bg-[#050B14] p-3"><div className="text-[11px] uppercase tracking-wider text-[#64748B]">Next action</div><div className="mt-1 text-sm leading-relaxed text-[#F8FAFC]">{nextAction}</div></div></div>
+                {developerMode && (result.decisionExplanation || result.result.decisionExplanation)?.code && <div className="mt-3 rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3"><div className="text-[11px] font-semibold uppercase tracking-wider text-[#22D3EE]">Developer diagnostic</div><div className="mt-2 grid gap-2 text-xs text-[#94A3B8] sm:grid-cols-2"><div>Code: <span className="font-mono text-[#F8FAFC]">{(result.decisionExplanation || result.result.decisionExplanation)?.code}</span></div><div>Field: <span className="font-mono text-[#F8FAFC]">{(result.decisionExplanation || result.result.decisionExplanation)?.field || "—"}</span></div><div>Expected: <span className="font-mono text-[#F8FAFC]">{diagnosticValue((result.decisionExplanation || result.result.decisionExplanation)?.expected)}</span></div><div>Received: <span className="font-mono text-[#F8FAFC]">{diagnosticValue((result.decisionExplanation || result.result.decisionExplanation)?.received)}</span></div></div>{((result.decisionExplanation || result.result.decisionExplanation)?.mismatchFields || []).length > 0 && <div className="mt-2 text-xs text-[#94A3B8]">Changed fields: <span className="font-mono text-[#F8FAFC]">{(result.decisionExplanation || result.result.decisionExplanation)?.mismatchFields?.join(", ")}</span></div>}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">{result.approval && <Btn variant="secondary" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:policies-tab", "approvals"); window.sessionStorage.setItem("magen3:approval-request-id", result.approval?.id || ""); } catch {} onNavigate("policies"); }}><Clock size={14} /> Open Approval Queue</Btn>}<Btn variant="ghost" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:audit-record-id", result.auditLog.id); } catch {} onNavigate("audit-log"); }}><Scroll size={14} /> Open audit record</Btn></div>
               </div>
 

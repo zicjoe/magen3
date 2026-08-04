@@ -731,6 +731,7 @@ const server = createServer(async (req, res) => {
               parameterChangeReason: "Required when protected parameters changed and policy permits changes",
               originalParameterHash: "SHA-256 fingerprint captured at original goal binding",
               currentParameterHash: "Optional client-computed SHA-256 fingerprint; server recomputes and verifies it",
+              originalProtectedParameters: "Optional non-secret snapshot of action type, amount, asset, destination, network, contract, method, and runtime arguments. It lets Magen3 identify the exact changed field.",
               originalPermissionScopes: ["read"],
               currentPermissionScopes: ["read"]
             },
@@ -1303,7 +1304,7 @@ const server = createServer(async (req, res) => {
           decision: "Allowed | Blocked | Review Required",
           executionApproved: "boolean; true only for an Allowed exact intent",
           agentMessage: "Safe concise explanation intended to be shown directly by the external agent",
-          decisionExplanation: "Structured primary reason, triggered rule, suggested resolution, user message, and deterministic agent instruction",
+          decisionExplanation: "Structured primary reason, triggered rule, suggested resolution, user message, deterministic agent instruction, machine-readable code, affected field, expected/received values, and mismatch fields when available",
           reviewResolution: "Autonomous | Balanced | Human Governed routing with mode, state, humanActionRequired, canAgentRetry, and requiredActions",
           primaryReason: "Deterministic explanation when available",
           triggeredRule: "Policy rule responsible for the decision when applicable",

@@ -100,3 +100,34 @@ test("agent-remediation explanation says human approval is not required yet", ()
   assert.match(explanation.userMessage, /No human approval is required yet/i);
   assert.equal(explanation.reviewMode, "agent_remediation");
 });
+
+test("structured diagnostics are copied from the primary finding", () => {
+  const explanation = buildDecisionExplanation({
+    decision: "Blocked",
+    policy: { structuredRules: { reviewResolutionMode: "Autonomous" } },
+    risk: "Critical",
+    riskScore: 96,
+    primaryReason: "The prepared amount changed from 5 to 10.",
+    triggeredRule: "Protected parameter binding",
+    suggestedResolution: "Restore the original amount.",
+    triggerFinding: {
+      module: "Agent Instruction Integrity",
+      evidence: {
+        code: "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH",
+        field: "amount",
+        expected: 5,
+        received: 10,
+        mismatchFields: ["amount"],
+        differences: [{ field: "amount", expected: 5, received: 10 }],
+      },
+    },
+    moduleFindings: [{ status: "fail", severity: "critical", rule: "Protected parameter binding", message: "The prepared amount changed from 5 to 10.", remediation: "Restore the original amount." }],
+  });
+  assert.equal(explanation.code, "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH");
+  assert.equal(explanation.module, "Agent Instruction Integrity");
+  assert.equal(explanation.field, "amount");
+  assert.equal(explanation.expected, 5);
+  assert.equal(explanation.received, 10);
+  assert.deepEqual(explanation.mismatchFields, ["amount"]);
+  assert.match(explanation.userMessage, /because the prepared amount changed/i);
+});

@@ -13,6 +13,20 @@ const complianceAttestationSchema = z.object({
   expiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
 }).strict();
 
+const protectedParametersSchema = z.object({
+  actionType: z.string(),
+  amount: z.number().finite(),
+  asset: z.string(),
+  outputAsset: z.string(),
+  target: z.string(),
+  targetType: z.string(),
+  entryPoint: z.string(),
+  chainName: z.string(),
+  destination: z.string(),
+  contract: z.string(),
+  runtimeArgs: z.record(z.string(), z.unknown()).nullable(),
+}).strict();
+
 const actionSchema = z.object({
   type: z.string().min(1),
   amount: z.number().finite().nonnegative().optional(),
@@ -60,6 +74,7 @@ const actionSchema = z.object({
     parameterChangeReason: z.string().min(1).max(500).optional(),
     originalParameterHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
     currentParameterHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+    originalProtectedParameters: protectedParametersSchema.optional(),
     originalPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
     currentPermissionScopes: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/)).max(64).optional(),
   }).strict().optional(),
@@ -305,7 +320,7 @@ const executionReconciliationPollSchema = z.object({
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
-    { name: "magen3-execution-firewall", version: "0.5.0" },
+    { name: "magen3-execution-firewall", version: "0.5.1" },
     { instructions: "Before any Web3 execution, call magen3_require_allowed with the complete intent. Proceed only when the response is Allowed and executionApproved is true. Blocked means stop and show agentMessage. Review Required means stop and inspect reviewResolution: when humanActionRequired is false, follow the deterministic remediation and resubmit the same bound goal; when true, surface the exact-bound approval request and poll magen3_get_approval. Never bypass Magen3, expose credentials, access wallet secrets, sign, broadcast, or redeploy contracts." }
   );
   server.registerTool("magen3_verify_agent", { title: "Verify Magen3 Agent", description: "Verify the configured Connected Agent credentials and active policy.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.verifyAgent());

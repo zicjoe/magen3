@@ -127,6 +127,7 @@ function withStructuredResult({
     risk,
     riskScore,
     moduleFindings,
+    triggerFinding: trigger,
     primaryReason,
     triggeredRule,
     suggestedResolution,

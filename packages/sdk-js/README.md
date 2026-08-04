@@ -248,32 +248,54 @@ Put public unsigned contract arguments in `action.preflight.runtimeArgs`. When t
 
 ## Agent Instruction Integrity
 
-For sensitive or externally influenced execution, include minimal deterministic provenance under `action.instructionIntegrity`:
+Use the official binding helper instead of manually building provenance hashes. It captures the exact normalized protected parameters so Magen3 can explain whether the amount, destination, asset, network, contract, method, action type, or runtime arguments changed.
 
 ```ts
-await magen3.checkIntent({
+import {
+  createMagen3InstructionIntegrityBinding,
+  getMagen3AgentMessage,
+} from "@magen3/sdk";
+
+const intent = {
+  targetChain: "base-sepolia",
   executionWalletAddress,
   action: {
     type: "Transfer",
     amount: 5,
+    asset: "USDC",
     target: recipient,
-    instructionIntegrity: {
-      goalId: "goal:transfer-001",
-      originalUserGoalHash: sha256(originalGoal),
-      initiatedBy: "user",
-      intentSource: "user",
-      sourceDomains: [],
-      externalContentUsed: false,
-      userConfirmed: true,
-      sourceTrustLevel: "trusted",
-      originalPermissionScopes: ["wallet:transfer"],
-      currentPermissionScopes: ["wallet:transfer"],
-    },
+    targetType: "Wallet Address",
   },
+};
+
+intent.action.instructionIntegrity = await createMagen3InstructionIntegrityBinding(intent, {
+  goalId: stableGoalId,
+  originalUserRequest,
+  initiatedBy: "user",
+  intentSource: "user",
+  userConfirmed: true,
 });
+
+const decision = await magen3.checkIntent(intent);
+console.log(getMagen3AgentMessage(decision));
 ```
 
-Submit hashes and minimal source labels only. Do not include private prompts, raw emails/documents, API keys, wallet secrets, or signatures. Magen3 verifies supplied provenance and exact parameter bindings; it does not claim to detect every prompt-injection attack.
+Preserve the returned `goalId`, `originalUserGoalHash`, `originalParameterHash`, and `originalProtectedParameters` while retrying the same user goal. When the agent legitimately changes a protected field, include a clear `parameterChangeReason` and obtain confirmation when the policy requires it.
+
+The response can expose field-specific diagnostics under `decisionExplanation`:
+
+```ts
+{
+  code: "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH",
+  module: "Agent Instruction Integrity",
+  field: "amount",
+  expected: 5,
+  received: 10,
+  mismatchFields: ["amount"]
+}
+```
+
+Render `agentMessage` to ordinary users. Keep hashes and structured diagnostic fields in developer details. Submit hashes and minimal source labels only; never send private prompts, raw emails or documents, API keys, wallet secrets, signatures, or provider credentials. Magen3 verifies supplied provenance and exact parameter bindings; it does not claim to detect every prompt-injection attack.
 
 
 ## Tool & MCP Integrity

@@ -21,18 +21,18 @@ export type ToolTextResult = CallToolResult;
 
 export const OFFICIAL_MCP_INTEGRITY = {
   serverId: "magen3-official-mcp",
-  serverVersion: "0.5.0",
-  manifestHash: "a16fb32421835bcd9a7dc035a4f3ba26a5e7a227d29375929f7bff57ac2d8f0c",
-  descriptionHash: "f77a077dad755bb5fae5dc408dc2902541649c98c427cc9c961b835d352b25c2",
+  serverVersion: "0.5.1",
+  manifestHash: "13fa36697e6a8fc245951012bcceb80af11e3fd58bb0ea641eaf5cb9ac27924b",
+  descriptionHash: "3a415223b22674c46c16636b28afae9e4ce21e95f1c69fff80a27785d51d6b1c",
   origin: "@magen3/mcp-server",
   credentialScope: "agent-gateway",
   tools: {
     magen3_check_intent: {
-      schemaHash: "29b728aaa61bced4a3f533d23e52045f1f00d593f995634d83063c44fa0e18f2",
+      schemaHash: "bd690b9c71ac86c8b48afda761c558744437ec1e956a5b3b451df96500023eeb",
       permissionScopes: ["magen3:intent:check"],
     },
     magen3_require_allowed: {
-      schemaHash: "bfce0408d41a7656c7792bbd36d318a41f41cee2ea8bbee8e4c0b81f4a1e5359",
+      schemaHash: "8eccadfdf3eef9ed2b927a81e8b8b598d153bcefbb150c4bc8a2aad7f960fb9e",
       permissionScopes: ["magen3:intent:require-allowed"],
     },
   },
@@ -62,7 +62,7 @@ function withOfficialMcpIntegrity(intent: Magen3Intent, toolName: keyof typeof O
 }
 
 export const INTENT_SCHEMA_DESCRIPTION = {
-  instructionIntegrity: "For sensitive or externally influenced execution, include action.instructionIntegrity with a stable goal ID, original goal hash, source provenance, protected-parameter hashes, confirmation state, and tool permission scopes. Magen3 validates these deterministically; it does not claim to detect every prompt-injection attack.",
+  instructionIntegrity: "For sensitive or externally influenced execution, include action.instructionIntegrity with a stable goal ID, original goal hash, source provenance, protected-parameter hashes, originalProtectedParameters, confirmation state, and tool permission scopes. The snapshot lets Magen3 identify the exact changed field. Magen3 validates these deterministically; it does not claim to detect every prompt-injection attack.",
   toolMcpIntegrity: "When an MCP or other execution tool is used, include action.toolIntegrity with the approved server ID/URL, tool name/version, manifest/schema/description hashes, TLS state, origin, credential scope, and requested permission scopes. Never send MCP credentials or secret tool output.",
   delegationSafety: "For delegated wallet authority, include action.delegation with a short-lived exact scope and a Casper Wallet attestation. The MCP server can relay caller-supplied public evidence but never creates signatures, holds session-key secrets, or approves its own authority.",
   rpcChainIntegrity: "When authorization depends on chain state, include action.rpcIntegrity with the expected chain identity, selected approved endpoint, and fresh observations from trusted RPC adapters. MCP may relay public provider evidence but never fabricates sync state, block timestamps, provider agreement, or transaction status.",
@@ -130,6 +130,7 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       parameterChangeReason: "Reason protected parameters changed after the original goal",
       originalParameterHash: "Optional SHA-256 fingerprint of original protected parameters",
       currentParameterHash: "Optional adapter-computed SHA-256 fingerprint; Magen3 independently computes its own",
+      originalProtectedParameters: "Optional non-secret original normalized snapshot used to identify exact field changes",
       originalPermissionScopes: "Permission scopes approved when the goal was established",
       currentPermissionScopes: "Permission scopes requested by the current tool execution",
     },

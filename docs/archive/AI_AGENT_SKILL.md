@@ -96,7 +96,7 @@ const response = await fetch(`${gatewayBaseUrl}/api/agent-gateway/intents`, {
 
 const decision = await response.json();
 if (!decision.executionApproved) {
-  throw new Error(decision.result?.reason || "Magen3 did not approve execution");
+  throw new Error(decision.agentMessage || decision.decisionExplanation?.userMessage || decision.result?.primaryReason || "Magen3 did not approve execution");
 }
 ```
 

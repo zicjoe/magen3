@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildInstructionParameterFingerprint, evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
+import { buildInstructionParameterFingerprint, buildInstructionProtectedParameters, evaluateInstructionIntegrity } from "./instructionIntegrity.mjs";
 
 const HASH = "a".repeat(64);
 function policy(overrides = {}) {
@@ -100,4 +100,38 @@ test("legacy policies remain backward compatible", () => {
   assert.equal(result.hardBlock, false);
   assert.equal(result.needsReview, false);
   assert.ok(result.findings.every((item) => item.status === "skipped"));
+});
+
+
+test("returns a precise diagnostic for a current parameter hash mismatch", () => {
+  const result = evaluateInstructionIntegrity({ request: request({ instructionCurrentParameterHash: "b".repeat(64) }), policy: policy() });
+  const finding = result.findings.find((item) => item.rule === "Valid instruction provenance" && item.status === "fail");
+  assert.equal(finding.evidence.code, "INSTRUCTION_CURRENT_PARAMETER_HASH_MISMATCH");
+  assert.equal(finding.evidence.field, "currentParameterHash");
+  assert.match(finding.message, /calculated the transaction-verification hash differently/i);
+  assert.match(finding.remediation, /SDK binding helper/i);
+});
+
+test("names the exact changed protected field when the original snapshot is supplied", () => {
+  const original = request({ amount: 10 });
+  const originalProtectedParameters = buildInstructionProtectedParameters(original);
+  const changed = request({ amount: 25, instructionOriginalProtectedParameters: originalProtectedParameters });
+  changed.instructionOriginalParameterHash = buildInstructionParameterFingerprint(original);
+  changed.instructionCurrentParameterHash = buildInstructionParameterFingerprint(changed);
+  const result = evaluateInstructionIntegrity({ request: changed, policy: policy() });
+  const finding = result.findings.find((item) => item.rule === "Protected parameter binding" && item.status === "warning");
+  assert.equal(finding.evidence.code, "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH");
+  assert.equal(finding.evidence.field, "amount");
+  assert.deepEqual(finding.evidence.mismatchFields, ["amount"]);
+  assert.equal(finding.evidence.expected, 10);
+  assert.equal(finding.evidence.received, 25);
+  assert.match(finding.message, /amount changed from 10 to 25/i);
+});
+
+test("identifies each missing goal-binding field", () => {
+  const result = evaluateInstructionIntegrity({ request: request({ instructionGoalId: "", instructionOriginalUserGoalHash: "" }), policy: policy() });
+  const finding = result.findings.find((item) => item.rule === "Stable goal binding" && item.status === "warning");
+  assert.equal(finding.evidence.code, "INSTRUCTION_GOAL_BINDING_MISSING");
+  assert.deepEqual(finding.evidence.missingFields, ["goalId", "originalUserGoalHash"]);
+  assert.match(finding.message, /goal ID and original request hash/i);
 });

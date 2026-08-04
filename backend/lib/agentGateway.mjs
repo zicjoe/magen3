@@ -350,7 +350,7 @@ export function normalizeAgentGatewayIntent(body = {}) {
     ),
     entryPoint: cleanString(contract.entryPoint || contract.entry_point || action.entryPoint || action.entry_point || body.entryPoint || body.entry_point, ""),
     contractVersion,
-    chainName: cleanString(contract.chainName || contract.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name, ""),
+    chainName: cleanString(contract.chainName || contract.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name || body.targetChain || body.target_chain, ""),
     paymentAmountMotes: cleanString(preflight.paymentAmountMotes ?? preflight.payment_amount_motes ?? action.paymentAmountMotes ?? action.payment_amount_motes ?? "", ""),
     gasPriceTolerance: optionalNumber(preflight.gasPriceTolerance ?? preflight.gas_price_tolerance ?? action.gasPriceTolerance ?? action.gas_price_tolerance, "gasPriceTolerance", { integer: true }),
     ttl: cleanString(preflight.ttl ?? action.ttl ?? "", ""),
@@ -476,6 +476,11 @@ export function normalizeAgentGatewayIntent(body = {}) {
     instructionParameterChangeReason: cleanString(instructionIntegrity.parameterChangeReason || instructionIntegrity.parameter_change_reason || "", ""),
     instructionOriginalParameterHash: cleanString(instructionIntegrity.originalParameterHash || instructionIntegrity.original_parameter_hash || "", ""),
     instructionCurrentParameterHash: cleanString(instructionIntegrity.currentParameterHash || instructionIntegrity.current_parameter_hash || "", ""),
+    instructionOriginalProtectedParameters: instructionIntegrity.originalProtectedParameters && typeof instructionIntegrity.originalProtectedParameters === "object" && !Array.isArray(instructionIntegrity.originalProtectedParameters)
+      ? normalizeMetadataValue(instructionIntegrity.originalProtectedParameters)
+      : instructionIntegrity.original_protected_parameters && typeof instructionIntegrity.original_protected_parameters === "object" && !Array.isArray(instructionIntegrity.original_protected_parameters)
+        ? normalizeMetadataValue(instructionIntegrity.original_protected_parameters)
+        : null,
     instructionOriginalPermissionScopes: Array.isArray(instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes) ? (instructionIntegrity.originalPermissionScopes || instructionIntegrity.original_permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
     instructionCurrentPermissionScopes: Array.isArray(instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes) ? (instructionIntegrity.currentPermissionScopes || instructionIntegrity.current_permission_scopes || instructionIntegrity.permissionScopes || instructionIntegrity.permission_scopes).slice(0, 50).map((item) => cleanString(item)).filter(Boolean) : [],
     toolIntegrityMetadataSupplied: Object.keys(toolIntegrity).length > 0,

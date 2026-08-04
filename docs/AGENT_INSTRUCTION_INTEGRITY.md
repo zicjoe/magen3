@@ -23,6 +23,13 @@ Submit public, non-sensitive evidence under `action.instructionIntegrity`:
   "parameterChangeReason": "",
   "originalParameterHash": "<optional 64-character SHA-256>",
   "currentParameterHash": "<optional adapter-computed SHA-256>",
+  "originalProtectedParameters": {
+    "actionType": "Transfer",
+    "amount": 25,
+    "asset": "USDC",
+    "target": "0x...",
+    "chainName": "base-sepolia"
+  },
   "originalPermissionScopes": ["treasury:propose"],
   "currentPermissionScopes": ["treasury:propose"]
 }
@@ -42,7 +49,7 @@ Do not send private prompts, email bodies, document contents, API keys, wallet s
 - Tool/MCP permission-scope expansion prevention
 - Review or blocking of high-risk actions derived from untrusted external content
 
-A blocked source, malformed or contradictory provenance, x402 self-authorization, tool scope expansion, or a supplied current hash that does not match Magen3's normalized parameters fails closed.
+A blocked source, malformed or contradictory provenance, x402 self-authorization, tool scope expansion, or a supplied current hash that does not match Magen3's normalized parameters fails closed. When an original protected-parameter snapshot is supplied, Magen3 compares it field by field and identifies the exact mismatch.
 
 ## Policy fields
 
@@ -62,7 +69,9 @@ Legacy policies without the control remain backward compatible. When enabled, mi
 
 ## Decision and audit evidence
 
-The Gateway returns `instructionIntegrityContext` with the goal ID, source category, domains, confirmation state, original and computed parameter hashes, permission scopes, change state, deterministic violations, and the explicit limitation of the control. Audit Logs persist the same normalized evidence and structured findings without storing raw external content.
+The Gateway returns `instructionIntegrityContext` with the goal ID, source category, domains, confirmation state, original and computed parameter hashes, original/current protected-parameter snapshots, field differences, permission scopes, change state, deterministic violations, and the explicit limitation of the control. Audit Logs persist the same normalized evidence and structured findings without storing raw external content.
+
+Every Blocked or Review Required response also includes a user-ready `agentMessage` and structured `decisionExplanation`. Instruction-integrity failures use stable codes and may expose `field`, `expected`, `received`, and `mismatchFields`. For example, an amount mismatch can say that the user requested 5 USDC but the prepared transaction contains 10 USDC, while malformed hashes and missing goal bindings receive separate explanations. Ordinary agents should display `agentMessage`; developer tooling may show the structured details.
 
 The existing Human Approval workflow binds the complete normalized intent. If protected parameters change after approval, the approval binding changes and the prior authorization cannot be reused.
 

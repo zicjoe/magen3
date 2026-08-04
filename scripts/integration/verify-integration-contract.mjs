@@ -35,7 +35,7 @@ if (!app.includes("Magen3Client.fromEnv(process.env)")) fail("TypeScript onboard
 if (!app.includes("Magen3Client.from_env()")) fail("Python onboarding does not use the canonical environment loader");
 if (!envExample.includes("MAGEN3_API_KEY=")) fail(".env.example is missing MAGEN3_API_KEY");
 if (/MAGEN3_GATEWAY_URL=.*api\/agent-gateway/.test(envExample)) fail(".env.example uses an endpoint instead of the API base URL");
-if (sdkPackage.version !== "0.4.0-beta.2") fail("SDK package version must be 0.4.0-beta.2");
+if (sdkPackage.version !== "0.4.0-beta.3") fail("SDK package version must be 0.4.0-beta.3");
 if (!sdkSource.includes("magen3ClientOptionsFromEnv")) fail("SDK environment resolver is missing");
 if (!sdkSource.includes("normalizeMagen3GatewayUrl")) fail("SDK Gateway URL normalization is missing");
 if (!sdkSource.includes("getMagen3AgentMessage")) fail("SDK agent-message helper is missing");

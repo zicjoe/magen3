@@ -8,7 +8,7 @@ Prepare the existing `@magen3/sdk` package for safe public beta publishing witho
 
 ### `packages/sdk-js/package.json`
 
-- Changed version from `0.4.0` to `0.4.0-beta.2`.
+- Advanced the existing public beta package to `0.4.0-beta.3`; no second SDK was created.
 - Added public beta `publishConfig`.
 - Added `publish:check`.
 - Added `prepublishOnly` with the correct order: typecheck, build, then test.
@@ -37,11 +37,11 @@ The code is ready for packaging, but publishing still requires an npm account wi
 
 - SDK TypeScript no-emit compilation: passed.
 - SDK build: passed.
-- SDK tests: 30 passed, 0 failed after the integration-contract additions.
+- SDK tests: 35 passed, 0 failed, including public instruction-binding and field-specific explanation diagnostics.
 - npm package dry run: passed.
 - npm package contained exactly five intended files: `LICENSE`, `README.md`, `dist/index.d.ts`, `dist/index.js`, and `package.json`.
 - Packed-package external consumer installation: passed.
-- External consumer import and `verifyAgent()` call using a mocked Gateway: passed.
+- External consumer installation, import, and instruction-integrity binding generation: passed.
 - Existing security patch verification: passed.
 - Package JSON validation: passed.
 

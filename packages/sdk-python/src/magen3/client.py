@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -43,6 +44,106 @@ def is_execution_approved(response: Mapping[str, Any]) -> bool:
     result = response.get("result") if isinstance(response, Mapping) else {}
     result = result if isinstance(result, Mapping) else {}
     return response.get("executionApproved") is True and result.get("decision") == "Allowed"
+
+
+def build_protected_parameters(intent: Mapping[str, Any]) -> Dict[str, Any]:
+    """Build the exact non-secret parameter snapshot used by Instruction Integrity."""
+    action = intent.get("action") if isinstance(intent, Mapping) else {}
+    action = action if isinstance(action, Mapping) else {}
+    token_permission = action.get("tokenPermission") if isinstance(action.get("tokenPermission"), Mapping) else {}
+    bridge = action.get("bridge") if isinstance(action.get("bridge"), Mapping) else {}
+    x402 = action.get("x402") if isinstance(action.get("x402"), Mapping) else {}
+    privileged = action.get("privilegedAction") if isinstance(action.get("privilegedAction"), Mapping) else {}
+    upgrade = action.get("contractUpgrade") if isinstance(action.get("contractUpgrade"), Mapping) else {}
+    preflight = action.get("preflight") if isinstance(action.get("preflight"), Mapping) else {}
+    target = str(action.get("target") or "").strip()
+    chain_name = str(
+        action.get("chainName")
+        or token_permission.get("network")
+        or bridge.get("destinationChain")
+        or x402.get("network")
+        or intent.get("targetChain")
+        or ""
+    ).strip()
+    destination = str(
+        bridge.get("destinationAddress")
+        or x402.get("payTo")
+        or token_permission.get("spender")
+        or target
+    ).strip()
+    contract = str(
+        upgrade.get("contract")
+        or privileged.get("contract")
+        or token_permission.get("tokenContract")
+        or target
+    ).strip()
+    runtime_args = preflight.get("runtimeArgs")
+    if not isinstance(runtime_args, Mapping):
+        runtime_args = None
+    else:
+        runtime_args = dict(runtime_args)
+    amount_value = action.get("amount") or 0
+    try:
+        numeric_amount = float(amount_value)
+        normalized_amount: Any = int(numeric_amount) if numeric_amount.is_integer() else numeric_amount
+    except (TypeError, ValueError):
+        normalized_amount = 0
+    return {
+        "actionType": str(action.get("type") or "").strip(),
+        "amount": normalized_amount,
+        "asset": str(action.get("asset") or "").strip(),
+        "outputAsset": str(action.get("outputAsset") or "").strip(),
+        "target": target,
+        "targetType": str(action.get("targetType") or "").strip(),
+        "entryPoint": str(action.get("entryPoint") or "").strip(),
+        "chainName": chain_name,
+        "destination": destination,
+        "contract": contract,
+        "runtimeArgs": runtime_args,
+    }
+
+
+def hash_protected_parameters(parameters: Mapping[str, Any]) -> str:
+    """Generate the backend-compatible SHA-256 protected-parameter fingerprint."""
+    canonical = json.dumps(dict(parameters), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def create_instruction_integrity_binding(
+    intent: Mapping[str, Any],
+    *,
+    goal_id: str,
+    original_user_request: str,
+    original_protected_parameters: Optional[Mapping[str, Any]] = None,
+    initiated_by: str = "user",
+    intent_source: str = "user",
+    source_domains: Optional[list[str]] = None,
+    external_content_used: bool = False,
+    user_confirmed: bool = True,
+    source_trust_level: str = "trusted",
+    parameter_change_reason: str = "",
+    original_permission_scopes: Optional[list[str]] = None,
+    current_permission_scopes: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    """Create consistent provenance, hashes, and an exact original parameter snapshot."""
+    current = build_protected_parameters(intent)
+    original = dict(original_protected_parameters or current)
+    return {
+        "goalId": goal_id,
+        "originalUserGoalHash": hashlib.sha256(original_user_request.encode("utf-8")).hexdigest(),
+        "initiatedBy": initiated_by,
+        "intentSource": intent_source,
+        "sourceDomains": list(source_domains or []),
+        "externalContentUsed": external_content_used,
+        "userConfirmed": user_confirmed,
+        "sourceTrustLevel": source_trust_level,
+        "parameterChangeReason": parameter_change_reason or None,
+        "originalParameterHash": hash_protected_parameters(original),
+        "currentParameterHash": hash_protected_parameters(current),
+        "originalProtectedParameters": original,
+        "originalPermissionScopes": list(original_permission_scopes or []),
+        "currentPermissionScopes": list(current_permission_scopes or []),
+    }
 
 
 def _normalize_gateway_url(value: str) -> str:
