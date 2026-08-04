@@ -451,8 +451,8 @@ export function evaluateX402PaymentControls({ request = {}, policy = {}, auditLo
     if (config.maxPayment > 0 && displayAmount > config.maxPayment) applyViolation(state, config, { rule: "Maximum x402 payment", message: `Payment amount ${displayAmount} exceeds the policy maximum of ${config.maxPayment}.`, evidence: { received: displayAmount, maximum: config.maxPayment, asset }, remediation: "Reduce the payment or obtain authorized policy approval." });
     else pass(state, "Maximum x402 payment", "The payment is within the per-payment limit.", { amount: displayAmount, maximum: config.maxPayment || null, asset });
     if (config.reviewThreshold > 0 && displayAmount > config.reviewThreshold) {
-      state.findings.push(finding({ status: "warning", severity: "medium", rule: "x402 review threshold", message: `Payment amount ${displayAmount} exceeds the review threshold of ${config.reviewThreshold}.`, evidence: { amount: displayAmount, reviewThreshold: config.reviewThreshold, asset }, remediation: "Obtain human approval or reduce the payment amount." }));
-      state.checksFailed.push("x402 payment exceeds the human-review threshold");
+      state.findings.push(finding({ status: "warning", severity: "medium", rule: "x402 review threshold", message: `Payment amount ${displayAmount} exceeds the review threshold of ${config.reviewThreshold}.`, evidence: { amount: displayAmount, reviewThreshold: config.reviewThreshold, asset }, remediation: "Reduce the payment amount or follow the active policy review-resolution strategy." }));
+      state.checksFailed.push("x402 payment exceeds the review threshold");
       state.needsReview = true;
       state.scoreDelta += 12;
     } else pass(state, "x402 review threshold", "The payment does not exceed the x402 review threshold.", { amount: displayAmount, reviewThreshold: config.reviewThreshold || null });

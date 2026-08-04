@@ -33,7 +33,7 @@ test("requireAllowed returns success for an Allowed decision", async () => {
   });
   const result = await handlers.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def" } });
   assert.equal(result.isError, undefined);
-  assert.match(result.content[0].text, /Allowed by Magen3/);
+  assert.match(result.content[0].text, /Proceed only with the exact evaluated parameters/);
 });
 
 test("requireAllowed fails closed when SDK rejects the decision", async () => {
@@ -46,6 +46,86 @@ test("requireAllowed fails closed when SDK rejects the decision", async () => {
   const result = await handlers.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def" } });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /Blocked/);
+});
+
+test("checkIntent routes autonomous review to agent remediation instead of human approval", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => ({
+      ok: true,
+      executionApproved: false,
+      result: {
+        decision: "Review Required",
+        risk: "Medium",
+        riskScore: 45,
+        reason: "Destination evidence is incomplete",
+        recommendedAction: "Supply destination evidence",
+      },
+      gatewayRequest: {},
+      auditLog: {},
+      nextAction: "Supply destination evidence",
+      agentMessage: "Magen3 paused this action because destination evidence is incomplete. No human approval is required yet. Nothing was signed or sent.",
+      reviewResolution: {
+        strategy: "Autonomous",
+        mode: "agent_remediation",
+        state: "awaiting_agent_remediation",
+        humanActionRequired: false,
+        agentActionRequired: true,
+        canAgentRetry: true,
+        mayAutoResume: false,
+        requiredActions: ["Supply destination evidence"],
+        summary: "Autonomous remediation is required",
+      },
+    }),
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+  });
+  const result = await handlers.checkIntent({ executionWalletAddress: "01abc", action: { type: "Transfer", target: "01def" } });
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /No human approval is required yet/i);
+  assert.match(result.content[0].text, /Do not poll human approval/i);
+});
+
+test("checkIntent tells the agent to poll approval only for human-escalated review", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => ({
+      ok: true,
+      executionApproved: false,
+      result: {
+        decision: "Review Required",
+        risk: "High",
+        riskScore: 90,
+        reason: "Privileged action requires independent approval",
+        recommendedAction: "Complete approval",
+      },
+      gatewayRequest: {},
+      auditLog: {},
+      nextAction: "Complete approval",
+      agentMessage: "Magen3 paused this action because it is privileged. Human approval is required by the active policy. Nothing was signed or sent.",
+      reviewResolution: {
+        strategy: "Autonomous",
+        mode: "human_approval",
+        state: "awaiting_human_approval",
+        humanActionRequired: true,
+        agentActionRequired: false,
+        canAgentRetry: false,
+        mayAutoResume: false,
+        requiredActions: ["Complete approval"],
+        summary: "Independent approval is required",
+      },
+    }),
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+  });
+  const result = await handlers.checkIntent({ executionWalletAddress: "01abc", action: { type: "Contract Interaction", target: "hash" } });
+  assert.match(result.content[0].text, /poll the bound approval request/i);
 });
 
 

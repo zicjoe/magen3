@@ -428,15 +428,15 @@ The top-level response preserves the existing contract and adds structured expla
 
 | Decision | External-agent behavior |
 | --- | --- |
-| `Allowed` | The agent may request wallet signing. Magen3 does not sign for the user. |
-| `Blocked` | Stop. Do not submit the blockchain transaction. |
-| `Review Required` | Pause automatic execution and request an authorized human decision. |
+| `Allowed` | Proceed only when `executionApproved` is also `true`, using the exact evaluated parameters. |
+| `Blocked` | Stop, show `agentMessage`, and do not sign or submit. |
+| `Review Required` | Stop and inspect `reviewResolution`: autonomously remediate and resubmit, or poll approval only when `humanActionRequired` is `true`. |
 
-The initial intent response sets `executionApproved` to `true` only for `Allowed`. A `Review Required` intent remains blocked until its exact-bound approval request reaches `Approved` before expiry; agents must poll the approval workflow rather than treating review as authorization.
+The initial intent response sets `executionApproved` to `true` only for `Allowed`. Every `Review Required` response remains non-executable. `reviewResolution.mode` distinguishes `agent_remediation` from `human_approval`, while `agentMessage` is safe to display directly and `decisionExplanation` supplies the exact reason, triggered rule, remediation, and backend instruction.
 
 ## Human Approval & Quorum
 
-When the active policy enables Human Approval & Quorum and the deterministic decision is `Review Required`, the response includes an `approval` object:
+When a deterministic `Review Required` decision is explicitly routed to human or organizational approval, the response includes `reviewResolution.humanActionRequired: true` and an `approval` object. Autonomous remediation reviews return `approval: null`:
 
 ```json
 {
@@ -552,11 +552,11 @@ The owner wallet registers the agent, manages credentials, and controls its poli
 | `auditLog.approvalBindingHash` | SHA-256 binding over the protected intent and policy context. |
 | `auditLog.executionTxHash` | Real execution deploy/transaction hash attached after an Allowed action, or an unexpired Approved review, is signed and submitted. |
 
-Blocked actions can receive decision proofs but must not receive execution hashes. Review Required actions also remain ineligible until their exact-bound approval reaches Approved before expiry.
+Blocked actions can receive decision proofs but must not receive execution hashes. Review Required actions also remain ineligible; autonomous reviews require a fresh Allowed decision after remediation, and human-escalated reviews require a current exact-bound approval.
 
 ## Attach an Execution Hash
 
-After an Allowed action—or a Review Required action with a completed, unexpired exact-bound approval—is signed and submitted by the execution wallet, attach its real deploy or transaction hash to the matching audit record using the existing execution-confirmation route. Magen3 rejects execution hashes for Blocked, Pending, Rejected, Expired, or Configuration Required decisions.
+After an Allowed action—or a human-escalated Review Required action with a completed, unexpired exact-bound approval—is signed and submitted by the execution wallet, attach its real deploy or transaction hash to the matching audit record using the existing execution-confirmation route. Autonomous remediation reviews must first be resubmitted and receive a fresh Allowed decision. Magen3 rejects execution hashes for Blocked, Pending, Rejected, Expired, or Configuration Required decisions.
 
 ## Failure States
 
@@ -567,7 +567,7 @@ After an Allowed action—or a Review Required action with a completed, unexpire
 | Revoked agent | Gateway access is rejected. |
 | No active policy | Magen3 fails closed. |
 | Hard policy, wallet-validation, contract-validation, execution-preflight, or enforced threat-intelligence violation | `Blocked`. |
-| Review threshold or review condition | `Review Required`; an enabled approval workflow creates an exact-bound request. |
+| Review threshold or review condition | `Review Required`; `reviewResolution` chooses autonomous remediation or explicit human escalation. |
 | Approval quorum incomplete or expired | Execution confirmation is rejected. |
 | Threat feed stale or unavailable | Warn, Review Required, or Blocked according to the active policy; never silently passed. |
 | Unavailable roadmap module | Reported honestly as `unavailable`; it is not silently counted as protection. |

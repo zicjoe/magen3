@@ -475,6 +475,7 @@ test("Organizational approval coverage requires named groups, deterministic rule
     dailyLimit: 1000,
     approvalThreshold: 100,
     structuredRules: {
+      reviewResolutionMode: "Human Governed",
       approvalWorkflowEnabled: true,
       approvalWorkflowMode: "Quorum",
       approvalRequiredCount: 3,
@@ -497,6 +498,18 @@ test("Organizational approval coverage requires named groups, deterministic rule
     moduleFindings: [{ module: "Policy & Approval Controls", status: "pass", severity: "low", rule: "Organizational approval quorum", message: "Role quorum satisfied." }],
   }]);
   assert.equal(observed.checks.find((item) => item.id === "organizational-approval").passed, true);
+});
+
+test("Integration Health separates autonomous remediation from human approval", () => {
+  const timestamp = new Date().toISOString();
+  const health = securityModel.deriveIntegrationHealth(
+    { status: "Active", apiKeyPreview: "mg3_live_…f91a", lastIntentAt: timestamp },
+    { status: "Active" },
+    [{ timestamp, decision: "Review Required", decisionProofStatus: "recorded", moduleFindings: [{ module: "Policy & Approval Controls", status: "warning", severity: "medium", rule: "Autonomous review resolution", message: "Agent remediation required." }] }],
+    true,
+  );
+  assert.ok(health.checks.some((check) => check.label === "Autonomous review resolution" && check.status === "pending"));
+  assert.ok(health.checks.some((check) => check.label === "Human approval workflow" && check.status === "unknown"));
 });
 
 test("Integration Health exposes pending and failed organizational approval state", () => {

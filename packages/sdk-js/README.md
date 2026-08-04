@@ -80,11 +80,26 @@ Execution Simulation is Foundation Available. Supplied preflight metadata is val
 
 Use `requireAllowed()` when the caller must stop automatically for `Blocked` and `Review Required` decisions. The SDK never signs or broadcasts transactions.
 
-The TypeScript response types expose `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, `suggestedResolution`, and sanitized `threatIntelligenceContext`, so integrations can render deterministic preflight and exact-match intelligence guidance without parsing free-form text. Threat Intelligence remains Foundation Available and requires an operator-configured fresh feed.
+The TypeScript response types expose `agentMessage`, `decisionExplanation`, `reviewResolution`, `moduleFindings`, `pipelineStages`, `primaryReason`, `triggeredRule`, and `suggestedResolution`. Render `getMagen3AgentMessage(response)` directly in the external agent instead of inventing a generic explanation.
+
+A `Review Required` result always pauses execution, but it does not automatically mean a human is needed. Inspect `reviewResolution.humanActionRequired`:
+
+```ts
+import { getMagen3AgentMessage, isMagen3ExecutionApproved } from "@magen3/sdk";
+
+console.log(getMagen3AgentMessage(decision));
+if (isMagen3ExecutionApproved(decision)) {
+  // Submit only the exact evaluated parameters.
+} else if (decision.reviewResolution?.humanActionRequired) {
+  // Poll the exact-bound approval request.
+} else {
+  // Follow decisionExplanation.agentInstruction, remediate, and resubmit the same bound goal.
+}
+```
 
 ## Human approval polling
 
-A `Review Required` result is not permission to sign. When `decision.approval` is present, stop execution and poll the exact-bound request:
+Poll human approval only when `decision.reviewResolution?.humanActionRequired === true` and `decision.approval` is present:
 
 ```ts
 const { approval } = await magen3.getApproval(decision.approval.id);

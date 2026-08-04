@@ -26,6 +26,7 @@ async function fixture(structuredRules = {}) {
     blockedActions: [],
     riskMode: "Balanced",
     structuredRules: {
+      reviewResolutionMode: "Human Governed",
       approvalWorkflowEnabled: true,
       approvalWorkflowMode: "Quorum",
       approvalRequiredCount: 2,

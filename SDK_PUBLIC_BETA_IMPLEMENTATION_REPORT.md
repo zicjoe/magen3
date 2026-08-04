@@ -8,7 +8,7 @@ Prepare the existing `@magen3/sdk` package for safe public beta publishing witho
 
 ### `packages/sdk-js/package.json`
 
-- Changed version from `0.4.0` to `0.4.0-beta.1`.
+- Changed version from `0.4.0` to `0.4.0-beta.2`.
 - Added public beta `publishConfig`.
 - Added `publish:check`.
 - Added `prepublishOnly` with the correct order: typecheck, build, then test.

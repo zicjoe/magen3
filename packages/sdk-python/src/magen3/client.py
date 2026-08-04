@@ -19,6 +19,32 @@ class Magen3Error(RuntimeError):
 Transport = Callable[[str, str, Dict[str, str], Optional[bytes], float], Any]
 
 
+def get_agent_message(response: Mapping[str, Any]) -> str:
+    """Return the safe user-facing explanation supplied by Magen3."""
+    result = response.get("result") if isinstance(response, Mapping) else {}
+    result = result if isinstance(result, Mapping) else {}
+    top_explanation = response.get("decisionExplanation") if isinstance(response, Mapping) else {}
+    top_explanation = top_explanation if isinstance(top_explanation, Mapping) else {}
+    result_explanation = result.get("decisionExplanation") if isinstance(result, Mapping) else {}
+    result_explanation = result_explanation if isinstance(result_explanation, Mapping) else {}
+    return str(
+        (response.get("agentMessage") if isinstance(response, Mapping) else "")
+        or top_explanation.get("userMessage")
+        or result_explanation.get("userMessage")
+        or result.get("primaryReason")
+        or result.get("reason")
+        or (response.get("nextAction") if isinstance(response, Mapping) else "")
+        or "Magen3 returned no user-facing explanation."
+    )
+
+
+def is_execution_approved(response: Mapping[str, Any]) -> bool:
+    """True only when the exact evaluated action may reach signing/submission."""
+    result = response.get("result") if isinstance(response, Mapping) else {}
+    result = result if isinstance(result, Mapping) else {}
+    return response.get("executionApproved") is True and result.get("decision") == "Allowed"
+
+
 def _normalize_gateway_url(value: str) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -172,10 +198,18 @@ class Magen3Client:
 
     def require_allowed(self, intent: Dict[str, Any]) -> Dict[str, Any]:
         response = self.check_intent(intent)
-        result = response.get("result", {})
-        if result.get("decision") != "Allowed":
-            raise Magen3Error(f"Magen3 returned {result.get('decision')}: {result.get('reason')}", 403, response)
+        if not is_execution_approved(response):
+            result = response.get("result", {})
+            raise Magen3Error(f"Magen3 returned {result.get('decision')}: {get_agent_message(response)}", 403, response)
         return response
+
+    @staticmethod
+    def agent_message(response: Mapping[str, Any]) -> str:
+        return get_agent_message(response)
+
+    @staticmethod
+    def execution_approved(response: Mapping[str, Any]) -> bool:
+        return is_execution_approved(response)
 
     def _request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         headers = {"Accept": "application/json", "Content-Type": "application/json"}

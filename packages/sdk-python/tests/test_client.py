@@ -1,6 +1,6 @@
 import json
 import unittest
-from magen3 import Magen3Client, Magen3Error, build_delegation_attestation_message, hash_delegation_attestation
+from magen3 import Magen3Client, Magen3Error, build_delegation_attestation_message, get_agent_message, hash_delegation_attestation, is_execution_approved
 
 
 class ClientTests(unittest.TestCase):
@@ -34,6 +34,29 @@ class ClientTests(unittest.TestCase):
             return {"result": {"decision": "Blocked", "reason": "limit"}}
         client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
         with self.assertRaises(Magen3Error):
+            client.require_allowed({"executionWalletAddress": "01abc", "action": {"type": "Transfer", "target": "01def"}})
+
+    def test_agent_message_prefers_user_ready_gateway_explanation(self):
+        response = {
+            "agentMessage": "Magen3 paused this action because the destination is new. No human approval is required yet. Nothing was signed or sent.",
+            "result": {"decision": "Review Required", "primaryReason": "The destination is new."},
+        }
+        self.assertEqual(get_agent_message(response), response["agentMessage"])
+
+    def test_execution_approval_requires_allowed_and_explicit_execution_approval(self):
+        self.assertTrue(is_execution_approved({"executionApproved": True, "result": {"decision": "Allowed"}}))
+        self.assertFalse(is_execution_approved({"executionApproved": False, "result": {"decision": "Allowed"}}))
+        self.assertFalse(is_execution_approved({"executionApproved": True, "result": {"decision": "Review Required"}}))
+
+    def test_require_allowed_fails_closed_when_allowed_is_not_execution_approved(self):
+        def transport(*_):
+            return {
+                "executionApproved": False,
+                "agentMessage": "Magen3 has not approved execution. Nothing was signed or sent.",
+                "result": {"decision": "Allowed", "primaryReason": "Additional execution evidence is required."},
+            }
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        with self.assertRaisesRegex(Magen3Error, "not approved execution"):
             client.require_allowed({"executionWalletAddress": "01abc", "action": {"type": "Transfer", "target": "01def"}})
 
     def test_bridge_metadata_passes_through(self):

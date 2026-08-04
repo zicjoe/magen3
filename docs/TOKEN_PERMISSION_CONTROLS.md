@@ -135,7 +135,7 @@ This reuses the existing persisted audit and lifecycle infrastructure instead of
 
 ## Human Approval
 
-When a Token Permission rule produces `Review Required` and Human Approval is enabled, the existing exact-intent approval workflow creates an approval request. The approval binding includes the original intent, so changing the token, spender, amount, deadline, nonce, or other protected parameter requires a new Gateway decision and a new approval.
+When a Token Permission rule produces `Review Required`, execution remains paused. If `reviewResolution.humanActionRequired` is `false`, the agent follows the returned remediation and resubmits the same bound goal. If it is `true`, the existing exact-intent approval workflow creates an approval request. The approval binding includes the original intent, so changing the token, spender, amount, deadline, nonce, or another protected parameter requires a new Gateway decision and a new approval.
 
 ## Audit evidence
 

@@ -175,7 +175,7 @@ export function evaluateEmergencyControls({ request = {}, agent = {}, policy = {
 
   const message = effectiveDecision === "Blocked"
     ? `Execution is blocked by an active ${selected.scopeType || "emergency"} pause: ${selected.reason || "Emergency controls are active."}`
-    : `Execution requires human review because an active ${selected.scopeType || "emergency"} pause applies: ${selected.reason || "Emergency controls are active."}`;
+    : `Execution requires review because an active ${selected.scopeType || "emergency"} pause applies: ${selected.reason || "Emergency controls are active."}`;
   return {
     hardBlock: effectiveDecision === "Blocked",
     needsReview: effectiveDecision === "Review Required",

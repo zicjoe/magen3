@@ -1227,7 +1227,7 @@ export async function createPostgresStore() {
         }
       }
       const authorizedAmount = result.x402PaymentControlsContext?.amount ?? intent.amount;
-      const status = gatewayStatusFromDecision(result.decision);
+      const status = gatewayStatusFromDecision(result.decision, result.decisionExplanation);
 
       const auditTimestamp = new Date();
       const auditValues = {
@@ -1251,7 +1251,7 @@ export async function createPostgresStore() {
         executionStatus: initialExecutionStatus(result.decision),
         executionTxHash: "",
         executionSignedBy: "",
-        executionNote: result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the wallet owner to sign the real execution transaction." : "Execution did not proceed because Magen3 did not approve automatic execution.",
+        executionNote: result.decisionExplanation?.userMessage || (result.decision === "Allowed" ? "Magen3 approved this action. Waiting for the execution layer to submit the exact transaction." : "Execution did not proceed because Magen3 did not approve automatic execution."),
         executionUpdatedAt: null,
         originalIntent: {
           source: intent.source,
@@ -1260,6 +1260,10 @@ export async function createPostgresStore() {
           goal: intent.goal,
           reason: intent.reason,
           emergencyControl: result.emergencyControlsContext || null,
+          magen3DecisionContext: {
+            decisionExplanation: result.decisionExplanation || null,
+            reviewResolution: result.reviewResolution || null,
+          },
           instructionIntegrity: (intent.instructionIntegrityMetadataSupplied || result.instructionIntegrityContext) ? {
             goalId: intent.instructionGoalId,
             originalUserGoalHash: intent.instructionOriginalUserGoalHash,
@@ -1563,33 +1567,44 @@ export async function createPostgresStore() {
         proofConfirmedAt: null,
         riskScore: Number(result.riskScore || 50),
       };
-      const approvalRequest = createApprovalRequest({ auditLog: { ...auditValues, timestamp: auditValues.timestamp.toISOString() }, policy, ownerWalletAddress: walletAddress });
+      const approvalRequest = createApprovalRequest({ auditLog: { ...auditValues, timestamp: auditValues.timestamp.toISOString() }, policy, ownerWalletAddress: walletAddress, reviewResolution: result.reviewResolution });
       if (result.decision === "Review Required") {
-        const approvalFinding = approvalRequest ? {
+        const humanActionRequired = result.reviewResolution?.humanActionRequired === true;
+        const reviewFinding = approvalRequest ? {
           module: "Policy & Approval Controls",
           status: approvalRequest.reviewStatus === "Pending" ? "warning" : "unavailable",
           severity: approvalRequest.reviewStatus === "Pending" ? "medium" : "high",
           rule: "Human approval quorum",
-          message: approvalRequest.reviewStatus === "Pending" ? `Execution is paused until ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} are recorded.` : "The active policy enables human review but has no eligible approver wallet.",
-          evidence: { approvalRequestId: approvalRequest.id, bindingHash: approvalRequest.bindingHash, requiredApprovals: approvalRequest.requiredApprovals, expiresAt: approvalRequest.expiresAt },
+          message: approvalRequest.reviewStatus === "Pending" ? `Execution is paused until ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} are recorded.` : "The active policy requires human approval but has no eligible approver wallet.",
+          evidence: { approvalRequestId: approvalRequest.id, bindingHash: approvalRequest.bindingHash, requiredApprovals: approvalRequest.requiredApprovals, expiresAt: approvalRequest.expiresAt, humanActionRequired: true },
           remediation: approvalRequest.reviewStatus === "Pending" ? "Open Policy & Approval Controls, review the exact bound intent, and approve or reject it before expiry." : "Configure at least one authorized approver wallet or enable owner-wallet fallback.",
-        } : {
+        } : humanActionRequired ? {
           module: "Policy & Approval Controls",
           status: "unavailable",
-          severity: "medium",
+          severity: "high",
           rule: "Human approval workflow",
-          message: "The decision requires human review, but the active policy does not enable an approval workflow.",
-          evidence: { policyId: policy?.id || "", policyName: policy?.name || "" },
-          remediation: "Enable Human Approval & Quorum in the active policy to turn Review Required into a controlled approval workflow.",
+          message: "The active review strategy requires human approval, but no approval workflow is available.",
+          evidence: { policyId: policy?.id || "", policyName: policy?.name || "", humanActionRequired: true },
+          remediation: "Enable Human Approval & Quorum and configure an eligible approver before retrying.",
+        } : {
+          module: "Policy & Approval Controls",
+          status: "warning",
+          severity: "medium",
+          rule: "Autonomous review resolution",
+          message: "Execution is paused for agent remediation. Human approval is not required by the active review strategy.",
+          evidence: { policyId: policy?.id || "", policyName: policy?.name || "", strategy: result.reviewResolution?.strategy || "Autonomous", reviewMode: result.reviewResolution?.mode || "agent_remediation", humanActionRequired: false },
+          remediation: (result.reviewResolution?.requiredActions || [result.suggestedResolution]).filter(Boolean).join(" ") || "Correct or supply the required evidence and resubmit the exact business goal.",
         };
         const organizationalFinding = approvalRequest ? approvalOrganizationalFinding(approvalRequest) : null;
-        auditValues.moduleFindings = [...(auditValues.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
-        result.moduleFindings = [...(result.moduleFindings || []), approvalFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
-        auditValues.pipelineStages = updatePipelineStage(auditValues.pipelineStages, "human-approval", approvalRequest ? "pending" : "skipped", approvalRequest ? auditTimestamp.toISOString() : "", approvalRequest ? "Human approval pending" : "Human approval workflow not configured");
+        auditValues.moduleFindings = [...(auditValues.moduleFindings || []), reviewFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
+        result.moduleFindings = [...(result.moduleFindings || []), reviewFinding, ...(organizationalFinding ? [organizationalFinding] : [])];
+        const stageId = humanActionRequired ? "human-approval" : "agent-remediation";
+        const stageLabel = humanActionRequired ? (approvalRequest ? "Human approval pending" : "Human approval required but unavailable") : "Agent remediation required";
+        auditValues.pipelineStages = updatePipelineStage(auditValues.pipelineStages, stageId, approvalRequest || !humanActionRequired ? "pending" : "failed", auditTimestamp.toISOString(), stageLabel);
         result.pipelineStages = auditValues.pipelineStages;
       }
       auditValues.approvalRequestId = approvalRequest?.id || "";
-      auditValues.approvalStatus = approvalRequest?.reviewStatus || (result.decision === "Review Required" ? "not_configured" : "not_required");
+      auditValues.approvalStatus = approvalRequest?.reviewStatus || (result.decision === "Review Required" ? (result.reviewResolution?.humanActionRequired === true ? "not_configured" : "agent_remediation") : "not_required");
       auditValues.approvalBindingHash = approvalRequest?.bindingHash || "";
       auditValues.approvalRequiredCount = Number(approvalRequest?.requiredApprovals || 0);
       auditValues.approvalReceivedCount = 0;
@@ -1774,8 +1789,11 @@ export async function createPostgresStore() {
         casperPayload: buildAuditDecisionPayload(recordedAuditLog),
         executionApproved: result.decision === "Allowed",
         approval: approvalRequest ? approvalPublicSummary(approvalRequest) : null,
+        reviewResolution: result.reviewResolution,
+        decisionExplanation: result.decisionExplanation,
+        agentMessage: result.decisionExplanation?.userMessage || result.primaryReason || result.reason,
         emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
-        nextAction: approvalRequest ? `Review Required. ${approvalRequest.requiredApprovals} authorized approval${approvalRequest.requiredApprovals === 1 ? "" : "s"} must be recorded before signing.` : gatewayNextAction(result.decision),
+        nextAction: gatewayNextAction(result.decision, result.decisionExplanation),
       };
     },
 

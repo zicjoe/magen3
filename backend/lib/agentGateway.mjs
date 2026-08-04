@@ -558,18 +558,22 @@ export function normalizeAgentGatewayIntent(body = {}) {
   };
 }
 
-export function gatewayNextAction(decision) {
+export function gatewayNextAction(decision, decisionExplanation = null) {
+  if (decisionExplanation?.agentInstruction) return decisionExplanation.agentInstruction;
   if (decision === "Allowed") {
-    return "Allowed by Magen3. The external agent may continue only after the wallet owner or execution layer signs the actual transaction.";
+    return "Allowed by Magen3. The external agent may continue only with the exact evaluated parameters, then report the real execution result.";
   }
   if (decision === "Blocked") {
-    return "Blocked by Magen3. The external agent must stop and must not ask the wallet to sign this action.";
+    return "Blocked by Magen3. Stop execution, show the returned reason to the user, and do not ask the wallet to sign this action.";
   }
-  return "Review Required. Pause the agent and send this action to a human/admin approval flow before execution.";
+  if (decisionExplanation?.humanActionRequired === true) {
+    return "Review Required. Stop execution, show the exact reason, and wait for the bound approval workflow before signing.";
+  }
+  return "Review Required. Stop this attempt, show the exact reason, correct or supply the requested evidence, and resubmit. Human approval is not required unless the policy explicitly escalates it.";
 }
 
-export function gatewayStatusFromDecision(decision) {
+export function gatewayStatusFromDecision(decision, decisionExplanation = null) {
   if (decision === "Allowed") return "allowed_pending_execution";
   if (decision === "Blocked") return "blocked_before_execution";
-  return "waiting_for_human_review";
+  return decisionExplanation?.humanActionRequired === true ? "waiting_for_human_review" : "waiting_for_agent_remediation";
 }

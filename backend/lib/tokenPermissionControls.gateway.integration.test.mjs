@@ -33,6 +33,7 @@ async function fixture() {
     blockedActions: [],
     riskMode: "Balanced",
     structuredRules: {
+      reviewResolutionMode: "Human Governed",
       allowedEntryPoints: ["approve", "permit", "set_approval_for_all", "batch_approve"],
       tokenPermissionControlsEnabled: true,
       tokenPermissionMode: "Review",

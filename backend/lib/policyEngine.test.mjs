@@ -116,7 +116,7 @@ test("requires human review above the active wallet threshold", () => {
 
   assert.equal(result.decision, "Review Required");
   assert.ok(result.moduleFindings.some((finding) =>
-    finding.rule === "Wallet human-review threshold" && finding.status === "warning"));
+    finding.rule === "Wallet review threshold" && finding.status === "warning"));
 });
 
 test("blocks wallet spending that would exceed the daily limit", () => {

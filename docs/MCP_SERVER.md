@@ -37,17 +37,18 @@ Ask Codex:
 Use magen3_verify_agent first. Then call magen3_require_allowed before any blockchain action. Submit a harmless Casper Testnet transfer intent below the configured policy limit. Do not sign or broadcast anything. Report the decision, risk, reason, audit-log identifier, and proof status.
 ```
 
-Then test an amount above the policy limit. Codex must stop when the tool returns an error for Blocked and must request human review for Review Required.
+Then test a policy review condition. Codex must stop, show `agentMessage`, and inspect `reviewResolution`. It should remediate and resubmit when `humanActionRequired` is false, and request human review only when it is true.
 
 
-## Human approval workflow
+## Review resolution and human approval
 
-When `magen3_check_intent` returns `Review Required`, the agent must stop. If the response includes an approval request, call `magen3_get_approval` with either the approval ID or audit ID.
+When `magen3_check_intent` returns `Review Required`, the agent must stop. Read `reviewResolution.humanActionRequired`. When false, follow `decisionExplanation.agentInstruction`, correct the evidence, and resubmit the same bound goal. When true and an approval request is present, call `magen3_get_approval` with either the approval ID or audit ID.
 
 ```text
 Review Required
 → Do not sign or broadcast
-→ Human resolves the exact-bound request in Policies → Approval Queue
+→ humanActionRequired false: remediate and resubmit
+→ humanActionRequired true: human resolves the exact-bound request
 → Call magen3_get_approval
 → Continue only when mayProceedToSigning is true
 ```

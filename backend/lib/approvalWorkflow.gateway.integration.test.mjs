@@ -29,6 +29,7 @@ async function fixture() {
     blockedActions: [],
     riskMode: "Balanced",
     structuredRules: {
+      reviewResolutionMode: "Human Governed",
       approvalWorkflowEnabled: true,
       approvalWorkflowMode: "Single",
       approvalRequiredCount: 1,
@@ -41,7 +42,7 @@ async function fixture() {
   return { store, agent };
 }
 
-test("Review Required creates an exact-bound approval and approved quorum permits execution recording", async () => {
+test("Human Governed Review Required creates an exact-bound approval and approved quorum permits execution recording", async () => {
   const { store, agent } = await fixture();
   const response = await store.submitAgentGatewayIntent({
     source: "approval-test",

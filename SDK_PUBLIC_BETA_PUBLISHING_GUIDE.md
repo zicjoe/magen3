@@ -5,7 +5,7 @@ This release prepares the existing JavaScript/TypeScript SDK for its first publi
 ## What was prepared
 
 - Package: `@magen3/sdk`
-- Release version: `0.4.0-beta.1`
+- Release version: `0.4.0-beta.2`
 - Default npm distribution tag: `beta`
 - Public scoped-package access enabled
 - A publish-time gate now runs type checking, builds `dist`, and then runs SDK tests

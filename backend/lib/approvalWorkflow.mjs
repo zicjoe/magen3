@@ -116,9 +116,10 @@ function privilegedApprovalRequirement(auditLog = {}) {
   };
 }
 
-export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, now = new Date() }) {
+export function createApprovalRequest({ auditLog, policy, ownerWalletAddress, reviewResolution = null, now = new Date() }) {
   const config = normalizeApprovalPolicy(policy, ownerWalletAddress);
   if (!config.enabled || auditLog?.decision !== "Review Required") return null;
+  if (reviewResolution && reviewResolution.humanActionRequired !== true) return null;
   const privilegedRequirement = privilegedApprovalRequirement(auditLog);
   const organizational = resolveOrganizationalApproval({
     policy,

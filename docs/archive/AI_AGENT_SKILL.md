@@ -36,10 +36,10 @@ The kit is generated per connected agent, so it includes that agent's ID, gatewa
 2. Treat the wallet connected inside the external agent as the execution wallet.
 3. The execution wallet does not need to match the Magen3 owner/admin wallet.
 4. Call the verify endpoint before sending an intent when starting a session.
-5. Never execute a Web3 action before Magen3 returns `Allowed`.
-6. Stop when Magen3 returns `Blocked`.
-7. Pause for human/admin approval when Magen3 returns `Review Required`.
-8. After real execution, send the real Casper deploy hash back to Magen3 audit.
+5. Execute only when Magen3 returns `Allowed` and `executionApproved` is true.
+6. Stop on `Blocked` and show the returned `agentMessage`.
+7. Stop on `Review Required`; remediate autonomously unless `reviewResolution.humanActionRequired` is true.
+8. After real execution, report the real transaction hash and execution status to Magen3.
 
 ## Proof Rule
 

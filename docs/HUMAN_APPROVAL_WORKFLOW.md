@@ -1,8 +1,8 @@
 # Human Approval & Quorum
 
-Human Approval & Quorum turns a deterministic `Review Required` decision into a controlled workflow under **Policy & Approval Controls**.
+Human Approval & Quorum handles the subset of deterministic `Review Required` decisions that the active review-resolution strategy explicitly escalates to an independent human or organization.
 
-It does not create a separate product or bypass the three Magen3 decision outcomes. The original Gateway decision remains `Review Required`; the approval workflow determines whether that exact reviewed intent may later continue to human-controlled wallet signing before expiry.
+`Review Required` by itself does not mean human approval. Autonomous reviews return `reviewResolution.mode: "agent_remediation"`, create no approval request, and instruct the agent to correct or supply evidence before resubmitting the same bound goal. Human-escalated reviews preserve the original `Review Required` decision and use this exact-bound workflow before execution may continue.
 
 ## Status
 
@@ -44,6 +44,7 @@ The control remains Foundation Available until the real deployed browser flow is
 External agent submits intent
 → Magen3 authenticates agent
 → Active policy produces Review Required
+→ Review resolution explicitly selects human_approval
 → Magen3 stores the audit record
 → Magen3 computes an exact-intent approval binding hash
 → Approval request enters Pending state
@@ -86,7 +87,8 @@ Approval settings live under `structuredRules`:
 
 | Field | Meaning |
 | --- | --- |
-| `approvalWorkflowEnabled` | Creates an approval request when the final decision is Review Required. |
+| `reviewResolutionMode` | `Autonomous`, `Balanced`, or `Human Governed`; determines when review escalates to people. |
+| `approvalWorkflowEnabled` | Enables approval creation only for reviews whose resolved mode is `human_approval`. |
 | `approvalWorkflowMode` | `Single` or `Quorum`. |
 | `approvalRequiredCount` | Number of distinct approvals required, from 1 to 10. |
 | `approvalApproverWallets` | Casper public keys permitted to respond. |
@@ -122,7 +124,7 @@ A rejected or expired request cannot be revived. Submit a new intent to obtain a
 
 ## Gateway response
 
-A Review Required response can include:
+A human-escalated Review Required response can include:
 
 ```json
 {

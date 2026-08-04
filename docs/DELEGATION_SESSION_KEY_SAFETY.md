@@ -146,7 +146,7 @@ Audit records do not store:
 
 ## Human Approval and execution
 
-A Review Required delegation finding reuses Magen3's existing exact-intent Human Approval workflow. The normalized delegation fields are part of the approval binding. Changing a delegate, scope, limit, expiry, nonce, target, action, or amount produces a different bound intent and requires a new authorization.
+A `Review Required` delegation finding always pauses execution, but it does not automatically require a person. Magen3 inspects the active review-resolution strategy: autonomous reviews return deterministic remediation for the agent to satisfy and resubmit, while explicitly escalated reviews use the exact-intent Human Approval workflow. When approval is required, the normalized delegation fields are part of the approval binding. Changing a delegate, scope, limit, expiry, nonce, target, action, or amount produces a different bound intent and requires a new authorization.
 
 Approval does not repair an invalid signature, revoked delegation, expired authority, forbidden redelegation, or hard scope violation.
 

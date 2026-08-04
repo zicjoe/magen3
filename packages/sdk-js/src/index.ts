@@ -1,5 +1,6 @@
 export type Magen3Decision = "Allowed" | "Blocked" | "Review Required";
 export type Magen3Risk = "Low" | "Medium" | "High" | "Critical";
+export type Magen3ReviewResolutionStrategy = "Autonomous" | "Balanced" | "Human Governed" | string;
 
 export interface Magen3Lifecycle {
   /** Unique 8-128 character identifier for one business intent. */
@@ -1121,6 +1122,36 @@ export interface Magen3ApprovalRequest {
   updatedAt?: string;
 }
 
+export interface Magen3ReviewResolution {
+  strategy: Magen3ReviewResolutionStrategy;
+  mode: "not_required" | "blocked" | "agent_remediation" | "human_approval" | string;
+  state: string;
+  humanActionRequired: boolean;
+  agentActionRequired?: boolean;
+  canAgentRetry: boolean;
+  mayAutoResume?: boolean;
+  requiredActions: string[];
+  summary: string;
+}
+
+export interface Magen3DecisionExplanation {
+  decision: Magen3Decision;
+  strategy?: Magen3ReviewResolutionStrategy;
+  summary: string;
+  primaryReason: string;
+  triggeredRule: string;
+  suggestedResolution: string;
+  /** Safe, concise text intended to be shown directly in the external agent UI or chat. */
+  userMessage: string;
+  /** Deterministic instruction for the external agent backend. */
+  agentInstruction: string;
+  humanActionRequired: boolean;
+  reviewMode: string;
+  reviewState: string;
+  canAgentRetry: boolean;
+  requiredActions: string[];
+}
+
 export interface Magen3DecisionResult {
   decision: Magen3Decision;
   risk: Magen3Risk;
@@ -1132,6 +1163,8 @@ export interface Magen3DecisionResult {
   primaryReason?: string;
   triggeredRule?: string;
   suggestedResolution?: string;
+  decisionExplanation?: Magen3DecisionExplanation;
+  reviewResolution?: Magen3ReviewResolution;
   moduleFindings?: Magen3ModuleFinding[];
   pipelineStages?: Magen3PipelineStage[];
   /** Deterministic goal binding, source provenance, protected-parameter binding, confirmation, and tool-scope evidence. */
@@ -1178,8 +1211,32 @@ export interface Magen3IntentResponse {
   nextAction: string;
   /** Newly activated automatic pause, when the current finding crossed a configured circuit-breaker threshold. */
   emergencyPause?: Magen3EmergencyPause | null;
-  /** Exact-intent approval request for Review Required decisions when the active policy enables the workflow. */
+  /** Exact-intent approval request only when the review strategy explicitly requires human or organizational approval. */
   approval?: Magen3ApprovalRequest | null;
+  /** AI-native routing for Review Required decisions. */
+  reviewResolution?: Magen3ReviewResolution;
+  /** Structured reason and remediation that can be rendered without parsing module findings. */
+  decisionExplanation?: Magen3DecisionExplanation;
+  /** Safe concise message intended for the external agent's user-facing response. */
+  agentMessage?: string;
+}
+
+/**
+ * Returns the safe user-facing explanation produced by Magen3. Applications
+ * should display this rather than inventing a generic Blocked/Review message.
+ */
+export function getMagen3AgentMessage(response: Magen3IntentResponse): string {
+  return response.agentMessage
+    || response.decisionExplanation?.userMessage
+    || response.result.decisionExplanation?.userMessage
+    || response.result.primaryReason
+    || response.result.reason
+    || response.nextAction;
+}
+
+/** True only when the exact evaluated action may reach signing/submission. */
+export function isMagen3ExecutionApproved(response: Magen3IntentResponse): boolean {
+  return response.executionApproved === true && response.result.decision === "Allowed";
 }
 
 export const MAGEN3_ENVIRONMENT_VARIABLES = {
@@ -1349,8 +1406,8 @@ export class Magen3Client {
 
   async requireAllowed(intent: Magen3Intent): Promise<Magen3IntentResponse> {
     const response = await this.checkIntent(intent);
-    if (response.result.decision !== "Allowed") {
-      throw new Magen3Error(`Magen3 returned ${response.result.decision}: ${response.result.reason}`, 403, response);
+    if (!isMagen3ExecutionApproved(response)) {
+      throw new Magen3Error(`Magen3 did not authorize execution: ${getMagen3AgentMessage(response)}`, 403, response);
     }
     return response;
   }

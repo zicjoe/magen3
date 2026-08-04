@@ -104,9 +104,25 @@ The response can include `tokenPermissionControlsContext` plus structured findin
 
 Never send a permit signature, wallet signature, signed authorization, private key, seed phrase, or mnemonic through the Gateway. Magen3 stores a canonical permission fingerprint and enough sanitized metadata to detect replay or protected-parameter mutation without retaining raw signed authority.
 
+## AI-native review routing and explanations
+
+A `Review Required` decision is not execution authorization, but it does not automatically require a human. Show `get_agent_message(decision)` to the user and inspect `decision["reviewResolution"]["humanActionRequired"]`. Autonomous reviews require the agent to follow the returned remediation and resubmit the same bound goal.
+
+```python
+from magen3 import get_agent_message, is_execution_approved
+
+print(get_agent_message(decision))
+if is_execution_approved(decision):
+    pass  # Submit only the exact evaluated action.
+elif decision.get("reviewResolution", {}).get("humanActionRequired"):
+    pass  # Poll the exact-bound approval request.
+else:
+    pass  # Remediate using decisionExplanation and resubmit.
+```
+
 ## Human approval polling
 
-A `Review Required` decision is not execution authorization. Poll the exact-bound request by approval ID or audit ID:
+Poll the exact-bound request by approval ID or audit ID only when `humanActionRequired` is true:
 
 ```python
 approval = client.get_approval(decision["approval"]["id"])["approval"]

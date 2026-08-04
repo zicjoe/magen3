@@ -155,6 +155,7 @@ type OnboardingSetupMode = "guided" | "advanced";
 type GuidedUseCaseId = "trading" | "wallet" | "treasury" | "dapp" | "enterprise" | "custom";
 type IntegrationTarget = "Codex" | "MCP" | "JavaScript" | "Python" | "Custom API" | "Integrate later";
 type ProtectionLevel = "Standard" | "Strict" | "Custom";
+type ReviewResolutionMode = "Autonomous" | "Balanced" | "Human Governed";
 interface OnboardingLaunchRequest { mode: OnboardingSetupMode; nonce: number; }
 
 interface GuidedUseCase {
@@ -426,6 +427,34 @@ interface X402PaymentControlsStatus {
   securityBoundary?: string;
 }
 
+interface ReviewResolution {
+  strategy: ReviewResolutionMode | string;
+  mode: "not_required" | "blocked" | "agent_remediation" | "human_approval" | string;
+  state: string;
+  humanActionRequired: boolean;
+  agentActionRequired?: boolean;
+  canAgentRetry: boolean;
+  mayAutoResume?: boolean;
+  requiredActions: string[];
+  summary: string;
+}
+
+interface DecisionExplanation {
+  decision: Decision;
+  strategy?: ReviewResolutionMode | string;
+  summary: string;
+  primaryReason: string;
+  triggeredRule: string;
+  suggestedResolution: string;
+  userMessage: string;
+  agentInstruction: string;
+  humanActionRequired: boolean;
+  reviewMode: string;
+  reviewState: string;
+  canAgentRetry: boolean;
+  requiredActions: string[];
+}
+
 interface DecisionResult {
   decision: Decision;
   risk: Risk;
@@ -437,6 +466,8 @@ interface DecisionResult {
   primaryReason?: string;
   triggeredRule?: string;
   suggestedResolution?: string;
+  decisionExplanation?: DecisionExplanation;
+  reviewResolution?: ReviewResolution;
   moduleFindings?: ModuleFinding[];
   modulesEvaluated?: string[];
   capabilityContext?: ExecutionCapability[];
@@ -723,6 +754,9 @@ interface AgentGatewayResponse {
   casperPayload: CasperPreparedPayload;
   executionApproved: boolean;
   approval?: ApprovalRequest | null;
+  reviewResolution?: ReviewResolution;
+  decisionExplanation?: DecisionExplanation;
+  agentMessage?: string;
   emergencyPause?: EmergencyPause | null;
   nextAction: string;
 }
@@ -3683,6 +3717,7 @@ function createInitialAgentRegistrationDraft(mode: OnboardingSetupMode = "guided
     guidedUseCase: "trading" as GuidedUseCaseId,
     integrationTarget: "Codex" as IntegrationTarget,
     protectionLevel: "Strict" as ProtectionLevel,
+    reviewResolutionMode: "Autonomous" as ReviewResolutionMode,
     executionWalletAddress: "",
     demoConfiguration: false,
   };
@@ -3709,6 +3744,7 @@ function guidedProtectionRules(level: ProtectionLevel): Record<string, unknown> 
       tokenPermissionUnlimitedApprovalAction: "Review",
       privilegedActionMode: "Enforce",
       unknownPrivilegedAction: "Review",
+      reviewResolutionMode: "Autonomous",
       reconciliationEnabled: true,
       pendingRetryAction: "Block",
       uncertainRetryAction: "Block",
@@ -3729,6 +3765,7 @@ function guidedProtectionRules(level: ProtectionLevel): Record<string, unknown> 
       feeSafetySponsorshipUnavailableAction: "Warn",
       tokenPermissionMode: "Review",
       privilegedActionMode: "Review",
+      reviewResolutionMode: "Autonomous",
       reconciliationEnabled: true,
       pendingRetryAction: "Block",
       uncertainRetryAction: "Block",
@@ -4012,6 +4049,7 @@ function AgentRegistrationWizard({
           emergencyPauseOnThreatMatch: typeof sourceRules.emergencyPauseOnThreatMatch === "boolean" ? sourceRules.emergencyPauseOnThreatMatch : true,
           emergencyPauseOnOracleDisagreement: typeof sourceRules.emergencyPauseOnOracleDisagreement === "boolean" ? sourceRules.emergencyPauseOnOracleDisagreement : true,
           emergencyPauseOnPrivilegedActionFailure: typeof sourceRules.emergencyPauseOnPrivilegedActionFailure === "boolean" ? sourceRules.emergencyPauseOnPrivilegedActionFailure : true,
+          reviewResolutionMode: typeof sourceRules.reviewResolutionMode === "string" ? sourceRules.reviewResolutionMode : (draft.reviewResolutionMode || "Autonomous"),
           instructionIntegrityEnabled: typeof sourceRules.instructionIntegrityEnabled === "boolean" ? sourceRules.instructionIntegrityEnabled : true,
           instructionIntegrityMode: typeof sourceRules.instructionIntegrityMode === "string" ? sourceRules.instructionIntegrityMode : "Review",
           requireGoalBindingForActions: Array.isArray(sourceRules.requireGoalBindingForActions) ? sourceRules.requireGoalBindingForActions : ["Transfer", "Swap", "Stake", "Bridge", "x402 Payment", "DAO Treasury Payment", "Contract Interaction", "Deposit to Vault"],
@@ -4172,7 +4210,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "reviewResolutionMode", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
         });
@@ -4440,12 +4478,26 @@ function AgentRegistrationWizard({
                   return <button type="button" key={level.id} onClick={() => applyProtectionLevel(level.id)} className={`rounded-2xl border p-5 text-left transition-colors ${selected ? "border-[#22D3EE]/50 bg-[#22D3EE]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}><div className="flex items-center justify-between gap-3"><div className="text-lg font-bold font-['Space_Grotesk'] text-[#F8FAFC]">{level.title}</div><span className="rounded-full border border-[#1E293B] bg-[#050B14] px-2 py-1 text-[10px] font-semibold" style={{ color: level.tone }}>{level.badge}</span></div><p className="mt-3 text-xs leading-relaxed text-[#94A3B8]">{level.description}</p></button>;
                 })}
               </div>
+              <div className={`${CARD} p-5`}>
+                <div className="text-sm font-semibold text-[#F8FAFC]">How should review conditions be resolved?</div>
+                <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Protection strictness and human involvement are separate. Magen3 can be strict while allowing agents to remediate ordinary uncertainty automatically.</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {([
+                    { id: "Autonomous" as ReviewResolutionMode, title: "Autonomous", description: "Ordinary review conditions return exact remediation instructions to the agent. Humans are used only for rules that explicitly require approval." },
+                    { id: "Balanced" as ReviewResolutionMode, title: "Balanced", description: "Agent remediation handles routine uncertainty. High-risk or explicit governance conditions escalate to human or quorum approval." },
+                    { id: "Human Governed" as ReviewResolutionMode, title: "Human Governed", description: "Every Review Required decision enters the configured approval workflow." },
+                  ]).map((mode) => {
+                    const selected = draft.reviewResolutionMode === mode.id;
+                    return <button key={mode.id} type="button" onClick={() => setDraft((current) => ({ ...current, reviewResolutionMode: mode.id }))} className={`rounded-xl border p-4 text-left ${selected ? "border-[#A78BFA]/45 bg-[#A78BFA]/10" : "border-[#1E293B] bg-[#0B1220] hover:border-[#334155]"}`}><div className="flex items-center justify-between gap-2"><div className="text-sm font-semibold text-[#F8FAFC]">{mode.title}</div>{selected && <CheckCircle size={15} className="text-[#A78BFA]" />}</div><p className="mt-2 text-xs leading-relaxed text-[#94A3B8]">{mode.description}</p></button>;
+                  })}
+                </div>
+              </div>
               <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
                 <div className={`${CARD} p-5`}>
                   <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">Plain-language protection summary</div><div className="mt-1 text-xs text-[#94A3B8]">This is what the selected policy means during execution.</div></div><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-2.5 py-1 text-xs font-semibold text-[#BBF7D0]">{draft.protectionLevel}</span></div>
                   <div className="mt-4 space-y-2">
                     <CompactStatusRow compact label="Transaction limit" status={`${draft.maxTransaction} CSPR`} detail={`Requests above ${draft.maxTransaction} CSPR are blocked by the starter policy.`} tone="info" />
-                    <CompactStatusRow compact label="Human review" status={`Above ${draft.approvalThreshold} CSPR`} detail="Higher-value requests return Review Required before wallet signing." tone="warning" />
+                    <CompactStatusRow compact label="Review threshold" status={`Above ${draft.approvalThreshold} CSPR`} detail={`Higher-value requests return Review Required and follow the ${draft.reviewResolutionMode} resolution strategy.`} tone="warning" />
                     <CompactStatusRow compact label="Daily spending" status={`${draft.dailyLimit} CSPR`} detail="The active policy tracks cumulative spending for this agent." tone="info" />
                     <CompactStatusRow compact label="Unknown or unavailable evidence" status={draft.protectionLevel === "Strict" ? "Review" : "Policy controlled"} detail="Unavailable controls never silently count as a pass." tone={draft.protectionLevel === "Strict" ? "warning" : "neutral"} />
                     <CompactStatusRow compact label="Unsafe retries" status="Blocked" detail="Lifecycle and reconciliation controls prevent duplicate, pending, or uncertain retries." tone="success" />
@@ -4486,7 +4538,7 @@ function AgentRegistrationWizard({
                   <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Magen3 evaluates a 1 CSPR synthetic transfer, stores the audit record, and submits the decision proof through the existing proof flow. Nothing is signed or sent.</p>
                   <div className="mt-4 space-y-2"><CompactStatusRow compact label="Agent identity" status="Created" tone="success" /><CompactStatusRow compact label="Starter policy" status={createdPolicy?.status || "Not active"} tone={createdPolicy?.status === "Active" ? "success" : "warning"} /><CompactStatusRow compact label="Credential" status={credentialSaved ? "Saved" : "Save now"} tone={credentialSaved ? "success" : "warning"} /><CompactStatusRow compact label="Protected test" status={testResult ? testResult.result.decision : "Not run"} tone={testResult?.result.decision === "Allowed" ? "success" : testResult ? "warning" : "neutral"} /></div>
                   <Btn variant="primary" onClick={runProtectedTest} disabled={testing || !createdAgent.apiKey || createdPolicy?.status !== "Active"} className="mt-4 w-full justify-center"><Send size={15} /> {createdPolicy?.status !== "Active" ? "Activate policy to test" : testing ? "Evaluating…" : testResult ? "Run another protected test" : "Run protected test"}</Btn>{createdPolicy?.status !== "Active" && <Btn variant="secondary" size="sm" onClick={() => { closeWizard(); onNavigate("policies"); }} className="mt-2 w-full justify-center"><FileText size={14} /> Open Policies</Btn>}
-                  {testResult && <div className={`mt-4 rounded-xl border p-4 ${testResult.result.decision === "Allowed" ? "border-[#22C55E]/25 bg-[#22C55E]/5" : testResult.result.decision === "Blocked" ? "border-[#EF4444]/25 bg-[#EF4444]/5" : "border-[#F59E0B]/25 bg-[#F59E0B]/5"}`}><div className="flex items-center justify-between gap-3"><DecisionBadge decision={testResult.result.decision} /><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Protected decision</span></div><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">{testResult.result.primaryReason || testResult.result.reason}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{testResult.result.suggestedResolution || testResult.nextAction}</div><div className="mt-3 flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:audit-record-id", testResult.auditLog.id); } catch {} closeWizard(); onNavigate("audit-log"); }}>View Audit Record</Btn><Btn variant="ghost" size="sm" onClick={() => { closeWizard(); onNavigate("intent-playground"); }}>Open Playground</Btn></div></div>}
+                  {testResult && <div className={`mt-4 rounded-xl border p-4 ${testResult.result.decision === "Allowed" ? "border-[#22C55E]/25 bg-[#22C55E]/5" : testResult.result.decision === "Blocked" ? "border-[#EF4444]/25 bg-[#EF4444]/5" : "border-[#F59E0B]/25 bg-[#F59E0B]/5"}`}><div className="flex items-center justify-between gap-3"><DecisionBadge decision={testResult.result.decision} /><span className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Protected decision</span></div><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">{testResult.agentMessage || testResult.result.decisionExplanation?.userMessage || testResult.result.primaryReason || testResult.result.reason}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{testResult.nextAction}</div><div className="mt-3 flex flex-wrap gap-2"><Btn variant="secondary" size="sm" onClick={() => { try { window.sessionStorage.setItem("magen3:audit-record-id", testResult.auditLog.id); } catch {} closeWizard(); onNavigate("audit-log"); }}>View Audit Record</Btn><Btn variant="ghost" size="sm" onClick={() => { closeWizard(); onNavigate("intent-playground"); }}>Open Playground</Btn></div></div>}
                 </div>
               </div>
             </div>
@@ -4941,10 +4993,10 @@ Use this skill when acting as the external agent "${agent.name}".
 2. Identify with Agent ID and the Magen3 API key.
 3. Treat the wallet connected inside the external agent as the execution wallet.
 4. The execution wallet does not need to match the Magen3 owner/admin wallet.
-5. If Magen3 returns Allowed, request the execution wallet signature.
-6. If Magen3 returns Blocked, stop.
-7. If Magen3 returns Review Required, pause for human/admin approval.
-8. After real execution, send the real Casper deploy hash back to Magen3 audit.
+5. Continue only when Magen3 returns Allowed and executionApproved is true.
+6. If Magen3 returns Blocked, stop and show agentMessage to the user.
+7. If Magen3 returns Review Required, stop and inspect reviewResolution. Remediate and resubmit when humanActionRequired is false; poll the bound approval only when it is true.
+8. After real execution, report the real execution transaction hash and status to Magen3. Casper records only the separate Magen3 decision proof.
 
 ## Example Intent
 \`\`\`json
@@ -5079,7 +5131,7 @@ ${snippet}
         id: `${agent.id}-approval`,
         kind: "approval",
         title: `${agent.name} has ${pendingApprovals.length} pending ${pendingApprovals.length === 1 ? "review" : "reviews"}`,
-        description: "A Review Required decision is waiting for the configured human approval workflow.",
+        description: "A Review Required decision was explicitly escalated to the configured human approval workflow.",
         severity: "warning",
         actionLabel: "Review decision",
         page: "audit-log",
@@ -5666,12 +5718,13 @@ function ApprovalPolicyFields({
     <div className="rounded-xl border border-[#A78BFA]/20 bg-[#A78BFA]/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Human Approval & Quorum</div>
-          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Turn Review Required into a controlled queue bound to the exact intent, approved wallets, quorum, and expiry. Parameter changes require a new Magen3 decision.</p>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Review Resolution</div>
+          <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Choose how Review Required conditions are resolved. Autonomous remediation keeps routine agent workflows automated; Human Approval & Quorum remains available for explicit governance and exceptional risk.</p>
         </div>
         <StatusBadge status="Foundation Available" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <SelectField label="Review Resolution Strategy" value={String(values.reviewResolutionMode ?? "Autonomous")} onChange={(value) => onChange({ reviewResolutionMode: value })} options={["Autonomous", "Balanced", "Human Governed"]} />
         <SelectField label="Enable Approval Workflow" value={String(values.approvalWorkflowEnabled ?? "")} onChange={(value) => onChange({ approvalWorkflowEnabled: value })} options={["Yes", "No"]} />
         <SelectField label="Workflow Mode" value={String(values.approvalWorkflowMode ?? "")} onChange={(value) => onChange({ approvalWorkflowMode: value })} options={["Single", "Quorum"]} />
         <InputField label="Required Approvals" value={String(values.approvalRequiredCount ?? "")} onChange={(value) => onChange({ approvalRequiredCount: value })} type="number" />
@@ -6331,6 +6384,7 @@ function PoliciesPage({
     emergencyPauseOnThreatMatch: "Yes",
     emergencyPauseOnOracleDisagreement: "Yes",
     emergencyPauseOnPrivilegedActionFailure: "Yes",
+    reviewResolutionMode: "Autonomous",
     approvalWorkflowEnabled: "Yes",
     approvalWorkflowMode: "Single",
     approvalRequiredCount: "1",
@@ -6580,6 +6634,7 @@ function PoliciesPage({
     emergencyPauseOnThreatMatch: "Yes",
     emergencyPauseOnOracleDisagreement: "Yes",
     emergencyPauseOnPrivilegedActionFailure: "Yes",
+    reviewResolutionMode: "Autonomous",
     approvalWorkflowEnabled: "Yes",
     approvalWorkflowMode: "Single",
     approvalRequiredCount: "1",
@@ -6843,6 +6898,7 @@ function PoliciesPage({
         emergencyPauseOnThreatMatch: form.emergencyPauseOnThreatMatch !== "No",
         emergencyPauseOnOracleDisagreement: form.emergencyPauseOnOracleDisagreement !== "No",
         emergencyPauseOnPrivilegedActionFailure: form.emergencyPauseOnPrivilegedActionFailure !== "No",
+        reviewResolutionMode: form.reviewResolutionMode || "Autonomous",
         approvalWorkflowEnabled: form.approvalWorkflowEnabled !== "No",
         approvalWorkflowMode: form.approvalWorkflowMode,
         approvalRequiredCount: Math.max(1, Math.min(10, Number(form.approvalRequiredCount) || 1)),
@@ -7059,6 +7115,7 @@ function PoliciesPage({
       maxTransaction: "",
       dailyLimit: "",
       approvalThreshold: "",
+      reviewResolutionMode: "Autonomous",
       emergencyControlsEnabled: "Yes",
     automaticPauseEnabled: "No",
     emergencyAutomaticPauseAction: "Blocked",
@@ -7321,6 +7378,7 @@ function PoliciesPage({
       emergencyPauseOnThreatMatch: policy.structuredRules?.emergencyPauseOnThreatMatch === false ? "No" : "Yes",
       emergencyPauseOnOracleDisagreement: policy.structuredRules?.emergencyPauseOnOracleDisagreement === false ? "No" : "Yes",
       emergencyPauseOnPrivilegedActionFailure: policy.structuredRules?.emergencyPauseOnPrivilegedActionFailure === false ? "No" : "Yes",
+      reviewResolutionMode: String(policy.structuredRules?.reviewResolutionMode || "Autonomous"),
       approvalWorkflowEnabled: policy.structuredRules?.approvalWorkflowEnabled === true ? "Yes" : "No",
       approvalWorkflowMode: typeof policy.structuredRules?.approvalWorkflowMode === "string" ? policy.structuredRules.approvalWorkflowMode : "Single",
       approvalRequiredCount: String(typeof policy.structuredRules?.approvalRequiredCount === "number" ? policy.structuredRules.approvalRequiredCount : 1),
@@ -7584,6 +7642,7 @@ function PoliciesPage({
         emergencyPauseOnThreatMatch: editForm.emergencyPauseOnThreatMatch !== "No",
         emergencyPauseOnOracleDisagreement: editForm.emergencyPauseOnOracleDisagreement !== "No",
         emergencyPauseOnPrivilegedActionFailure: editForm.emergencyPauseOnPrivilegedActionFailure !== "No",
+        reviewResolutionMode: editForm.reviewResolutionMode || "Autonomous",
         approvalWorkflowEnabled: editForm.approvalWorkflowEnabled !== "No",
         approvalWorkflowMode: editForm.approvalWorkflowMode,
         approvalRequiredCount: Math.max(1, Math.min(10, Number(editForm.approvalRequiredCount) || 1)),
@@ -8313,7 +8372,7 @@ function PoliciesPage({
                       <div className="space-y-5">
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Max transaction", `${selectedPolicy.maxTransaction} CSPR`], ["Daily limit", `${selectedPolicy.dailyLimit} CSPR`], ["Review above", `${selectedPolicy.approvalThreshold} CSPR`], ["Controls enabled", `${selectedPolicyEnabledControls}/${selectedPolicyControlTotal}`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-base font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>
                         <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Policy posture</div><div className="mt-3 space-y-3 text-xs"><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Risk mode</span><span className="text-[#F8FAFC]">{selectedPolicy.riskMode}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Status</span><span className={selectedPolicy.status === "Active" ? "text-[#22C55E]" : "text-[#94A3B8]"}>{selectedPolicy.status}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Created</span><span className="text-[#F8FAFC]">{fmtTs(selectedPolicy.createdAt)}</span></div><div className="flex items-start justify-between gap-4"><span className="text-[#94A3B8]">Policy hash</span><span className="max-w-[220px] truncate font-mono text-[#22D3EE]" title={selectedPolicy.policyHash}>{selectedPolicy.policyHash}</span></div></div></div>
+                          <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Policy posture</div><div className="mt-3 space-y-3 text-xs"><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Risk mode</span><span className="text-[#F8FAFC]">{selectedPolicy.riskMode}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Review resolution</span><span className="text-[#F8FAFC]">{String(selectedPolicy.structuredRules?.reviewResolutionMode || "Autonomous")}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Status</span><span className={selectedPolicy.status === "Active" ? "text-[#22C55E]" : "text-[#94A3B8]"}>{selectedPolicy.status}</span></div><div className="flex items-center justify-between"><span className="text-[#94A3B8]">Created</span><span className="text-[#F8FAFC]">{fmtTs(selectedPolicy.createdAt)}</span></div><div className="flex items-start justify-between gap-4"><span className="text-[#94A3B8]">Policy hash</span><span className="max-w-[220px] truncate font-mono text-[#22D3EE]" title={selectedPolicy.policyHash}>{selectedPolicy.policyHash}</span></div></div></div>
                           <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Configuration status</div><div className="mt-3 space-y-2">{selectedPolicyAreas.filter((area) => area.enabled < area.total).slice(0, 4).map((area) => <div key={area.id} className="flex items-center justify-between gap-3 rounded-lg bg-[#050B14] px-3 py-2"><div className="text-xs text-[#F8FAFC]">{area.name}</div><div className="text-[10px] text-[#F59E0B]">{area.total - area.enabled} available</div></div>)}{selectedPolicyAreas.every((area) => area.enabled === area.total) && <div className="rounded-lg border border-[#22C55E]/20 bg-[#22C55E]/5 px-3 py-3 text-xs text-[#BBF7D0]">All currently represented policy controls are configured.</div>}</div></div>
                         </div>
                         <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="flex items-center justify-between"><div><div className="text-sm font-semibold text-[#F8FAFC]">Trusted targets</div><div className="mt-1 text-xs text-[#94A3B8]">Destinations and contracts allowed by this policy.</div></div><span className="text-xs text-[#64748B]">{selectedPolicy.trustedContracts.length}</span></div>{selectedPolicy.trustedContracts.length > 0 ? <div className="mt-3 flex flex-wrap gap-2">{selectedPolicy.trustedContracts.slice(0, 6).map((target) => <span key={target} className="max-w-full truncate rounded-lg border border-[#334155] bg-[#050B14] px-2.5 py-1.5 font-mono text-[10px] text-[#94A3B8]" title={target}>{target}</span>)}</div> : <div className="mt-3 text-xs text-[#F59E0B]">No trusted targets configured. Unknown destinations will follow the active validation and review rules.</div>}</div>
@@ -8322,7 +8381,7 @@ function PoliciesPage({
                     {policyDetailTab === "controls" && <div className="space-y-3">{selectedPolicyAreas.map((area) => { const Icon = area.icon; return <button key={area.id} type="button" onClick={() => { setEditSection(area.id === "agent-trust-access" ? "agent-trust" : area.id === "policy-approval-controls" ? "approval" : area.id === "contract-permission-safety" ? "contract" : area.id === "execution-integrity" ? "execution" : area.id === "market-oracle-integrity" ? "market" : area.id === "cross-chain-payment-controls" ? "cross-chain" : area.id === "threat-compliance" ? "threat" : "limits"); openPolicyEditor(selectedPolicy); }} className="flex w-full items-center gap-3 rounded-xl border border-[#1E293B] bg-[#0B1220] p-4 text-left hover:border-[#22D3EE]/35"><div className="rounded-lg border border-[#334155] bg-[#050B14] p-2 text-[#22D3EE]"><Icon size={17} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><div className="text-sm font-semibold text-[#F8FAFC]">{area.name}</div><span className={`text-xs ${area.enabled === area.total ? "text-[#22C55E]" : "text-[#F59E0B]"}`}>{area.enabled}/{area.total} enabled</span></div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{area.detail}</div></div><ChevronRight size={16} className="text-[#64748B]" /></button>; })}</div>}
                     {policyDetailTab === "approval" && (
                       <div className="space-y-4">
-                        <div className="grid gap-3 md:grid-cols-3">{[["Workflow", policyRuleEnabled(selectedPolicy, "approvalWorkflowEnabled", true) ? "Enabled" : "Disabled"], ["Required approvals", String(selectedPolicy.structuredRules?.approvalRequiredCount ?? 1)], ["Expiry", `${String(selectedPolicy.structuredRules?.approvalExpiryMinutes ?? 60)} min`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-base font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>
+                        <div className="grid gap-3 md:grid-cols-3">{[["Review strategy", String(selectedPolicy.structuredRules?.reviewResolutionMode || "Autonomous")], ["Workflow", policyRuleEnabled(selectedPolicy, "approvalWorkflowEnabled", true) ? "Enabled" : "Disabled"], ["Required approvals", String(selectedPolicy.structuredRules?.approvalRequiredCount ?? 1)], ["Expiry", `${String(selectedPolicy.structuredRules?.approvalExpiryMinutes ?? 60)} min`]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-base font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>
                         <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Reviewer protection</div><div className="mt-3 grid gap-2 sm:grid-cols-2"><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Cryptographic signatures</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "requireCryptographicReviewerSignature", true) ? "Required" : "Not required"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Separation of duties</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "approvalSeparationOfDuties", false) ? "Required" : "Not required"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Organizational quorum</div><div className="mt-1 text-[#F8FAFC]">{policyRuleEnabled(selectedPolicy, "approvalOrganizationalQuorumEnabled", false) ? "Enabled" : "Single-list quorum"}</div></div><div className="rounded-lg bg-[#050B14] px-3 py-2 text-xs"><div className="text-[#64748B]">Execution delay</div><div className="mt-1 text-[#F8FAFC]">{String(selectedPolicy.structuredRules?.approvalExecutionDelaySeconds ?? 0)} sec</div></div></div></div>
                         <Btn variant="secondary" onClick={() => { setEditSection("approval"); openPolicyEditor(selectedPolicy); }}>Configure approval rules<ChevronRight size={14} /></Btn>
                       </div>
@@ -8336,10 +8395,10 @@ function PoliciesPage({
       ) : (
         <div className="space-y-4">
           <div className={`${CARD} p-5`}>
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><div className="flex items-center gap-2"><Clock size={17} className="text-[#A78BFA]" /><h2 className={SECTION_TITLE}>Approval Queue</h2><StatusBadge status="Foundation Available" /></div><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Review Required decisions stay blocked until the configured wallet quorum approves the exact binding hash. Detailed cryptographic evidence remains available inside each request.</p></div><div className="flex gap-2 text-xs"><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{approvals.filter((item) => item.reviewStatus === "Approved").length} approved</span></div></div>
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><div className="flex items-center gap-2"><Clock size={17} className="text-[#A78BFA]" /><h2 className={SECTION_TITLE}>Approval Queue</h2><StatusBadge status="Foundation Available" /></div><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Only Review Required decisions that the active strategy escalates to humans appear here. Autonomous remediation stays inside the agent flow, while approval requests remain exact-bound to the protected intent.</p></div><div className="flex gap-2 text-xs"><span className="rounded-full border border-[#F59E0B]/25 bg-[#F59E0B]/10 px-3 py-1 text-[#F59E0B]">{pendingApprovals.length} pending</span><span className="rounded-full border border-[#22C55E]/25 bg-[#22C55E]/10 px-3 py-1 text-[#22C55E]">{approvals.filter((item) => item.reviewStatus === "Approved").length} approved</span></div></div>
             {approvalError && <div className="mt-4 rounded-lg border border-[#EF4444]/25 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{approvalError}</div>}
           </div>
-          {pendingApprovals.length === 0 ? <div className={`${CARD} p-8 text-center`}><CheckCircle size={28} className="mx-auto text-[#22C55E]" /><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">No pending approvals</div><p className="mt-1 text-xs text-[#94A3B8]">Review Required decisions will appear here when Human Approval is enabled.</p></div> : <div className="space-y-3">{pendingApprovals.map(renderApprovalCompactRow)}</div>}
+          {pendingApprovals.length === 0 ? <div className={`${CARD} p-8 text-center`}><CheckCircle size={28} className="mx-auto text-[#22C55E]" /><div className="mt-3 text-sm font-semibold text-[#F8FAFC]">No pending approvals</div><p className="mt-1 text-xs text-[#94A3B8]">Human-escalated Review Required decisions will appear here. Autonomous remediation does not create unnecessary approval requests.</p></div> : <div className="space-y-3">{pendingApprovals.map(renderApprovalCompactRow)}</div>}
           {resolvedApprovals.length > 0 && <div className={`${CARD} overflow-hidden`}><button type="button" onClick={() => setShowApprovalHistory((current) => !current)} className="flex w-full items-center justify-between p-4 text-left"><div><div className="text-sm font-semibold text-[#F8FAFC]">Approval history</div><div className="mt-0.5 text-xs text-[#94A3B8]">{resolvedApprovals.length} resolved requests</div></div><ChevronDown size={16} className={`text-[#64748B] transition-transform ${showApprovalHistory ? "rotate-180" : ""}`} /></button>{showApprovalHistory && <div className="space-y-3 border-t border-[#1E293B] p-4">{resolvedApprovals.map(renderApprovalCompactRow)}</div>}</div>}
         </div>
       )}
@@ -8355,7 +8414,7 @@ function PoliciesPage({
               {createPolicyStep === 2 && <div className="mx-auto max-w-4xl space-y-4"><div className="grid gap-3 md:grid-cols-3"><InputField label="Max Tx (CSPR)" value={form.maxTransaction} onChange={(value) => setForm((current) => ({ ...current, maxTransaction: value }))} type="number" /><InputField label="Daily Limit (CSPR)" value={form.dailyLimit} onChange={(value) => setForm((current) => ({ ...current, dailyLimit: value }))} type="number" /><InputField label="Review Above (CSPR)" value={form.approvalThreshold} onChange={(value) => setForm((current) => ({ ...current, approvalThreshold: value }))} type="number" /></div><TextareaField label="Trusted Targets" value={form.trustedContracts} onChange={(value) => setForm((current) => ({ ...current, trustedContracts: value }))} /><div className="grid gap-3 md:grid-cols-2"><TextareaField label="Blocked Contracts" value={form.blockedContracts} onChange={(value) => setForm((current) => ({ ...current, blockedContracts: value }))} /><TextareaField label="Allowed Contract Entry Points" value={form.allowedEntryPoints} onChange={(value) => setForm((current) => ({ ...current, allowedEntryPoints: value }))} /></div></div>}
               {createPolicyStep === 3 && <div className="mx-auto max-w-4xl space-y-4"><div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Recommended for this agent</div><p className="mt-1 text-xs text-[#94A3B8]">Recommendations are derived from the selected agent’s execution capabilities and do not replace policy enforcement.</p></div><div className="grid gap-3 md:grid-cols-2">{recommendedModules(normalizeCapabilities(agents.find((agent) => agent.id === form.agentId)?.executionCapabilities, agents.find((agent) => agent.id === form.agentId)?.type)).map((module) => <div key={module.id} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-[#F8FAFC]">{module.name}</div><div className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{module.description}</div></div><CheckCircle size={16} className="shrink-0 text-[#22C55E]" /></div><div className="mt-3 text-[10px] uppercase tracking-wider text-[#64748B]">{module.controls.filter((control) => control.configurable).length} configurable controls</div></div>)}</div></div>}
               {createPolicyStep === 4 && <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)]"><div className={`${CARD} h-fit p-2`}>{PROTECTION_MODULE_CATALOG.map((area) => <button key={area.id} type="button" onClick={() => setCreateAdvancedArea(area.id)} className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left text-xs ${createAdvancedArea === area.id ? "bg-[#22D3EE]/12 text-[#22D3EE]" : "text-[#94A3B8] hover:bg-[#0B1220] hover:text-[#F8FAFC]"}`}>{area.name}</button>)}</div><div className="min-w-0">{renderCreateAdvancedArea()}</div></div>}
-              {createPolicyStep === 5 && <div className="mx-auto max-w-4xl space-y-4"><div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Review before activation</div><p className="mt-1 text-xs text-[#94A3B8]">Magen3 will create the policy using the exact fields below. Existing agents, keys and Gateway contracts remain unchanged.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Agent", agents.find((agent) => agent.id === form.agentId)?.name || "Not selected"], ["Template", createTemplate], ["Max transaction", `${form.maxTransaction || 0} CSPR`], ["Daily limit", `${form.dailyLimit || 0} CSPR`], ["Review above", `${form.approvalThreshold || 0} CSPR`], ["Risk mode", form.riskMode], ["Approval workflow", form.approvalWorkflowEnabled], ["Lifecycle controls", form.lifecycleControlsEnabled]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-sm font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>{policyFormError && <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{policyFormError}</div>}</div>}
+              {createPolicyStep === 5 && <div className="mx-auto max-w-4xl space-y-4"><div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-4"><div className="text-sm font-semibold text-[#F8FAFC]">Review before activation</div><p className="mt-1 text-xs text-[#94A3B8]">Magen3 will create the policy using the exact fields below. Existing agents, keys and Gateway contracts remain unchanged.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Agent", agents.find((agent) => agent.id === form.agentId)?.name || "Not selected"], ["Template", createTemplate], ["Max transaction", `${form.maxTransaction || 0} CSPR`], ["Daily limit", `${form.dailyLimit || 0} CSPR`], ["Review above", `${form.approvalThreshold || 0} CSPR`], ["Risk mode", form.riskMode], ["Review resolution", form.reviewResolutionMode], ["Approval workflow", form.approvalWorkflowEnabled], ["Lifecycle controls", form.lifecycleControlsEnabled]].map(([label, value]) => <div key={label} className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 text-sm font-semibold text-[#F8FAFC]">{value}</div></div>)}</div>{policyFormError && <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 px-3 py-2 text-xs text-[#FCA5A5]">{policyFormError}</div>}</div>}
             </div>
             <div className="flex items-center justify-between border-t border-[#1E293B] bg-[#050B14] px-5 py-4"><Btn variant="secondary" onClick={() => createPolicyStep === 1 ? setCreatePolicyOpen(false) : setCreatePolicyStep((step) => Math.max(1, step - 1))}>{createPolicyStep === 1 ? "Cancel" : "Back"}</Btn>{createPolicyStep < 5 ? <Btn variant="primary" onClick={() => setCreatePolicyStep((step) => Math.min(5, step + 1))}>Continue<ArrowRight size={15} /></Btn> : <Btn variant="primary" onClick={activatePolicyFromDrawer}><ShieldCheck size={15} />Activate Policy</Btn>}</div>
           </div>
@@ -9982,9 +10041,9 @@ codex mcp add magen3 \
                 </p>
                 <div className="mt-5"><DocsCodeBlock lang="text" code={`Before any Web3 execution:
 1. Call Magen3 with the exact intended action.
-2. Allowed: continue only toward human-controlled signing.
-3. Blocked: stop immediately.
-4. Review Required: pause and request human review.
+2. Allowed: continue only when executionApproved is true and parameters are unchanged.
+3. Blocked: stop immediately and show agentMessage.
+4. Review Required: stop and inspect reviewResolution; remediate autonomously unless humanActionRequired is true.
 5. Gateway or authentication error: fail closed; never bypass Magen3.`} /></div>
               </section>
 

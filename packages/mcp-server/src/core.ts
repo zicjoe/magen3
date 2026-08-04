@@ -1,4 +1,12 @@
-import { Magen3Client, Magen3Error, magen3ClientOptionsFromEnv, type Magen3Intent } from "@magen3/sdk";
+import {
+  Magen3Client,
+  Magen3Error,
+  getMagen3AgentMessage,
+  isMagen3ExecutionApproved,
+  magen3ClientOptionsFromEnv,
+  type Magen3Intent,
+  type Magen3IntentResponse,
+} from "@magen3/sdk";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export interface Magen3McpConfig {
@@ -319,6 +327,28 @@ function errorPayload(error: unknown) {
   return { ok: false, error: error instanceof Error ? error.message : "Unknown Magen3 MCP error" };
 }
 
+function mcpDecisionGuidance(response: Magen3IntentResponse): string {
+  const explanation = response.decisionExplanation || response.result.decisionExplanation;
+  const resolution = response.reviewResolution || response.result.reviewResolution;
+  const userMessage = getMagen3AgentMessage(response);
+
+  if (isMagen3ExecutionApproved(response)) {
+    return `${userMessage} Proceed only with the exact evaluated parameters. Magen3 does not sign or broadcast; the authorized execution layer may now continue and must report the real execution result.`;
+  }
+
+  if (response.result.decision === "Review Required") {
+    if (resolution?.humanActionRequired === true) {
+      return explanation?.agentInstruction
+        || `${userMessage} Stop execution, surface the exact reason, and poll the bound approval request until mayProceedToSigning is true.`;
+    }
+    return explanation?.agentInstruction
+      || `${userMessage} Stop this attempt, supply or correct the requested evidence, and resubmit the same bound goal. Do not poll human approval unless Magen3 explicitly says humanActionRequired is true.`;
+  }
+
+  return explanation?.agentInstruction
+    || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
+}
+
 export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "reportExecutionReconciliation" | "pollExecutionReconciliation">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
@@ -339,7 +369,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
-        approvalWorkflowBoundary: "Review Required can create an exact-intent approval request. Agents may poll its status, but only authorized reviewers respond through the Magen3 application. Signature-enabled policies require one-time Casper Wallet message signatures; MCP never receives or submits those signatures. Approval does not sign or broadcast the transaction.",
+        approvalWorkflowBoundary: "Review Required means execution is paused, not automatically that a human is needed. Inspect reviewResolution.humanActionRequired: autonomous reviews require agent remediation and resubmission; only explicitly escalated reviews create an exact-intent approval request. Authorized reviewers respond through the Magen3 application. Approval never signs or broadcasts the transaction.",
         organizationalApprovalBoundary: "Approval tiers, named role groups, backup escalation, total quorum, execution delays, and signing windows are resolved deterministically by Magen3. MCP may report this state but cannot join an approver group, accelerate escalation, shorten a delay, extend a window, or submit a human approval response.",
         x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
         executionReconciliationBoundary: "Execution & Settlement Reconciliation accepts authenticated public transaction-state evidence after authorization, enforces monotonic state transitions, blocks unsafe retries, links replacements, and records finality, delivery, refund, and failure state. Optional polling uses only backend-configured RPC endpoints; MCP cannot supply provider URLs. MCP never sends raw signed transactions, wallet signatures, private keys, mnemonics, or sponsor credentials.",
@@ -354,7 +384,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     async checkIntent(intent: Magen3Intent): Promise<ToolTextResult> {
       try {
         const response = await client.checkIntent(withOfficialMcpIntegrity(intent, "magen3_check_intent"));
-        return text({ ...response, mcpGuidance: response.result.decision === "Allowed" ? "Policy allows continuation, but a human-controlled wallet must still approve signing." : response.result.decision === "Review Required" ? "Stop and request human review." : "Stop. Do not execute or bypass Magen3." });
+        return text({ ...response, mcpGuidance: mcpDecisionGuidance(response) });
       } catch (error) { return text(errorPayload(error), true); }
     },
     async getApproval(input: { approvalOrAuditId: string }): Promise<ToolTextResult> {
@@ -392,7 +422,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     async requireAllowed(intent: Magen3Intent): Promise<ToolTextResult> {
       try {
         const response = await client.requireAllowed(withOfficialMcpIntegrity(intent, "magen3_require_allowed"));
-        return text({ ...response, mcpGuidance: "Allowed by Magen3. Do not sign or broadcast without explicit human approval." });
+        return text({ ...response, mcpGuidance: mcpDecisionGuidance(response) });
       } catch (error) { return text(errorPayload(error), true); }
     },
   };

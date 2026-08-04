@@ -35,9 +35,14 @@ if (!app.includes("Magen3Client.fromEnv(process.env)")) fail("TypeScript onboard
 if (!app.includes("Magen3Client.from_env()")) fail("Python onboarding does not use the canonical environment loader");
 if (!envExample.includes("MAGEN3_API_KEY=")) fail(".env.example is missing MAGEN3_API_KEY");
 if (/MAGEN3_GATEWAY_URL=.*api\/agent-gateway/.test(envExample)) fail(".env.example uses an endpoint instead of the API base URL");
-if (sdkPackage.version !== "0.4.0-beta.1") fail("SDK package version must be 0.4.0-beta.1");
+if (sdkPackage.version !== "0.4.0-beta.2") fail("SDK package version must be 0.4.0-beta.2");
 if (!sdkSource.includes("magen3ClientOptionsFromEnv")) fail("SDK environment resolver is missing");
 if (!sdkSource.includes("normalizeMagen3GatewayUrl")) fail("SDK Gateway URL normalization is missing");
+if (!sdkSource.includes("getMagen3AgentMessage")) fail("SDK agent-message helper is missing");
+if (!sdkSource.includes("isMagen3ExecutionApproved")) fail("SDK fail-closed execution helper is missing");
+if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
+if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
+if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");
 if (!mcpSource.includes("magen3ClientOptionsFromEnv")) fail("MCP server is not using the shared SDK environment contract");
 if (!pythonSource.includes("MAGEN3_API_KEY") || !pythonSource.includes("from_env")) fail("Python SDK is not using the canonical environment contract");
 if (archivedSkill.includes("MAGEN3_VERIFY_URL")) fail("Archived skill still introduces a second Gateway URL variable");

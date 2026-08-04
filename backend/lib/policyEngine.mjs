@@ -18,6 +18,7 @@ import { evaluateToolMcpIntegrity } from "./toolMcpIntegrity.mjs";
 import { evaluateDelegationSafety } from "./delegationSafety.mjs";
 import { evaluateRpcChainIntegrity } from "./rpcChainIntegrity.mjs";
 import { evaluateGasSponsorshipFeeSafety } from "./gasSponsorshipFeeSafety.mjs";
+import { buildDecisionExplanation } from "./decisionExplanation.mjs";
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -117,6 +118,21 @@ function withStructuredResult({
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
+  const primaryReason = trigger?.message || reason;
+  const triggeredRule = trigger?.rule || "All evaluated policy rules passed";
+  const suggestedResolution = trigger?.remediation || recommendedAction;
+  const decisionExplanation = buildDecisionExplanation({
+    decision,
+    policy,
+    risk,
+    riskScore,
+    moduleFindings,
+    primaryReason,
+    triggeredRule,
+    suggestedResolution,
+    reason,
+    recommendedAction,
+  });
   return {
     decision,
     risk,
@@ -125,9 +141,21 @@ function withStructuredResult({
     policyChecksFailed: checksFailed,
     reason,
     recommendedAction,
-    primaryReason: trigger?.message || reason,
-    triggeredRule: trigger?.rule || "All evaluated policy rules passed",
-    suggestedResolution: trigger?.remediation || recommendedAction,
+    primaryReason,
+    triggeredRule,
+    suggestedResolution,
+    decisionExplanation,
+    reviewResolution: {
+      strategy: decisionExplanation.strategy,
+      mode: decisionExplanation.reviewMode,
+      state: decisionExplanation.reviewState,
+      humanActionRequired: decisionExplanation.humanActionRequired,
+      agentActionRequired: decision === "Blocked" || decisionExplanation.reviewMode === "agent_remediation",
+      canAgentRetry: decisionExplanation.canAgentRetry,
+      mayAutoResume: decision === "Allowed",
+      requiredActions: decisionExplanation.requiredActions,
+      summary: decisionExplanation.summary,
+    },
     moduleFindings,
     modulesEvaluated: [...new Set(moduleFindings.map((item) => item.module))],
     capabilityContext: normalizeExecutionCapabilities(agent?.executionCapabilities, agent?.type),
@@ -269,7 +297,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
       checksFailed,
       reason: emergencyControlsResult.hardBlock
         ? "An active emergency pause blocks this request before the remaining authorization pipeline can run."
-        : "An active emergency pause requires controlled human review before the remaining authorization pipeline can run.",
+        : "An active emergency pause requires controlled resolution before the remaining authorization pipeline can run.",
       recommendedAction: "Do not execute or bypass the circuit breaker. Resolve the incident and complete the authorized resume workflow.",
       moduleFindings,
       timestamp,
@@ -296,7 +324,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
         : "The request requires authorized review because its instruction provenance or protected-parameter binding is incomplete or high risk.",
       recommendedAction: instructionIntegrityResult.hardBlock
         ? "Do not execute. Reconstruct the intent from a trusted source and bind it to a stable user goal before retrying."
-        : "Pause execution and obtain exact-bound human approval or resubmit complete trusted provenance metadata.",
+        : "Pause execution and resubmit complete trusted provenance metadata. Human approval is required only when the active review strategy explicitly escalates this rule.",
       moduleFindings,
       timestamp,
       agent,
@@ -351,7 +379,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
         : "The delegated authority requires authorized review because signer evidence, delegate approval, or scope binding is incomplete.",
       recommendedAction: delegationSafetyResult.hardBlock
         ? "Do not execute. Revoke or replace the delegation with a valid, short-lived, cryptographically signed and least-privilege authority."
-        : "Pause execution and obtain exact-bound human approval or resubmit a complete signed delegation attestation.",
+        : "Pause execution and resubmit a complete signed delegation attestation. Human approval is required only when the active review strategy explicitly escalates this rule.",
       moduleFindings,
       timestamp,
       agent,
@@ -380,7 +408,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
         : "The request requires authorized review because RPC or chain-integrity evidence is incomplete, unavailable, or inconsistent.",
       recommendedAction: rpcChainIntegrityResult.hardBlock
         ? "Do not execute. Use approved synchronized providers that agree on the expected chain and state before retrying."
-        : "Pause execution and restore the required trusted RPC evidence or obtain exact-bound human approval.",
+        : "Pause execution and restore the required trusted RPC evidence. Human approval is required only when the active review strategy explicitly escalates this rule.",
       moduleFindings,
       timestamp,
       agent,
@@ -410,7 +438,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
         : "The request requires authorized review because fee or sponsorship evidence is incomplete, unavailable, unapproved, or outside configured limits.",
       recommendedAction: gasSponsorshipFeeSafetyResult.hardBlock
         ? "Do not execute. Rebuild the transaction with bounded fees and approved, unexpired, exact-scope sponsorship evidence."
-        : "Pause execution and restore the required fee or sponsorship evidence, or obtain exact-bound human approval.",
+        : "Pause execution and restore the required fee or sponsorship evidence. Human approval is required only when the active review strategy explicitly escalates this rule.",
       moduleFindings,
       timestamp,
       agent,
@@ -544,13 +572,13 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
         ? "This action violates one or more hard policy, wallet-validation, contract-validation, token-permission, privileged-action, execution-integrity, fee-safety, threat-intelligence, oracle-validation, bridge-control, compliance-control, or x402-payment rules and must not execute."
-        : "This action is not automatically allowed and requires authorized human review before execution.";
+        : "This action is not automatically allowed. Magen3 requires remediation, independent verification, or human approval according to the active review-resolution strategy.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
         ? "Do not execute. Correct the wallet, contract, token permission, privileged action, destination, lifecycle metadata, fee or sponsorship evidence, transaction state, threat-intelligence finding, oracle quote, bridge route, compliance evidence, x402 payment requirement, or request parameters, or update the policy only if authorized."
-        : "Pause execution and obtain human approval or retry with policy-compliant parameters.";
+        : "Pause execution. Follow the returned review-resolution instructions, then resubmit policy-compliant evidence or complete approval only when explicitly required.";
 
   return withStructuredResult({
     decision,

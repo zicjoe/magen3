@@ -72,7 +72,7 @@ Use `require_allowed(intent)` for fail-closed execution control.
 
 ## Human Approval & Quorum polling
 
-`Review Required` is not execution authorization. When the response contains an approval request, stop automatic execution and poll the exact-bound workflow by approval ID or audit ID.
+`Review Required` is not execution authorization. Show `agentMessage`, inspect `reviewResolution.humanActionRequired`, remediate and resubmit autonomous reviews, and poll the exact-bound workflow only when an approval request is present.
 
 TypeScript:
 

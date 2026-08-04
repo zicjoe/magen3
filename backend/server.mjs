@@ -665,7 +665,7 @@ const server = createServer(async (req, res) => {
           emergencyPauseManagementEndpoints: ["/api/emergency-pauses", "/api/emergency-pauses/:id/resume"],
           authRequired: true,
           decisionModel: "Allowed | Blocked | Review Required",
-          executionRule: "External agents may request wallet signing only after Magen3 returns Allowed, or after an exact-bound Review Required approval reaches Approved before expiry."
+          executionRule: "External agents may reach signing only when Magen3 returns Allowed and executionApproved is true. Review Required always pauses execution; autonomous reviews require remediation and resubmission, while only humanActionRequired reviews use an exact-bound approval workflow."
         }
       });
     }
@@ -963,7 +963,7 @@ const server = createServer(async (req, res) => {
           reviewerQueueEndpoint: "GET /api/approvals?walletAddress=CASPER_PUBLIC_KEY",
           reviewerChallengeEndpoint: "POST /api/approvals/:approvalId/challenge",
           reviewerResponseEndpoint: "POST /api/approvals/:approvalId/respond",
-          purpose: "Turn configured Review Required decisions into exact-intent single or quorum approval workflows before wallet signing.",
+          purpose: "Provide exact-intent single or quorum approval workflows only for Review Required decisions whose review-resolution strategy explicitly requires human or organizational approval.",
           deterministicChecks: [
             "SHA-256 binding over agent, action, amount, target, execution wallet, policy, and original intent",
             "Distinct eligible approver wallets",
@@ -1301,7 +1301,10 @@ const server = createServer(async (req, res) => {
         },
         responseShape: {
           decision: "Allowed | Blocked | Review Required",
-          executionApproved: "boolean",
+          executionApproved: "boolean; true only for an Allowed exact intent",
+          agentMessage: "Safe concise explanation intended to be shown directly by the external agent",
+          decisionExplanation: "Structured primary reason, triggered rule, suggested resolution, user message, and deterministic agent instruction",
+          reviewResolution: "Autonomous | Balanced | Human Governed routing with mode, state, humanActionRequired, canAgentRetry, and requiredActions",
           primaryReason: "Deterministic explanation when available",
           triggeredRule: "Policy rule responsible for the decision when applicable",
           suggestedResolution: "Safe remediation derived from policy evidence",
@@ -1321,9 +1324,9 @@ const server = createServer(async (req, res) => {
           emergencyControlsContext: "Active pause scope, enforcement action, trigger, expiry, resume authority, and approval-gated resume evidence",
           emergencyControlsStatusEndpoint: "GET /api/emergency-controls/status",
           emergencyPauseManagement: ["GET /api/emergency-pauses", "POST /api/emergency-pauses", "POST /api/emergency-pauses/:id/resume"],
-          approval: "For Review Required decisions, the exact bound intent can expose a wallet-scoped approval request, quorum, expiry, responses, and whether signing may proceed",
+          approval: "Present only when a Review Required decision explicitly escalates to human or organizational approval; autonomous remediation reviews do not create approval requests",
           x402PaymentControlsContext: "Canonical paid-resource, merchant, network, recipient, amount, expiry, request-binding, replay, spending, and settlement evidence",
-          nextAction: "Allowed actions should request user wallet signature before execution",
+          nextAction: "Deterministic next step: execute exact Allowed parameters, remediate and resubmit autonomous reviews, poll explicitly escalated approvals, or stop on Blocked",
           auditLog: "Stored Magen3 audit record with capability context and proof state",
           casperPayload: "Payload to anchor the Magen3 decision with record_decision on Casper",
           execution: "Approved actions can later report authenticated submission, pending, confirmation, failure, uncertainty, replacement, refund, and delivery state through the reconciliation endpoint",

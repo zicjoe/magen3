@@ -6,6 +6,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 
 - `MAGEN3_PLATFORM.md` — product model, execution capabilities, protection areas and control-level status, Security Pipeline, Risk Assessment, Security Coverage, Intent Playground, audit records, proofs, compatibility, deployment, and troubleshooting.
 - `AGENT_GATEWAY_API.md` — current gateway authentication and request/response contract.
+- `AI_NATIVE_REVIEW_RESOLUTION.md` — autonomous remediation, balanced escalation, human-governed review, and agent-ready decision explanations.
 - `GATEWAY_INTEGRATION.md` — external-agent integration before wallet signing.
 - `CONNECTED_WALLET_EXECUTION.md` — owner wallet, execution wallet, and proof boundaries.
 - `AGENT_INSTRUCTION_INTEGRITY.md` — deterministic goal binding, source provenance, protected-parameter fingerprints, external-content confirmation, permission-scope containment, audit evidence, and limitations.

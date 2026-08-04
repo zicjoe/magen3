@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage, magen3ClientOptionsFromEnv, normalizeMagen3GatewayUrl } from "../dist/index.js";
+import { Magen3Client, Magen3Error, buildMagen3DelegationAttestationMessage, getMagen3AgentMessage, isMagen3ExecutionApproved, magen3ClientOptionsFromEnv, normalizeMagen3GatewayUrl } from "../dist/index.js";
 
 test("checkIntent authenticates and injects agent identity", async () => {
   let captured;
@@ -61,6 +61,33 @@ test("Magen3Client.fromEnv uses the canonical variables", () => {
 test("requireAllowed stops blocked execution", async () => {
   const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret", fetch: async () => new Response(JSON.stringify({ ok: true, executionApproved: false, result: { decision: "Blocked", risk: "High", riskScore: 80, reason: "limit exceeded", recommendedAction: "stop" }, gatewayRequest: {}, auditLog: {}, nextAction: "stop" }), { status: 201 }) });
   await assert.rejects(() => client.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", amount: 100, target: "01def" } }), Magen3Error);
+});
+
+test("requireAllowed fails closed when Allowed is not explicitly execution approved", async () => {
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async () => new Response(JSON.stringify({
+      ok: true,
+      executionApproved: false,
+      result: {
+        decision: "Allowed",
+        risk: "Low",
+        riskScore: 5,
+        reason: "Policy checks passed",
+        recommendedAction: "Do not execute without explicit approval",
+      },
+      gatewayRequest: {},
+      auditLog: {},
+      nextAction: "Stop",
+      agentMessage: "Magen3 did not explicitly authorize execution. Nothing was signed or sent.",
+    }), { status: 201 }),
+  });
+  await assert.rejects(
+    () => client.requireAllowed({ executionWalletAddress: "01abc", action: { type: "Transfer", amount: 1, target: "01def" } }),
+    /did not explicitly authorize execution/i,
+  );
 });
 
 test("normalizes trailing gateway URL slashes without a regular expression", async () => {
@@ -963,4 +990,25 @@ test("preserves Gas Sponsorship & Fee Safety metadata and sanitized response con
   assert.equal(captured.action.feeSafety.sponsorSignatureHash, "a".repeat(64));
   assert.equal(result.result.gasSponsorshipFeeSafetyContext.payerMatches, true);
   assert.equal(result.result.gasSponsorshipFeeSafetyContext.violations.length, 0);
+});
+
+
+test("returns the Gateway-provided user-facing explanation", () => {
+  const response = {
+    ok: true,
+    executionApproved: false,
+    result: { decision: "Review Required", risk: "Medium", riskScore: 40, reason: "review", recommendedAction: "resubmit" },
+    gatewayRequest: {},
+    auditLog: {},
+    nextAction: "resubmit",
+    agentMessage: "Magen3 paused this action because RPC evidence is missing. No human approval is required yet.",
+  };
+  assert.match(getMagen3AgentMessage(response), /No human approval is required yet/i);
+  assert.equal(isMagen3ExecutionApproved(response), false);
+});
+
+test("execution helper requires both Allowed and executionApproved", () => {
+  const base = { ok: true, gatewayRequest: {}, auditLog: {}, nextAction: "continue" };
+  assert.equal(isMagen3ExecutionApproved({ ...base, executionApproved: true, result: { decision: "Allowed", risk: "Low", riskScore: 1, reason: "ok", recommendedAction: "continue" } }), true);
+  assert.equal(isMagen3ExecutionApproved({ ...base, executionApproved: true, result: { decision: "Review Required", risk: "Medium", riskScore: 50, reason: "review", recommendedAction: "stop" } }), false);
 });

@@ -99,7 +99,7 @@ Legacy policies remain non-breaking. Duplicate-fingerprint enforcement is activa
 
 ### Human Approval & Quorum foundation
 
-Human Approval & Quorum is a Foundation Available control inside Policy & Approval Controls. When enabled and the deterministic result is `Review Required`, Magen3 creates an approval request bound to the audit record, agent, action, amount, target, execution wallet, active policy, and original intent.
+Human Approval & Quorum is a Foundation Available control inside Policy & Approval Controls. It creates an exact-bound approval request only when the active review-resolution strategy explicitly escalates a `Review Required` result to human or organizational governance.
 
 Approval Escalation & Organizational Quorum is Live as a deterministic extension of that workflow. It resolves amount-, action-, capability-, and contract-aware tiers; requires named role groups; activates configured backup or emergency reviewers after timed escalation; and enforces post-quorum execution delays and signing windows. It never reduces an existing quorum or lets an agent approve through SDK or MCP.
 
@@ -270,7 +270,7 @@ Intent received
 → Execution recorded when available
 ```
 
-Only relevant modules are represented as evaluated. There are no fake animation delays. A Review Required request remains blocked until the exact-bound approval workflow reaches Approved before expiry.
+Only relevant modules are represented as evaluated. There are no fake animation delays. Every Review Required request remains non-executable: autonomous reviews must be remediated and resubmitted, while human-escalated reviews remain paused until the exact-bound approval workflow permits signing.
 
 ## Decision guidance
 

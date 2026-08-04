@@ -121,7 +121,7 @@ Wallet Validation now runs on every authenticated gateway intent before a wallet
 - `Transfer` intents must classify the target as `Wallet Address`.
 - Exact source/destination self-transfers are blocked to prevent accidental execution.
 - Wallet destinations are checked against the active policy's Trusted Targets list.
-- Maximum transaction, daily wallet spending, and human-review thresholds are evaluated as Wallet Validation findings.
+- Maximum transaction, daily wallet spending, and review thresholds are evaluated as Wallet Validation findings.
 - The execution wallet is evaluated independently from the Magen3 owner wallet.
 
 Malformed execution wallets, malformed destinations, incorrect transfer classification, self-transfers, and hard policy-limit violations return `Blocked`. Valid but unapproved destinations return `Blocked` in Conservative mode and `Review Required` in Balanced or Aggressive mode.
@@ -224,9 +224,11 @@ Magen3 deterministically checks:
 
 New starter policies enable strict Lifecycle & Replay controls. Legacy policies remain non-breaking: duplicate-fingerprint enforcement is not silently activated unless the policy explicitly enables it. Magen3 evaluates unsigned intent metadata only and never accepts private keys, mnemonics, wallet approvals, or transaction signatures.
 
-### Human Approval & Quorum foundation
+### AI-native Review Resolution and Human Approval & Quorum
 
-Human Approval & Quorum sits inside **Policy & Approval Controls** and turns `Review Required` into an exact-intent approval workflow instead of treating review as a passive label. When enabled, Magen3 creates an approval request bound to a SHA-256 hash of the agent, action, amount, target, execution wallet, policy, and original intent.
+`Review Required` means the action cannot execute yet; it does not automatically mean a person must approve it. Policies independently configure review resolution as **Autonomous**, **Balanced**, or **Human Governed**. Ordinary uncertainty can be returned to the agent as deterministic remediation, while privileged, high-risk, or explicitly governed actions can escalate to Human Approval & Quorum.
+
+Every Blocked or Review Required Gateway response includes a safe `agentMessage`, a structured `decisionExplanation`, and `reviewResolution.humanActionRequired`. External agents can explain the exact primary reason, triggered rule, and suggested resolution without inventing generic text. Only human-escalated reviews create an approval request bound to a SHA-256 hash of the agent, action, amount, target, execution wallet, policy, and original intent.
 
 Policies can configure:
 
@@ -987,7 +989,7 @@ The existing `vercel.json` remains valid.
 | Invalid agent API key | Use the latest key or rotate it from Connected Agents. |
 | No active policy | Complete onboarding or create an active policy for the agent. |
 | Approval stays Configuration Required | Add eligible approver wallets or enable owner-wallet fallback on the active policy. |
-| Agent cannot proceed after Review Required | Poll the approval ID or audit ID; quorum must be Approved and unexpired before execution confirmation is accepted. |
+| Agent cannot proceed after Review Required | Inspect `reviewResolution`: remediate and resubmit when autonomous, or poll the approval only when `humanActionRequired` is true. |
 | Token permission intent is skipped | Include an explicit `action.tokenPermission` object with a supported `permissionType`; generic contract calls are intentionally not classified as approvals. |
 | Approval response rejected | Confirm the connected wallet is an eligible approver, has not already responded, and is not the execution wallet when separation of duties is enabled. |
 | Threat feed unavailable | Configure one feed source, verify JSON structure, and check `/api/threat-intelligence/status`. |
@@ -1080,3 +1082,8 @@ Execution & Settlement Reconciliation is Foundation Available under Execution In
 ## Agent lifecycle: revoke and delete
 
 Connected Agents now separates immediate access revocation from permanent deletion. Revoke disables the Agent ID and API key while keeping the registration visible. Permanent deletion is available in the selected agent's **Access** tab after revocation and removes the registration, API credential material, and assigned policies. Magen3 blocks deletion while approvals, emergency pauses, or executions remain unresolved, and requires the exact agent name as confirmation. Historical Audit Logs, approval evidence, Gateway requests, Casper proofs, and reconciliation records remain available. See [`docs/AGENT_LIFECYCLE.md`](docs/AGENT_LIFECYCLE.md).
+
+### AI-native review resolution
+
+`Review Required` pauses execution but does not automatically create a human-approval request. Policies separately choose **Autonomous**, **Balanced**, or **Human Governed** resolution. External agents receive `agentMessage`, the exact `primaryReason`, `triggeredRule`, `suggestedResolution`, and structured `reviewResolution` instructions. See [`docs/AI_NATIVE_REVIEW_RESOLUTION.md`](docs/AI_NATIVE_REVIEW_RESOLUTION.md).
+

@@ -329,7 +329,7 @@ See also:
 
 For exact contract and entry-point enforcement, include public unsigned values in `action.preflight.runtimeArgs`. Do not flatten them into the top-level action or send encoded signed deploy bytes. Magen3 applies the active Contract Argument Policy before wallet signing and returns `contractArgumentPoliciesContext` plus structured findings.
 
-External agents must stop on Blocked, pause on Review Required, and request wallet signing only when `result.decision === "Allowed"` and `executionApproved === true`. Changing a protected runtime argument after Human Approval changes both the argument fingerprint and the exact-intent approval binding.
+External agents must stop on Blocked, pause on Review Required, show `agentMessage`, and request wallet signing only when `result.decision === "Allowed"` and `executionApproved === true`. Review Required routes through autonomous remediation or explicit human escalation according to `reviewResolution`; changing a protected parameter invalidates the earlier binding.
 
 See `CONTRACT_ARGUMENT_POLICIES.md` for policy examples and the security boundary.
 

@@ -339,7 +339,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
     }));
     findings.push(finding({
       status: "skipped",
-      rule: "Wallet human-review threshold",
+      rule: "Wallet review threshold",
       message: "The generic Casper review threshold is not applied to x402 payments; the x402 review threshold controls payment authorization.",
       evidence: { asset: request.asset || request.x402Asset || "", amount },
     }));
@@ -400,17 +400,17 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       findings.push(finding({
         status: "warning",
         severity: "medium",
-        rule: "Wallet human-review threshold",
+        rule: "Wallet review threshold",
         message,
         evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
-        remediation: `Reduce the amount to ${approvalThreshold} CSPR or less, or obtain authorized human review.`,
+        remediation: `Reduce the amount to ${approvalThreshold} CSPR or less, or follow the policy's configured review-resolution strategy.`,
       }));
     } else {
       const message = `Amount is below the wallet review threshold (${amount} ≤ ${approvalThreshold} CSPR)`;
       checksPassed.push(message);
       findings.push(finding({
         status: "pass",
-        rule: "Wallet human-review threshold",
+        rule: "Wallet review threshold",
         message,
         evidence: { received: amount, threshold: approvalThreshold, asset: request.asset || "CSPR" },
       }));
