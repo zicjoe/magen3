@@ -7,6 +7,7 @@ import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMa
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
+import { runStatefulSimulation } from "../lib/statefulSimulation.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
@@ -1206,6 +1207,11 @@ export async function createPostgresStore() {
       ]);
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
+      const rawAction = body.action && typeof body.action === "object" ? body.action : body;
+      request.statefulSimulationEvidence = await runStatefulSimulation({
+        simulation: rawAction.simulation || rawAction.statefulSimulation || {},
+        chainName: request.chainName,
+      });
       let result = evaluatePolicy({ request, agents, policies, auditLogs, emergencyPauses, threatIntelligence, oracleValidation, complianceControls });
       let activatedEmergencyPause = null;
       if (!result.emergencyControlsContext?.active) {
@@ -1380,6 +1386,21 @@ export async function createPostgresStore() {
             protectedFingerprint: result.gasSponsorshipFeeSafetyContext?.protectedFingerprint || "",
             status: result.gasSponsorshipFeeSafetyContext?.status || "",
             violations: result.gasSponsorshipFeeSafetyContext?.violations || [],
+          } : undefined,
+          assetIdentity: result.assetIdentityContext || undefined,
+          statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
+          valueExposure: result.valueExposureContext ? {
+            basis: result.valueExposureContext.basis,
+            referenceCurrency: result.valueExposureContext.referenceCurrency,
+            nativeAmount: result.valueExposureContext.nativeAmount,
+            unit: result.valueExposureContext.unit,
+            verifiedReferenceValue: result.valueExposureContext.verifiedReferenceValue,
+            identity: result.valueExposureContext.identity,
+            priceEvidence: result.valueExposureContext.priceEvidence,
+            thresholds: result.valueExposureContext.thresholds,
+            cumulativeExposure: result.valueExposureContext.cumulativeExposure,
+            walletPercentage: result.valueExposureContext.walletPercentage,
+            triggeredBreach: result.valueExposureContext.triggeredBreach,
           } : undefined,
           lifecycle: {
             intentId: intent.lifecycleIntentId,

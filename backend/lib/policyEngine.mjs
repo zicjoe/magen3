@@ -2,6 +2,8 @@ import { normalizeExecutionCapabilities } from "./securityModel.mjs";
 import { evaluateWalletValidation } from "./walletValidation.mjs";
 import { evaluateContractValidation } from "./contractValidation.mjs";
 import { evaluateExecutionSimulation } from "./executionSimulation.mjs";
+import { evaluateStatefulSimulationEvidence } from "./statefulSimulation.mjs";
+import { evaluateAssetIdentity } from "./assetIdentity.mjs";
 import { evaluateExecutionIntegrity } from "./executionIntegrity.mjs";
 import { evaluateThreatIntelligence } from "./threatIntelligence.mjs";
 import { evaluateOracleValidation } from "./oracleValidation.mjs";
@@ -18,6 +20,7 @@ import { evaluateToolMcpIntegrity } from "./toolMcpIntegrity.mjs";
 import { evaluateDelegationSafety } from "./delegationSafety.mjs";
 import { evaluateRpcChainIntegrity } from "./rpcChainIntegrity.mjs";
 import { evaluateGasSponsorshipFeeSafety } from "./gasSponsorshipFeeSafety.mjs";
+import { evaluateValueExposureLimits } from "./valueExposureLimits.mjs";
 import { buildDecisionExplanation } from "./decisionExplanation.mjs";
 
 function isSameDay(a, b) {
@@ -115,6 +118,7 @@ function withStructuredResult({
   delegationSafetyContext = null,
   rpcChainIntegrityContext = null,
   gasSponsorshipFeeSafetyContext = null,
+  valueExposureContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -177,6 +181,7 @@ function withStructuredResult({
     delegationSafetyContext,
     rpcChainIntegrityContext,
     gasSponsorshipFeeSafetyContext,
+    valueExposureContext,
     emergencyControlsContext,
   };
 }
@@ -454,9 +459,15 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   }
 
   const dailyUsed = getDailyUsed(request.agentId, auditLogs, request.executionWalletAddress || request.walletAddress);
+  const assetIdentityResult = evaluateAssetIdentity({ request, policy });
+  request.assetIdentity = assetIdentityResult.context;
+  checksPassed.push(...assetIdentityResult.checksPassed);
+  checksFailed.push(...assetIdentityResult.checksFailed);
+  moduleFindings.push(...assetIdentityResult.findings);
+  const valueExposureLimitsResult = evaluateValueExposureLimits({ request, policy, auditLogs });
   const isBlockedAction = (policy.blockedActions || []).includes(request.actionType);
   const walletValidation = evaluateWalletValidation({ request, policy, auditLogs, dailyUsed });
-  let score = 5;
+  let score = 5 + assetIdentityResult.scoreDelta;
 
   checksPassed.push(`Active policy found: ${policy.name}`);
 
@@ -485,6 +496,11 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     }));
   }
 
+  checksPassed.push(...valueExposureLimitsResult.checksPassed);
+  checksFailed.push(...valueExposureLimitsResult.checksFailed);
+  moduleFindings.push(...valueExposureLimitsResult.findings);
+  score += valueExposureLimitsResult.scoreDelta;
+
   checksPassed.push(...walletValidation.checksPassed);
   checksFailed.push(...walletValidation.checksFailed);
   moduleFindings.push(...walletValidation.findings);
@@ -497,10 +513,15 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   score += contractValidation.scoreDelta;
 
   const executionSimulation = evaluateExecutionSimulation({ request });
+  const statefulSimulation = evaluateStatefulSimulationEvidence({ request, policy });
   checksPassed.push(...executionSimulation.checksPassed);
   checksFailed.push(...executionSimulation.checksFailed);
   moduleFindings.push(...executionSimulation.findings);
   score += executionSimulation.scoreDelta;
+  checksPassed.push(...statefulSimulation.checksPassed);
+  checksFailed.push(...statefulSimulation.checksFailed);
+  moduleFindings.push(...statefulSimulation.findings);
+  score += statefulSimulation.scoreDelta;
 
   const executionIntegrityResult = evaluateExecutionIntegrity({ request, policy, auditLogs });
   checksPassed.push(...executionIntegrityResult.checksPassed);
@@ -562,8 +583,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || rpcChainIntegrityResult.hardBlock || gasSponsorshipFeeSafetyResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || rpcChainIntegrityResult.needsReview || gasSponsorshipFeeSafetyResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || rpcChainIntegrityResult.hardBlock || gasSponsorshipFeeSafetyResult.hardBlock || assetIdentityResult.hardBlock || valueExposureLimitsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || statefulSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (assetIdentityResult.needsReview || emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || rpcChainIntegrityResult.needsReview || gasSponsorshipFeeSafetyResult.needsReview || valueExposureLimitsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || statefulSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -599,6 +620,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     complianceControlsContext: complianceControlsResult.context,
     x402PaymentControlsContext: x402PaymentControlsResult.context,
     executionIntegrityContext: executionIntegrityResult.context,
+    assetIdentityContext: assetIdentityResult.context,
+    statefulSimulationContext: statefulSimulation.context,
     tokenPermissionControlsContext: tokenPermissionControlsResult.context,
     privilegedActionControlsContext: privilegedActionControlsResult.context,
     contractUpgradeSafetyContext: contractUpgradeSafetyResult.context,
@@ -608,6 +631,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     delegationSafetyContext: delegationSafetyResult.context,
     rpcChainIntegrityContext: rpcChainIntegrityResult.context,
     gasSponsorshipFeeSafetyContext: gasSponsorshipFeeSafetyResult.context,
+    valueExposureContext: valueExposureLimitsResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }
