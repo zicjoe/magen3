@@ -465,6 +465,33 @@ export interface Magen3WalletBalanceEvidence {
   provider?: string;
 }
 
+
+export interface Magen3StatefulSimulationRequest {
+  requested?: boolean;
+  required?: boolean;
+  chainFamily: "EVM" | "Casper" | string;
+  network?: string;
+  chainId?: string;
+  /** Exact unsigned payload. Never include signatures, private keys, or provider URLs. */
+  payload?: Record<string, unknown>;
+}
+
+export interface Magen3StatefulSimulationEvidence {
+  schemaVersion?: string;
+  simulationId?: string;
+  status: "not_requested" | "pending" | "succeeded" | "reverted" | "failed" | "timed_out" | "unsupported" | "unavailable" | "inconclusive" | "stale" | "invalidated" | string;
+  expectedSuccess?: boolean | null;
+  payloadHash?: string;
+  chainFamily?: string;
+  chainId?: string;
+  blockNumber?: string;
+  blockHash?: string;
+  gasEstimate?: string;
+  revertReason?: string;
+  expiresAt?: string;
+  evidenceCompleteness?: Record<string, "observed" | "derived" | "inferred" | "unsupported" | "unavailable" | string>;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -519,6 +546,8 @@ export interface Magen3Action {
   lifecycle?: Magen3Lifecycle;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
+  /** Provider-backed pre-signing simulation request. Provider URLs are server-controlled. */
+  simulation?: Magen3StatefulSimulationRequest;
 }
 
 export interface Magen3Intent {
@@ -1292,6 +1321,8 @@ export interface Magen3IntentResponse {
   decisionExplanation?: Magen3DecisionExplanation;
   /** Safe concise message intended for the external agent's user-facing response. */
   agentMessage?: string;
+  /** Safe normalized simulation evidence is also retained in the audit log and result context. */
+  statefulSimulation?: Magen3StatefulSimulationEvidence;
 }
 
 /**
