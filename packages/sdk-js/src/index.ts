@@ -489,7 +489,25 @@ export interface Magen3Action {
   preflight?: Magen3ExecutionPreflight;
 }
 
-export interface Magen3Intent {
+
+export interface Magen3ValueExposureInput {
+  /** Exact execution network used to resolve the canonical native asset. */
+  executionNetwork?: string;
+  /** Token contract identity for non-native assets. */
+  assetContractAddress?: string;
+  /** Token decimals supplied by the execution adapter. */
+  assetDecimals?: number;
+  /** Current execution-wallet balance evidence when percentage limits are enabled. */
+  executionWalletBalance?: number;
+}
+
+export interface Magen3ValueExposureContext {
+  configured?: boolean; basis?: "fiat" | "native" | "legacy-native" | string; referenceCurrency?: string;
+  amount?: number | null; asset?: string; network?: string; canonicalAssetIdentity?: string; evaluatedValue?: number | null;
+  priceEvidence?: Record<string, unknown> | null; cumulativeExposure?: { hourly?: number; daily?: number; perDestination?: number; unit?: string };
+}
+
+export interface Magen3Intent extends Magen3ValueExposureInput {
   source?: string;
   targetChain?: string;
   walletAddress?: string;
@@ -1224,6 +1242,7 @@ export interface Magen3DecisionResult {
   threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
   /** Sanitized oracle-feed state and deterministic price-integrity evidence. */
   oracleValidationContext?: Magen3OracleValidationContext;
+  valueExposureContext?: Magen3ValueExposureContext;
   /** Deterministic route, chain, address, fee, freshness, and confirmation evidence. */
   bridgeControlsContext?: Magen3BridgeControlsContext;
   /** Sanitized compliance policy, evidence status, and configured exact-match context. */
