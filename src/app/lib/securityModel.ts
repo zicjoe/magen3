@@ -156,7 +156,8 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
       { id: "wallet-identity", name: "Wallet identity and destination validation", description: "Casper public-key/account-hash structure, target classification, and self-transfer protection.", status: "Live", configurable: true },
       { id: "wallet-spend-controls", name: "Wallet spending controls", description: "Per-transaction, wallet-specific daily, destination, and review-threshold limits.", status: "Live", configurable: true },
       { id: "asset-identity", name: "Asset identity and network consistency", description: "Resolves native assets and tokens to stable chain-aware identities, detects symbol/decimal conflicts, and records metadata provenance without treating display symbols as unique.", status: "Foundation Available", configurable: true },
-      { id: "token-risk", name: "Token behavior and economic risk", description: "Mint, pause, blacklist, fee-on-transfer, liquidity, concentration, and backing signals.", status: "Planned", configurable: true },
+      { id: "asset-contract-risk", name: "Asset contract structural risk", description: "Inspects deployed asset bytecode, code hashes, proxy implementations, and bounded structural indicators through a trusted chain adapter. Unsupported behavioral and historical evidence remains explicit.", status: "Foundation Available", configurable: true },
+      { id: "asset-market-risk", name: "Asset market and economic risk", description: "Liquidity, concentration, volatility, backing, and external market evidence remain planned for later milestones.", status: "Planned", configurable: true },
     ],
   }),
   protectionArea({

@@ -4,6 +4,8 @@ import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from 
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { runStatefulSimulation } from "../lib/statefulSimulation.mjs";
+import { inspectAssetContractRisk } from "../lib/assetContractRisk.mjs";
+import { evaluateAssetIdentity } from "../lib/assetIdentity.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
@@ -826,6 +828,10 @@ export function createMemoryStore() {
         simulation: rawAction.simulation || rawAction.statefulSimulation || {},
         chainName: request.chainName,
       });
+      // Resolve the canonical identity before provider-backed structural inspection.
+      const identityPreview = evaluateAssetIdentity({ request, policy });
+      request.assetIdentity = identityPreview.context;
+      request.assetContractRiskEvidence = await inspectAssetContractRisk({ request });
       let result = evaluatePolicy({ request, agents: walletAgents, policies: walletPolicies, auditLogs: walletAuditLogs, emergencyPauses: scopedEmergencyPauses(walletAddress, { activeOnly: true }), threatIntelligence, oracleValidation, complianceControls });
       let activatedEmergencyPause = null;
       if (!result.emergencyControlsContext?.active) {
@@ -1007,6 +1013,7 @@ export function createMemoryStore() {
             violations: result.gasSponsorshipFeeSafetyContext?.violations || [],
           } : undefined,
           assetIdentity: result.assetIdentityContext || undefined,
+          assetContractRisk: result.assetContractRiskContext && result.assetContractRiskContext.status !== "not_applicable" ? result.assetContractRiskContext : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,

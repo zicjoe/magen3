@@ -580,6 +580,31 @@ export interface Magen3AssetIdentityContext extends Magen3AssetIdentityReference
   metadataConflicts?: Array<{ field: string; expected?: unknown; observed?: unknown }>;
 }
 
+
+export interface Magen3AssetContractRiskEvidence {
+  schemaVersion?: string;
+  status?: "not_applicable" | "succeeded" | "unsupported" | "unavailable" | "failed" | "timed_out" | string;
+  requested?: boolean;
+  chainFamily?: string;
+  chainId?: string;
+  network?: string;
+  canonicalAssetId?: string;
+  contractAddress?: string;
+  providerId?: string;
+  blockNumber?: string;
+  present?: boolean;
+  byteLength?: number;
+  codeHash?: string;
+  minimalProxy?: boolean;
+  containsDelegateCallOpcode?: boolean;
+  containsSelfDestructOpcode?: boolean;
+  proxy?: { detected?: boolean; minimalProxy?: boolean; implementationAddress?: string; implementationSlotObserved?: boolean };
+  evidenceCompleteness?: Record<string, "observed" | "derived" | "inferred" | "unsupported" | "unavailable" | "not_applicable" | string>;
+  evidenceHash?: string;
+  errorClassification?: string;
+  message?: string;
+}
+
 export interface Magen3Intent {
   source?: string;
   targetChain?: string;
@@ -1325,6 +1350,8 @@ export interface Magen3DecisionResult {
   x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
   /** Canonical chain-aware asset identity, metadata provenance, and conflict evidence. */
   assetIdentityContext?: Magen3AssetIdentityContext;
+  /** Provider-backed structural evidence for the resolved asset contract. */
+  assetContractRiskContext?: Magen3AssetContractRiskEvidence;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1355,6 +1382,8 @@ export interface Magen3IntentResponse {
   agentMessage?: string;
   /** Canonical asset identity retained in the decision and audit. */
   assetIdentity?: Magen3AssetIdentityContext;
+  /** Structural asset-contract evidence retained in the decision and audit. */
+  assetContractRisk?: Magen3AssetContractRiskEvidence;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }

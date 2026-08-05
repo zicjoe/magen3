@@ -10,6 +10,7 @@ const sdkPackage = JSON.parse(read("packages/sdk-js/package.json"));
 const sdkSource = read("packages/sdk-js/src/index.ts");
 const statefulSimulationSource = read("backend/lib/statefulSimulation.mjs");
 const assetIdentitySource = read("backend/lib/assetIdentity.mjs");
+const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs");
 const policySource = read("backend/lib/policyEngine.mjs");
 const mcpSource = read("packages/mcp-server/src/core.ts");
 const pythonSource = read("packages/sdk-python/src/magen3/client.py");
@@ -50,6 +51,10 @@ if (!policySource.includes("evaluateStatefulSimulationEvidence")) fail("Stateful
 if (!assetIdentitySource.includes("canonicalAssetReference") || !assetIdentitySource.includes("evaluateAssetIdentity")) fail("Canonical asset identity implementation is missing");
 if (!policySource.includes("evaluateAssetIdentity")) fail("Asset identity findings are not wired into Risk Assessment");
 if (!sdkSource.includes("Magen3AssetIdentityReference") || !sdkSource.includes("assetIdentityContext")) fail("SDK asset identity schemas are missing");
+if (!assetContractRiskSource.includes("eth_getCode") || !assetContractRiskSource.includes("EIP1967_IMPLEMENTATION_SLOT")) fail("Provider-backed asset contract structural inspection is missing");
+if (!policySource.includes("evaluateAssetContractRisk")) fail("Asset contract risk findings are not wired into Risk Assessment");
+if (!sdkSource.includes("Magen3AssetContractRiskEvidence") || !sdkSource.includes("assetContractRiskContext")) fail("SDK asset contract risk schemas are missing");
+if (!read("docs/ASSET_CONTRACT_RISK.md").includes("Roadmap boundary")) fail("Asset contract risk documentation is missing its milestone boundary");
 if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
 if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
 if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");
