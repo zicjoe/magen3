@@ -443,12 +443,44 @@ export interface Magen3ContractUpgrade {
   network?: string;
 }
 
+
+export interface Magen3ValueEvidence {
+  provider: string;
+  assetIdentity: string;
+  network: string;
+  price: number;
+  referenceCurrency: string;
+  timestamp: string;
+  confidence?: number;
+  agreeingSources?: number;
+  sourceDisagreement?: boolean;
+  evidenceHash?: string;
+}
+
+export interface Magen3WalletBalanceEvidence {
+  balance: number;
+  asset?: string;
+  network?: string;
+  observedAt?: string;
+  provider?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
   asset?: string;
   /** Optional output or quote asset for price-sensitive actions. */
   outputAsset?: string;
+  /** Exact execution network used for chain-agnostic asset identity. */
+  executionNetwork?: string;
+  /** Token contract address where relevant; omit for native assets. */
+  assetContractAddress?: string;
+  /** Token decimals used by the execution adapter. */
+  assetDecimals?: number;
+  /** Fresh provider-backed value evidence; Magen3 performs the policy comparison. */
+  valueEvidence?: Magen3ValueEvidence;
+  /** Required only when a policy enables wallet-percentage exposure. */
+  walletBalanceEvidence?: Magen3WalletBalanceEvidence;
   target: string;
   targetType?: string;
   /** Explicit Casper identifier semantics for ambiguous raw/hash-prefixed values. */
@@ -489,25 +521,7 @@ export interface Magen3Action {
   preflight?: Magen3ExecutionPreflight;
 }
 
-
-export interface Magen3ValueExposureInput {
-  /** Exact execution network used to resolve the canonical native asset. */
-  executionNetwork?: string;
-  /** Token contract identity for non-native assets. */
-  assetContractAddress?: string;
-  /** Token decimals supplied by the execution adapter. */
-  assetDecimals?: number;
-  /** Current execution-wallet balance evidence when percentage limits are enabled. */
-  executionWalletBalance?: number;
-}
-
-export interface Magen3ValueExposureContext {
-  configured?: boolean; basis?: "fiat" | "native" | "legacy-native" | string; referenceCurrency?: string;
-  amount?: number | null; asset?: string; network?: string; canonicalAssetIdentity?: string; evaluatedValue?: number | null;
-  priceEvidence?: Record<string, unknown> | null; cumulativeExposure?: { hourly?: number; daily?: number; perDestination?: number; unit?: string };
-}
-
-export interface Magen3Intent extends Magen3ValueExposureInput {
+export interface Magen3Intent {
   source?: string;
   targetChain?: string;
   walletAddress?: string;
@@ -1242,7 +1256,6 @@ export interface Magen3DecisionResult {
   threatIntelligenceContext?: Magen3ThreatIntelligenceContext;
   /** Sanitized oracle-feed state and deterministic price-integrity evidence. */
   oracleValidationContext?: Magen3OracleValidationContext;
-  valueExposureContext?: Magen3ValueExposureContext;
   /** Deterministic route, chain, address, fee, freshness, and confirmation evidence. */
   bridgeControlsContext?: Magen3BridgeControlsContext;
   /** Sanitized compliance policy, evidence status, and configured exact-match context. */
