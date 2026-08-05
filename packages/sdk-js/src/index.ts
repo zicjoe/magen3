@@ -546,8 +546,38 @@ export interface Magen3Action {
   lifecycle?: Magen3Lifecycle;
   /** Optional deterministic transaction-construction metadata evaluated before wallet signing. */
   preflight?: Magen3ExecutionPreflight;
+  /** Chain-aware asset identity. Contract/mint identity is authoritative; display metadata is not globally unique. */
+  assetIdentity?: Magen3AssetIdentityReference;
   /** Provider-backed pre-signing simulation request. Provider URLs are server-controlled. */
   simulation?: Magen3StatefulSimulationRequest;
+}
+
+
+export interface Magen3AssetIdentityReference {
+  schemaVersion?: string;
+  canonicalId?: string;
+  chainFamily?: string;
+  network?: string;
+  chainId?: string;
+  assetType?: "native" | "fungible_token" | "non_fungible" | "unknown" | string;
+  identifier?: string;
+  contractAddress?: string;
+  standard?: string;
+  symbol?: string;
+  name?: string;
+  decimals?: number | null;
+  metadataSource?: string;
+  metadataProvenance?: string;
+  metadataVerified?: boolean;
+  metadataConfidence?: string;
+}
+
+export interface Magen3AssetIdentityContext extends Magen3AssetIdentityReference {
+  resolved?: boolean;
+  native?: boolean;
+  identityHash?: string;
+  registryMatched?: boolean;
+  metadataConflicts?: Array<{ field: string; expected?: unknown; observed?: unknown }>;
 }
 
 export interface Magen3Intent {
@@ -1293,6 +1323,8 @@ export interface Magen3DecisionResult {
   executionIntegrityContext?: Magen3ExecutionIntegrityContext;
   /** Canonical x402 request binding, policy limits, replay state, and settlement context. */
   x402PaymentControlsContext?: Magen3X402PaymentControlsContext;
+  /** Canonical chain-aware asset identity, metadata provenance, and conflict evidence. */
+  assetIdentityContext?: Magen3AssetIdentityContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1321,6 +1353,8 @@ export interface Magen3IntentResponse {
   decisionExplanation?: Magen3DecisionExplanation;
   /** Safe concise message intended for the external agent's user-facing response. */
   agentMessage?: string;
+  /** Canonical asset identity retained in the decision and audit. */
+  assetIdentity?: Magen3AssetIdentityContext;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }
