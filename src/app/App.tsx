@@ -37,6 +37,7 @@ import {
   Menu,
   Layers,
   Trash2,
+  Scale,
 } from "lucide-react";
 import { api } from "./lib/api";
 import { buildMagen3EnvironmentFile, getMagen3IntegrationEndpoints } from "./lib/integrationConfig";
@@ -7146,6 +7147,11 @@ function PoliciesPage({
       maxTransaction: "",
       dailyLimit: "",
       approvalThreshold: "",
+      limitBasis: typeof window !== "undefined" ? (localStorage.getItem("magen3.defaultLimitUnit") || "Fiat Value") : "Fiat Value",
+      referenceCurrency: typeof window !== "undefined" ? (localStorage.getItem("magen3.referenceCurrency") || "USD") : "USD",
+      hourlyLimit: "",
+      perDestinationLimit: "",
+      walletPercentageLimit: "",
       reviewResolutionMode: "Autonomous",
       emergencyControlsEnabled: "Yes",
     automaticPauseEnabled: "No",
