@@ -98,3 +98,9 @@ Contract Validation still evaluates the exact Casper bridge contract or package 
 Bridge findings are stored in the audit record and returned as structured `moduleFindings`. `bridgeControlsContext` contains sanitized route details such as provider, chains, route ID, asset, amount, fee, destination address family, quote expiry, and confirmation requirements.
 
 No bridge API credential or private key belongs in an intent.
+
+## Milestone 22 provider-backed execution
+
+Bridge Controls remains the deterministic metadata-policy layer. Milestone 22 adds a separate Real Bridge Provider Integration module that fetches an Across testnet quote, normalizes approval transactions and the exact unsigned source transaction, binds that evidence to the protected Bridge intent, and later tracks provider-reported destination delivery through Execution & Settlement Reconciliation.
+
+See [`REAL_BRIDGE_PROVIDER_INTEGRATION.md`](REAL_BRIDGE_PROVIDER_INTEGRATION.md). A successful provider quote does not prove submission, finality, settlement, solvency, or delivery.

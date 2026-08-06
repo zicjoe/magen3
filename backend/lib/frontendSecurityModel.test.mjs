@@ -664,3 +664,14 @@ test("Market Risk Signals is presented honestly as Foundation Available", () => 
     .find((item) => item.id === "asset-market-risk");
   assert.equal(control?.status, "Foundation Available");
 });
+
+
+test("Real Bridge Provider Integration is presented honestly as Foundation Available", () => {
+  assert.equal(securityModel.realBridgeProviderIntegrationMilestone.status, "Foundation Available");
+  assert.match(securityModel.realBridgeProviderIntegrationMilestone.description, /no mainnet, signing, or submission/i);
+  const control = securityModel.PROTECTION_MODULE_CATALOG
+    .flatMap((area) => area.controls || [])
+    .find((item) => item.id === "bridge-provider-integration");
+  assert.equal(control?.status, "Foundation Available");
+  assert.match(control?.description || "", /Across testnet/i);
+});

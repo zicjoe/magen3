@@ -484,3 +484,66 @@ test("intent schema exposes Market Risk Signals without accepting caller-supplie
   assert.match(result.content[0].text, /Market Risk Signals evaluates only freshness-checked operator-configured provider evidence/i);
   assert.match(result.content[0].text, /never fabricates metrics/i);
 });
+
+
+test("intent schema exposes real testnet bridge-provider integration without accepting provider credentials", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.bridgeProviderIntegration, /Across testnet/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.bridgeProviderIntegration, /never accepts provider URLs, API keys/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.amountAtomic, /base units/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.bridge.tradeType, /exactInput only/i);
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+    pollBridgeProvider: async () => ({ ok: true }),
+  });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /fetches Across testnet quotes and exact unsigned source transactions/i);
+  assert.match(result.content[0].text, /a quote is not settlement/i);
+});
+
+test("pollBridgeProvider delegates server-controlled delivery tracking and returns safe guidance", async () => {
+  let captured;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => { throw new Error("unused"); },
+    requireAllowed: async () => { throw new Error("unused"); },
+    getApproval: async () => { throw new Error("unused"); },
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+    pollBridgeProvider: async (options) => {
+      captured = options;
+      return { ok: true, reconciliation: { status: "delivered", provider: "Across Testnet" } };
+    },
+  });
+  const result = await handlers.pollBridgeProvider({ auditLogId: "AUD-BRIDGE-1", transactionHash: `0x${"a".repeat(64)}` });
+  assert.equal(captured.auditLogId, "AUD-BRIDGE-1");
+  assert.match(result.content[0].text, /destination delivery/i);
+  assert.match(result.content[0].text, /authoritative protected lifecycle state/i);
+});
+
+test("MCP requests protected bridge provider quotes without signing or provider credentials", async () => {
+  let captured;
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => ({ ok: true }),
+    requireAllowed: async () => ({ ok: true }),
+    getApproval: async () => ({ ok: true }),
+    reportX402Settlement: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+    getBridgeProviderStatus: async () => ({ ok: true, bridgeProviderIntegration: { status: "foundation_available", providerId: "across-testnet" } }),
+    requestBridgeProviderQuote: async (quote) => { captured = quote; return { ok: true, provider: { id: "across-testnet" }, unsignedTransactions: { approvals: [], bridge: { to: "0x5555555555555555555555555555555555555555", data: "0x1234", value: "0" } } }; },
+    pollBridgeProvider: async () => ({ ok: true, reconciliation: { status: "pending" } }),
+  });
+  const status = await handlers.getBridgeProviderStatus();
+  assert.match(status.content[0].text, /Across testnet quote construction/i);
+  const result = await handlers.requestBridgeProviderQuote({ sourceChainId: 11155420, destinationChainId: 84532, inputToken: "0x3333333333333333333333333333333333333333", outputToken: "0x4444444444444444444444444444444444444444", amountAtomic: "1000000", depositor: "0x1111111111111111111111111111111111111111", recipient: "0x2222222222222222222222222222222222222222" });
+  assert.equal(captured.amountAtomic, "1000000");
+  assert.match(result.content[0].text, /does not sign or submit/i);
+});

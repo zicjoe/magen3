@@ -45,12 +45,27 @@ export interface Magen3ExecutionPreflight {
 }
 
 
+export interface Magen3BridgeTransaction {
+  chainId: string | number;
+  from?: string;
+  to: string;
+  data: string;
+  value: string;
+  gas?: string;
+  gasLimit?: string;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  nonce?: string;
+}
+
 export interface Magen3BridgeRoute {
-  sourceChain: string;
-  destinationChain: string;
-  provider: string;
+  /** Legacy provider label consumed by Bridge Controls. */
+  provider?: string;
+  sourceChain?: string;
+  destinationChain?: string;
   routeId?: string;
-  destinationAddress: string;
+  destinationAddress?: string;
   asset?: string;
   feeAmount?: number;
   feeBps?: number;
@@ -60,6 +75,167 @@ export interface Magen3BridgeRoute {
   quoteExpiresAt?: string;
   sourceConfirmations?: number;
   destinationConfirmations?: number;
+  /** Registered server-side bridge adapter. Across testnet is the initial live adapter. */
+  providerId?: "across-testnet" | string;
+  sourceChainId?: number | string;
+  destinationChainId?: number | string;
+  sourceToken?: string;
+  destinationToken?: string;
+  /** Alias accepted by the Gateway and MCP schema. */
+  inputToken?: string;
+  /** Alias accepted by the Gateway and MCP schema. */
+  outputToken?: string;
+  /** Protected source amount in atomic/base units. */
+  amountAtomic?: string;
+  depositor?: string;
+  recipient?: string;
+  /** Milestone 22 supports exactInput only. */
+  tradeType?: "exactInput" | string;
+  /** Across-compatible slippage fraction from 0 to 1. */
+  slippage?: number;
+  /** Provider quote identifier and cryptographic bindings returned by Magen3. */
+  providerQuoteId?: string;
+  providerQuoteHash?: string;
+  providerRouteHash?: string;
+  providerPayloadHash?: string;
+  /** Signed, bounded evidence returned by Magen3's server-controlled provider adapter. */
+  providerEvidence?: Magen3BridgeProviderEvidence;
+  /** HMAC signature copied from providerEvidence.attestation.signature for transport convenience. */
+  providerAttestation?: string;
+  sourceTransaction?: Magen3BridgeTransaction;
+  approvalTransactions?: Magen3BridgeTransaction[];
+}
+
+export interface Magen3BridgeProviderAttestation {
+  schema: string;
+  algorithm: "hmac-sha256" | string;
+  keyId: string;
+  issuedAt: string;
+  signature?: string;
+  signatureHash?: string;
+}
+
+export interface Magen3BridgeProviderEvidence {
+  schemaVersion: string;
+  status: "succeeded" | "unsupported" | "unavailable" | "timed_out" | "failed" | "invalidated" | string;
+  providerId?: string;
+  providerName?: string;
+  adapterId?: string;
+  adapterVersion?: string;
+  environment?: "testnet" | string;
+  requestedAt?: string;
+  completedAt?: string;
+  sourceChainId?: string;
+  destinationChainId?: string;
+  sourceNetwork?: string;
+  destinationNetwork?: string;
+  depositor?: string;
+  recipient?: string;
+  inputToken?: string;
+  outputToken?: string;
+  inputAmountAtomic?: string;
+  outputAmountAtomic?: string;
+  tradeType?: string;
+  providerQuoteId?: string;
+  providerQuoteHash?: string;
+  providerResponseHash?: string;
+  requestBindingHash?: string;
+  routeFingerprint?: string;
+  payloadHash?: string;
+  evidenceHash?: string;
+  quoteExpiresAt?: string;
+  expectedFillTimeSeconds?: number | null;
+  simulationSuccess?: boolean;
+  fees?: { totalFeeAtomic?: string };
+  sourceTransaction?: Magen3BridgeTransaction;
+  approvalTransactions?: Magen3BridgeTransaction[];
+  evidenceCompleteness?: Record<string, string>;
+  attestation?: Magen3BridgeProviderAttestation;
+  error?: { code?: string; field?: string; message?: string } | null;
+}
+
+export interface Magen3BridgeProviderQuoteRequest {
+  providerId?: "across-testnet" | string;
+  sourceChainId: number | string;
+  destinationChainId: number | string;
+  inputToken: string;
+  outputToken: string;
+  amountAtomic: string;
+  depositor: string;
+  recipient: string;
+  target?: string;
+  tradeType?: "exactInput" | string;
+  slippage?: number;
+}
+
+export interface Magen3BridgeProviderQuoteResponse {
+  ok: boolean;
+  provider: { id: string; name: string; environment: string };
+  evidence: Magen3BridgeProviderEvidence;
+  protectedIntent: { actionType: "Bridge"; bridge: Magen3BridgeRoute };
+  unsignedTransactions: { approvals: Magen3BridgeTransaction[]; bridge: Magen3BridgeTransaction };
+}
+
+export interface Magen3BridgeProviderStatus {
+  status: string;
+  providerId: string;
+  providerName: string;
+  environment: "testnet" | string;
+  configuredBaseHost?: string;
+  allowedTestnetChainIds?: number[];
+  tradeTypes?: string[];
+  quoteAttestation?: boolean;
+  sourceTransactionConstruction?: boolean;
+  destinationStatusTracking?: boolean;
+  signing?: boolean;
+  submission?: boolean;
+  mainnetEnabled?: boolean;
+  error?: string;
+}
+
+export interface Magen3BridgeProviderIntegrationContext {
+  status: "not_required" | "not_requested" | "passed" | "review_required" | "blocked" | "unsupported" | "unavailable" | "timed_out" | "failed" | string;
+  providerId?: string;
+  adapterId?: string;
+  adapterVersion?: string;
+  providerName?: string;
+  environment?: "testnet" | string;
+  sourceNetwork?: string;
+  destinationNetwork?: string;
+  sourceChainId?: string;
+  destinationChainId?: string;
+  depositor?: string;
+  recipient?: string;
+  inputToken?: string;
+  outputToken?: string;
+  inputAmountAtomic?: string;
+  outputAmountAtomic?: string;
+  providerQuoteId?: string;
+  providerQuoteHash?: string;
+  providerResponseHash?: string;
+  requestBindingHash?: string;
+  routeFingerprint?: string;
+  payloadHash?: string;
+  evidenceHash?: string;
+  attestation?: Magen3BridgeProviderAttestation;
+  quoteExpiresAt?: string;
+  simulationSuccess?: boolean;
+  sourceTransaction?: Magen3BridgeTransaction;
+  approvalTransactions?: Magen3BridgeTransaction[];
+  expectedFillTimeSeconds?: number | null;
+  evidenceCompleteness?: Record<string, string>;
+  error?: { code?: string; field?: string; message?: string } | null;
+}
+
+export interface Magen3BridgeProviderExecution {
+  providerId: string;
+  quoteId?: string;
+  quoteHash?: string;
+  evidenceHash?: string;
+  routeFingerprint: string;
+  payloadHash: string;
+  approvals: Magen3BridgeTransaction[];
+  transaction: Magen3BridgeTransaction;
 }
 
 export interface Magen3OracleQuote {
@@ -1392,6 +1568,8 @@ export interface Magen3DecisionResult {
   oracleValidationContext?: Magen3OracleValidationContext;
   /** Deterministic route, chain, address, fee, freshness, and confirmation evidence. */
   bridgeControlsContext?: Magen3BridgeControlsContext;
+  /** Server-fetched testnet bridge quote, exact unsigned source transaction, and payload-binding evidence. */
+  bridgeProviderIntegrationContext?: Magen3BridgeProviderIntegrationContext;
   /** Sanitized compliance policy, evidence status, and configured exact-match context. */
   complianceControlsContext?: Magen3ComplianceControlsContext;
   /** Exact-once intent lifecycle, canonical fingerprint, replay, idempotency, expiry, sequence, and retry evidence. */
@@ -1578,6 +1756,10 @@ export interface Magen3IntentResponse {
   tradingRouteIntegrity?: Magen3TradingRouteIntegrityContext;
   /** Deterministic market-risk evidence retained in the decision and audit. */
   marketRiskSignals?: Magen3MarketRiskSignalsContext;
+  /** Safe bridge-provider evidence retained in the decision and audit. */
+  bridgeProviderIntegration?: Magen3BridgeProviderIntegrationContext;
+  /** Exact provider-produced unsigned transactions returned only when the protected bridge is Allowed. */
+  bridgeProviderExecution?: Magen3BridgeProviderExecution;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }
@@ -1849,6 +2031,34 @@ export class Magen3Client {
   }
 
 
+  async getBridgeProviderStatus(): Promise<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }> {
+    return this.request<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }>("/api/bridge-provider-integration/status", { method: "GET" });
+  }
+
+  async listBridgeProviderChains(providerId = "across-testnet"): Promise<{ ok: boolean; bridgeProviderIntegration: { status: string; providerId: string; environment?: string; chains: unknown[] } }> {
+    return this.request(`/api/bridge-providers/chains?providerId=${encodeURIComponent(providerId)}`, { method: "GET" });
+  }
+
+  async listBridgeProviderTokens(chainId: string | number, providerId = "across-testnet"): Promise<{ ok: boolean; bridgeProviderIntegration: { status: string; providerId: string; environment?: string; chainId: string; tokens: unknown[] } }> {
+    const normalizedChainId = String(chainId ?? "").trim();
+    if (!/^[1-9][0-9]*$/.test(normalizedChainId)) throw new TypeError("chainId must be a positive integer");
+    return this.request(`/api/bridge-providers/tokens?providerId=${encodeURIComponent(providerId)}&chainId=${encodeURIComponent(normalizedChainId)}`, { method: "GET" });
+  }
+
+  async requestBridgeProviderQuote(quote: Magen3BridgeProviderQuoteRequest): Promise<Magen3BridgeProviderQuoteResponse> {
+    if (!quote || typeof quote !== "object") throw new TypeError("quote is required");
+    for (const field of ["sourceChainId", "destinationChainId", "inputToken", "outputToken", "amountAtomic", "depositor", "recipient"] as const) {
+      if (String(quote[field] ?? "").trim() === "") throw new TypeError(`${field} is required`);
+    }
+    const prohibitedProviderField = Object.keys(quote).find((key) => /^(?:rpcUrl|rpcEndpoint|providerUrl|endpoint|apiKey|authorization)$/i.test(key));
+    if (prohibitedProviderField) throw new TypeError(`${prohibitedProviderField} is not accepted; bridge providers are configured on the Magen3 backend`);
+    return this.request<Magen3BridgeProviderQuoteResponse>("/api/bridge-provider-integration/quotes", {
+      method: "POST",
+      body: JSON.stringify({ agentId: this.agentId, quote }),
+    });
+  }
+
+
   async getApproval(approvalOrAuditId: string): Promise<{ ok: boolean; approval: Magen3ApprovalRequest }> {
     const id = approvalOrAuditId?.trim();
     if (!id) throw new TypeError("approvalOrAuditId is required");
@@ -1877,6 +2087,16 @@ export class Magen3Client {
     const prohibitedProviderField = Object.keys(options).find((key) => /^(?:rpcUrl|rpcEndpoint|providerUrl|endpoint)$/i.test(key));
     if (prohibitedProviderField) throw new TypeError(`${prohibitedProviderField} is not accepted; RPC endpoints are configured on the Magen3 backend`);
     return this.request<{ ok: boolean; reconciliation: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown> }>("/api/agent-gateway/executions/poll", {
+      method: "POST",
+      body: JSON.stringify({ ...options, agentId: this.agentId }),
+    });
+  }
+
+  async pollBridgeProvider(options: Magen3ExecutionReconciliationPollOptions): Promise<{ ok: boolean; reconciliation?: Magen3ExecutionReconciliationRecord; auditLog?: Record<string, unknown>; bridgeProviderObservation?: Record<string, unknown> }> {
+    if (!options?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    const prohibitedProviderField = Object.keys(options).find((key) => /^(?:rpcUrl|rpcEndpoint|providerUrl|endpoint|apiKey)$/i.test(key));
+    if (prohibitedProviderField) throw new TypeError(`${prohibitedProviderField} is not accepted; bridge providers are configured on the Magen3 backend`);
+    return this.request("/api/agent-gateway/bridge/poll", {
       method: "POST",
       body: JSON.stringify({ ...options, agentId: this.agentId }),
     });

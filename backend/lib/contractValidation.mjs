@@ -244,6 +244,62 @@ export function evaluateContractValidation({ request = {}, policy = {} } = {}) {
     };
   }
 
+  const realEvmBridge = request.actionType === "Bridge" && Boolean(request.bridgeProviderId) && Boolean(request.bridgeSourceChainId || request.bridgeOriginChainId);
+  if (realEvmBridge) {
+    const target = clean(request.target).toLowerCase();
+    const expectedChainId = String(request.bridgeSourceChainId || request.bridgeOriginChainId || "").trim();
+    const chainName = clean(request.chainName).toLowerCase();
+    const evmAddress = /^0x[0-9a-f]{40}$/.test(target);
+    const expectedTargetTypes = expectedTargetTypesForAction(request.actionType);
+    const trusted = normalizeContractList(policy.trustedContracts).includes(target);
+    const { blockedContracts } = structuredContractRules(policy);
+    const blocked = blockedContracts.includes(target);
+    const identifier = { value: target, normalized: target, valid: evmAddress, kind: evmAddress ? "evm-address" : "invalid-evm-address", label: "EVM Contract Address", canonical: evmAddress ? `eip155:${expectedChainId}:${target}` : "" };
+
+    if (!expectedTargetTypes.includes(request.targetType)) {
+      const message = `Bridge must use ${expectedTargetTypes.join(" or ")}, not ${request.targetType || "an unspecified target type"}.`;
+      checksFailed.push(message); scoreDelta += 40; hardBlock = true;
+      findings.push(finding({ status: "fail", severity: "critical", rule: "Contract target classification", message, evidence: { receivedTargetType: request.targetType || "", expectedTargetTypes }, remediation: "Classify the Across router as a Bridge Contract or approved contract target." }));
+    } else {
+      checksPassed.push("The bridge intent uses a contract-compatible target classification.");
+      findings.push(finding({ status: "pass", rule: "Contract target classification", message: "The bridge intent uses a contract-compatible target classification.", evidence: { targetType: request.targetType } }));
+    }
+
+    if (!evmAddress) {
+      const message = "Bridge contract target is not a valid EVM address.";
+      checksFailed.push(message); scoreDelta += 45; hardBlock = true;
+      findings.push(finding({ status: "fail", severity: "critical", rule: "Valid bridge contract address", message, evidence: { target }, remediation: "Use the exact 20-byte router address returned by the trusted bridge provider." }));
+    } else {
+      checksPassed.push("Bridge contract target uses a valid EVM address format.");
+      findings.push(finding({ status: "pass", rule: "Valid bridge contract address", message: "Bridge contract target uses a valid EVM address format.", evidence: { target, chainId: expectedChainId } }));
+    }
+
+    if (expectedChainId && chainName && chainName !== `eip155:${expectedChainId}` && chainName !== expectedChainId) {
+      const message = "Bridge contract network differs from the protected provider source chain.";
+      checksFailed.push(message); scoreDelta += 45; hardBlock = true;
+      findings.push(finding({ status: "fail", severity: "critical", rule: "Bridge contract network", message, evidence: { chainName, expected: `eip155:${expectedChainId}` }, remediation: "Rebuild the quote for the unchanged protected source chain." }));
+    } else {
+      checksPassed.push("Bridge contract network matches the protected source chain.");
+      findings.push(finding({ status: "pass", rule: "Bridge contract network", message: "Bridge contract network matches the protected source chain.", evidence: { chainName: chainName || `eip155:${expectedChainId}` } }));
+    }
+
+    if (blocked) {
+      const message = "Bridge contract is blocked by the active policy.";
+      checksFailed.push(message); scoreDelta += 50; hardBlock = true;
+      findings.push(finding({ status: "fail", severity: "critical", rule: "Blocked contract", message, evidence: { target }, remediation: "Do not use this bridge contract unless an authorized administrator changes policy after independent review." }));
+    } else if (trusted) {
+      checksPassed.push("Bridge contract is present in the trusted-contract policy list.");
+      findings.push(finding({ status: "pass", rule: "Trusted bridge contract", message: "Bridge contract is present in the trusted-contract policy list.", evidence: { target } }));
+    } else {
+      const message = "Bridge contract is not present in the trusted-contract policy list.";
+      checksFailed.push(message); scoreDelta += policy.riskMode === "Conservative" ? 35 : 18;
+      if (policy.riskMode === "Conservative") hardBlock = true; else needsReview = true;
+      findings.push(finding({ status: policy.riskMode === "Conservative" ? "fail" : "warning", severity: policy.riskMode === "Conservative" ? "high" : "medium", rule: "Trusted bridge contract", message, evidence: { target }, remediation: "Add only the verified provider router to trustedContracts, or require human review." }));
+    }
+
+    return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, contractIntent: true, identifier, approved: trusted, blocked };
+  }
+
   const target = clean(request.target || request.contractHash || request.contractPackageHash);
   const identifierType = normalizeIdentifierType(request.contractIdentifierType);
   const entryPoint = clean(request.entryPoint);

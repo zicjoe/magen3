@@ -542,6 +542,35 @@ interface DecisionResult {
     confidence?: number | null;
     quoteTimestamp?: string;
   };
+  bridgeProviderIntegrationContext?: {
+    status?: string;
+    providerId?: string;
+    adapterId?: string;
+    adapterVersion?: string;
+    providerName?: string;
+    environment?: string;
+    sourceNetwork?: string;
+    destinationNetwork?: string;
+    sourceChainId?: string;
+    destinationChainId?: string;
+    depositor?: string;
+    recipient?: string;
+    inputToken?: string;
+    outputToken?: string;
+    inputAmountAtomic?: string;
+    outputAmountAtomic?: string;
+    providerQuoteId?: string;
+    routeFingerprint?: string;
+    payloadHash?: string;
+    evidenceHash?: string;
+    quoteExpiresAt?: string;
+    simulationSuccess?: boolean;
+    expectedFillTimeSeconds?: number | null;
+    evidenceCompleteness?: Record<string, string>;
+    sourceTransaction?: Record<string, unknown>;
+    approvalTransactions?: Array<Record<string, unknown>>;
+    error?: Record<string, unknown> | null;
+  };
   complianceControlsContext?: {
     status?: string;
     sourceType?: string;
@@ -4223,7 +4252,7 @@ function AgentRegistrationWizard({
           complianceMaxAttestationAgeSeconds: typeof sourceRules.complianceMaxAttestationAgeSeconds === "number" ? sourceRules.complianceMaxAttestationAgeSeconds : 86400,
           complianceMaxScreeningAgeSeconds: typeof sourceRules.complianceMaxScreeningAgeSeconds === "number" ? sourceRules.complianceMaxScreeningAgeSeconds : 3600,
           complianceMaximumRiskRating: typeof sourceRules.complianceMaximumRiskRating === "string" ? sourceRules.complianceMaximumRiskRating : "Medium",
-          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "reviewResolutionMode", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
+          enforcedFields: ["emergencyControlsEnabled", "automaticPauseEnabled", "emergencyAutomaticPauseAction", "emergencyRepeatedBlockThreshold", "emergencyReplayAttemptThreshold", "emergencyRequestFrequencyThreshold", "emergencyLookbackSeconds", "emergencySpendingSpikeMultiplier", "emergencyProviderFailureThreshold", "emergencyUnresolvedExecutionThreshold", "emergencyUnresolvedX402Threshold", "emergencyBridgeFailureThreshold", "emergencyPauseDurationSeconds", "emergencyResumeRequiresApproval", "emergencyResumeQuorum", "emergencyPauseOnThreatMatch", "emergencyPauseOnOracleDisagreement", "emergencyPauseOnPrivilegedActionFailure", "maxTransaction", "dailyLimit", "approvalThreshold", "reviewResolutionMode", "approvalWorkflowEnabled", "approvalWorkflowMode", "approvalRequiredCount", "approvalExpiryMinutes", "approvalAllowOwnerFallback", "approvalSeparationOfDuties", "approvalRequireRejectComment", "approvalApproverWallets", "requireCryptographicReviewerSignature", "approvalSignatureLifetimeSeconds", "requireReviewerChainBinding", "requireApprovalDomainSeparation", "approvalSignatureChainName", "approvalOrganizationalQuorumEnabled", "approvalGroups", "approvalTiers", "approvalOrganizationDefaults", "approvalEscalationRules", "approvalEmergencyGroupIds", "approvalExecutionDelaySeconds", "approvalExecutionWindowSeconds", "instructionIntegrityEnabled", "instructionIntegrityMode", "requireGoalBindingForActions", "requireUserConfirmationForExternalContent", "allowedSourceDomains", "blockedSourceDomains", "externalContentHighRiskAction", "allowParameterChangesAfterGoal", "requireParameterChangeReason", "toolIntegrityEnabled", "toolIntegrityMode", "approvedMcpServers", "approvedTools", "requireManifestHash", "requireSchemaHash", "requireTls", "allowToolVersionChanges", "unknownToolAction", "permissionExpansionAction", "delegationControlsEnabled", "delegationMode", "requireExpiringDelegation", "maximumDelegationLifetime", "maximumDelegationDepth", "allowRedelegation", "approvedDelegates", "blockedDelegates", "revokedDelegationIds", "unknownDelegateAction", "requireScopeBinding", "requireCryptographicDelegationAttestation", "delegationUnavailableAction", "rpcIntegrityEnabled", "rpcIntegrityMode", "approvedRpcEndpoints", "rpcIntegrityRequireTls", "rpcIntegrityMaximumBlockAgeSeconds", "rpcIntegrityMinimumProviders", "rpcIntegrityMaximumHeightDifference", "rpcIntegrityDisagreementAction", "rpcIntegrityUnavailableAction", "rpcIntegrityRequireNetworkIdentity", "rpcIntegrityAllowAutomaticFailover", "feeSafetyEnabled", "feeSafetyMode", "feeSafetyMaximumNetworkFee", "feeSafetyMaximumGasPrice", "feeSafetyMaximumPriorityFee", "feeSafetyApprovedSponsors", "feeSafetyApprovedPaymasters", "feeSafetySponsorshipUnavailableAction", "feeSafetySponsoredBudget", "feeSafetyMaximumSponsoredOperations", "feeSafetyMaximumFailedSponsoredOperations", "feeSafetyLookbackSeconds", "feeSafetyRequireSponsorshipExpiry", "feeSafetyRequireSponsorEvidence", "trustedContracts", "blockedActions", "riskMode", "threatIntelligenceMode", "threatIntelligenceMinConfidence", "threatIntelligenceUnavailableAction", "oracleValidationMode", "oracleValidationMaxAgeSeconds", "oracleValidationMaxDeviationBps", "oracleValidationMaxSourceSpreadBps", "oracleValidationMinConfidence", "oracleValidationMinSources", "oracleValidationUnavailableAction", "bridgeControlMode", "bridgeControlUnavailableAction", "bridgeAllowedProviders", "bridgeAllowedSourceChains", "bridgeAllowedDestinationChains", "bridgeBlockedDestinationChains", "bridgeAllowedAssets", "bridgeMaxAmount", "bridgeMaxFeeBps", "bridgeMaxQuoteAgeSeconds", "bridgeRequireQuoteExpiry", "bridgeMinSourceConfirmations", "bridgeMinDestinationConfirmations", "bridgeProviderIntegrationEnabled", "bridgeRequireProviderQuote", "bridgeProviderUnavailableAction", "bridgeAllowedProviderAdapters", "bridgeMaxProviderEvidenceAgeSeconds", "bridgeRequireTestnet", "bridgeRequirePayloadBinding", "bridgeRequireProviderSimulationSuccess", "tokenPermissionControlsEnabled", "tokenPermissionMode", "tokenPermissionUnknownSpenderAction", "tokenPermissionUnlimitedApprovalAction", "tokenPermissionMaxApprovalAmount", "tokenPermissionMaxApprovalToTransactionRatio", "tokenPermissionMaxLifetimeSeconds", "tokenPermissionRequireExpiry", "tokenPermissionRequireAllowanceReset", "tokenPermissionApprovedSpenders", "tokenPermissionBlockedSpenders", "tokenPermissionAllowNftOperatorApproval", "tokenPermissionAllowBatchApproval", "tokenPermissionRequireChainBinding", "tokenPermissionRequireNonce", "tokenPermissionMaximumBatchSize", "privilegedActionControlsEnabled", "privilegedActionMode", "privilegedActionsRequiringReview", "privilegedActionsBlocked", "approvedAdministrators", "approvedImplementations", "privilegedActionQuorumRules", "unknownPrivilegedAction", "contractUpgradeControlsEnabled", "contractUpgradeMode", "contractUpgradeApprovedImplementations", "contractUpgradeBlockedImplementations", "contractUpgradeRequiresApproval", "contractUpgradeQuorum", "contractUpgradeDelaySeconds", "contractUpgradeRequireCodeHash", "contractUpgradeRequireAdministrator", "contractUpgradeApprovedAdministrators", "contractUpgradeUnknownImplementationAction", "contractArgumentControlsEnabled", "contractArgumentMode", "contractArgumentUnknownRuleAction", "contractArgumentUnknownArgumentAction", "contractArgumentRules", "x402ControlsEnabled", "x402ControlMode", "x402UnavailableAction", "x402AllowedVersions", "x402AllowedSchemes", "x402AllowedMethods", "x402AllowedNetworks", "x402AllowedAssets", "x402AssetDecimals", "x402AllowedFacilitators", "x402AllowedMerchants", "x402BlockedMerchants", "x402AllowedRecipients", "x402MaxPayment", "x402DailyLimit", "x402MonthlyLimit", "x402ReviewThreshold", "x402MaxPaymentsPerHour", "x402MaxAuthorizationLifetimeSeconds", "x402RequireHttps", "x402RequirePaymentRequiredHash", "x402RequireBodyHashForUnsafeMethods", "x402RequireRequestId", "x402RequireClientFingerprint", "x402PreventAmbiguousRetry", "x402MaxSettlementAttempts", "complianceControlsEnabled", "complianceControlMode", "complianceUnavailableAction", "complianceRequiredActions", "complianceRequireOriginatorAttestation", "complianceRequireBeneficiaryAttestation", "complianceRequireTravelRule", "complianceTravelRuleThreshold", "complianceRequireSanctionsScreening", "complianceAllowedJurisdictions", "complianceBlockedJurisdictions", "complianceReviewJurisdictions", "complianceAllowedCounterpartyTypes", "complianceAcceptedProviders", "complianceMaxAttestationAgeSeconds", "complianceMaxScreeningAgeSeconds", "complianceMaximumRiskRating"],
           configurationOnly: [],
         },
         });
@@ -6533,6 +6562,14 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    bridgeProviderIntegrationEnabled: "Yes",
+    bridgeRequireProviderQuote: "Yes",
+    bridgeProviderUnavailableAction: "Review",
+    bridgeAllowedProviderAdapters: "across-testnet",
+    bridgeMaxProviderEvidenceAgeSeconds: "300",
+    bridgeRequireTestnet: "Yes",
+    bridgeRequirePayloadBinding: "Yes",
+    bridgeRequireProviderSimulationSuccess: "No",
     tokenPermissionControlsEnabled: "Yes",
     tokenPermissionMode: "Review",
     tokenPermissionUnknownSpenderAction: "Review",
@@ -6783,6 +6820,14 @@ function PoliciesPage({
     bridgeRequireQuoteExpiry: "Yes",
     bridgeMinSourceConfirmations: "2",
     bridgeMinDestinationConfirmations: "12",
+    bridgeProviderIntegrationEnabled: "Yes",
+    bridgeRequireProviderQuote: "Yes",
+    bridgeProviderUnavailableAction: "Review",
+    bridgeAllowedProviderAdapters: "across-testnet",
+    bridgeMaxProviderEvidenceAgeSeconds: "300",
+    bridgeRequireTestnet: "Yes",
+    bridgeRequirePayloadBinding: "Yes",
+    bridgeRequireProviderSimulationSuccess: "No",
     tokenPermissionControlsEnabled: "Yes",
     tokenPermissionMode: "Review",
     tokenPermissionUnknownSpenderAction: "Review",
@@ -7056,6 +7101,16 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: form.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(form.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(form.bridgeMinDestinationConfirmations) || 0),
+        bridgeProviderIntegration: {
+          enabled: form.bridgeProviderIntegrationEnabled !== "No",
+          required: form.bridgeRequireProviderQuote !== "No",
+          unavailableAction: form.bridgeProviderUnavailableAction.toLowerCase(),
+          allowedAdapters: form.bridgeAllowedProviderAdapters.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+          maximumEvidenceAgeSeconds: Math.max(10, Math.min(3600, Number(form.bridgeMaxProviderEvidenceAgeSeconds) || 300)),
+          requireTestnet: form.bridgeRequireTestnet !== "No",
+          requirePayloadBinding: form.bridgeRequirePayloadBinding !== "No",
+          requireProviderSimulationSuccess: form.bridgeRequireProviderSimulationSuccess === "Yes",
+        },
         tokenPermissionControlsEnabled: form.tokenPermissionControlsEnabled !== "No",
         tokenPermissionMode: form.tokenPermissionMode,
         tokenPermissionUnknownSpenderAction: form.tokenPermissionUnknownSpenderAction,
@@ -7300,6 +7355,14 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: "Yes",
       bridgeMinSourceConfirmations: "2",
       bridgeMinDestinationConfirmations: "12",
+    bridgeProviderIntegrationEnabled: "Yes",
+    bridgeRequireProviderQuote: "Yes",
+    bridgeProviderUnavailableAction: "Review",
+    bridgeAllowedProviderAdapters: "across-testnet",
+    bridgeMaxProviderEvidenceAgeSeconds: "300",
+    bridgeRequireTestnet: "Yes",
+    bridgeRequirePayloadBinding: "Yes",
+    bridgeRequireProviderSimulationSuccess: "No",
       tokenPermissionControlsEnabled: "Yes",
     tokenPermissionMode: "Review",
     tokenPermissionUnknownSpenderAction: "Review",
@@ -7544,6 +7607,14 @@ function PoliciesPage({
       bridgeRequireQuoteExpiry: policy.structuredRules?.bridgeRequireQuoteExpiry === false ? "No" : "Yes",
       bridgeMinSourceConfirmations: String(typeof policy.structuredRules?.bridgeMinSourceConfirmations === "number" ? policy.structuredRules.bridgeMinSourceConfirmations : 2),
       bridgeMinDestinationConfirmations: String(typeof policy.structuredRules?.bridgeMinDestinationConfirmations === "number" ? policy.structuredRules.bridgeMinDestinationConfirmations : 12),
+      bridgeProviderIntegrationEnabled: (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.enabled === false ? "No" : "Yes",
+      bridgeRequireProviderQuote: (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.required === false ? "No" : "Yes",
+      bridgeProviderUnavailableAction: typeof (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.unavailableAction === "string" ? String((policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown>).unavailableAction).replace(/^./, (value) => value.toUpperCase()) : "Review",
+      bridgeAllowedProviderAdapters: Array.isArray((policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.allowedAdapters) ? ((policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown>).allowedAdapters as string[]).join("\n") : "across-testnet",
+      bridgeMaxProviderEvidenceAgeSeconds: String(typeof (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.maximumEvidenceAgeSeconds === "number" ? (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown>).maximumEvidenceAgeSeconds : 300),
+      bridgeRequireTestnet: (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.requireTestnet === false ? "No" : "Yes",
+      bridgeRequirePayloadBinding: (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.requirePayloadBinding === false ? "No" : "Yes",
+      bridgeRequireProviderSimulationSuccess: (policy.structuredRules?.bridgeProviderIntegration as Record<string, unknown> | undefined)?.requireProviderSimulationSuccess === true ? "Yes" : "No",
       tokenPermissionControlsEnabled: policy.structuredRules?.tokenPermissionControlsEnabled === false ? "No" : "Yes",
       tokenPermissionMode: typeof policy.structuredRules?.tokenPermissionMode === "string" ? policy.structuredRules.tokenPermissionMode : "Review",
       tokenPermissionUnknownSpenderAction: typeof policy.structuredRules?.tokenPermissionUnknownSpenderAction === "string" ? policy.structuredRules.tokenPermissionUnknownSpenderAction : "Review",
@@ -7805,6 +7876,16 @@ function PoliciesPage({
         bridgeRequireQuoteExpiry: editForm.bridgeRequireQuoteExpiry !== "No",
         bridgeMinSourceConfirmations: Math.max(0, Number(editForm.bridgeMinSourceConfirmations) || 0),
         bridgeMinDestinationConfirmations: Math.max(0, Number(editForm.bridgeMinDestinationConfirmations) || 0),
+        bridgeProviderIntegration: {
+          enabled: editForm.bridgeProviderIntegrationEnabled !== "No",
+          required: editForm.bridgeRequireProviderQuote !== "No",
+          unavailableAction: editForm.bridgeProviderUnavailableAction.toLowerCase(),
+          allowedAdapters: editForm.bridgeAllowedProviderAdapters.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+          maximumEvidenceAgeSeconds: Math.max(10, Math.min(3600, Number(editForm.bridgeMaxProviderEvidenceAgeSeconds) || 300)),
+          requireTestnet: editForm.bridgeRequireTestnet !== "No",
+          requirePayloadBinding: editForm.bridgeRequirePayloadBinding !== "No",
+          requireProviderSimulationSuccess: editForm.bridgeRequireProviderSimulationSuccess === "Yes",
+        },
         tokenPermissionControlsEnabled: editForm.tokenPermissionControlsEnabled !== "No",
         tokenPermissionMode: editForm.tokenPermissionMode,
         tokenPermissionUnknownSpenderAction: editForm.tokenPermissionUnknownSpenderAction,
@@ -8178,6 +8259,25 @@ function PoliciesPage({
         <InputField label="Maximum Quote Age (sec)" value={values.bridgeMaxQuoteAgeSeconds} onChange={(value) => onChange({ bridgeMaxQuoteAgeSeconds: value })} type="number" />
         <InputField label="Source Confirmations" value={values.bridgeMinSourceConfirmations} onChange={(value) => onChange({ bridgeMinSourceConfirmations: value })} type="number" />
         <InputField label="Destination Confirmations" value={values.bridgeMinDestinationConfirmations} onChange={(value) => onChange({ bridgeMinDestinationConfirmations: value })} type="number" />
+      </div>
+      <div className="mt-5 border-t border-[#38BDF8]/15 pt-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7DD3FC]">Real provider execution evidence</div>
+            <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Use the registered Across testnet adapter to obtain an attested quote, exact unsigned source transaction, and destination-delivery status. Magen3 never signs or submits it.</p>
+          </div>
+          <StatusBadge status="Foundation Available" />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <SelectField label="Provider Integration" value={values.bridgeProviderIntegrationEnabled} onChange={(value) => onChange({ bridgeProviderIntegrationEnabled: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Provider Quote" value={values.bridgeRequireProviderQuote} onChange={(value) => onChange({ bridgeRequireProviderQuote: value })} options={["Yes", "No"]} />
+          <SelectField label="Provider Unavailable" value={values.bridgeProviderUnavailableAction} onChange={(value) => onChange({ bridgeProviderUnavailableAction: value })} options={["Allow", "Warn", "Review", "Block"]} />
+          <TextareaField label="Allowed Provider Adapters" value={values.bridgeAllowedProviderAdapters} onChange={(value) => onChange({ bridgeAllowedProviderAdapters: value })} />
+          <InputField label="Maximum Evidence Age (sec)" value={values.bridgeMaxProviderEvidenceAgeSeconds} onChange={(value) => onChange({ bridgeMaxProviderEvidenceAgeSeconds: value })} type="number" />
+          <SelectField label="Testnet Only" value={values.bridgeRequireTestnet} onChange={(value) => onChange({ bridgeRequireTestnet: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Payload Binding" value={values.bridgeRequirePayloadBinding} onChange={(value) => onChange({ bridgeRequirePayloadBinding: value })} options={["Yes", "No"]} />
+          <SelectField label="Require Provider Simulation" value={values.bridgeRequireProviderSimulationSuccess} onChange={(value) => onChange({ bridgeRequireProviderSimulationSuccess: value })} options={["Yes", "No"]} />
+        </div>
       </div>
     </div>
   );
@@ -11574,6 +11674,7 @@ function IntentPlaygroundPage({
     ["Oracle Validation", result.result.oracleValidationContext],
     ["x402 Payment Controls", result.result.x402PaymentControlsContext],
     ["Bridge Controls", result.result.bridgeControlsContext],
+    ["Bridge Provider Integration", result.result.bridgeProviderIntegrationContext],
     ["Compliance Controls", result.result.complianceControlsContext],
   ].filter((entry) => Boolean(entry[1])) as Array<[string, unknown]> : [];
 
@@ -11702,6 +11803,9 @@ function SettingsPage({
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["Trading Route Integrity Status", `${api.baseUrl}/api/trading-route-integrity/status`],
     ["Market Risk Signals Status", `${api.baseUrl}/api/market-risk-signals/status`],
+    ["Bridge Provider Integration Status", `${api.baseUrl}/api/bridge-provider-integration/status`],
+    ["Bridge Provider Quote", `${api.baseUrl}/api/bridge-provider-integration/quotes`],
+    ["Bridge Provider Delivery Polling", `${api.baseUrl}/api/agent-gateway/bridge/poll`],
     ["Execution Reconciliation Status", `${api.baseUrl}/api/execution-reconciliation/status`],
     ["Execution Reconciliation Reporting", `${api.baseUrl}/api/agent-gateway/executions/reconcile`],
     ["Execution Reconciliation Polling", `${api.baseUrl}/api/agent-gateway/executions/poll`],

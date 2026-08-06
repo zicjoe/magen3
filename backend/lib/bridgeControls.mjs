@@ -88,6 +88,7 @@ function isApplicable(request = {}) {
 function destinationFamily(chainName) {
   const normalized = normalizeChain(chainName);
   if (normalized.includes("casper")) return "casper";
+  if (/^eip155-[1-9][0-9]*$/.test(normalized) || /^eip155:[1-9][0-9]*$/.test(lower(chainName))) return "evm";
   if (EVM_CHAIN_HINTS.some((hint) => normalized === hint || normalized.includes(`${hint}-`) || normalized.includes(`-${hint}`))) return "evm";
   return "unknown";
 }
@@ -163,6 +164,11 @@ function parseIso(value) {
 function derivedFeeBps(request = {}) {
   const explicit = finiteNumber(request.bridgeFeeBps, null);
   if (explicit !== null) return explicit;
+  const atomicFee = clean(request.bridgeFeeAmount);
+  const atomicAmount = clean(request.bridgeAmountAtomic);
+  if (/^[0-9]+$/.test(atomicFee) && /^[1-9][0-9]*$/.test(atomicAmount)) {
+    try { return Number((BigInt(atomicFee) * 10_000n) / BigInt(atomicAmount)); } catch {}
+  }
   const feeAmount = finiteNumber(request.bridgeFeeAmount, null);
   const amount = finiteNumber(request.amount, null);
   if (feeAmount === null || amount === null || amount <= 0) return null;

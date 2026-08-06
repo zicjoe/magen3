@@ -28,14 +28,17 @@ function finding({ status, severity = "info", rule, message, evidence = {}, reme
 export function normalizeChainFamily(value = "", network = "") {
   const explicit = clean(value).toUpperCase();
   if (explicit) return explicit;
-  const known = NATIVE_BY_NETWORK.get(lower(network));
+  const normalizedNetwork = lower(network);
+  if (/^eip155:[1-9][0-9]*$/.test(normalizedNetwork)) return "EVM";
+  const known = NATIVE_BY_NETWORK.get(normalizedNetwork);
   return known?.family || "UNKNOWN";
 }
 
 export function canonicalAssetReference(input = {}) {
   const network = clean(input.network || input.executionNetwork || input.chainName);
   const chainFamily = normalizeChainFamily(input.chainFamily, network);
-  const chainId = clean(input.chainId || input.networkId);
+  const networkChainId = lower(network).match(/^eip155:([1-9][0-9]*)$/)?.[1] || "";
+  const chainId = clean(input.chainId || input.networkId || networkChainId);
   const contractAddress = clean(input.contractAddress || input.assetContractAddress || input.tokenAddress || input.mintAddress || input.assetId);
   const declaredType = lower(input.assetType || input.tokenType);
   const nativeKnown = NATIVE_BY_NETWORK.get(lower(network));

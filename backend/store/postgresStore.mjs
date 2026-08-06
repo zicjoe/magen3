@@ -8,6 +8,7 @@ import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from 
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
 import { evaluateAction as evaluatePolicy } from "../lib/policyEngine.mjs";
 import { runStatefulSimulation } from "../lib/statefulSimulation.mjs";
+import { applyBridgeProviderEvidenceToRequest, pollBridgeProviderTransfer, prepareBridgeProviderIntegration, summarizeBridgeProviderIntegration } from "../lib/bridgeProviderIntegration.mjs";
 import { inspectAssetContractRisk } from "../lib/assetContractRisk.mjs";
 import { evaluateAssetIdentity } from "../lib/assetIdentity.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
@@ -1000,7 +1001,7 @@ export async function createPostgresStore() {
         listAuditLogs(walletAddress),
         listEmergencyPauses(walletAddress, { activeOnly: true }),
       ]);
-      const request = {
+      let request = {
         agentId: intent.agentId,
         actionType: intent.actionType,
         amount: intent.amount,
@@ -1074,6 +1075,31 @@ export async function createPostgresStore() {
         bridgeQuoteExpiresAt: intent.bridgeQuoteExpiresAt,
         bridgeSourceConfirmations: intent.bridgeSourceConfirmations,
         bridgeDestinationConfirmations: intent.bridgeDestinationConfirmations,
+        bridgeProviderId: intent.bridgeProviderId,
+        bridgeOriginChainId: intent.bridgeOriginChainId,
+        bridgeSourceChainId: intent.bridgeSourceChainId || intent.bridgeOriginChainId,
+        bridgeDestinationChainId: intent.bridgeDestinationChainId,
+        bridgeDepositor: intent.bridgeDepositor,
+        bridgeRecipient: intent.bridgeRecipient,
+        bridgeTradeType: intent.bridgeTradeType,
+        bridgeSlippage: intent.bridgeSlippage,
+        bridgeInputToken: intent.bridgeInputToken,
+        bridgeOutputToken: intent.bridgeOutputToken,
+        bridgeAmountAtomic: intent.bridgeAmountAtomic,
+        bridgeExpectedOutputAtomic: intent.bridgeExpectedOutputAtomic,
+        bridgeMinimumReceivedAtomic: intent.bridgeMinimumReceivedAtomic,
+        bridgeProviderQuoteId: intent.bridgeProviderQuoteId,
+        bridgeProviderQuoteHash: intent.bridgeProviderQuoteHash,
+        bridgeProviderRouteHash: intent.bridgeProviderRouteHash,
+        bridgeProviderPayloadHash: intent.bridgeProviderPayloadHash,
+        bridgeProviderEvidence: intent.bridgeProviderEvidence,
+        bridgeProviderAttestation: intent.bridgeProviderAttestation,
+        bridgeSourceTransactionTo: intent.bridgeSourceTransactionTo,
+        bridgeSourceTransactionData: intent.bridgeSourceTransactionData,
+        bridgeSourceTransactionDataHash: intent.bridgeSourceTransactionDataHash,
+        bridgeSourceTransactionValue: intent.bridgeSourceTransactionValue,
+        bridgeSourceTransactionGas: intent.bridgeSourceTransactionGas,
+        bridgeApprovalTransactions: intent.bridgeApprovalTransactions,
         complianceOriginatorJurisdiction: intent.complianceOriginatorJurisdiction,
         complianceBeneficiaryJurisdiction: intent.complianceBeneficiaryJurisdiction,
         complianceCounterpartyType: intent.complianceCounterpartyType,
@@ -1254,6 +1280,8 @@ export async function createPostgresStore() {
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");
       const rawAction = body.action && typeof body.action === "object" ? body.action : body;
+      const bridgeProviderEvidence = await prepareBridgeProviderIntegration({ request });
+      request = applyBridgeProviderEvidenceToRequest(request, bridgeProviderEvidence);
       request.statefulSimulationEvidence = await runStatefulSimulation({
         simulation: rawAction.simulation || rawAction.statefulSimulation || {},
         chainName: request.chainName,
@@ -1443,6 +1471,7 @@ export async function createPostgresStore() {
           mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
           tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
           marketRiskSignals: result.marketRiskSignalsContext && result.marketRiskSignalsContext.status !== "not_required" ? result.marketRiskSignalsContext : undefined,
+          bridgeProviderIntegration: result.bridgeProviderIntegrationContext && !["not_required", "not_applicable", "not_requested"].includes(result.bridgeProviderIntegrationContext.status) ? summarizeBridgeProviderIntegration(result.bridgeProviderIntegrationContext) : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,
@@ -1581,6 +1610,16 @@ export async function createPostgresStore() {
               quoteExpiresAt: intent.bridgeQuoteExpiresAt,
               sourceConfirmations: intent.bridgeSourceConfirmations,
               destinationConfirmations: intent.bridgeDestinationConfirmations,
+              providerId: intent.bridgeProviderId,
+              sourceChainId: intent.bridgeSourceChainId || intent.bridgeOriginChainId,
+              destinationChainId: intent.bridgeDestinationChainId,
+              inputToken: intent.bridgeInputToken,
+              outputToken: intent.bridgeOutputToken,
+              amountAtomic: intent.bridgeAmountAtomic,
+              depositor: intent.bridgeDepositor,
+              recipient: intent.bridgeRecipient,
+              tradeType: intent.bridgeTradeType,
+              providerIntegration: summarizeBridgeProviderIntegration(result.bridgeProviderIntegrationContext),
             },
             compliance: {
               originatorJurisdiction: intent.complianceOriginatorJurisdiction,
@@ -1842,6 +1881,31 @@ export async function createPostgresStore() {
         bridgeQuoteExpiresAt: intent.bridgeQuoteExpiresAt,
         bridgeSourceConfirmations: intent.bridgeSourceConfirmations,
         bridgeDestinationConfirmations: intent.bridgeDestinationConfirmations,
+        bridgeProviderId: intent.bridgeProviderId,
+        bridgeOriginChainId: intent.bridgeOriginChainId,
+        bridgeSourceChainId: intent.bridgeSourceChainId || intent.bridgeOriginChainId,
+        bridgeDestinationChainId: intent.bridgeDestinationChainId,
+        bridgeDepositor: intent.bridgeDepositor,
+        bridgeRecipient: intent.bridgeRecipient,
+        bridgeTradeType: intent.bridgeTradeType,
+        bridgeSlippage: intent.bridgeSlippage,
+        bridgeInputToken: intent.bridgeInputToken,
+        bridgeOutputToken: intent.bridgeOutputToken,
+        bridgeAmountAtomic: intent.bridgeAmountAtomic,
+        bridgeExpectedOutputAtomic: intent.bridgeExpectedOutputAtomic,
+        bridgeMinimumReceivedAtomic: intent.bridgeMinimumReceivedAtomic,
+        bridgeProviderQuoteId: intent.bridgeProviderQuoteId,
+        bridgeProviderQuoteHash: intent.bridgeProviderQuoteHash,
+        bridgeProviderRouteHash: intent.bridgeProviderRouteHash,
+        bridgeProviderPayloadHash: intent.bridgeProviderPayloadHash,
+        bridgeProviderEvidence: intent.bridgeProviderEvidence,
+        bridgeProviderAttestation: intent.bridgeProviderAttestation,
+        bridgeSourceTransactionTo: intent.bridgeSourceTransactionTo,
+        bridgeSourceTransactionData: intent.bridgeSourceTransactionData,
+        bridgeSourceTransactionDataHash: intent.bridgeSourceTransactionDataHash,
+        bridgeSourceTransactionValue: intent.bridgeSourceTransactionValue,
+        bridgeSourceTransactionGas: intent.bridgeSourceTransactionGas,
+        bridgeApprovalTransactions: intent.bridgeApprovalTransactions,
         x402Version: intent.x402Version,
         x402Scheme: intent.x402Scheme,
         x402ResourceUrl: intent.x402ResourceUrl,
@@ -1885,6 +1949,17 @@ export async function createPostgresStore() {
         mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
           tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
           marketRiskSignals: result.marketRiskSignalsContext && result.marketRiskSignalsContext.status !== "not_required" ? result.marketRiskSignalsContext : undefined,
+          bridgeProviderIntegration: result.bridgeProviderIntegrationContext && !["not_required", "not_applicable", "not_requested"].includes(result.bridgeProviderIntegrationContext.status) ? summarizeBridgeProviderIntegration(result.bridgeProviderIntegrationContext) : undefined,
+          bridgeProviderExecution: result.decision === "Allowed" && result.bridgeProviderIntegrationContext?.status === "passed" ? {
+            providerId: result.bridgeProviderIntegrationContext.adapterId,
+            quoteId: result.bridgeProviderIntegrationContext.providerQuoteId,
+            quoteHash: result.bridgeProviderIntegrationContext.providerQuoteHash,
+            evidenceHash: result.bridgeProviderIntegrationContext.evidenceHash,
+            routeFingerprint: result.bridgeProviderIntegrationContext.routeFingerprint,
+            payloadHash: result.bridgeProviderIntegrationContext.payloadHash,
+            approvals: result.bridgeProviderIntegrationContext.approvalTransactions || [],
+            transaction: result.bridgeProviderIntegrationContext.sourceTransaction,
+          } : undefined,
         emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: gatewayNextAction(result.decision, result.decisionExplanation),
       };
@@ -2421,6 +2496,46 @@ export async function createPostgresStore() {
         throw err;
       }
       const originalAction = auditLog.originalIntent?.action && typeof auditLog.originalIntent.action === "object" ? auditLog.originalIntent.action : {};
+      const bridgeProviderContext = originalAction?.bridge?.providerIntegration;
+      if (bridgeProviderContext?.adapterId === "across-testnet" || bridgeProviderContext?.providerId === "across-testnet") {
+        const providerObservation = await pollBridgeProviderTransfer({ providerId: "across-testnet", depositTransactionHash: transactionHash });
+        const attempt = Math.max(1, Number(auditLog.executionAttemptCount || auditLog.executionReconciliation?.attempt || 1));
+        const common = {
+          auditLogId: id,
+          agentId,
+          transactionHash,
+          attempt,
+          provider: providerObservation.provider,
+          providerReference: providerObservation.evidenceReference || providerObservation.depositTransactionHash,
+          observedAt: providerObservation.checkedAt,
+          chainName: bridgeProviderContext.sourceNetwork || originalAction?.bridge?.sourceChain || "",
+          note: String(body?.note || `Across testnet destination status: ${providerObservation.providerStatus}.`).trim(),
+        };
+        const currentStatus = String(auditLog.executionReconciliation?.status || auditLog.executionStatus || "not_submitted").toLowerCase();
+        if (providerObservation.status === "delivered") {
+          if (!['confirmed', 'delivered'].includes(currentStatus)) {
+            await this.reconcileExecution(id, { ...common, status: "confirmed", confirmations: 1, finalized: true }, context);
+          }
+          const delivered = await this.reconcileExecution(id, { ...common, status: "delivered", confirmations: 1, finalized: true, resourceDelivered: true, deliveryReference: providerObservation.destinationTransactionHash || providerObservation.evidenceReference }, context);
+          return { ...delivered, bridgeProviderObservation: providerObservation };
+        }
+        if (providerObservation.status === "refunded") {
+          if (!['failed', 'refunded'].includes(currentStatus)) {
+            await this.reconcileExecution(id, { ...common, status: "failed", failureReason: "Across testnet reported that the deposit was refunded." }, context);
+          }
+          const refunded = await this.reconcileExecution(id, { ...common, status: "refunded", refundTransactionHash: transactionHash }, context);
+          return { ...refunded, bridgeProviderObservation: providerObservation };
+        }
+        if (providerObservation.status === "failed") {
+          const failed = await this.reconcileExecution(id, { ...common, status: "failed", failureReason: "Across testnet reported that the bridge deposit expired or failed." }, context);
+          return { ...failed, bridgeProviderObservation: providerObservation };
+        }
+        if (['confirmed', 'delivered', 'refunded'].includes(currentStatus)) {
+          return { ok: true, auditLog, reconciliation: auditLog.executionReconciliation || null, bridgeProviderObservation: providerObservation, unchanged: true };
+        }
+        const pending = await this.reconcileExecution(id, { ...common, status: providerObservation.status === "uncertain" ? "uncertain" : "pending", confirmations: 0, finalized: false }, context);
+        return { ...pending, bridgeProviderObservation: providerObservation };
+      }
       const observation = await pollExecutionTransaction({
         transactionHash,
         chainFamily: String(body?.chainFamily || originalAction?.feeSafety?.chainFamily || "").trim(),

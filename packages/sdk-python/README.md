@@ -301,3 +301,27 @@ The Python client passes additive `action.tradingRoute` metadata through unchang
 ## Market Risk Signals
 
 For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.
+
+## Real Bridge Provider Integration
+
+```python
+quote = client.request_bridge_provider_quote({
+    "providerId": "across-testnet",
+    "sourceChainId": 11155420,
+    "destinationChainId": 84532,
+    "inputToken": "0xSourceToken",
+    "outputToken": "0xDestinationToken",
+    "amountAtomic": "1000000",
+    "depositor": "0xExecutionWallet",
+    "recipient": "0xDestinationRecipient",
+    "tradeType": "exactInput",
+})
+
+# Submit quote["protectedIntent"] through the protected Gateway before signing.
+client.poll_bridge_provider({
+    "auditLogId": "AUD-...",
+    "transactionHash": "0xSourceTransactionHash",
+})
+```
+
+Provider endpoints and evidence-attestation secrets remain on the Magen3 backend. The Python client never signs, broadcasts, or accepts provider credentials.

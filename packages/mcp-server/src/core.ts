@@ -74,7 +74,8 @@ export const INTENT_SCHEMA_DESCRIPTION = {
   mevExecutionQuality: "For Swap actions, include action.executionQuality with quote timestamp/expiry, deadline, price impact, simulated output, and execution channel. Magen3 enforces deterministic freshness, slippage, deviation, and mempool-exposure rules.",
   tradingRouteIntegrity: "For Swap actions, include action.tradingRoute with the exact quote ID, router, ordered token path and pools, amounts, fee recipients, and payload/calldata hashes. Magen3 deterministically binds the authorized route to the final simulated payload; MCP never invents route evidence.",
   marketRiskSignals: "For Swap, Trade, Exchange, or Bridge actions, action.marketRisk may identify the exact pair, canonical asset IDs, network, venue, and pool. Risk metrics come only from the server-configured feed; MCP must never invent volatility, liquidity, spread, depeg, divergence, or manipulation evidence.",
-  bridgeControls: "For Bridge actions, include action.bridge. Magen3 validates provider-supplied route metadata, configured providers and chains, destination format, fees, quote freshness, output bounds, and confirmation requirements.",
+  bridgeControls: "For Bridge actions, include action.bridge. Magen3 validates provider-supplied or server-fetched route metadata, configured providers and chains, destination format, fees, quote freshness, output bounds, and confirmation requirements.",
+  bridgeProviderIntegration: "For a live protected testnet bridge, set action.bridge.providerId to Across testnet (across-testnet) and provide exact source/destination EVM chain IDs, token addresses, base-unit input amount, depositor, and recipient. Magen3 fetches the quote and unsigned source transaction from its server-configured provider, cryptographically binds the evidence to the intent, and never accepts provider URLs, API keys, signatures, or fabricated quote evidence from MCP clients.",
   complianceControls: "For controlled treasury or enterprise actions, include action.compliance with non-sensitive statuses and opaque references. Never send names, identity documents, biometrics, contact details, or other raw personal data.",
   x402PaymentControls: "For paid HTTP resources, include action.type x402 Payment and action.x402. Magen3 binds the exact resource, merchant, recipient, CAIP-2 network, asset, amount, expiry, PAYMENT-REQUIRED hash, request body where required, request ID, replay state, and settlement state before signing.",
   tokenPermissionControls: "For explicit approvals, permits, NFT operator authority, batches, or delegated spender permissions, include action.tokenPermission. Magen3 validates owner, token, spender, amount, ratio, scope, expiry, nonce, fingerprint, replay, and parameter binding before signing.",
@@ -140,16 +141,26 @@ export const INTENT_SCHEMA_DESCRIPTION = {
       poolId: "Optional exact pool selector",
     },
     bridge: {
-      sourceChain: "Canonical source chain name",
-      destinationChain: "Canonical destination chain name",
-      provider: "Bridge or route provider name",
+      sourceChain: "Canonical source-chain name or CAIP-2 network label",
+      destinationChain: "Canonical destination chain name or CAIP-2 network label",
+      provider: "Human-readable bridge provider label",
+      providerId: "Registered server-side provider adapter ID; across-testnet is the initial live adapter",
+      sourceChainId: "Exact EVM source chain ID for provider quote binding",
+      destinationChainId: "Exact EVM destination chain ID for provider quote binding",
+      inputToken: "Exact source token contract address",
+      outputToken: "Exact destination token contract address",
+      amountAtomic: "Exact positive input amount in token base units; never a floating-point display amount",
+      depositor: "Exact source execution wallet; must match executionWalletAddress",
+      recipient: "Exact destination recipient; must match destinationAddress",
+      tradeType: "exactInput only for the initial Across testnet adapter",
+      slippage: "Optional decimal ratio between 0 and 1; provider quote input, not independent market evidence",
       routeId: "Optional provider route identifier",
       destinationAddress: "Destination-chain recipient address",
-      asset: "Optional bridged asset symbol",
+      asset: "Optional bridged asset symbol; not a canonical identity",
       feeAmount: "Optional absolute route fee",
       feeBps: "Optional route fee in basis points",
       expectedOutput: "Optional quoted destination output",
-      minimumReceived: "Optional minimum accepted destination output",
+      minimumReceived: "Optional minimum accepted destination output for legacy metadata controls; not accepted as a live Across trade type",
       quoteTimestamp: "ISO-8601 time when the route was quoted",
       quoteExpiresAt: "ISO-8601 route expiry time",
       sourceConfirmations: "Optional source confirmation requirement",
@@ -389,7 +400,7 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "reportExecutionReconciliation" | "pollExecutionReconciliation">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
@@ -407,7 +418,8 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         marketRiskSignalsBoundary: "Market Risk Signals evaluates only freshness-checked operator-configured provider evidence. MCP never fabricates metrics, and passing evidence does not guarantee future liquidity, price, ordering, settlement, or final execution quality.",
-        bridgeControlsBoundary: "Bridge Controls validates provider-supplied route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
+        bridgeControlsBoundary: "Bridge Controls validates route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
+        bridgeProviderIntegrationBoundary: "Real Bridge Provider Integration fetches Across testnet quotes and exact unsigned source transactions through the Magen3 backend, binds them to the protected intent, and can poll provider delivery status after source submission. MCP never supplies provider URLs or credentials, never signs or submits transactions, and a quote is not settlement.",
         complianceControlsBoundary: "Compliance Controls accepts non-sensitive statuses and opaque references only. It does not determine legal obligations, certify a provider, or guarantee compliance. Never send raw personal identity data.",
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
         approvalWorkflowBoundary: "Review Required means execution is paused, not automatically that a human is needed. Inspect reviewResolution.humanActionRequired: autonomous reviews require agent remediation and resubmission; only explicitly escalated reviews create an exact-intent approval request. Authorized reviewers respond through the Magen3 application. Approval never signs or broadcasts the transaction.",
@@ -459,6 +471,40 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     },
     async pollExecutionReconciliation(options: Parameters<Magen3Client["pollExecutionReconciliation"]>[0]): Promise<ToolTextResult> {
       try { return text(await client.pollExecutionReconciliation(options)); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getBridgeProviderStatus(): Promise<ToolTextResult> {
+      try {
+        const response = await client.getBridgeProviderStatus();
+        return text({
+          ...response,
+          mcpGuidance: response.bridgeProviderIntegration?.status === "foundation_available"
+            ? "Across testnet quote construction and delivery polling are configured. A quote is pre-signing evidence only and is not submission or settlement."
+            : "Bridge provider integration is not fully configured. Do not fabricate provider evidence or bypass Magen3.",
+        });
+      } catch (error) { return text(errorPayload(error), true); }
+    },
+    async requestBridgeProviderQuote(quote: Parameters<Magen3Client["requestBridgeProviderQuote"]>[0]): Promise<ToolTextResult> {
+      try {
+        const response = await client.requestBridgeProviderQuote(quote);
+        return text({
+          ...response,
+          mcpGuidance: "Use protectedIntent.action.bridge and the exact unsignedTransactions returned by Magen3 in the subsequent protected intent. Do not alter the chain, wallet, token, amount, recipient, target, calldata, or value. Magen3 does not sign or submit these transactions.",
+        });
+      } catch (error) { return text(errorPayload(error), true); }
+    },
+    async pollBridgeProvider(options: Parameters<Magen3Client["pollBridgeProvider"]>[0]): Promise<ToolTextResult> {
+      try {
+        const response = await client.pollBridgeProvider(options);
+        const reconciliation = response.reconciliation;
+        const guidance = reconciliation?.status === "delivered"
+          ? "The bridge provider reports destination delivery. Treat the Magen3 reconciliation record as the authoritative protected lifecycle state."
+          : reconciliation?.status === "refunded"
+            ? "The bridge provider reports a refund. Do not treat the bridge as delivered."
+            : reconciliation?.status === "failed"
+              ? "The bridge provider reports failure or expiry. Stop and inspect the reconciliation reason before creating a new protected intent."
+              : "The bridge remains pending or uncertain. Do not retry or create a duplicate bridge unless Magen3 explicitly permits it.";
+        return text({ ...response, mcpGuidance: guidance });
+      } catch (error) { return text(errorPayload(error), true); }
     },
     async requireAllowed(intent: Magen3Intent): Promise<ToolTextResult> {
       try {

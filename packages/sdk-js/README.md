@@ -347,3 +347,34 @@ For protected swaps, provide `action.tradingRoute` with the exact quote ID, rout
 ## Market Risk Signals
 
 For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.
+
+## Real Bridge Provider Integration
+
+The JavaScript SDK can discover the configured testnet bridge provider, request a server-attested quote, submit the exact protected Bridge intent, and poll delivery after source submission:
+
+```ts
+const status = await client.getBridgeProviderStatus();
+const chains = await client.listBridgeProviderChains();
+const tokens = await client.listBridgeProviderTokens(11155420);
+
+const quote = await client.requestBridgeProviderQuote({
+  providerId: "across-testnet",
+  sourceChainId: 11155420,
+  destinationChainId: 84532,
+  inputToken: "0xSourceToken",
+  outputToken: "0xDestinationToken",
+  amountAtomic: "1000000",
+  depositor: "0xExecutionWallet",
+  recipient: "0xDestinationRecipient",
+  tradeType: "exactInput",
+});
+
+// Submit quote.protectedIntent through checkIntent/requireAllowed before signing.
+// After the exact source transaction is sent by the wallet layer:
+await client.pollBridgeProvider({
+  auditLogId: "AUD-...",
+  transactionHash: "0xSourceTransactionHash",
+});
+```
+
+The SDK does not accept provider URLs, API keys, private keys, signatures, or signed transactions for this flow. `bridgeProviderExecution` is returned only after an Allowed decision. Testnet quotes are not proof of destination delivery.

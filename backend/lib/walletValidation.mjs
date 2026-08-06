@@ -3,6 +3,7 @@ import { classifyX402Recipient } from "./x402PaymentControls.mjs";
 const ED25519_PUBLIC_KEY = /^01[0-9a-f]{64}$/i;
 const SECP256K1_PUBLIC_KEY = /^02[0-9a-f]{66}$/i;
 const ACCOUNT_HASH = /^account-hash-[0-9a-f]{64}$/i;
+const EVM_ADDRESS = /^0x[0-9a-f]{40}$/i;
 
 export const WALLET_DESTINATION_ACTIONS = new Set(["Transfer"]);
 
@@ -107,12 +108,15 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   const executionWalletAddress = clean(request.executionWalletAddress || request.walletAddress);
   const ownerWalletAddress = clean(request.agentOwnerWalletAddress || request.ownerWalletAddress);
   const x402Payment = request.actionType === "x402 Payment";
+  const realEvmBridge = request.actionType === "Bridge" && Boolean(request.bridgeProviderId) && Boolean(request.bridgeSourceChainId || request.bridgeOriginChainId);
   const executionWallet = x402Payment
     ? classifyX402Recipient(executionWalletAddress, request.x402Network)
-    : classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
+    : realEvmBridge
+      ? { valid: EVM_ADDRESS.test(executionWalletAddress), kind: EVM_ADDRESS.test(executionWalletAddress) ? "evm-address" : "invalid-evm-address", family: "evm", label: "EVM execution address" }
+      : classifyCasperWalletIdentifier(executionWalletAddress, { allowAccountHash: false });
   const executionWalletLabel = x402Payment
     ? executionWallet.family === "evm" ? "EVM payment address" : executionWallet.family === "solana" ? "Solana payment address" : "network payment address"
-    : executionWallet.label;
+    : realEvmBridge ? "EVM execution address" : executionWallet.label;
   const walletDestination = isWalletDestinationIntent(request);
   const target = clean(request.target);
   const destination = classifyCasperWalletIdentifier(target, { allowAccountHash: true });
@@ -127,7 +131,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   const relaxedMode = policy.riskMode === "Aggressive";
 
   if (!executionWalletAddress) {
-    const message = x402Payment ? "x402 payment wallet address is missing." : "Execution wallet public key is missing.";
+    const message = x402Payment ? "x402 payment wallet address is missing." : realEvmBridge ? "EVM bridge execution wallet address is missing." : "Execution wallet public key is missing.";
     checksFailed.push(message);
     scoreDelta += 45;
     hardBlock = true;
@@ -136,7 +140,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       severity: "critical",
       rule: "Execution wallet required",
       message,
-      evidence: { executionWalletAddress: "", requiredFormat: x402Payment ? "Public payment-wallet address matching the selected CAIP-2 network" : "Casper Ed25519 or Secp256k1 public key" },
+      evidence: { executionWalletAddress: "", requiredFormat: x402Payment ? "Public payment-wallet address matching the selected CAIP-2 network" : realEvmBridge ? "20-byte 0x-prefixed EVM address" : "Casper Ed25519 or Secp256k1 public key" },
       remediation: x402Payment
         ? "Provide the public address of the wallet that will create PAYMENT-SIGNATURE. Never provide its private key or signed payment payload."
         : "Provide the public key of the wallet that would sign the real transaction. Never provide a private key.",
@@ -144,6 +148,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
   } else if (!executionWallet.valid) {
     const message = x402Payment
       ? "Execution wallet does not match the selected x402 payment network."
+      : realEvmBridge ? "Execution wallet is not a valid EVM address for the protected bridge source network."
       : "Execution wallet is not a valid Casper signing public key.";
     checksFailed.push(message);
     scoreDelta += 45;
@@ -158,12 +163,12 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
         detectedFormat: executionWallet.kind,
         expected: x402Payment
           ? "An EVM address for eip155 networks or a Solana base58 address for solana networks"
-          : "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
-        network: x402Payment ? request.x402Network || "" : "casper",
+          : realEvmBridge ? "20-byte 0x-prefixed EVM address" : "66-character Ed25519 key beginning 01, or 68-character Secp256k1 key beginning 02",
+        network: x402Payment ? request.x402Network || "" : realEvmBridge ? `eip155:${request.bridgeSourceChainId || request.bridgeOriginChainId}` : "casper",
       },
       remediation: x402Payment
         ? "Use the public address of the wallet registered for the selected x402 network."
-        : "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
+        : realEvmBridge ? "Use the public EVM address that will sign the provider-produced source transaction." : "Connect a Casper Wallet and submit its public key as executionWalletAddress before retrying.",
     }));
   } else {
     const message = `Execution wallet uses a valid ${executionWalletLabel} format.`;
@@ -172,7 +177,7 @@ export function evaluateWalletValidation({ request = {}, policy = {}, auditLogs 
       status: "pass",
       rule: "Valid execution wallet format",
       message,
-      evidence: { executionWalletAddress, format: executionWallet.kind, network: x402Payment ? request.x402Network || "" : "casper" },
+      evidence: { executionWalletAddress, format: executionWallet.kind, network: x402Payment ? request.x402Network || "" : realEvmBridge ? `eip155:${request.bridgeSourceChainId || request.bridgeOriginChainId}` : "casper" },
     }));
   }
 

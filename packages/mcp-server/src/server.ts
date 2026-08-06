@@ -45,11 +45,45 @@ const actionSchema = z.object({
     quoteTimestamp: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
   }).optional(),
   bridge: z.object({
-    sourceChain: z.string().min(1),
-    destinationChain: z.string().min(1),
-    provider: z.string().min(1),
-    routeId: z.string().min(1).optional(),
-    destinationAddress: z.string().min(1),
+    sourceChain: z.string().min(1).optional(),
+    destinationChain: z.string().min(1).optional(),
+    provider: z.string().min(1).optional(),
+    providerId: z.string().min(1).max(64).optional(),
+    sourceChainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]).optional(),
+    destinationChainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]).optional(),
+    inputToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    outputToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    sourceToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    destinationToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    amountAtomic: z.string().regex(/^[1-9][0-9]*$/).optional(),
+    depositor: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    recipient: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+    tradeType: z.literal("exactInput").optional(),
+    slippage: z.number().finite().min(0).max(1).optional(),
+    routeId: z.string().min(1).max(160).optional(),
+    providerQuoteId: z.string().min(1).max(160).optional(),
+    providerQuoteHash: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+    providerRouteHash: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+    providerPayloadHash: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+    providerEvidence: z.record(z.string(), z.unknown()).optional(),
+    providerAttestation: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+    sourceTransaction: z.object({
+      chainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]).optional(),
+      to: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+      data: z.string().regex(/^0x(?:[0-9a-fA-F]{2})*$/),
+      dataHash: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+      value: z.string().regex(/^[0-9]+$/),
+      gas: z.string().regex(/^[0-9]+$/).optional(),
+    }).strict().optional(),
+    approvalTransactions: z.array(z.object({
+      chainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]).optional(),
+      to: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+      data: z.string().regex(/^0x(?:[0-9a-fA-F]{2})*$/),
+      dataHash: z.string().regex(/^(?:0x)?[0-9a-fA-F]{64}$/).optional(),
+      value: z.string().regex(/^[0-9]+$/),
+      gas: z.string().regex(/^[0-9]+$/).optional(),
+    }).strict()).max(8).optional(),
+    destinationAddress: z.string().min(1).optional(),
     asset: z.string().min(1).optional(),
     feeAmount: z.number().finite().nonnegative().optional(),
     feeBps: z.number().finite().min(0).max(10000).optional(),
@@ -59,6 +93,21 @@ const actionSchema = z.object({
     quoteExpiresAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/).optional(),
     sourceConfirmations: z.number().int().nonnegative().optional(),
     destinationConfirmations: z.number().int().nonnegative().optional(),
+  }).strict().superRefine((value, context) => {
+    const legacyComplete = Boolean(value.sourceChain && value.destinationChain && value.provider && value.destinationAddress);
+    const providerComplete = Boolean(
+      value.providerId
+      && value.sourceChainId
+      && value.destinationChainId
+      && (value.inputToken || value.sourceToken)
+      && (value.outputToken || value.destinationToken)
+      && value.amountAtomic
+      && value.depositor
+      && value.recipient
+    );
+    if (!legacyComplete && !providerComplete) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Bridge metadata must include either the complete legacy route or the complete provider-backed testnet route." });
+    }
   }).optional(),
   instructionIntegrity: z.object({
     goalId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/).optional(),
@@ -317,6 +366,26 @@ const executionReconciliationPollSchema = z.object({
   note: z.string().max(500).optional(),
 }).strict();
 
+const bridgeProviderQuoteSchema = z.object({
+  providerId: z.literal("across-testnet").optional(),
+  sourceChainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]),
+  destinationChainId: z.union([z.string().regex(/^[1-9][0-9]*$/), z.number().int().positive()]),
+  inputToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  outputToken: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  amountAtomic: z.string().regex(/^[1-9][0-9]*$/),
+  depositor: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  recipient: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  target: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional(),
+  tradeType: z.literal("exactInput").optional(),
+  slippage: z.number().finite().min(0).max(1).optional(),
+}).strict();
+
+const bridgeProviderPollSchema = z.object({
+  auditLogId: z.string().min(1),
+  transactionHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional(),
+  note: z.string().max(500).optional(),
+}).strict();
+
 export function buildServer() {
   const handlers = createToolHandlers(createClient(configFromEnv()));
   const server = new McpServer(
@@ -330,6 +399,9 @@ export function buildServer() {
   server.registerTool("magen3_report_x402_settlement", { title: "Report x402 Settlement", description: "Reconcile the real facilitator settlement and resource-delivery state for a previously Allowed x402 payment. Never send PAYMENT-SIGNATURE or signed payment payloads.", inputSchema: x402SettlementSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportX402Settlement(update));
   server.registerTool("magen3_report_execution_reconciliation", { title: "Report Execution Reconciliation", description: "Report authenticated public execution state after authorization. Enforces transaction binding, retry limits, replacement links, confirmation/finality, delivery, refund, and monotonic transitions. Never send signed transactions or wallet secrets.", inputSchema: executionReconciliationSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportExecutionReconciliation(update));
   server.registerTool("magen3_poll_execution_reconciliation", { title: "Poll Execution Reconciliation", description: "Poll a bound transaction through a backend-configured Casper or EVM RPC adapter and apply the observation through the same reconciliation state machine. Provider URLs cannot be supplied by MCP clients.", inputSchema: executionReconciliationPollSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (options) => handlers.pollExecutionReconciliation(options));
+  server.registerTool("magen3_get_bridge_provider_status", { title: "Get Bridge Provider Status", description: "Return the sanitized Across testnet adapter capability and configuration status. This never exposes provider credentials, attestation secrets, or internal endpoints.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getBridgeProviderStatus());
+  server.registerTool("magen3_request_bridge_provider_quote", { title: "Request Protected Bridge Quote", description: "Request an authenticated Across testnet quote, cryptographically bound provider evidence, and exact unsigned source-chain transactions. The tool never accepts provider URLs or credentials and never signs or submits transactions.", inputSchema: bridgeProviderQuoteSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (quote) => handlers.requestBridgeProviderQuote(quote));
+  server.registerTool("magen3_poll_bridge_provider", { title: "Poll Bridge Provider Delivery", description: "Poll the server-configured Across testnet provider for a previously submitted, Magen3-bound bridge deposit and apply pending, delivered, refunded, failed, or uncertain state through execution reconciliation. Provider URLs, credentials, signed transactions, and wallet secrets are never accepted.", inputSchema: bridgeProviderPollSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (options) => handlers.pollBridgeProvider(options));
   server.registerTool("magen3_require_allowed", { title: "Require Magen3 Approval", description: "Fail-closed execution gate. Returns an MCP error unless Magen3 explicitly returns Allowed.", inputSchema: intentSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (intent) => handlers.requireAllowed(intent));
   return server;
 }

@@ -690,5 +690,80 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(market["poolId"], "pool-1")
         self.assertEqual(result["result"]["marketRiskSignalsContext"]["status"], "review_required")
 
+    def test_across_bridge_metadata_and_polling_pass_through(self):
+        captured = []
+
+        def transport(method, url, headers, data, timeout):
+            payload = json.loads(data.decode()) if data else None
+            captured.append((method, url, payload))
+            if url.endswith("/api/agent-gateway/intents"):
+                return {"ok": True, "executionApproved": True, "result": {"decision": "Allowed", "bridgeProviderIntegrationContext": {"status": "passed"}}, "bridgeProviderExecution": {"providerId": "across-testnet", "payloadHash": "a" * 64, "routeFingerprint": "b" * 64, "approvals": [], "transaction": {"chainId": "11155420", "to": "0x5555555555555555555555555555555555555555", "data": "0x1234", "value": "0"}}}
+            return {"ok": True, "reconciliation": {"status": "delivered"}, "bridgeProviderObservation": {"status": "delivered"}}
+
+        client = Magen3Client("https://api.example", "MAG-BRIDGE", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "0x1111111111111111111111111111111111111111",
+            "action": {"type": "Bridge", "amount": 1, "asset": "USDC", "target": "0x5555555555555555555555555555555555555555", "bridge": {"providerId": "across-testnet", "sourceChainId": 11155420, "destinationChainId": 84532, "sourceToken": "0x3333333333333333333333333333333333333333", "destinationToken": "0x4444444444444444444444444444444444444444", "amountAtomic": "1000000", "recipient": "0x2222222222222222222222222222222222222222", "tradeType": "exactInput"}},
+        })
+        self.assertEqual(captured[0][2]["action"]["bridge"]["amountAtomic"], "1000000")
+        self.assertEqual(result["bridgeProviderExecution"]["providerId"], "across-testnet")
+        polled = client.poll_bridge_provider({"auditLogId": "AUD-1", "transactionHash": "0x" + "a" * 64})
+        self.assertTrue(captured[1][1].endswith("/api/agent-gateway/bridge/poll"))
+        self.assertEqual(polled["reconciliation"]["status"], "delivered")
+
+
+    def test_bridge_provider_discovery_and_quote_methods(self):
+        captured = []
+
+        def transport(method, url, headers, data, timeout):
+            payload = json.loads(data.decode()) if data else None
+            captured.append((method, url, payload))
+            if url.endswith("/api/bridge-provider-integration/status"):
+                return {"ok": True, "bridgeProviderIntegration": {"status": "foundation_available", "providerId": "across-testnet"}}
+            if "/api/bridge-providers/chains" in url:
+                return {"ok": True, "bridgeProviderIntegration": {"status": "available", "chains": []}}
+            if "/api/bridge-providers/tokens" in url:
+                return {"ok": True, "bridgeProviderIntegration": {"status": "available", "tokens": []}}
+            return {"ok": True, "provider": {"id": "across-testnet", "environment": "testnet"}, "evidence": {"status": "succeeded"}, "unsignedTransactions": {"approvals": [], "bridge": {"to": "0x" + "5" * 40, "data": "0x1234", "value": "0"}}}
+
+        client = Magen3Client("https://api.example", "MAG-BRIDGE", "secret", transport=transport)
+        self.assertEqual(client.get_bridge_provider_status()["bridgeProviderIntegration"]["providerId"], "across-testnet")
+        client.list_bridge_provider_chains()
+        client.list_bridge_provider_tokens(11155420)
+        quote_response = client.request_bridge_provider_quote({
+            "providerId": "across-testnet",
+            "sourceChainId": 11155420,
+            "destinationChainId": 84532,
+            "inputToken": "0x" + "3" * 40,
+            "outputToken": "0x" + "4" * 40,
+            "amountAtomic": "1000000",
+            "depositor": "0x" + "1" * 40,
+            "recipient": "0x" + "2" * 40,
+        })
+        self.assertEqual(quote_response["provider"]["id"], "across-testnet")
+        self.assertTrue(captured[1][1].endswith("/api/bridge-providers/chains?providerId=across-testnet"))
+        self.assertIn("chainId=11155420", captured[2][1])
+        self.assertEqual(captured[3][2]["agentId"], "MAG-BRIDGE")
+        self.assertEqual(captured[3][2]["quote"]["amountAtomic"], "1000000")
+
+    def test_bridge_provider_quote_rejects_provider_url(self):
+        client = Magen3Client("https://api.example", "MAG-BRIDGE", "secret", transport=lambda *args: {})
+        with self.assertRaisesRegex(ValueError, "not accepted"):
+            client.request_bridge_provider_quote({
+                "sourceChainId": 11155420,
+                "destinationChainId": 84532,
+                "inputToken": "0x" + "3" * 40,
+                "outputToken": "0x" + "4" * 40,
+                "amountAtomic": "1000000",
+                "depositor": "0x" + "1" * 40,
+                "recipient": "0x" + "2" * 40,
+                "providerUrl": "https://evil.example",
+            })
+
+    def test_bridge_poll_rejects_provider_credentials(self):
+        client = Magen3Client("https://api.example", "MAG-BRIDGE", "secret", transport=lambda *args: {})
+        with self.assertRaisesRegex(ValueError, "not accepted"):
+            client.poll_bridge_provider({"auditLogId": "AUD-1", "providerUrl": "https://evil.example"})
+
 if __name__ == "__main__":
     unittest.main()

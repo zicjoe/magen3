@@ -1153,3 +1153,72 @@ test("preserves Market Risk Signals selectors and response context", async () =>
   assert.equal(captured.action.marketRisk.poolId, "pool-1");
   assert.equal(response.result.marketRiskSignalsContext.status, "review_required");
 });
+
+test("preserves Across testnet bridge selectors and exact unsigned execution context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-BRIDGE",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: true,
+        result: { decision: "Allowed", risk: "Low", riskScore: 10, reason: "allowed", recommendedAction: "sign", bridgeProviderIntegrationContext: { status: "passed", adapterId: "across-testnet", payloadHash: "a".repeat(64) } },
+        gatewayRequest: {}, auditLog: {}, nextAction: "sign",
+        bridgeProviderIntegration: { status: "passed", adapterId: "across-testnet", payloadHash: "a".repeat(64) },
+        bridgeProviderExecution: { providerId: "across-testnet", routeFingerprint: "b".repeat(64), payloadHash: "a".repeat(64), approvals: [], transaction: { chainId: "11155420", to: "0x5555555555555555555555555555555555555555", data: "0x1234", value: "0" } },
+      }), { status: 201 });
+    },
+  });
+  const response = await client.checkIntent({
+    executionWalletAddress: "0x1111111111111111111111111111111111111111",
+    action: { type: "Bridge", amount: 1, asset: "USDC", target: "0x5555555555555555555555555555555555555555", bridge: { providerId: "across-testnet", sourceChainId: 11155420, destinationChainId: 84532, sourceToken: "0x3333333333333333333333333333333333333333", destinationToken: "0x4444444444444444444444444444444444444444", amountAtomic: "1000000", recipient: "0x2222222222222222222222222222222222222222", tradeType: "exactInput" } },
+  });
+  assert.equal(captured.action.bridge.providerId, "across-testnet");
+  assert.equal(captured.action.bridge.amountAtomic, "1000000");
+  assert.equal(response.bridgeProviderExecution.transaction.data, "0x1234");
+});
+
+test("pollBridgeProvider uses the authenticated backend route and rejects provider credentials", async () => {
+  let capturedUrl = "";
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-BRIDGE", apiKey: "secret", fetch: async (url) => { capturedUrl = String(url); return new Response(JSON.stringify({ ok: true, reconciliation: { status: "delivered" }, bridgeProviderObservation: { status: "delivered" } }), { status: 200 }); } });
+  const response = await client.pollBridgeProvider({ auditLogId: "AUD-1", transactionHash: `0x${"a".repeat(64)}` });
+  assert.match(capturedUrl, /\/api\/agent-gateway\/bridge\/poll$/);
+  assert.equal(response.reconciliation.status, "delivered");
+  await assert.rejects(() => client.pollBridgeProvider({ auditLogId: "AUD-1", providerUrl: "https://evil.example" }), /not accepted/);
+});
+
+test("bridge provider discovery and quote use authenticated server-controlled routes", async () => {
+  const requests = [];
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-BRIDGE",
+    apiKey: "secret",
+    fetch: async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/status")) return new Response(JSON.stringify({ ok: true, bridgeProviderIntegration: { status: "foundation_available", providerId: "across-testnet" } }), { status: 200 });
+      if (path.endsWith("/chains")) return new Response(JSON.stringify({ ok: true, bridgeProviderIntegration: { status: "available", providerId: "across-testnet", chains: [{ chainId: 11155420 }] } }), { status: 200 });
+      if (path.endsWith("/tokens")) return new Response(JSON.stringify({ ok: true, bridgeProviderIntegration: { status: "available", providerId: "across-testnet", chainId: "11155420", tokens: [] } }), { status: 200 });
+      return new Response(JSON.stringify({
+        ok: true,
+        provider: { id: "across-testnet", name: "Across", environment: "testnet" },
+        evidence: { schemaVersion: "magen3.bridge-provider-integration.v1", status: "succeeded", adapterId: "across-testnet", adapterVersion: "1.0.0", providerId: "across-testnet", environment: "testnet", requestBindingHash: "a".repeat(64), providerResponseHash: "b".repeat(64), quoteHash: "c".repeat(64), routeFingerprint: "d".repeat(64), payloadHash: "e".repeat(64), evidenceHash: "f".repeat(64), providerQuoteId: "quote-1", requestedAt: "2026-08-06T12:00:00.000Z", completedAt: "2026-08-06T12:00:01.000Z", expiresAt: "2026-08-06T12:05:00.000Z", sourceChainId: "11155420", destinationChainId: "84532", depositor: "0x1111111111111111111111111111111111111111", recipient: "0x2222222222222222222222222222222222222222", inputToken: "0x3333333333333333333333333333333333333333", outputToken: "0x4444444444444444444444444444444444444444", inputAmountAtomic: "1000000", outputAmountAtomic: "999000", approvalTransactions: [], sourceTransaction: { chainId: "11155420", to: "0x5555555555555555555555555555555555555555", data: "0x1234", value: "0" }, completeness: {} },
+        protectedIntent: { actionType: "Bridge", bridge: {} },
+        unsignedTransactions: { approvals: [], bridge: { chainId: "11155420", to: "0x5555555555555555555555555555555555555555", data: "0x1234", value: "0" } },
+      }), { status: 200 });
+    },
+  });
+
+  assert.equal((await client.getBridgeProviderStatus()).bridgeProviderIntegration.status, "foundation_available");
+  assert.equal((await client.listBridgeProviderChains()).bridgeProviderIntegration.chains.length, 1);
+  assert.equal((await client.listBridgeProviderTokens(11155420)).bridgeProviderIntegration.chainId, "11155420");
+  const quote = await client.requestBridgeProviderQuote({ sourceChainId: 11155420, destinationChainId: 84532, inputToken: "0x3333333333333333333333333333333333333333", outputToken: "0x4444444444444444444444444444444444444444", amountAtomic: "1000000", depositor: "0x1111111111111111111111111111111111111111", recipient: "0x2222222222222222222222222222222222222222" });
+  assert.equal(quote.provider.id, "across-testnet");
+  assert.match(requests.at(-1).url, /\/api\/bridge-provider-integration\/quotes$/);
+  const body = JSON.parse(requests.at(-1).init.body);
+  assert.equal(body.agentId, "MAG-BRIDGE");
+  await assert.rejects(() => client.requestBridgeProviderQuote({ sourceChainId: 11155420, destinationChainId: 84532, inputToken: "0x3333333333333333333333333333333333333333", outputToken: "0x4444444444444444444444444444444444444444", amountAtomic: "1000000", depositor: "0x1111111111111111111111111111111111111111", recipient: "0x2222222222222222222222222222222222222222", providerUrl: "https://evil.example" }), /not accepted/);
+});

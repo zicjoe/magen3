@@ -297,6 +297,47 @@ class Magen3Client:
         payload["agentId"] = self.agent_id
         return self._request("POST", "/api/agent-gateway/executions/poll", payload)
 
+    def get_bridge_provider_status(self) -> Dict[str, Any]:
+        return self._request("GET", "/api/bridge-provider-integration/status")
+
+    def list_bridge_provider_chains(self, provider_id: str = "across-testnet") -> Dict[str, Any]:
+        provider = str(provider_id or "").strip()
+        if not provider:
+            raise ValueError("provider_id is required")
+        return self._request("GET", f"/api/bridge-providers/chains?providerId={quote(provider)}")
+
+    def list_bridge_provider_tokens(self, chain_id: Any, provider_id: str = "across-testnet") -> Dict[str, Any]:
+        chain = str(chain_id or "").strip()
+        if not chain.isdigit() or int(chain) <= 0:
+            raise ValueError("chain_id must be a positive integer")
+        provider = str(provider_id or "").strip()
+        if not provider:
+            raise ValueError("provider_id is required")
+        return self._request("GET", f"/api/bridge-providers/tokens?providerId={quote(provider)}&chainId={quote(chain)}")
+
+    def request_bridge_provider_quote(self, bridge_quote: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(bridge_quote, dict):
+            raise ValueError("bridge_quote is required")
+        required = ("sourceChainId", "destinationChainId", "inputToken", "outputToken", "amountAtomic", "depositor", "recipient")
+        missing = [field for field in required if not str(bridge_quote.get(field, "")).strip()]
+        if missing:
+            raise ValueError(f"Missing required bridge quote fields: {', '.join(missing)}")
+        prohibited = next((key for key in bridge_quote if key.lower() in {"rpcurl", "rpcendpoint", "providerurl", "endpoint", "apikey", "authorization"}), None)
+        if prohibited:
+            raise ValueError(f"{prohibited} is not accepted; bridge providers are configured on the Magen3 backend")
+        return self._request("POST", "/api/bridge-provider-integration/quotes", {"agentId": self.agent_id, "quote": dict(bridge_quote)})
+
+    def poll_bridge_provider(self, options: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(options.get("auditLogId", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        prohibited = next((key for key in options if key.lower() in {"rpcurl", "rpcendpoint", "providerurl", "endpoint", "apikey"}), None)
+        if prohibited:
+            raise ValueError(f"{prohibited} is not accepted; bridge providers are configured on the Magen3 backend")
+        payload = dict(options)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/bridge/poll", payload)
+
     def require_allowed(self, intent: Dict[str, Any]) -> Dict[str, Any]:
         response = self.check_intent(intent)
         if not is_execution_approved(response):

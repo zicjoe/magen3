@@ -7,6 +7,7 @@ import { getMarketRiskSignalsSnapshot, summarizeMarketRiskSignalsSnapshot } from
 import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } from "./lib/complianceControls.mjs";
 import { getRpcChainIntegrityStatus } from "./lib/rpcChainIntegrity.mjs";
 import { getGasSponsorshipFeeSafetyStatus } from "./lib/gasSponsorshipFeeSafety.mjs";
+import { discoverBridgeProviderChains, discoverBridgeProviderTokens, getBridgeProviderIntegrationStatus, requestBridgeProviderQuote } from "./lib/bridgeProviderIntegration.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -199,6 +200,7 @@ const server = createServer(async (req, res) => {
         delegationSafety: { status: "foundation_available", casperAttestationVerification: true, scopeBinding: true, expiry: true, revocation: true, depth: true, amountAndFrequencyLimits: true },
         rpcChainIntegrity: getRpcChainIntegrityStatus(),
         gasSponsorshipFeeSafety: getGasSponsorshipFeeSafetyStatus(),
+        bridgeProviderIntegration: getBridgeProviderIntegrationStatus(),
         executionReconciliation: await store.executionReconciliationStatus("", {}),
 
         contractUpgradeControls: {
@@ -348,6 +350,38 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/market-risk-signals/status") {
       const snapshot = await getMarketRiskSignalsSnapshot();
       return send(res, 200, { ok: true, marketRiskSignals: summarizeMarketRiskSignalsSnapshot(snapshot) });
+    }
+
+    if (["GET /api/bridge-provider-integration/status", "GET /api/bridge-providers/status"].includes(route)) {
+      return send(res, 200, { ok: true, bridgeProviderIntegration: getBridgeProviderIntegrationStatus() });
+    }
+
+    if (route === "GET /api/bridge-providers/chains") {
+      return send(res, 200, { ok: true, bridgeProviderIntegration: await discoverBridgeProviderChains({ providerId: url.searchParams.get("providerId") || "across-testnet" }) });
+    }
+
+    if (route === "GET /api/bridge-providers/tokens") {
+      const chainId = String(url.searchParams.get("chainId") || "").trim();
+      if (!chainId) return send(res, 400, { error: "chainId is required" });
+      return send(res, 200, { ok: true, bridgeProviderIntegration: await discoverBridgeProviderTokens({ providerId: url.searchParams.get("providerId") || "across-testnet", chainId }) });
+    }
+
+    if (route === "POST /api/bridge-provider-integration/quotes") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const agentId = String(body.agentId || body.agent_id || "").trim();
+      if (!agentId) return send(res, 400, { error: "agentId is required" });
+      await store.getAgentGatewayIdentity(agentId, { apiKey });
+      const quote = body.quote && typeof body.quote === "object" ? body.quote : body;
+      return send(res, 201, await requestBridgeProviderQuote({ body: quote }));
+    }
+
+    if (["POST /api/bridge-provider-integration/transfers/status", "POST /api/agent-gateway/bridge/poll"].includes(route)) {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.pollExecution(auditLogId, body, { apiKey }));
     }
 
     if (route === "GET /api/rpc-chain-integrity/status") {

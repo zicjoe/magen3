@@ -48,6 +48,33 @@ if (marketRiskSource.includes("request.marketRiskFeedUrl") || marketRiskSource.i
   throw new Error("Market Risk Signals accepts a request-controlled provider URL");
 }
 
+const bridgeProviderSource = await readFile(new URL("../../backend/lib/bridgeProviderIntegration.mjs", import.meta.url), "utf8");
+for (const required of [
+  'const DEFAULT_BASE_URL = "https://testnet.across.to/api"',
+  "BRIDGE_PROVIDER_ALLOWED_TESTNET_CHAIN_IDS",
+  "BRIDGE_PROVIDER_EVIDENCE_SECRET",
+  "createHmac",
+  "timingSafeEqual",
+  "MAX_RESPONSE_BYTES",
+  "AbortController",
+  "BRIDGE_MAINNET_OR_UNSUPPORTED_CHAIN",
+  'environment: "testnet"',
+]) {
+  if (!bridgeProviderSource.includes(required)) throw new Error(`Bridge Provider Integration is missing security control: ${required}`);
+}
+for (const forbidden of ["request.providerUrl", "request.rpcUrl", "request.apiKey", "request.authorization"]) {
+  if (bridgeProviderSource.includes(forbidden)) throw new Error(`Bridge Provider Integration accepts request-controlled provider configuration: ${forbidden}`);
+}
+if (bridgeProviderSource.includes("sendTransaction(") || bridgeProviderSource.includes("signTransaction(") || bridgeProviderSource.includes("privateKey")) {
+  throw new Error("Bridge Provider Integration must not sign or submit bridge transactions");
+}
+const defaultBridgeChainMatch = bridgeProviderSource.match(/DEFAULT_TESTNET_CHAIN_IDS\s*=\s*\[([^\]]+)\]/);
+const defaultBridgeChainIds = new Set(defaultBridgeChainMatch?.[1]?.match(/\d+/g) || []);
+for (const currentAcrossEvmTestnetChainId of ["421614", "84532", "168587773", "808813", "37111", "4202", "919", "11155420", "80002", "11155111", "129399", "1301"]) {
+  if (!defaultBridgeChainIds.has(currentAcrossEvmTestnetChainId)) throw new Error(`Bridge Provider Integration defaults are missing current Across EVM testnet chain ID ${currentAcrossEvmTestnetChainId}`);
+}
+if (defaultBridgeChainIds.has("133268194659241")) throw new Error("The EVM bridge adapter must not advertise Solana Devnet as an EVM chain");
+
 try {
   await access(new URL("../../examples/real-agent-client/index.mjs", import.meta.url), constants.F_OK);
   throw new Error("Obsolete examples/real-agent-client/index.mjs must be removed before commit");

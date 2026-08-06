@@ -16,6 +16,10 @@ const walletBehavioralControlsSource = read("backend/lib/walletBehavioralControl
 const mevExecutionQualitySource = read("backend/lib/mevExecutionQuality.mjs");
 const tradingRouteIntegritySource = read("backend/lib/tradingRouteIntegrity.mjs");
 const marketRiskSignalsSource = read("backend/lib/marketRiskSignals.mjs");
+const bridgeProviderIntegrationSource = read("backend/lib/bridgeProviderIntegration.mjs");
+const serverSource = read("backend/server.mjs");
+const frontendApiSource = read("src/app/lib/api.ts");
+const mcpServerSource = read("packages/mcp-server/src/server.ts");
 const memoryStoreSource = read("backend/store/memoryStore.mjs");
 const postgresStoreSource = read("backend/store/postgresStore.mjs");
 const policySource = read("backend/lib/policyEngine.mjs");
@@ -89,6 +93,46 @@ if (!securityModelSource.includes('name: "Asset market-risk signals"') || !secur
 if (!read("backend/server.mjs").includes("GET /api/market-risk-signals/status")) fail("Market Risk Signals status endpoint is missing");
 if (!read("backend/server.mjs").includes("marketRiskSignals: summarizeMarketRiskSignalsSnapshot")) fail("Market Risk Signals are missing from service health");
 if (!read("src/app/lib/api.ts").includes("marketRiskSignalsStatus")) fail("Frontend API client is missing Market Risk Signals status support");
+if (!bridgeProviderIntegrationSource.includes('const ADAPTER_ID = "across-testnet"') || !bridgeProviderIntegrationSource.includes('DEFAULT_BASE_URL = "https://testnet.across.to/api"')) fail("Across testnet bridge adapter is missing or incorrectly configured");
+for (const required of ["/swap/approval", "/swap/chains", "/swap/tokens", "/deposit/status", "exactInput", "requestBindingHash", "routeFingerprint", "payloadHash", "evidenceHash", "BRIDGE_PROVIDER_EVIDENCE_SECRET"]) {
+  if (!bridgeProviderIntegrationSource.includes(required)) fail(`Bridge Provider Integration is missing ${required}`);
+}
+if (bridgeProviderIntegrationSource.includes("https://app.across.to/api")) fail("Milestone 22 must not enable Across mainnet");
+const defaultBridgeChainMatch = bridgeProviderIntegrationSource.match(/DEFAULT_TESTNET_CHAIN_IDS\s*=\s*\[([^\]]+)\]/);
+const defaultBridgeChainIds = new Set(defaultBridgeChainMatch?.[1]?.match(/\d+/g) || []);
+const envBridgeChainMatch = envExample.match(/BRIDGE_PROVIDER_ALLOWED_TESTNET_CHAIN_IDS=([^\n]+)/);
+const envBridgeChainIds = new Set(envBridgeChainMatch?.[1]?.match(/\d+/g) || []);
+for (const currentAcrossEvmTestnetChainId of ["421614", "84532", "168587773", "808813", "37111", "4202", "919", "11155420", "80002", "11155111", "129399", "1301"]) {
+  if (!defaultBridgeChainIds.has(currentAcrossEvmTestnetChainId) || !envBridgeChainIds.has(currentAcrossEvmTestnetChainId)) fail(`Milestone 22 is missing current Across EVM testnet chain ID: ${currentAcrossEvmTestnetChainId}`);
+}
+if (defaultBridgeChainIds.has("133268194659241")) fail("The EVM bridge adapter must not advertise Solana Devnet as an EVM chain");
+if (!policySource.includes("evaluateBridgeProviderIntegration")) fail("Bridge Provider Integration findings are not wired into Risk Assessment");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  for (const required of ["prepareBridgeProviderIntegration", "applyBridgeProviderEvidenceToRequest", "bridgeProviderExecution", "pollBridgeProviderTransfer"]) {
+    if (!source.includes(required)) fail(`${name} is missing real bridge-provider pipeline integration: ${required}`);
+  }
+}
+for (const route of ["GET /api/bridge-provider-integration/status", "GET /api/bridge-providers/chains", "GET /api/bridge-providers/tokens", "POST /api/bridge-provider-integration/quotes", "POST /api/agent-gateway/bridge/poll"]) {
+  if (!serverSource.includes(route)) fail(`Bridge Provider Integration route is missing: ${route}`);
+}
+if (!serverSource.includes("bridgeProviderIntegration: getBridgeProviderIntegrationStatus")) fail("Bridge Provider Integration is missing from service health");
+for (const required of ["Magen3BridgeProviderEvidence", "Magen3BridgeProviderExecution", "requestBridgeProviderQuote", "pollBridgeProvider"]) {
+  if (!sdkSource.includes(required)) fail(`JavaScript SDK Bridge Provider Integration support is missing: ${required}`);
+}
+for (const required of ["request_bridge_provider_quote", "poll_bridge_provider"]) {
+  if (!pythonSource.includes(required)) fail(`Python SDK Bridge Provider Integration support is missing: ${required}`);
+}
+if (!mcpSource.includes("bridgeProviderIntegration") || !mcpSource.includes("getBridgeProviderStatus") || !mcpSource.includes("requestBridgeProviderQuote") || !mcpSource.includes("pollBridgeProvider")) fail("MCP Bridge Provider Integration guidance or handlers are missing");
+for (const tool of ["magen3_get_bridge_provider_status", "magen3_request_bridge_provider_quote", "magen3_poll_bridge_provider"]) {
+  if (!mcpServerSource.includes(tool)) fail(`MCP bridge-provider tool is missing: ${tool}`);
+}
+if (!read("docs/REAL_BRIDGE_PROVIDER_INTEGRATION.md").includes("Roadmap boundary")) fail("Real Bridge Provider Integration documentation is missing its roadmap boundary");
+if (!read("REAL_BRIDGE_PROVIDER_INTEGRATION_IMPLEMENTATION_REPORT.md").includes("Milestones 23–28 were not prematurely implemented")) fail("Milestone 22 implementation report is incomplete");
+if (!securityModelSource.includes('name: "Real bridge provider integration"') || !securityModelSource.includes('status: "Foundation Available"')) fail("Frontend Bridge Provider Integration status is missing or dishonest");
+for (const required of ["bridgeProviderIntegrationStatus", "bridgeProviderChains", "bridgeProviderTokens", "requestBridgeProviderQuote", "pollBridgeProvider"]) {
+  if (!frontendApiSource.includes(required)) fail(`Frontend API client is missing Bridge Provider Integration support: ${required}`);
+}
+if (!envExample.includes("BRIDGE_PROVIDER_EVIDENCE_SECRET=") || !envExample.includes("BRIDGE_PROVIDER_ACROSS_BASE_URL=https://testnet.across.to/api")) fail(".env.example is missing Milestone 22 bridge-provider configuration");
 if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
 if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
 if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");
