@@ -117,3 +117,17 @@ test("normalizes lifecycle and replay metadata inside the existing action envelo
   assert.equal(normalized.lifecycleAttempt, 1);
   assert.equal(normalized.lifecycleIntentFingerprint, "a".repeat(64));
 });
+
+
+test("normalizes MEV execution-quality metadata inside the existing action envelope", () => {
+  const normalized = normalizeAgentGatewayIntent({
+    agentId: "agent-mev",
+    action: { type: "Swap", amount: 10, asset: "USDC", target: "0x1111111111111111111111111111111111111111",
+      expectedOutput: 9.9, minimumReceived: 9.8,
+      executionQuality: { quoteProvider: "test-aggregator", quoteId: "q-1", quoteTimestamp: "2026-08-06T09:00:00.000Z", quoteExpiresAt: "2026-08-06T09:01:00.000Z", deadline: "2026-08-06T09:02:00.000Z", priceImpactBps: 25, simulatedOutput: 9.85, executionChannel: "private", privateExecutionAvailable: true } }
+  });
+  assert.equal(normalized.executionQuoteProvider, "test-aggregator");
+  assert.equal(normalized.priceImpactBps, 25);
+  assert.equal(normalized.simulatedOutput, 9.85);
+  assert.equal(normalized.privateExecutionAvailable, true);
+});

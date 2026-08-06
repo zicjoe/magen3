@@ -1354,6 +1354,8 @@ export interface Magen3DecisionResult {
   assetContractRiskContext?: Magen3AssetContractRiskEvidence;
   /** Deterministic rolling wallet and agent behavior evidence from prior Magen3 audits. */
   walletBehavioralControlsContext?: Magen3WalletBehavioralControlsContext;
+  /** Deterministic quote freshness, slippage, simulation deviation, deadline, and execution-channel evidence. */
+  mevExecutionQualityContext?: Magen3MevExecutionQualityContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1384,6 +1386,31 @@ export interface Magen3WalletBehavioralControlsContext {
   status: "not_required" | "passed" | "review_required" | "blocked";
   config: Record<string, unknown>;
 }
+export interface Magen3MevExecutionQualityContext {
+  schemaVersion: string;
+  evaluatedAt: string;
+  applicable: boolean;
+  actionType: string;
+  quoteProvider?: string | null;
+  quoteId?: string | null;
+  quoteTimestamp?: string | null;
+  quoteExpiresAt?: string | null;
+  quoteAgeSeconds?: number | null;
+  expectedOutput?: number | null;
+  minimumReceived?: number | null;
+  simulatedOutput?: number | null;
+  slippageBps?: number | null;
+  impliedSlippageBps?: number | null;
+  priceImpactBps?: number | null;
+  simulationDeviationBps?: number | null;
+  executionDeadline?: string | null;
+  executionChannel: string;
+  privateExecutionAvailable: boolean;
+  simulationBlockNumber?: string | number | null;
+  evidenceFingerprint: string;
+  status: "not_required" | "passed" | "review_required" | "blocked";
+  config: Record<string, unknown>;
+}
 export interface Magen3IntentResponse {
   ok: boolean;
   executionApproved: boolean;
@@ -1408,6 +1435,8 @@ export interface Magen3IntentResponse {
   assetContractRisk?: Magen3AssetContractRiskEvidence;
   /** Deterministic wallet behavioral evidence retained in the decision and audit. */
   walletBehavioralControls?: Magen3WalletBehavioralControlsContext;
+  /** Deterministic MEV and execution-quality evidence retained in the decision and audit. */
+  mevExecutionQuality?: Magen3MevExecutionQualityContext;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }

@@ -798,3 +798,5 @@ export function deriveIntegrationHealth(
 
 
 export const walletBehavioralControlsMilestone = { name: "Wallet Behavioral Controls", status: "Foundation Available", description: "Deterministic rolling behavior checks using existing Magen3 audit history; no background monitoring." } as const;
+
+export const mevExecutionQualityMilestone = { name: "MEV & Execution Quality", status: "Foundation Available", description: "Deterministic quote freshness, slippage, simulation-deviation, deadline, and execution-channel controls; no live market feed or guaranteed MEV protection." } as const;

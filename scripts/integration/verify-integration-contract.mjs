@@ -10,8 +10,9 @@ const sdkPackage = JSON.parse(read("packages/sdk-js/package.json"));
 const sdkSource = read("packages/sdk-js/src/index.ts");
 const statefulSimulationSource = read("backend/lib/statefulSimulation.mjs");
 const assetIdentitySource = read("backend/lib/assetIdentity.mjs");
-const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs",
-  "backend/lib/walletBehavioralControls.mjs");
+const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs");
+const walletBehavioralControlsSource = read("backend/lib/walletBehavioralControls.mjs");
+const mevExecutionQualitySource = read("backend/lib/mevExecutionQuality.mjs");
 const policySource = read("backend/lib/policyEngine.mjs");
 const mcpSource = read("packages/mcp-server/src/core.ts");
 const pythonSource = read("packages/sdk-python/src/magen3/client.py");
@@ -56,6 +57,11 @@ if (!assetContractRiskSource.includes("eth_getCode") || !assetContractRiskSource
 if (!policySource.includes("evaluateAssetContractRisk")) fail("Asset contract risk findings are not wired into Risk Assessment");
 if (!sdkSource.includes("Magen3AssetContractRiskEvidence") || !sdkSource.includes("assetContractRiskContext")) fail("SDK asset contract risk schemas are missing");
 if (!read("docs/ASSET_CONTRACT_RISK.md").includes("Roadmap boundary")) fail("Asset contract risk documentation is missing its milestone boundary");
+if (!walletBehavioralControlsSource.includes("evaluateWalletBehavioralControls") || !policySource.includes("evaluateWalletBehavioralControls")) fail("Wallet behavioral controls are not wired into Risk Assessment");
+if (!mevExecutionQualitySource.includes("evaluateMevExecutionQuality") || !policySource.includes("evaluateMevExecutionQuality")) fail("MEV execution-quality controls are not wired into Risk Assessment");
+if (!mevExecutionQualitySource.includes("Quote freshness") || !mevExecutionQualitySource.includes("Simulation-to-quote deviation")) fail("MEV execution-quality evidence checks are incomplete");
+if (!sdkSource.includes("Magen3MevExecutionQualityContext") || !sdkSource.includes("mevExecutionQualityContext")) fail("SDK MEV execution-quality schemas are missing");
+if (!read("docs/MEV_EXECUTION_QUALITY.md").includes("does not guarantee")) fail("MEV execution-quality documentation must state simulation limitations");
 if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
 if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
 if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");

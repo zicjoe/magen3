@@ -173,6 +173,13 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.preflight && typeof body.preflight === "object"
         ? body.preflight
         : {};
+  const executionQuality = action.executionQuality && typeof action.executionQuality === "object"
+    ? action.executionQuality
+    : action.execution_quality && typeof action.execution_quality === "object"
+      ? action.execution_quality
+      : body.executionQuality && typeof body.executionQuality === "object"
+        ? body.executionQuality
+        : {};
   const oracle = action.oracle && typeof action.oracle === "object"
     ? action.oracle
     : action.oracleValidation && typeof action.oracleValidation === "object"
@@ -358,6 +365,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
     slippageBps: optionalNumber(preflight.slippageBps ?? preflight.slippage_bps ?? action.slippageBps ?? action.slippage_bps, "slippageBps", { integer: true }),
     expectedOutput: optionalNumber(preflight.expectedOutput ?? preflight.expected_output ?? action.expectedOutput ?? action.expected_output, "expectedOutput"),
     minimumReceived: optionalNumber(preflight.minimumReceived ?? preflight.minimum_received ?? action.minimumReceived ?? action.minimum_received, "minimumReceived"),
+    executionQuoteProvider: cleanString(executionQuality.quoteProvider || executionQuality.quote_provider || action.quoteProvider || action.quote_provider || "", ""),
+    executionQuoteId: cleanString(executionQuality.quoteId || executionQuality.quote_id || action.quoteId || action.quote_id || "", ""),
+    executionQuoteTimestamp: cleanString(executionQuality.quoteTimestamp || executionQuality.quote_timestamp || action.executionQuoteTimestamp || action.execution_quote_timestamp || action.quoteTimestamp || action.quote_timestamp || "", ""),
+    executionQuoteExpiresAt: cleanString(executionQuality.quoteExpiresAt || executionQuality.quote_expires_at || action.executionQuoteExpiresAt || action.execution_quote_expires_at || "", ""),
+    executionDeadline: cleanString(executionQuality.deadline || executionQuality.executionDeadline || executionQuality.execution_deadline || action.deadline || action.executionDeadline || action.execution_deadline || "", ""),
+    priceImpactBps: optionalNumber(executionQuality.priceImpactBps ?? executionQuality.price_impact_bps ?? action.priceImpactBps ?? action.price_impact_bps, "priceImpactBps", { min: 0, max: 10000 }),
+    simulatedOutput: optionalNumber(executionQuality.simulatedOutput ?? executionQuality.simulated_output ?? action.simulatedOutput ?? action.simulated_output, "simulatedOutput", { min: 0 }),
+    executionChannel: cleanString(executionQuality.executionChannel || executionQuality.execution_channel || action.executionChannel || action.execution_channel || "", ""),
+    privateExecutionAvailable: Boolean(executionQuality.privateExecutionAvailable === true || executionQuality.private_execution_available === true || action.privateExecutionAvailable === true || action.private_execution_available === true),
     runtimeArgs: normalizeRuntimeArgs(preflight.runtimeArgs ?? preflight.runtime_args ?? action.runtimeArgs ?? action.runtime_args),
     transactionHash: cleanString(preflight.transactionHash ?? preflight.transaction_hash ?? action.transactionHash ?? action.transaction_hash ?? "", ""),
     bridgeSourceChain: cleanString(bridge.sourceChain || bridge.source_chain || action.bridgeSourceChain || action.bridge_source_chain || body.bridgeSourceChain || body.bridge_source_chain || "", ""),

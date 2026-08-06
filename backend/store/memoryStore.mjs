@@ -1015,6 +1015,7 @@ export function createMemoryStore() {
           assetIdentity: result.assetIdentityContext || undefined,
           assetContractRisk: result.assetContractRiskContext && result.assetContractRiskContext.status !== "not_applicable" ? result.assetContractRiskContext : undefined,
           walletBehavioralControls: result.walletBehavioralControlsContext && result.walletBehavioralControlsContext.status !== "not_required" ? result.walletBehavioralControlsContext : undefined,
+          mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,
@@ -1309,6 +1310,7 @@ export function createMemoryStore() {
         reviewResolution: result.reviewResolution,
         decisionExplanation: result.decisionExplanation,
         agentMessage: result.decisionExplanation?.userMessage || result.primaryReason || result.reason,
+        mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
         emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: gatewayNextAction(result.decision, result.decisionExplanation),
       };

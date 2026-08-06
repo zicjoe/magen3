@@ -1087,3 +1087,8 @@ Connected Agents now separates immediate access revocation from permanent deleti
 
 `Review Required` pauses execution but does not automatically create a human-approval request. Policies separately choose **Autonomous**, **Balanced**, or **Human Governed** resolution. External agents receive `agentMessage`, the exact `primaryReason`, `triggeredRule`, `suggestedResolution`, and structured `reviewResolution` instructions. See [`docs/AI_NATIVE_REVIEW_RESOLUTION.md`](docs/AI_NATIVE_REVIEW_RESOLUTION.md).
 
+
+
+### Milestone 19 — MEV & Execution Quality
+
+Deterministic quote freshness, slippage, simulation-deviation, deadline, and execution-channel controls are documented in `docs/MEV_EXECUTION_QUALITY.md`.

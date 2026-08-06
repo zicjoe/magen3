@@ -1,0 +1,12 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { evaluateMevExecutionQuality } from "./mevExecutionQuality.mjs";
+const NOW = new Date("2026-08-06T09:00:00.000Z");
+const policy = (overrides={}) => ({ structuredRules:{ mevExecutionQuality:{ enabled:true, maxQuoteAgeSeconds:60, maxSlippageBps:300, ...overrides } } });
+const request = (overrides={}) => ({ actionType:"Swap", expectedOutput:100, minimumReceived:98, executionQuoteTimestamp:"2026-08-06T08:59:30.000Z", executionQuoteExpiresAt:"2026-08-06T09:01:00.000Z", executionChannel:"private", privateExecutionAvailable:true, ...overrides });
+test("passes fresh bounded private execution",()=>{ const r=evaluateMevExecutionQuality({request:request(),policy:policy(),now:NOW}); assert.equal(r.hardBlock,false); assert.equal(r.needsReview,false); assert.equal(r.context.status,"passed"); });
+test("blocks excessive slippage",()=>{ const r=evaluateMevExecutionQuality({request:request({slippageBps:800}),policy:policy(),now:NOW}); assert.equal(r.hardBlock,true); assert.ok(r.findings.some(f=>f.rule==="Slippage protection"&&f.status==="fail")); });
+test("reviews stale quote",()=>{ const r=evaluateMevExecutionQuality({request:request({executionQuoteTimestamp:"2026-08-06T08:55:00.000Z"}),policy:policy(),now:NOW}); assert.equal(r.needsReview,true); });
+test("blocks expired deadline",()=>{ const r=evaluateMevExecutionQuality({request:request({executionDeadline:"2026-08-06T08:59:00.000Z"}),policy:policy(),now:NOW}); assert.equal(r.hardBlock,true); });
+test("reviews public mempool exposure",()=>{ const r=evaluateMevExecutionQuality({request:request({executionChannel:"public"}),policy:policy(),now:NOW}); assert.equal(r.needsReview,true); });
+test("does not apply to transfers",()=>{ const r=evaluateMevExecutionQuality({request:request({actionType:"Transfer"}),policy:policy(),now:NOW}); assert.equal(r.context.status,"not_required"); });
