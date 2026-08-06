@@ -492,6 +492,40 @@ export interface Magen3StatefulSimulationEvidence {
   evidenceCompleteness?: Record<string, "observed" | "derived" | "inferred" | "unsupported" | "unavailable" | string>;
 }
 
+export interface Magen3TradingRoute {
+  /** Quote or route provider responsible for this route. */
+  quoteProvider?: string;
+  /** Provider-issued quote or route identifier. */
+  quoteId?: string;
+  /** Exact router receiving the final transaction. */
+  router: string;
+  aggregator?: string;
+  protocol?: string;
+  /** Ordered pool identifiers. Order is security-sensitive. */
+  poolSequence?: string[];
+  /** Ordered asset identifiers from input to output. */
+  tokenPath: string[];
+  inputAsset: string;
+  outputAsset: string;
+  inputAmount: number;
+  expectedOutput: number;
+  minimumOutput: number;
+  executionMode?: "exact_input" | "exact_output" | string;
+  routeFeeBps?: number;
+  routeFeeAmount?: number;
+  feeRecipients?: string[];
+  intermediaryContracts?: string[];
+  /** Final unsigned calldata. Never include signatures or signing material. */
+  calldata?: string;
+  /** SHA-256 of the final calldata when supplied by the trusted adapter. */
+  calldataHash?: string;
+  /** Exact unsigned payload hash expected to match Stateful Simulation. */
+  payloadHash?: string;
+  /** Trusted adapter fingerprint of the complete authorized route snapshot. */
+  authorizedRouteHash?: string;
+  expiresAt?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -550,6 +584,8 @@ export interface Magen3Action {
   assetIdentity?: Magen3AssetIdentityReference;
   /** Provider-backed pre-signing simulation request. Provider URLs are server-controlled. */
   simulation?: Magen3StatefulSimulationRequest;
+  /** Exact provider route, path, fee-recipient, calldata, and payload-binding evidence. */
+  tradingRoute?: Magen3TradingRoute;
 }
 
 
@@ -1356,6 +1392,8 @@ export interface Magen3DecisionResult {
   walletBehavioralControlsContext?: Magen3WalletBehavioralControlsContext;
   /** Deterministic quote freshness, slippage, simulation deviation, deadline, and execution-channel evidence. */
   mevExecutionQualityContext?: Magen3MevExecutionQualityContext;
+  /** Deterministic router, assets, path, pool, fee-recipient, calldata, and quote-to-payload binding evidence. */
+  tradingRouteIntegrityContext?: Magen3TradingRouteIntegrityContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1411,6 +1449,42 @@ export interface Magen3MevExecutionQualityContext {
   status: "not_required" | "passed" | "review_required" | "blocked";
   config: Record<string, unknown>;
 }
+export interface Magen3TradingRouteIntegrityContext {
+  schemaVersion: string;
+  evaluatedAt: string;
+  applicable: boolean;
+  actionType: string;
+  quoteProvider?: string | null;
+  quoteId?: string | null;
+  router?: string | null;
+  aggregator?: string | null;
+  protocol?: string | null;
+  poolSequence: string[];
+  tokenPath: string[];
+  inputAsset?: string | null;
+  outputAsset?: string | null;
+  inputAmount?: number | null;
+  expectedOutput?: number | null;
+  minimumOutput?: number | null;
+  executionMode: string;
+  routeFeeBps?: number | null;
+  routeFeeAmount?: number | null;
+  feeRecipients: string[];
+  intermediaryContracts: string[];
+  calldataHash?: string | null;
+  computedCalldataHash?: string | null;
+  payloadHash?: string | null;
+  simulationPayloadHash?: string | null;
+  routeFingerprint: string;
+  authorizedRouteHash?: string | null;
+  intermediaryAssets: string[];
+  unexpectedIntermediaryAssets: string[];
+  unexpectedPools: string[];
+  unexpectedFeeRecipients: string[];
+  status: "not_required" | "passed" | "review_required" | "blocked";
+  config: Record<string, unknown>;
+}
+
 export interface Magen3IntentResponse {
   ok: boolean;
   executionApproved: boolean;
@@ -1437,6 +1511,8 @@ export interface Magen3IntentResponse {
   walletBehavioralControls?: Magen3WalletBehavioralControlsContext;
   /** Deterministic MEV and execution-quality evidence retained in the decision and audit. */
   mevExecutionQuality?: Magen3MevExecutionQualityContext;
+  /** Deterministic trading-route and payload-binding evidence retained in the decision and audit. */
+  tradingRouteIntegrity?: Magen3TradingRouteIntegrityContext;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }

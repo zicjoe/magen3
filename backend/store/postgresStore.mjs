@@ -1397,6 +1397,7 @@ export async function createPostgresStore() {
           assetContractRisk: result.assetContractRiskContext && result.assetContractRiskContext.status !== "not_applicable" ? result.assetContractRiskContext : undefined,
           walletBehavioralControls: result.walletBehavioralControlsContext && result.walletBehavioralControlsContext.status !== "not_required" ? result.walletBehavioralControlsContext : undefined,
           mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
+          tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,
@@ -1827,6 +1828,7 @@ export async function createPostgresStore() {
         decisionExplanation: result.decisionExplanation,
         agentMessage: result.decisionExplanation?.userMessage || result.primaryReason || result.reason,
         mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
+          tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
         emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: gatewayNextAction(result.decision, result.decisionExplanation),
       };

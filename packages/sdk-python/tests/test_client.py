@@ -603,5 +603,50 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(first.api_key, "legacy-one")
         self.assertEqual(second.api_key, "legacy-two")
 
+    def test_trading_route_metadata_passes_through(self):
+        captured = {}
+
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {
+                "ok": True,
+                "executionApproved": False,
+                "result": {
+                    "decision": "Review Required",
+                    "tradingRouteIntegrityContext": {
+                        "status": "review_required",
+                        "routeFingerprint": "a" * 64,
+                    },
+                },
+            }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "0x0000000000000000000000000000000000000001",
+            "action": {
+                "type": "Swap",
+                "amount": 10,
+                "asset": "USDC",
+                "outputAsset": "DAI",
+                "target": "0x1111111111111111111111111111111111111111",
+                "tradingRoute": {
+                    "quoteProvider": "approved-aggregator",
+                    "quoteId": "quote-1",
+                    "router": "0x1111111111111111111111111111111111111111",
+                    "tokenPath": ["USDC", "WETH", "DAI"],
+                    "inputAsset": "USDC",
+                    "outputAsset": "DAI",
+                    "inputAmount": 10,
+                    "expectedOutput": 9.9,
+                    "minimumOutput": 9.8,
+                    "payloadHash": "b" * 64,
+                },
+            },
+        })
+        route = captured["payload"]["action"]["tradingRoute"]
+        self.assertEqual(route["quoteId"], "quote-1")
+        self.assertEqual(route["tokenPath"], ["USDC", "WETH", "DAI"])
+        self.assertEqual(result["result"]["tradingRouteIntegrityContext"]["status"], "review_required")
+
 if __name__ == "__main__":
     unittest.main()

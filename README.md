@@ -1092,3 +1092,7 @@ Connected Agents now separates immediate access revocation from permanent deleti
 ### Milestone 19 — MEV & Execution Quality
 
 Deterministic quote freshness, slippage, simulation-deviation, deadline, and execution-channel controls are documented in `docs/MEV_EXECUTION_QUALITY.md`.
+
+### Milestone 20 — Trading Route Integrity
+
+Magen3 can now deterministically bind swap routes to the authorized router, assets, ordered token/pool path, amounts, fee recipients, calldata hash, and Stateful Simulation payload hash. See [`docs/TRADING_ROUTE_INTEGRITY.md`](docs/TRADING_ROUTE_INTEGRITY.md). The current capability is **Foundation Available**; live quote-provider authentication and market-risk feeds are not claimed.

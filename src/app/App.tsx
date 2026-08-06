@@ -3040,7 +3040,7 @@ const SHIELD_AREA_FINDING_MODULES: Record<string, string[]> = {
   "wallet-asset-safety": ["Wallet Validation", "Asset Identity"],
   "contract-permission-safety": ["Contract Validation", "Privileged Action Controls", "Contract Upgrade Safety", "Contract Argument Policies", "Token Permission Controls"],
   "execution-integrity": ["Execution Simulation", "Execution Integrity", "Execution & Settlement Reconciliation", "RPC & Chain Integrity", "Gas Sponsorship & Fee Safety"],
-  "market-oracle-integrity": ["Oracle Validation", "Execution Quality"],
+  "market-oracle-integrity": ["Oracle Validation", "MEV & Execution Quality", "Trading Route Integrity"],
   "cross-chain-payment-controls": ["Bridge Controls", "x402 Payment Controls", "x402 Settlement"],
   "threat-compliance": ["Threat Intelligence", "Compliance Controls"],
 };
@@ -11700,6 +11700,7 @@ function SettingsPage({
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
+    ["Trading Route Integrity Status", `${api.baseUrl}/api/trading-route-integrity/status`],
     ["Execution Reconciliation Status", `${api.baseUrl}/api/execution-reconciliation/status`],
     ["Execution Reconciliation Reporting", `${api.baseUrl}/api/agent-gateway/executions/reconcile`],
     ["Execution Reconciliation Polling", `${api.baseUrl}/api/agent-gateway/executions/poll`],
@@ -11715,8 +11716,9 @@ function SettingsPage({
     ["x402 Settlement Reporting", `${api.baseUrl}/api/agent-gateway/x402/settlements`],
     ["Agent API Keys", "Created and rotated from Connected Agents"],
   ];
-  const essentialGatewayRows = [gatewayRows[0], gatewayRows[1], gatewayRows[2], gatewayRows[8]];
-  const advancedGatewayRows = gatewayRows.filter((row) => !essentialGatewayRows.includes(row));
+  const essentialGatewayLabels = new Set(["API Base URL", "Gateway Intent URL", "Gateway Verify URL", "Execution Reconciliation Reporting"]);
+  const essentialGatewayRows = gatewayRows.filter(([label]) => essentialGatewayLabels.has(label));
+  const advancedGatewayRows = gatewayRows.filter(([label]) => !essentialGatewayLabels.has(label));
   const backendEnvironment = api.baseUrl.includes("localhost") || api.baseUrl.includes("127.0.0.1") ? "Local backend" : "Deployed backend";
   const activePauses = emergencyPauses.filter((pause) => pause.active === true || pause.status === "Active");
   const proofRecords = auditLogs.filter((log) => Boolean(log.txHash || log.decisionProofStatus));

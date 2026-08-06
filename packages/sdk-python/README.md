@@ -292,3 +292,7 @@ client.poll_execution_reconciliation({
 ```
 
 Polling uses only RPC endpoints configured on the Magen3 backend. Do not send signed transactions, wallet signatures, private keys, or provider URLs.
+
+## Trading Route Integrity
+
+The Python client passes additive `action.tradingRoute` metadata through unchanged. Supply only public route evidence such as the exact quote ID, router, ordered token/pool path, amounts, fee recipients, and trusted calldata/payload hashes. Never include signatures, signing material, or provider credentials.

@@ -1058,3 +1058,56 @@ test("preserves precise decision explanation diagnostics", () => {
   assert.equal(response.result.decisionExplanation.code, "INSTRUCTION_PROTECTED_PARAMETER_MISMATCH");
   assert.equal(response.result.decisionExplanation.field, "amount");
 });
+
+test("passes Trading Route Integrity metadata and response context through unchanged", async () => {
+  let capturedPayload;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-ROUTE",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      capturedPayload = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: false,
+        result: {
+          decision: "Review Required",
+          risk: "Medium",
+          riskScore: 40,
+          reason: "route review",
+          recommendedAction: "requote",
+          tradingRouteIntegrityContext: { status: "review_required", routeFingerprint: "a".repeat(64) },
+        },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "requote",
+        tradingRouteIntegrity: { status: "review_required", routeFingerprint: "a".repeat(64) },
+      }), { status: 201 });
+    },
+  });
+  const response = await client.checkIntent({
+    executionWalletAddress: "0x0000000000000000000000000000000000000001",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "USDC",
+      outputAsset: "DAI",
+      target: "0x1111111111111111111111111111111111111111",
+      tradingRoute: {
+        quoteProvider: "approved-aggregator",
+        quoteId: "quote-1",
+        router: "0x1111111111111111111111111111111111111111",
+        tokenPath: ["USDC", "WETH", "DAI"],
+        inputAsset: "USDC",
+        outputAsset: "DAI",
+        inputAmount: 10,
+        expectedOutput: 9.9,
+        minimumOutput: 9.8,
+      },
+    },
+  });
+  assert.equal(capturedPayload.action.tradingRoute.quoteId, "quote-1");
+  assert.deepEqual(capturedPayload.action.tradingRoute.tokenPath, ["USDC", "WETH", "DAI"]);
+  assert.equal(response.result.tradingRouteIntegrityContext.status, "review_required");
+  assert.equal(response.tradingRouteIntegrity.routeFingerprint, "a".repeat(64));
+});

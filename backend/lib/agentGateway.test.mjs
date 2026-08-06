@@ -131,3 +131,40 @@ test("normalizes MEV execution-quality metadata inside the existing action envel
   assert.equal(normalized.simulatedOutput, 9.85);
   assert.equal(normalized.privateExecutionAvailable, true);
 });
+
+test("normalizes Trading Route Integrity metadata inside the existing action envelope", () => {
+  const normalized = normalizeAgentGatewayIntent({
+    agentId: "agent-route",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "USDC",
+      outputAsset: "DAI",
+      target: "0xrouter",
+      expectedOutput: 9.9,
+      minimumReceived: 9.8,
+      tradingRoute: {
+        quoteProvider: "aggregator-a",
+        quoteId: "quote-1",
+        router: "0xrouter",
+        poolSequence: ["pool-1", "pool-2"],
+        tokenPath: ["USDC", "WETH", "DAI"],
+        inputAsset: "USDC",
+        outputAsset: "DAI",
+        inputAmount: 10,
+        expectedOutput: 9.9,
+        minimumOutput: 9.8,
+        feeRecipients: ["fee-recipient"],
+        payloadHash: "a".repeat(64),
+      },
+    },
+  });
+  assert.equal(normalized.tradingRouteQuoteProvider, "aggregator-a");
+  assert.equal(normalized.tradingRouteRouter, "0xrouter");
+  assert.deepEqual(normalized.tradingRouteTokenPath, ["USDC", "WETH", "DAI"]);
+  assert.equal(normalized.tradingRoutePayloadHash, "a".repeat(64));
+});
+
+test("rejects oversized trading-route calldata at the Gateway boundary", () => {
+  assert.throws(() => normalizeAgentGatewayIntent({ agentId: "agent-route", action: { type: "Swap", amount: 1, target: "0xrouter", tradingRoute: { calldata: `0x${"00".repeat(131073)}` } } }), /tradingRoute\.calldata exceeds/);
+});

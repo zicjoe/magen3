@@ -315,6 +315,34 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (route === "GET /api/trading-route-integrity/status") {
+      return send(res, 200, {
+        ok: true,
+        tradingRouteIntegrity: {
+          status: "foundation-available",
+          protectionArea: "Market & Oracle Integrity",
+          control: "Trading Route Integrity",
+          deterministicBindings: [
+            "quote and route identifier",
+            "router and transaction target",
+            "input and output assets",
+            "input amount and output bounds",
+            "ordered token and pool path",
+            "fee recipients and intermediary contracts",
+            "calldata SHA-256",
+            "authorized route fingerprint",
+            "Stateful Simulation payload hash"
+          ],
+          limitations: [
+            "no live quote-provider authentication",
+            "no universal router calldata decoder",
+            "no live pool-state or market-risk feed",
+            "no final inclusion-block guarantee"
+          ]
+        }
+      });
+    }
+
     if (route === "GET /api/rpc-chain-integrity/status") {
       return send(res, 200, { ok: true, rpcChainIntegrity: getRpcChainIntegrityStatus() });
     }
@@ -824,6 +852,29 @@ const server = createServer(async (req, res) => {
               executionPrice: "Proposed execution price in quote units per base unit; can be derived from expectedOutput / amount",
               quoteTimestamp: "ISO-8601 time when the execution quote was produced"
             },
+            tradingRoute: {
+              quoteProvider: "Trusted quote or route provider",
+              quoteId: "Provider-issued route identifier",
+              router: "Exact final transaction target",
+              aggregator: "Optional approved aggregator",
+              protocol: "Optional protocol identifier",
+              poolSequence: ["Ordered pool identifiers"],
+              tokenPath: ["Input asset", "Optional intermediary", "Output asset"],
+              inputAsset: "Exact protected input asset",
+              outputAsset: "Exact protected output asset",
+              inputAmount: "Exact protected input amount",
+              expectedOutput: "Exact quoted output",
+              minimumOutput: "Exact payload minimum output",
+              executionMode: "exact_input | exact_output",
+              routeFeeBps: "Optional route fee in basis points",
+              routeFeeAmount: "Optional absolute route fee",
+              feeRecipients: ["Explicit fee recipients"],
+              intermediaryContracts: ["Other contracts reached by the route"],
+              calldataHash: "SHA-256 of final unsigned calldata",
+              payloadHash: "Exact unsigned payload hash expected to match Stateful Simulation",
+              authorizedRouteHash: "Trusted adapter fingerprint of the complete authorized route snapshot",
+              expiresAt: "ISO-8601 route expiry"
+            },
             bridge: {
               sourceChain: "Source chain identifier, normally casper-test for the current Magen3 deployment",
               destinationChain: "Destination chain identifier, for example ethereum-sepolia",
@@ -925,6 +976,23 @@ const server = createServer(async (req, res) => {
           ],
           statefulSimulation: "Unavailable in the current pre-signing Gateway. Casper speculative execution requires a constructed transaction or deploy and is disabled by default on nodes.",
           decisionRule: "Malformed supplied preflight data can block or require review; omitted legacy metadata remains backward compatible and does not silently count as full simulation."
+        },
+        tradingRouteIntegrity: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/trading-route-integrity/status",
+          appliesTo: ["Swap", "Trade", "Exchange"],
+          bindings: [
+            "quote provider and route ID",
+            "router and final transaction target",
+            "ordered token path and pool sequence",
+            "input/output assets and amounts",
+            "route fees and explicit fee recipients",
+            "calldata hash",
+            "authorized route fingerprint",
+            "Stateful Simulation payload hash"
+          ],
+          decisionRule: "Trading Route Integrity emits deterministic pass, review, or block findings. Passing route evidence cannot override another blocking module.",
+          limitation: "The current foundation evaluates trusted adapter-supplied evidence and does not independently authenticate every quote provider or decode every router."
         },
         threatIntelligence: {
           status: "Foundation Available",

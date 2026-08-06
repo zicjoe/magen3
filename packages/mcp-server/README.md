@@ -143,3 +143,7 @@ The official MCP server may relay public `action.feeSafety` evidence produced by
 - `magen3_poll_execution_reconciliation` queries a bound transaction through the backend-configured Casper or EVM adapter.
 
 The MCP schema cannot provide RPC URLs. Both tools preserve Audit ownership and never receive signed transactions or wallet secrets.
+
+## Trading Route Integrity
+
+For swaps, the MCP caller may supply public `action.tradingRoute` evidence. The MCP server relays the exact quote ID, router, ordered token/pool path, amounts, fee recipients, and trusted calldata/payload hashes to Magen3. It does not create or infer route evidence, authenticate quote providers, or sign transactions.

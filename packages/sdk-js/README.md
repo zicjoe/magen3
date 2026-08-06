@@ -339,3 +339,6 @@ await client.pollExecutionReconciliation({
 ```
 
 Polling uses only RPC endpoints configured on the Magen3 backend. Do not send signed transactions, wallet signatures, private keys, or provider URLs.
+## Trading Route Integrity
+
+For protected swaps, provide `action.tradingRoute` with the exact quote ID, router, ordered token and pool path, input/output amounts, explicit fee recipients, and available calldata/payload hashes. The response may include `result.tradingRouteIntegrityContext` and top-level `tradingRouteIntegrity`. See `docs/TRADING_ROUTE_INTEGRITY.md` in the main repository.

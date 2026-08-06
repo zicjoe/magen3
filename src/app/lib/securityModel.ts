@@ -196,7 +196,8 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
     controls: [
       { id: "quote-bounds", name: "Slippage and output bounds", description: "Slippage structure, expected output, minimum received, and quote-bound consistency.", status: "Live", configurable: true },
       { id: "oracle-integrity", name: "Oracle price integrity", description: "Feed freshness, pair availability, source quorum, confidence, spread, and execution-price deviation.", status: "Foundation Available", configurable: true },
-      { id: "mev-quality", name: "MEV and execution quality", description: "Price impact, route quality, sandwich risk, protected submission, and reserve-movement signals.", status: "Planned", configurable: true },
+      { id: "mev-quality", name: "MEV and execution quality", description: "Deterministic quote freshness, slippage, simulation deviation, deadlines, and execution-channel policy. Live mempool and relay protection are not claimed.", status: "Foundation Available", configurable: true },
+      { id: "trading-route-integrity", name: "Trading route integrity", description: "Binds quote ID, router, ordered token and pool path, amounts, fee recipients, calldata, and the final simulated payload.", status: "Foundation Available", configurable: true },
       { id: "asset-market-risk", name: "Asset market-risk signals", description: "Liquidity depth, concentration, volatility, and wrapped-asset backing evidence.", status: "Planned", configurable: true },
     ],
   }),
@@ -800,3 +801,5 @@ export function deriveIntegrationHealth(
 export const walletBehavioralControlsMilestone = { name: "Wallet Behavioral Controls", status: "Foundation Available", description: "Deterministic rolling behavior checks using existing Magen3 audit history; no background monitoring." } as const;
 
 export const mevExecutionQualityMilestone = { name: "MEV & Execution Quality", status: "Foundation Available", description: "Deterministic quote freshness, slippage, simulation-deviation, deadline, and execution-channel controls; no live market feed or guaranteed MEV protection." } as const;
+
+export const tradingRouteIntegrityMilestone = { name: "Trading Route Integrity", status: "Foundation Available", description: "Deterministic quote, router, ordered path, pool, fee-recipient, calldata, and payload binding; no live quote-provider authentication or market-risk feed." } as const;

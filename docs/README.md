@@ -48,3 +48,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Delegation & Session Key Safety](./DELEGATION_SESSION_KEY_SAFETY.md) — Casper-signed, expiring, least-privilege delegated authority and session-key enforcement.
 
 - [Integration Configuration](./INTEGRATION_CONFIGURATION.md) — canonical environment variables, base URL semantics, SDK, Python, and MCP setup.
+
+- [Trading Route Integrity](TRADING_ROUTE_INTEGRITY.md) — deterministic quote, router, path, pool, fee-recipient, calldata, and payload binding for Milestone 20.

@@ -60,6 +60,16 @@ function cleanString(value, fallback = "") {
   return String(value ?? fallback).trim();
 }
 
+function boundedString(value, name, maxLength) {
+  const normalized = cleanString(value);
+  if (normalized.length > maxLength) {
+    const err = new Error(`${name} exceeds the maximum supported length`);
+    err.status = 400;
+    throw err;
+  }
+  return normalized;
+}
+
 function normalizeActionType(value) {
   const raw = cleanString(value, "Contract Interaction");
   return ACTION_ALIASES[raw.toLowerCase()] || raw;
@@ -180,6 +190,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
       : body.executionQuality && typeof body.executionQuality === "object"
         ? body.executionQuality
         : {};
+  const tradingRoute = action.tradingRoute && typeof action.tradingRoute === "object"
+    ? action.tradingRoute
+    : action.trading_route && typeof action.trading_route === "object"
+      ? action.trading_route
+      : action.route && typeof action.route === "object"
+        ? action.route
+        : body.tradingRoute && typeof body.tradingRoute === "object"
+          ? body.tradingRoute
+          : {};
   const oracle = action.oracle && typeof action.oracle === "object"
     ? action.oracle
     : action.oracleValidation && typeof action.oracleValidation === "object"
@@ -374,6 +393,28 @@ export function normalizeAgentGatewayIntent(body = {}) {
     simulatedOutput: optionalNumber(executionQuality.simulatedOutput ?? executionQuality.simulated_output ?? action.simulatedOutput ?? action.simulated_output, "simulatedOutput", { min: 0 }),
     executionChannel: cleanString(executionQuality.executionChannel || executionQuality.execution_channel || action.executionChannel || action.execution_channel || "", ""),
     privateExecutionAvailable: Boolean(executionQuality.privateExecutionAvailable === true || executionQuality.private_execution_available === true || action.privateExecutionAvailable === true || action.private_execution_available === true),
+    tradingRouteQuoteProvider: cleanString(tradingRoute.quoteProvider || tradingRoute.quote_provider || tradingRoute.provider || executionQuality.quoteProvider || executionQuality.quote_provider || "", ""),
+    tradingRouteQuoteId: cleanString(tradingRoute.quoteId || tradingRoute.quote_id || tradingRoute.routeId || tradingRoute.route_id || executionQuality.quoteId || executionQuality.quote_id || "", ""),
+    tradingRouteRouter: cleanString(tradingRoute.router || tradingRoute.routerAddress || tradingRoute.router_address || "", ""),
+    tradingRouteAggregator: cleanString(tradingRoute.aggregator || tradingRoute.aggregatorId || tradingRoute.aggregator_id || "", ""),
+    tradingRouteProtocol: cleanString(tradingRoute.protocol || tradingRoute.protocolId || tradingRoute.protocol_id || "", ""),
+    tradingRoutePoolSequence: Array.isArray(tradingRoute.poolSequence || tradingRoute.pool_sequence || tradingRoute.pools) ? (tradingRoute.poolSequence || tradingRoute.pool_sequence || tradingRoute.pools).slice(0, 32).map((item) => cleanString(item)).filter(Boolean) : [],
+    tradingRouteTokenPath: Array.isArray(tradingRoute.tokenPath || tradingRoute.token_path || tradingRoute.path) ? (tradingRoute.tokenPath || tradingRoute.token_path || tradingRoute.path).slice(0, 32).map((item) => cleanString(item)).filter(Boolean) : [],
+    tradingRouteInputAsset: cleanString(tradingRoute.inputAsset || tradingRoute.input_asset || tradingRoute.fromAsset || tradingRoute.from_asset || action.asset || body.asset || "", ""),
+    tradingRouteOutputAsset: cleanString(tradingRoute.outputAsset || tradingRoute.output_asset || tradingRoute.toAsset || tradingRoute.to_asset || action.outputAsset || action.output_asset || body.outputAsset || body.output_asset || "", ""),
+    tradingRouteInputAmount: optionalNumber(tradingRoute.inputAmount ?? tradingRoute.input_amount ?? action.amount ?? body.amount, "tradingRouteInputAmount", { min: 0 }),
+    tradingRouteExpectedOutput: optionalNumber(tradingRoute.expectedOutput ?? tradingRoute.expected_output ?? action.expectedOutput ?? action.expected_output, "tradingRouteExpectedOutput", { min: 0 }),
+    tradingRouteMinimumOutput: optionalNumber(tradingRoute.minimumOutput ?? tradingRoute.minimum_output ?? tradingRoute.minimumReceived ?? tradingRoute.minimum_received ?? action.minimumReceived ?? action.minimum_received, "tradingRouteMinimumOutput", { min: 0 }),
+    tradingRouteExecutionMode: cleanString(tradingRoute.executionMode || tradingRoute.execution_mode || tradingRoute.swapType || tradingRoute.swap_type || "exact_input", "exact_input"),
+    tradingRouteFeeBps: optionalNumber(tradingRoute.routeFeeBps ?? tradingRoute.route_fee_bps ?? tradingRoute.feeBps ?? tradingRoute.fee_bps, "tradingRouteFeeBps", { min: 0, max: 10000 }),
+    tradingRouteFeeAmount: optionalNumber(tradingRoute.routeFeeAmount ?? tradingRoute.route_fee_amount ?? tradingRoute.feeAmount ?? tradingRoute.fee_amount, "tradingRouteFeeAmount", { min: 0 }),
+    tradingRouteFeeRecipients: Array.isArray(tradingRoute.feeRecipients || tradingRoute.fee_recipients) ? (tradingRoute.feeRecipients || tradingRoute.fee_recipients).slice(0, 32).map((item) => cleanString(item)).filter(Boolean) : [],
+    tradingRouteIntermediaryContracts: Array.isArray(tradingRoute.intermediaryContracts || tradingRoute.intermediary_contracts || tradingRoute.contracts) ? (tradingRoute.intermediaryContracts || tradingRoute.intermediary_contracts || tradingRoute.contracts).slice(0, 32).map((item) => cleanString(item)).filter(Boolean) : [],
+    tradingRouteCalldata: boundedString(tradingRoute.calldata || tradingRoute.callData || tradingRoute.call_data || "", "tradingRoute.calldata", 262144),
+    tradingRouteCalldataHash: boundedString(tradingRoute.calldataHash || tradingRoute.calldata_hash || "", "tradingRoute.calldataHash", 128).toLowerCase(),
+    tradingRoutePayloadHash: boundedString(tradingRoute.payloadHash || tradingRoute.payload_hash || "", "tradingRoute.payloadHash", 128).toLowerCase(),
+    tradingRouteAuthorizedRouteHash: boundedString(tradingRoute.authorizedRouteHash || tradingRoute.authorized_route_hash || tradingRoute.routeFingerprint || tradingRoute.route_fingerprint || "", "tradingRoute.authorizedRouteHash", 128).toLowerCase(),
+    tradingRouteExpiresAt: cleanString(tradingRoute.expiresAt || tradingRoute.expires_at || tradingRoute.quoteExpiresAt || tradingRoute.quote_expires_at || executionQuality.quoteExpiresAt || executionQuality.quote_expires_at || "", ""),
     runtimeArgs: normalizeRuntimeArgs(preflight.runtimeArgs ?? preflight.runtime_args ?? action.runtimeArgs ?? action.runtime_args),
     transactionHash: cleanString(preflight.transactionHash ?? preflight.transaction_hash ?? action.transactionHash ?? action.transaction_hash ?? "", ""),
     bridgeSourceChain: cleanString(bridge.sourceChain || bridge.source_chain || action.bridgeSourceChain || action.bridge_source_chain || body.bridgeSourceChain || body.bridge_source_chain || "", ""),
