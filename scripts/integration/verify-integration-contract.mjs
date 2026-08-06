@@ -15,6 +15,9 @@ const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs");
 const walletBehavioralControlsSource = read("backend/lib/walletBehavioralControls.mjs");
 const mevExecutionQualitySource = read("backend/lib/mevExecutionQuality.mjs");
 const tradingRouteIntegritySource = read("backend/lib/tradingRouteIntegrity.mjs");
+const marketRiskSignalsSource = read("backend/lib/marketRiskSignals.mjs");
+const memoryStoreSource = read("backend/store/memoryStore.mjs");
+const postgresStoreSource = read("backend/store/postgresStore.mjs");
 const policySource = read("backend/lib/policyEngine.mjs");
 const mcpSource = read("packages/mcp-server/src/core.ts");
 const pythonSource = read("packages/sdk-python/src/magen3/client.py");
@@ -71,6 +74,21 @@ if (!mcpSource.includes("tradingRouteIntegrity") || !mcpSource.includes("action.
 if (!read("docs/TRADING_ROUTE_INTEGRITY.md").includes("Roadmap boundary")) fail("Trading Route Integrity documentation is missing its milestone boundary");
 if (!securityModelSource.includes('name: "Trading route integrity"') || !securityModelSource.includes('status: "Foundation Available"')) fail("Frontend Trading Route Integrity capability status is missing or dishonest");
 if (!read("backend/server.mjs").includes("GET /api/trading-route-integrity/status")) fail("Trading Route Integrity status endpoint is missing");
+if (!marketRiskSignalsSource.includes("evaluateMarketRiskSignals") || !policySource.includes("evaluateMarketRiskSignals")) fail("Market Risk Signals are not wired into Risk Assessment");
+if (!marketRiskSignalsSource.includes("MARKET_RISK_SIGNALS_FEED_URL") || !marketRiskSignalsSource.includes("liquidityCoverageBps") || !marketRiskSignalsSource.includes("stablecoinDepegBps")) fail("Market Risk Signals provider evidence is incomplete");
+if (!marketRiskSignalsSource.includes("requested.inputAmount && item.inputAmount === requested.inputAmount")) fail("Market Risk Signals liquidity evidence is not bound to the protected amount");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  for (const field of ["executionQuoteTimestamp", "tradingRouteQuoteProvider", "marketRiskBaseAsset", "marketRiskPoolId"]) {
+    if (!source.includes(field)) fail(`${name} does not forward ${field} into the protected-intent pipeline`);
+  }
+}
+if (!sdkSource.includes("Magen3MarketRiskRequest") || !sdkSource.includes("Magen3MarketRiskSignalsContext") || !sdkSource.includes("marketRiskSignalsContext")) fail("SDK Market Risk Signals schemas are missing");
+if (!mcpSource.includes("marketRiskSignals") || !mcpSource.includes("action.marketRisk")) fail("MCP Market Risk Signals guidance is missing");
+if (!read("docs/MARKET_RISK_SIGNALS.md").includes("Roadmap boundary")) fail("Market Risk Signals documentation is missing its milestone boundary");
+if (!securityModelSource.includes('name: "Asset market-risk signals"') || !securityModelSource.includes('status: "Foundation Available"')) fail("Frontend Market Risk Signals capability status is missing or dishonest");
+if (!read("backend/server.mjs").includes("GET /api/market-risk-signals/status")) fail("Market Risk Signals status endpoint is missing");
+if (!read("backend/server.mjs").includes("marketRiskSignals: summarizeMarketRiskSignalsSnapshot")) fail("Market Risk Signals are missing from service health");
+if (!read("src/app/lib/api.ts").includes("marketRiskSignalsStatus")) fail("Frontend API client is missing Market Risk Signals status support");
 if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
 if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
 if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");

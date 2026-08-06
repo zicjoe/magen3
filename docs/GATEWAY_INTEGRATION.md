@@ -350,3 +350,8 @@ An adapter that submits delegated execution should construct the exact `action.d
 ## Post-authorization reconciliation
 
 After an Allowed intent or a currently executable approved review is submitted, preserve the returned Audit ID. Report submission and later state changes to `/api/agent-gateway/executions/reconcile`. Do not create a fresh retry while the original is pending or uncertain. Use an explicit replacement intent and replacement link when policy permits. For configured networks, `/api/agent-gateway/executions/poll` can query only the backend-approved RPC adapter and then applies the same deterministic state machine. Never send signed transactions, wallet signatures, secrets, or provider URLs.
+
+
+## Market Risk Signals
+
+For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.

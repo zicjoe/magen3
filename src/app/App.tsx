@@ -11701,6 +11701,7 @@ function SettingsPage({
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["Trading Route Integrity Status", `${api.baseUrl}/api/trading-route-integrity/status`],
+    ["Market Risk Signals Status", `${api.baseUrl}/api/market-risk-signals/status`],
     ["Execution Reconciliation Status", `${api.baseUrl}/api/execution-reconciliation/status`],
     ["Execution Reconciliation Reporting", `${api.baseUrl}/api/agent-gateway/executions/reconcile`],
     ["Execution Reconciliation Polling", `${api.baseUrl}/api/agent-gateway/executions/poll`],

@@ -157,7 +157,7 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
       { id: "wallet-spend-controls", name: "Wallet spending controls", description: "Per-transaction, wallet-specific daily, destination, and review-threshold limits.", status: "Live", configurable: true },
       { id: "asset-identity", name: "Asset identity and network consistency", description: "Resolves native assets and tokens to stable chain-aware identities, detects symbol/decimal conflicts, and records metadata provenance without treating display symbols as unique.", status: "Foundation Available", configurable: true },
       { id: "asset-contract-risk", name: "Asset contract structural risk", description: "Inspects deployed asset bytecode, code hashes, proxy implementations, and bounded structural indicators through a trusted chain adapter. Unsupported behavioral and historical evidence remains explicit.", status: "Foundation Available", configurable: true },
-      { id: "asset-market-risk", name: "Asset market and economic risk", description: "Liquidity, concentration, volatility, backing, and external market evidence remain planned for later milestones.", status: "Planned", configurable: true },
+      { id: "asset-market-risk", name: "Asset market and economic risk", description: "Evaluates freshness-checked provider signals for volatility, liquidity coverage/loss, spreads, price divergence, depeg, imbalance, volume deterioration, and manipulation indicators.", status: "Foundation Available", configurable: true },
     ],
   }),
   protectionArea({
@@ -198,7 +198,7 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
       { id: "oracle-integrity", name: "Oracle price integrity", description: "Feed freshness, pair availability, source quorum, confidence, spread, and execution-price deviation.", status: "Foundation Available", configurable: true },
       { id: "mev-quality", name: "MEV and execution quality", description: "Deterministic quote freshness, slippage, simulation deviation, deadlines, and execution-channel policy. Live mempool and relay protection are not claimed.", status: "Foundation Available", configurable: true },
       { id: "trading-route-integrity", name: "Trading route integrity", description: "Binds quote ID, router, ordered token and pool path, amounts, fee recipients, calldata, and the final simulated payload.", status: "Foundation Available", configurable: true },
-      { id: "asset-market-risk", name: "Asset market-risk signals", description: "Liquidity depth, concentration, volatility, and wrapped-asset backing evidence.", status: "Planned", configurable: true },
+      { id: "asset-market-risk", name: "Asset market-risk signals", description: "Freshness, source quorum, confidence, volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation evidence from configured providers.", status: "Foundation Available", configurable: true },
     ],
   }),
   protectionArea({
@@ -802,4 +802,5 @@ export const walletBehavioralControlsMilestone = { name: "Wallet Behavioral Cont
 
 export const mevExecutionQualityMilestone = { name: "MEV & Execution Quality", status: "Foundation Available", description: "Deterministic quote freshness, slippage, simulation-deviation, deadline, and execution-channel controls; no live market feed or guaranteed MEV protection." } as const;
 
-export const tradingRouteIntegrityMilestone = { name: "Trading Route Integrity", status: "Foundation Available", description: "Deterministic quote, router, ordered path, pool, fee-recipient, calldata, and payload binding; no live quote-provider authentication or market-risk feed." } as const;
+export const tradingRouteIntegrityMilestone = { name: "Trading Route Integrity", status: "Foundation Available", description: "Deterministic quote, router, ordered path, pool, fee-recipient, calldata, and payload binding; no universal quote-provider authentication." } as const;
+export const marketRiskSignalsMilestone = { name: "Market Risk Signals", status: "Foundation Available", description: "Deterministic configured-provider evidence for volatility, liquidity, spread, divergence, depeg, imbalance, and market-data freshness; no bundled production provider." } as const;

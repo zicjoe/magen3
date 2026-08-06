@@ -1111,3 +1111,45 @@ test("passes Trading Route Integrity metadata and response context through uncha
   assert.equal(response.result.tradingRouteIntegrityContext.status, "review_required");
   assert.equal(response.tradingRouteIntegrity.routeFingerprint, "a".repeat(64));
 });
+
+test("preserves Market Risk Signals selectors and response context", async () => {
+  let captured;
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-1",
+    apiKey: "secret",
+    fetch: async (_url, init) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        executionApproved: false,
+        result: {
+          decision: "Review Required",
+          risk: "Medium",
+          riskScore: 45,
+          reason: "market evidence incomplete",
+          recommendedAction: "refresh evidence",
+          marketRiskSignalsContext: { schemaVersion: "magen3.market-risk-signals.v1", evaluatedAt: "2026-08-06T11:00:00.000Z", applicable: true, actionType: "Swap", requested: { pair: "USDC/DAI" }, snapshot: { status: "available", sourceType: "remote", sourceName: "provider", observationCount: 1, pairCount: 1, ageMs: 1000, maxAgeMs: 300000 }, sourceCount: 1, confidence: 80, newestObservationAt: "2026-08-06T11:00:00.000Z", metrics: {}, evidenceFingerprint: "a".repeat(64), status: "review_required", config: {} },
+        },
+        gatewayRequest: {},
+        auditLog: {},
+        nextAction: "refresh evidence",
+        marketRiskSignals: { status: "review_required" },
+      }), { status: 201 });
+    },
+  });
+  const response = await client.checkIntent({
+    executionWalletAddress: "01abc",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "USDC",
+      outputAsset: "DAI",
+      target: "0xrouter",
+      marketRisk: { baseAsset: "USDC", quoteAsset: "DAI", network: "base-sepolia", venue: "aggregator-a", poolId: "pool-1" },
+    },
+  });
+  assert.equal(captured.action.marketRisk.network, "base-sepolia");
+  assert.equal(captured.action.marketRisk.poolId, "pool-1");
+  assert.equal(response.result.marketRiskSignalsContext.status, "review_required");
+});

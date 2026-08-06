@@ -296,3 +296,8 @@ Polling uses only RPC endpoints configured on the Magen3 backend. Do not send si
 ## Trading Route Integrity
 
 The Python client passes additive `action.tradingRoute` metadata through unchanged. Supply only public route evidence such as the exact quote ID, router, ordered token/pool path, amounts, fee recipients, and trusted calldata/payload hashes. Never include signatures, signing material, or provider credentials.
+
+
+## Market Risk Signals
+
+For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.

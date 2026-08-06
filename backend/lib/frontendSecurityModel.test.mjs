@@ -655,3 +655,12 @@ test("Integration Health surfaces RPC & Chain Integrity disagreement", () => {
   );
   assert.ok(health.checks.some((check) => check.label === "RPC & Chain Integrity" && check.status === "attention"));
 });
+
+test("Market Risk Signals is presented honestly as Foundation Available", () => {
+  assert.equal(securityModel.marketRiskSignalsMilestone.status, "Foundation Available");
+  assert.match(securityModel.marketRiskSignalsMilestone.description, /no bundled production provider/i);
+  const control = securityModel.PROTECTION_MODULE_CATALOG
+    .flatMap((area) => area.controls || [])
+    .find((item) => item.id === "asset-market-risk");
+  assert.equal(control?.status, "Foundation Available");
+});

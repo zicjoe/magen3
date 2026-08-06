@@ -733,3 +733,8 @@ Trusted transaction adapters may include `action.feeSafety` with `chainFamily`, 
 Report public post-authorization state with `POST /api/agent-gateway/executions/reconcile` using the same connected-agent API key. Required fields are `agentId`, `auditLogId`, and `status`; transaction-bound states require a transaction identifier either in the update or already stored on the audit. Supported states are `submitted`, `pending`, `confirmed`, `failed`, `uncertain`, `replaced`, `refunded`, and `delivered`.
 
 Optional provider polling is available at `POST /api/agent-gateway/executions/poll`. Supply `agentId`, `auditLogId`, and optionally `chainFamily`, `chainName`, or the already-authorized `transactionHash`. Caller-provided `rpcUrl`, `rpcEndpoint`, `providerUrl`, and `endpoint` fields are rejected. See [Execution & Settlement Reconciliation](./EXECUTION_SETTLEMENT_RECONCILIATION.md).
+
+
+## Market Risk Signals
+
+For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.

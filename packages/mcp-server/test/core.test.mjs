@@ -473,3 +473,14 @@ test("intent schema exposes Gas Sponsorship & Fee Safety without granting sponso
   assert.match(result.content[0].text, /Gas Sponsorship & Fee Safety/i);
   assert.match(result.content[0].text, /never.*raw sponsor signatures/i);
 });
+
+test("intent schema exposes Market Risk Signals without accepting caller-supplied risk metrics", async () => {
+  assert.match(INTENT_SCHEMA_DESCRIPTION.marketRiskSignals, /server-configured feed/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.marketRiskSignals, /must never invent volatility/i);
+  assert.match(INTENT_SCHEMA_DESCRIPTION.action.marketRisk.baseCanonicalId, /canonical input asset ID/i);
+  assert.equal(INTENT_SCHEMA_DESCRIPTION.action.marketRisk.volatilityBps, undefined);
+  const handlers = createToolHandlers({ verifyAgent: async () => ({ ok: true }), checkIntent: async () => { throw new Error("unused"); }, requireAllowed: async () => { throw new Error("unused"); }, getApproval: async () => { throw new Error("unused"); }, reportX402Settlement: async () => ({ ok: true }) });
+  const result = await handlers.getIntentSchema();
+  assert.match(result.content[0].text, /Market Risk Signals evaluates only freshness-checked operator-configured provider evidence/i);
+  assert.match(result.content[0].text, /never fabricates metrics/i);
+});

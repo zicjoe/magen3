@@ -17,6 +17,7 @@ Current product and integration documentation for the Magen3 Platform and Agent 
 - `HUMAN_APPROVAL_WORKFLOW.md` — exact-intent Review Required approvals, quorum, expiry, separation of duties, agent polling, audit evidence, and current security boundary.
 - `THREAT_INTELLIGENCE.md` — feed schema, policy modes, freshness, environment configuration, and operational safeguards.
 - `ORACLE_VALIDATION.md` — price-intent fields, multi-source feed schema, policy limits, freshness, operational status, and security boundary.
+- `MARKET_RISK_SIGNALS.md` — volatility, liquidity, spread, divergence, depeg, imbalance, source-quorum, provider-disagreement, policy, feed, and audit boundaries.
 - `BRIDGE_CONTROLS.md` — route metadata, provider and chain policy, fees, quote freshness, destination formats, and confirmation boundaries.
 - `X402_PAYMENT_CONTROLS.md` — x402 v2 intent schema, policy limits, request binding, replay prevention, settlement reconciliation, SDK flow, and security boundary.
 - `COMPLIANCE_CONTROLS.md` — non-sensitive evidence schema, policy controls, optional exact-match feed, privacy boundary, and deployment guidance.
@@ -50,3 +51,4 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Integration Configuration](./INTEGRATION_CONFIGURATION.md) — canonical environment variables, base URL semantics, SDK, Python, and MCP setup.
 
 - [Trading Route Integrity](TRADING_ROUTE_INTEGRITY.md) — deterministic quote, router, path, pool, fee-recipient, calldata, and payload binding for Milestone 20.
+- [Market Risk Signals](MARKET_RISK_SIGNALS.md) — configured-provider market-condition evidence and deterministic policy enforcement for Milestone 21.

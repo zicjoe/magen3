@@ -104,7 +104,7 @@ Magen3 groups related controls into eight protection areas. This keeps the inter
 | Wallet & Asset Safety | Wallet identity, destination validation, spending controls | Asset identity and network consistency | Token behavior and economic-risk analysis |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
 | Execution Integrity | Transaction construction preflight; lifecycle and replay protection | RPC & Chain Integrity; Gas Sponsorship & Fee Safety; execution/settlement reconciliation; stateful simulation | — |
-| Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity | MEV/execution quality; asset market-risk signals |
+| Market & Oracle Integrity | Slippage and output-bound structure | Oracle price integrity; MEV/execution quality; trading-route integrity; market-risk signals | Production provider integrations and continuous market monitoring |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement reconciliation | Additional native payment adapters |
 | Threat & Compliance | — | Threat-intelligence screening; non-sensitive compliance evidence | Managed risk-provider adapters |
 
@@ -1028,6 +1028,7 @@ scripts/casper/              Contract and proof tooling
 - [`docs/HUMAN_APPROVAL_WORKFLOW.md`](docs/HUMAN_APPROVAL_WORKFLOW.md)
 - [`docs/TOKEN_PERMISSION_CONTROLS.md`](docs/TOKEN_PERMISSION_CONTROLS.md)
 - [`docs/CONTRACT_ARGUMENT_POLICIES.md`](docs/CONTRACT_ARGUMENT_POLICIES.md)
+- [`docs/MARKET_RISK_SIGNALS.md`](docs/MARKET_RISK_SIGNALS.md)
 - [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md)
 - [`docs/CASPER_DEPLOYMENT_PLAYBOOK.md`](docs/CASPER_DEPLOYMENT_PLAYBOOK.md)
 
@@ -1095,4 +1096,9 @@ Deterministic quote freshness, slippage, simulation-deviation, deadline, and exe
 
 ### Milestone 20 — Trading Route Integrity
 
-Magen3 can now deterministically bind swap routes to the authorized router, assets, ordered token/pool path, amounts, fee recipients, calldata hash, and Stateful Simulation payload hash. See [`docs/TRADING_ROUTE_INTEGRITY.md`](docs/TRADING_ROUTE_INTEGRITY.md). The current capability is **Foundation Available**; live quote-provider authentication and market-risk feeds are not claimed.
+Magen3 can now deterministically bind swap routes to the authorized router, assets, ordered token/pool path, amounts, fee recipients, calldata hash, and Stateful Simulation payload hash. See [`docs/TRADING_ROUTE_INTEGRITY.md`](docs/TRADING_ROUTE_INTEGRITY.md). The current capability is **Foundation Available**; universal live quote-provider authentication is not claimed. Market Risk Signals is implemented separately through a configured server-side feed.
+
+
+### Milestone 21 — Market Risk Signals
+
+Magen3 can now evaluate freshness-checked provider evidence for volatility, liquidity coverage and loss, spreads, price/oracle divergence, stablecoin depeg, pool imbalance, volume deterioration, provider disagreement, and manipulation indicators before signing. See [`docs/MARKET_RISK_SIGNALS.md`](docs/MARKET_RISK_SIGNALS.md). The capability is **Foundation Available**: no production market-data provider is bundled or certified.

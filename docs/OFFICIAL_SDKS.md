@@ -189,3 +189,8 @@ Both official SDKs pass through `action.feeSafety` and the returned `gasSponsors
 ## Execution & Settlement Reconciliation
 
 The TypeScript SDK exposes `reportExecutionReconciliation` and `pollExecutionReconciliation`. The Python SDK exposes `report_execution_reconciliation` and `poll_execution_reconciliation`. Reporting accepts public state evidence; polling selects only a backend-configured Casper or EVM adapter. Both require the original Magen3 Audit ID and connected-agent credentials. Neither method accepts raw signed transactions, wallet secrets, or caller-selected RPC URLs. See `EXECUTION_SETTLEMENT_RECONCILIATION.md`.
+
+
+## Market Risk Signals
+
+For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.

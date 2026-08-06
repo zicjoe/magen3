@@ -32,6 +32,7 @@
     "mcp:test": "pnpm mcp:build && pnpm --filter @magen3/mcp-server test",
     "mcp:start": "node packages/mcp-server/dist/server.js",
     "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs",
+    "market-risk:refresh-example-feed": "node scripts/market-risk/refresh-example-feed.mjs",
     "compliance:refresh-example-feed": "node scripts/compliance/refresh-example-feed.mjs",
     "security:verify": "node scripts/security/verify-security-patch.mjs",
     "sdk:publish:check": "pnpm --filter @magen3/sdk publish:check",

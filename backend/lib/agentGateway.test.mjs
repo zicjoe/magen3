@@ -168,3 +168,34 @@ test("normalizes Trading Route Integrity metadata inside the existing action env
 test("rejects oversized trading-route calldata at the Gateway boundary", () => {
   assert.throws(() => normalizeAgentGatewayIntent({ agentId: "agent-route", action: { type: "Swap", amount: 1, target: "0xrouter", tradingRoute: { calldata: `0x${"00".repeat(131073)}` } } }), /tradingRoute\.calldata exceeds/);
 });
+
+test("normalizes Market Risk Signals pair and route selectors without accepting client risk metrics", () => {
+  const normalized = normalizeAgentGatewayIntent({
+    agentId: "agent-market-risk",
+    action: {
+      type: "Swap",
+      amount: 10,
+      asset: "USDC",
+      outputAsset: "DAI",
+      target: "0xrouter",
+      marketRisk: {
+        baseAsset: "USDC",
+        quoteAsset: "DAI",
+        baseCanonicalId: "evm:84532:fungible_token:0xabc",
+        quoteCanonicalId: "evm:84532:fungible_token:0xdef",
+        chainFamily: "EVM",
+        network: "base-sepolia",
+        venue: "aggregator-a",
+        poolId: "pool-1",
+        volatilityBps: 999999
+      }
+    }
+  });
+  assert.equal(normalized.marketRiskMetadataSupplied, true);
+  assert.equal(normalized.marketRiskBaseAsset, "USDC");
+  assert.equal(normalized.marketRiskQuoteAsset, "DAI");
+  assert.equal(normalized.marketRiskNetwork, "base-sepolia");
+  assert.equal(normalized.marketRiskVenue, "aggregator-a");
+  assert.equal(normalized.marketRiskPoolId, "pool-1");
+  assert.equal("marketRiskVolatilityBps" in normalized, false);
+});

@@ -526,6 +526,18 @@ export interface Magen3TradingRoute {
   expiresAt?: string;
 }
 
+export interface Magen3MarketRiskRequest {
+  /** Exact pair identifiers used only to select trusted server-side market evidence. */
+  baseAsset?: string;
+  quoteAsset?: string;
+  baseCanonicalId?: string;
+  quoteCanonicalId?: string;
+  chainFamily?: string;
+  network?: string;
+  venue?: string;
+  poolId?: string;
+}
+
 export interface Magen3Action {
   type: string;
   amount?: number;
@@ -586,6 +598,8 @@ export interface Magen3Action {
   simulation?: Magen3StatefulSimulationRequest;
   /** Exact provider route, path, fee-recipient, calldata, and payload-binding evidence. */
   tradingRoute?: Magen3TradingRoute;
+  /** Pair and route selectors for server-controlled market-risk evidence. Clients must not invent risk metrics. */
+  marketRisk?: Magen3MarketRiskRequest;
 }
 
 
@@ -1394,6 +1408,8 @@ export interface Magen3DecisionResult {
   mevExecutionQualityContext?: Magen3MevExecutionQualityContext;
   /** Deterministic router, assets, path, pool, fee-recipient, calldata, and quote-to-payload binding evidence. */
   tradingRouteIntegrityContext?: Magen3TradingRouteIntegrityContext;
+  /** Deterministic freshness, liquidity, volatility, spread, depeg, divergence, imbalance, and source-agreement evidence. */
+  marketRiskSignalsContext?: Magen3MarketRiskSignalsContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1485,6 +1501,53 @@ export interface Magen3TradingRouteIntegrityContext {
   config: Record<string, unknown>;
 }
 
+export interface Magen3MarketRiskMetricSummary {
+  value: number | null;
+  sourceCount: number;
+  disagreementBps: number | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  completeness: "observed" | "unavailable" | string;
+}
+
+export interface Magen3MarketRiskSignalsContext {
+  schemaVersion: string;
+  evaluatedAt: string;
+  applicable: boolean;
+  actionType: string;
+  requested: {
+    baseAsset?: string;
+    quoteAsset?: string;
+    pair?: string;
+    baseCanonicalId?: string;
+    quoteCanonicalId?: string;
+    canonicalPair?: string;
+    chainFamily?: string;
+    network?: string;
+    venue?: string;
+    poolId?: string;
+  };
+  snapshot: {
+    status: string;
+    sourceType: string;
+    sourceName: string;
+    generatedAt?: string;
+    fetchedAt?: string;
+    observationCount: number;
+    pairCount: number;
+    ageMs: number | null;
+    maxAgeMs: number | null;
+    error?: string;
+  };
+  sourceCount: number;
+  confidence: number | null;
+  newestObservationAt: string | null;
+  metrics: Record<string, Magen3MarketRiskMetricSummary>;
+  evidenceFingerprint: string;
+  status: "not_required" | "passed" | "review_required" | "blocked" | "unavailable" | "inconclusive" | string;
+  config: Record<string, unknown>;
+}
+
 export interface Magen3IntentResponse {
   ok: boolean;
   executionApproved: boolean;
@@ -1513,6 +1576,8 @@ export interface Magen3IntentResponse {
   mevExecutionQuality?: Magen3MevExecutionQualityContext;
   /** Deterministic trading-route and payload-binding evidence retained in the decision and audit. */
   tradingRouteIntegrity?: Magen3TradingRouteIntegrityContext;
+  /** Deterministic market-risk evidence retained in the decision and audit. */
+  marketRiskSignals?: Magen3MarketRiskSignalsContext;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }

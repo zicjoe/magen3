@@ -40,6 +40,14 @@ for (const path of providerPaths) {
   }
 }
 
+const marketRiskSource = await readFile(new URL("../../backend/lib/marketRiskSignals.mjs", import.meta.url), "utf8");
+for (const required of ["readUtf8FileLimited", 'redirect: "error"', "MARKET_RISK_SIGNALS_FEED_URL must use HTTPS in production", "MARKET_RISK_SIGNALS_FEED_URL must not contain credentials", "MAX_FEED_BYTES", "MAX_OBSERVATIONS", "safePublicError"]) {
+  if (!marketRiskSource.includes(required)) throw new Error(`Market Risk Signals is missing security control: ${required}`);
+}
+if (marketRiskSource.includes("request.marketRiskFeedUrl") || marketRiskSource.includes("request.providerUrl")) {
+  throw new Error("Market Risk Signals accepts a request-controlled provider URL");
+}
+
 try {
   await access(new URL("../../examples/real-agent-client/index.mjs", import.meta.url), constants.F_OK);
   throw new Error("Obsolete examples/real-agent-client/index.mjs must be removed before commit");

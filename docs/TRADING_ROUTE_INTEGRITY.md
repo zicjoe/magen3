@@ -184,4 +184,4 @@ Foundation Available does not mean that Magen3 independently authenticates every
 
 ## Roadmap boundary
 
-Milestone 21 — Market Risk Signals remains future work. Trading Route Integrity does not invent liquidity, volatility, spread, price-manipulation, or depeg evidence. Milestones 22–28 were not implemented in this release.
+Milestone 21 — Market Risk Signals is now implemented as a separate configured-provider evidence layer. Trading Route Integrity still does not invent liquidity, volatility, spread, manipulation, or depeg evidence. Milestones 22–28 remain separate roadmap work.

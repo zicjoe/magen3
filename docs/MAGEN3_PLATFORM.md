@@ -85,7 +85,7 @@ Agent Shield groups related security controls into eight broad protection areas.
 | Wallet & Asset Safety | Wallet/destination validation; spending controls | Asset identity/network consistency | Token behavior and economic risk |
 | Contract & Permission Safety | Contract identity, allowlists, entry points, package versions; Token Approval & Permit Safety; Privileged Contract Action Classification; Contract Upgrade Safety; Contract Argument Policies | — | — |
 | Execution Integrity | Transaction preflight; Lifecycle & Replay | RPC & Chain Integrity; Gas Sponsorship & Fee Safety; settlement reconciliation; stateful simulation | — |
-| Market & Oracle Integrity | Slippage/output structure | Oracle price integrity | MEV/execution quality; market-risk signals |
+| Market & Oracle Integrity | Slippage/output structure | Oracle price integrity; MEV/execution quality; route integrity; market-risk signals | Production provider integrations and continuous monitoring |
 | Cross-chain & Payment Controls | — | Bridge routes; x402 authorization and settlement | Additional native payment adapters |
 | Threat & Compliance | — | Threat screening; compliance evidence | Managed provider adapters |
 
@@ -584,3 +584,8 @@ The control is not marked Live until real deployed RPC adapters and Railway/Post
 ## Gas Sponsorship & Fee Safety
 
 Gas Sponsorship & Fee Safety is Foundation Available inside Execution Integrity. It evaluates trusted adapter evidence for bounded Casper network fees and relayers, or isolated EVM gas and Paymaster flows. It checks fee caps, approved sponsor identities, expiry, scope, public evidence hashes, expected payer, rolling sponsored budget, operation limits, and repeated failures. Casper requests containing EVM-only Paymaster or gas-price fields fail closed. Raw sponsor signatures and provider credentials are prohibited. See `GAS_SPONSORSHIP_FEE_SAFETY.md`.
+
+
+## Market Risk Signals
+
+Market Risk Signals is Foundation Available. It evaluates freshness-checked configured-provider evidence for volatility, liquidity, spread, divergence, depeg, imbalance, volume deterioration, and manipulation indicators. No production provider is bundled or certified. See `MARKET_RISK_SIGNALS.md`.

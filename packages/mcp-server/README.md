@@ -147,3 +147,8 @@ The MCP schema cannot provide RPC URLs. Both tools preserve Audit ownership and 
 ## Trading Route Integrity
 
 For swaps, the MCP caller may supply public `action.tradingRoute` evidence. The MCP server relays the exact quote ID, router, ordered token/pool path, amounts, fee recipients, and trusted calldata/payload hashes to Magen3. It does not create or infer route evidence, authenticate quote providers, or sign transactions.
+
+
+## Market Risk Signals
+
+For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.

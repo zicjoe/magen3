@@ -12,6 +12,7 @@ import { inspectAssetContractRisk } from "../lib/assetContractRisk.mjs";
 import { evaluateAssetIdentity } from "../lib/assetIdentity.mjs";
 import { getThreatIntelligenceSnapshot } from "../lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot } from "../lib/oracleValidation.mjs";
+import { getMarketRiskSignalsSnapshot } from "../lib/marketRiskSignals.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
@@ -862,9 +863,10 @@ export async function createPostgresStore() {
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs, emergencyPauses] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress), listEmergencyPauses(walletAddress, { activeOnly: true })]);
-      const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
+      const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot(),
         getOracleValidationSnapshot(),
+        getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
       ]);
       const result = evaluatePolicy({
@@ -880,6 +882,7 @@ export async function createPostgresStore() {
         emergencyPauses,
         threatIntelligence,
         oracleValidation,
+        marketRiskSignals,
         complianceControls,
       });
 
@@ -1015,6 +1018,46 @@ export async function createPostgresStore() {
         slippageBps: intent.slippageBps,
         expectedOutput: intent.expectedOutput,
         minimumReceived: intent.minimumReceived,
+        executionQuoteProvider: intent.executionQuoteProvider,
+        executionQuoteId: intent.executionQuoteId,
+        executionQuoteTimestamp: intent.executionQuoteTimestamp,
+        executionQuoteExpiresAt: intent.executionQuoteExpiresAt,
+        executionDeadline: intent.executionDeadline,
+        priceImpactBps: intent.priceImpactBps,
+        simulatedOutput: intent.simulatedOutput,
+        executionChannel: intent.executionChannel,
+        privateExecutionAvailable: intent.privateExecutionAvailable,
+        tradingRouteQuoteProvider: intent.tradingRouteQuoteProvider,
+        tradingRouteQuoteId: intent.tradingRouteQuoteId,
+        tradingRouteRouter: intent.tradingRouteRouter,
+        tradingRouteAggregator: intent.tradingRouteAggregator,
+        tradingRouteProtocol: intent.tradingRouteProtocol,
+        tradingRoutePoolSequence: intent.tradingRoutePoolSequence,
+        tradingRouteTokenPath: intent.tradingRouteTokenPath,
+        tradingRouteInputAsset: intent.tradingRouteInputAsset,
+        tradingRouteOutputAsset: intent.tradingRouteOutputAsset,
+        tradingRouteInputAmount: intent.tradingRouteInputAmount,
+        tradingRouteExpectedOutput: intent.tradingRouteExpectedOutput,
+        tradingRouteMinimumOutput: intent.tradingRouteMinimumOutput,
+        tradingRouteExecutionMode: intent.tradingRouteExecutionMode,
+        tradingRouteFeeBps: intent.tradingRouteFeeBps,
+        tradingRouteFeeAmount: intent.tradingRouteFeeAmount,
+        tradingRouteFeeRecipients: intent.tradingRouteFeeRecipients,
+        tradingRouteIntermediaryContracts: intent.tradingRouteIntermediaryContracts,
+        tradingRouteCalldata: intent.tradingRouteCalldata,
+        tradingRouteCalldataHash: intent.tradingRouteCalldataHash,
+        tradingRoutePayloadHash: intent.tradingRoutePayloadHash,
+        tradingRouteAuthorizedRouteHash: intent.tradingRouteAuthorizedRouteHash,
+        tradingRouteExpiresAt: intent.tradingRouteExpiresAt,
+        marketRiskMetadataSupplied: intent.marketRiskMetadataSupplied,
+        marketRiskBaseAsset: intent.marketRiskBaseAsset,
+        marketRiskQuoteAsset: intent.marketRiskQuoteAsset,
+        marketRiskBaseCanonicalId: intent.marketRiskBaseCanonicalId,
+        marketRiskQuoteCanonicalId: intent.marketRiskQuoteCanonicalId,
+        marketRiskChainFamily: intent.marketRiskChainFamily,
+        marketRiskNetwork: intent.marketRiskNetwork,
+        marketRiskVenue: intent.marketRiskVenue,
+        marketRiskPoolId: intent.marketRiskPoolId,
         runtimeArgs: intent.runtimeArgs,
         transactionHash: intent.transactionHash,
         bridgeSourceChain: intent.bridgeSourceChain,
@@ -1202,9 +1245,10 @@ export async function createPostgresStore() {
         executionWalletAddress,
         agentOwnerWalletAddress: walletAddress,
       };
-      const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([
+      const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot(),
         getOracleValidationSnapshot(),
+        getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
       ]);
       const agent = agents.find((item) => item.id === intent.agentId);
@@ -1218,7 +1262,7 @@ export async function createPostgresStore() {
       const identityPreview = evaluateAssetIdentity({ request, policy });
       request.assetIdentity = identityPreview.context;
       request.assetContractRiskEvidence = await inspectAssetContractRisk({ request });
-      let result = evaluatePolicy({ request, agents, policies, auditLogs, emergencyPauses, threatIntelligence, oracleValidation, complianceControls });
+      let result = evaluatePolicy({ request, agents, policies, auditLogs, emergencyPauses, threatIntelligence, oracleValidation, marketRiskSignals, complianceControls });
       let activatedEmergencyPause = null;
       if (!result.emergencyControlsContext?.active) {
         const trigger = detectAutomaticEmergencyTrigger({ request, agent: agentRecord, policy, auditLogs, result });
@@ -1398,6 +1442,7 @@ export async function createPostgresStore() {
           walletBehavioralControls: result.walletBehavioralControlsContext && result.walletBehavioralControlsContext.status !== "not_required" ? result.walletBehavioralControlsContext : undefined,
           mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
           tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
+          marketRiskSignals: result.marketRiskSignalsContext && result.marketRiskSignalsContext.status !== "not_required" ? result.marketRiskSignalsContext : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,
@@ -1435,6 +1480,16 @@ export async function createPostgresStore() {
               executionPrice: intent.executionPrice,
               quoteTimestamp: intent.quoteTimestamp,
             },
+            marketRisk: intent.marketRiskMetadataSupplied ? {
+              baseAsset: intent.marketRiskBaseAsset,
+              quoteAsset: intent.marketRiskQuoteAsset,
+              baseCanonicalId: intent.marketRiskBaseCanonicalId,
+              quoteCanonicalId: intent.marketRiskQuoteCanonicalId,
+              chainFamily: intent.marketRiskChainFamily,
+              network: intent.marketRiskNetwork,
+              venue: intent.marketRiskVenue,
+              poolId: intent.marketRiskPoolId,
+            } : undefined,
             target: intent.target,
             targetType: intent.targetType,
             contractIdentifierType: intent.contractIdentifierType,
@@ -1829,6 +1884,7 @@ export async function createPostgresStore() {
         agentMessage: result.decisionExplanation?.userMessage || result.primaryReason || result.reason,
         mevExecutionQuality: result.mevExecutionQualityContext && result.mevExecutionQualityContext.status !== "not_required" ? result.mevExecutionQualityContext : undefined,
           tradingRouteIntegrity: result.tradingRouteIntegrityContext && result.tradingRouteIntegrityContext.status !== "not_required" ? result.tradingRouteIntegrityContext : undefined,
+          marketRiskSignals: result.marketRiskSignalsContext && result.marketRiskSignalsContext.status !== "not_required" ? result.marketRiskSignalsContext : undefined,
         emergencyPause: activatedEmergencyPause ? publicEmergencyPause(activatedEmergencyPause) : null,
         nextAction: gatewayNextAction(result.decision, result.decisionExplanation),
       };

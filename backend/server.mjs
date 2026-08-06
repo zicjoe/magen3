@@ -3,6 +3,7 @@ import { createStore } from "./store/index.mjs";
 import { getCasperStatus } from "./casper/auditPayload.mjs";
 import { getThreatIntelligenceSnapshot, summarizeThreatIntelligenceSnapshot } from "./lib/threatIntelligence.mjs";
 import { getOracleValidationSnapshot, summarizeOracleValidationSnapshot } from "./lib/oracleValidation.mjs";
+import { getMarketRiskSignalsSnapshot, summarizeMarketRiskSignalsSnapshot } from "./lib/marketRiskSignals.mjs";
 import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } from "./lib/complianceControls.mjs";
 import { getRpcChainIntegrityStatus } from "./lib/rpcChainIntegrity.mjs";
 import { getGasSponsorshipFeeSafetyStatus } from "./lib/gasSponsorshipFeeSafety.mjs";
@@ -186,6 +187,7 @@ const server = createServer(async (req, res) => {
         casper: getCasperStatus(),
         threatIntelligence: summarizeThreatIntelligenceSnapshot(await getThreatIntelligenceSnapshot()),
         oracleValidation: summarizeOracleValidationSnapshot(await getOracleValidationSnapshot()),
+        marketRiskSignals: summarizeMarketRiskSignalsSnapshot(await getMarketRiskSignalsSnapshot()),
         complianceControls: summarizeComplianceControlsSnapshot(await getComplianceControlsSnapshot()),
         executionIntegrity: { status: "live", lifecycleReplay: true, canonicalFingerprinting: true, idempotency: true, retrySafety: true },
         approvalWorkflow: { status: "foundation-available", exactIntentBinding: true, quorum: true, organizationalQuorum: true, tierResolution: true, timedEscalation: true, executionDelays: true, executionWindows: true, expiry: true, rejection: true },
@@ -336,11 +338,16 @@ const server = createServer(async (req, res) => {
           limitations: [
             "no live quote-provider authentication",
             "no universal router calldata decoder",
-            "no live pool-state or market-risk feed",
+            "no universal live pool-state decoder",
             "no final inclusion-block guarantee"
           ]
         }
       });
+    }
+
+    if (route === "GET /api/market-risk-signals/status") {
+      const snapshot = await getMarketRiskSignalsSnapshot();
+      return send(res, 200, { ok: true, marketRiskSignals: summarizeMarketRiskSignalsSnapshot(snapshot) });
     }
 
     if (route === "GET /api/rpc-chain-integrity/status") {
@@ -993,6 +1000,25 @@ const server = createServer(async (req, res) => {
           ],
           decisionRule: "Trading Route Integrity emits deterministic pass, review, or block findings. Passing route evidence cannot override another blocking module.",
           limitation: "The current foundation evaluates trusted adapter-supplied evidence and does not independently authenticate every quote provider or decode every router."
+        },
+        marketRiskSignals: {
+          status: "Foundation Available",
+          statusEndpoint: "GET /api/market-risk-signals/status",
+          appliesTo: ["Swap", "Trade", "Exchange", "Bridge"],
+          feedSources: ["MARKET_RISK_SIGNALS_FEED_JSON", "MARKET_RISK_SIGNALS_FEED_PATH", "MARKET_RISK_SIGNALS_FEED_URL"],
+          deterministicChecks: [
+            "volatility",
+            "liquidity coverage and recent loss",
+            "spread",
+            "price and oracle divergence",
+            "stablecoin depeg",
+            "pool imbalance",
+            "volume deterioration",
+            "provider manipulation indicators",
+            "source quorum, confidence, freshness, and disagreement"
+          ],
+          decisionRule: "Configured provider evidence produces deterministic pass, review, or block findings. Missing or stale evidence follows policy and never counts as a verified zero-risk result.",
+          limitation: "No production market-data provider is bundled or certified, and this milestone does not replace Production Oracle Integration."
         },
         threatIntelligence: {
           status: "Foundation Available",

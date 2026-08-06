@@ -19,4 +19,4 @@ Configure `structuredRules.mevExecutionQuality`. The module supports `allow`, `w
 
 ## Limitations
 
-A successful simulation reflects one observed state and does not guarantee inclusion-block output or eliminate front-running, sandwiching, back-running, reordering, or state changes. This milestone does not implement live market feeds, route/calldata verification, private-relay submission, or market-risk scoring. Those remain Milestones 20 and 21 or later integrations.
+A successful simulation reflects one observed state and does not guarantee inclusion-block output or eliminate front-running, sandwiching, back-running, reordering, or state changes. This module does not perform route/calldata verification, private-relay submission, or market-risk provider evaluation. Route Integrity and Market Risk Signals are separate Milestones 20 and 21 modules, and final inclusion-block guarantees remain unavailable.

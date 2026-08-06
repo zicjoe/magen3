@@ -199,6 +199,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
         : body.tradingRoute && typeof body.tradingRoute === "object"
           ? body.tradingRoute
           : {};
+  const marketRisk = action.marketRisk && typeof action.marketRisk === "object"
+    ? action.marketRisk
+    : action.market_risk && typeof action.market_risk === "object"
+      ? action.market_risk
+      : action.marketRiskSignals && typeof action.marketRiskSignals === "object"
+        ? action.marketRiskSignals
+        : body.marketRisk && typeof body.marketRisk === "object"
+          ? body.marketRisk
+          : {};
   const oracle = action.oracle && typeof action.oracle === "object"
     ? action.oracle
     : action.oracleValidation && typeof action.oracleValidation === "object"
@@ -415,6 +424,15 @@ export function normalizeAgentGatewayIntent(body = {}) {
     tradingRoutePayloadHash: boundedString(tradingRoute.payloadHash || tradingRoute.payload_hash || "", "tradingRoute.payloadHash", 128).toLowerCase(),
     tradingRouteAuthorizedRouteHash: boundedString(tradingRoute.authorizedRouteHash || tradingRoute.authorized_route_hash || tradingRoute.routeFingerprint || tradingRoute.route_fingerprint || "", "tradingRoute.authorizedRouteHash", 128).toLowerCase(),
     tradingRouteExpiresAt: cleanString(tradingRoute.expiresAt || tradingRoute.expires_at || tradingRoute.quoteExpiresAt || tradingRoute.quote_expires_at || executionQuality.quoteExpiresAt || executionQuality.quote_expires_at || "", ""),
+    marketRiskMetadataSupplied: Object.keys(marketRisk).length > 0,
+    marketRiskBaseAsset: cleanString(marketRisk.baseAsset || marketRisk.base_asset || tradingRoute.inputAsset || tradingRoute.input_asset || action.asset || body.asset || "", ""),
+    marketRiskQuoteAsset: cleanString(marketRisk.quoteAsset || marketRisk.quote_asset || tradingRoute.outputAsset || tradingRoute.output_asset || action.outputAsset || action.output_asset || body.outputAsset || body.output_asset || "", ""),
+    marketRiskBaseCanonicalId: boundedString(marketRisk.baseCanonicalId || marketRisk.base_canonical_id || "", "marketRisk.baseCanonicalId", 256).toLowerCase(),
+    marketRiskQuoteCanonicalId: boundedString(marketRisk.quoteCanonicalId || marketRisk.quote_canonical_id || "", "marketRisk.quoteCanonicalId", 256).toLowerCase(),
+    marketRiskChainFamily: boundedString(marketRisk.chainFamily || marketRisk.chain_family || "", "marketRisk.chainFamily", 32).toUpperCase(),
+    marketRiskNetwork: boundedString(marketRisk.network || marketRisk.chainName || marketRisk.chain_name || action.chainName || action.chain_name || body.chainName || body.chain_name || "", "marketRisk.network", 128).toLowerCase(),
+    marketRiskVenue: boundedString(marketRisk.venue || marketRisk.protocol || marketRisk.aggregator || tradingRoute.protocol || tradingRoute.aggregator || "", "marketRisk.venue", 128).toLowerCase(),
+    marketRiskPoolId: boundedString(marketRisk.poolId || marketRisk.pool_id || marketRisk.pool || (Array.isArray(tradingRoute.poolSequence || tradingRoute.pool_sequence || tradingRoute.pools) ? (tradingRoute.poolSequence || tradingRoute.pool_sequence || tradingRoute.pools)[0] : "") || "", "marketRisk.poolId", 256).toLowerCase(),
     runtimeArgs: normalizeRuntimeArgs(preflight.runtimeArgs ?? preflight.runtime_args ?? action.runtimeArgs ?? action.runtime_args),
     transactionHash: cleanString(preflight.transactionHash ?? preflight.transaction_hash ?? action.transactionHash ?? action.transaction_hash ?? "", ""),
     bridgeSourceChain: cleanString(bridge.sourceChain || bridge.source_chain || action.bridgeSourceChain || action.bridge_source_chain || body.bridgeSourceChain || body.bridge_source_chain || "", ""),

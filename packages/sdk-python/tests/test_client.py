@@ -648,5 +648,47 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(route["tokenPath"], ["USDC", "WETH", "DAI"])
         self.assertEqual(result["result"]["tradingRouteIntegrityContext"]["status"], "review_required")
 
+
+    def test_market_risk_metadata_passes_through(self):
+        captured = {}
+
+        def transport(method, url, headers, data, timeout):
+            captured["payload"] = json.loads(data.decode())
+            return {
+                "ok": True,
+                "executionApproved": False,
+                "result": {
+                    "decision": "Review Required",
+                    "marketRiskSignalsContext": {
+                        "status": "review_required",
+                        "pair": "USDC/DAI",
+                        "providerCount": 2,
+                    },
+                },
+            }
+
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        result = client.check_intent({
+            "executionWalletAddress": "0x0000000000000000000000000000000000000001",
+            "action": {
+                "type": "Swap",
+                "amount": 10,
+                "asset": "USDC",
+                "outputAsset": "DAI",
+                "target": "0x1111111111111111111111111111111111111111",
+                "marketRisk": {
+                    "baseAsset": "USDC",
+                    "quoteAsset": "DAI",
+                    "network": "base-sepolia",
+                    "venue": "approved-aggregator",
+                    "poolId": "pool-1",
+                },
+            },
+        })
+        market = captured["payload"]["action"]["marketRisk"]
+        self.assertEqual(market["network"], "base-sepolia")
+        self.assertEqual(market["poolId"], "pool-1")
+        self.assertEqual(result["result"]["marketRiskSignalsContext"]["status"], "review_required")
+
 if __name__ == "__main__":
     unittest.main()

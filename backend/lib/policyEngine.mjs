@@ -25,6 +25,7 @@ import { evaluateValueExposureLimits } from "./valueExposureLimits.mjs";
 import { evaluateWalletBehavioralControls } from "./walletBehavioralControls.mjs";
 import { evaluateMevExecutionQuality } from "./mevExecutionQuality.mjs";
 import { evaluateTradingRouteIntegrity } from "./tradingRouteIntegrity.mjs";
+import { evaluateMarketRiskSignals } from "./marketRiskSignals.mjs";
 import { buildDecisionExplanation } from "./decisionExplanation.mjs";
 
 function isSameDay(a, b) {
@@ -129,6 +130,7 @@ function withStructuredResult({
   statefulSimulationContext = null,
   mevExecutionQualityContext = null,
   tradingRouteIntegrityContext = null,
+  marketRiskSignalsContext = null,
   emergencyControlsContext = null,
 }) {
   const trigger = primaryFailure(moduleFindings);
@@ -198,11 +200,12 @@ function withStructuredResult({
     statefulSimulationContext,
     mevExecutionQualityContext,
     tradingRouteIntegrityContext,
+    marketRiskSignalsContext,
     emergencyControlsContext,
   };
 }
 
-export function evaluateAction({ request, agents, policies, auditLogs, emergencyPauses = [], threatIntelligence = {}, oracleValidation = {}, complianceControls = {} }) {
+export function evaluateAction({ request, agents, policies, auditLogs, emergencyPauses = [], threatIntelligence = {}, oracleValidation = {}, marketRiskSignals = {}, complianceControls = {} }) {
   const timestamp = new Date().toISOString();
   const agent = agents.find((item) => item.id === request.agentId);
   const policy = policies.find((item) => item.agentId === request.agentId && item.status === "Active");
@@ -561,6 +564,18 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...tradingRouteIntegrityResult.findings);
   score += tradingRouteIntegrityResult.scoreDelta;
 
+  const marketRiskSignalsResult = evaluateMarketRiskSignals({
+    request,
+    policy,
+    snapshot: marketRiskSignals,
+    assetIdentityContext: assetIdentityResult.context,
+    tradingRouteIntegrityContext: tradingRouteIntegrityResult.context,
+  });
+  checksPassed.push(...marketRiskSignalsResult.checksPassed);
+  checksFailed.push(...marketRiskSignalsResult.checksFailed);
+  moduleFindings.push(...marketRiskSignalsResult.findings);
+  score += marketRiskSignalsResult.scoreDelta;
+
   const executionIntegrityResult = evaluateExecutionIntegrity({ request, policy, auditLogs });
   checksPassed.push(...executionIntegrityResult.checksPassed);
   checksFailed.push(...executionIntegrityResult.checksFailed);
@@ -621,8 +636,8 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
   moduleFindings.push(...x402PaymentControlsResult.findings);
   score += x402PaymentControlsResult.scoreDelta;
 
-  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || rpcChainIntegrityResult.hardBlock || gasSponsorshipFeeSafetyResult.hardBlock || assetIdentityResult.hardBlock || assetContractRiskResult.hardBlock || valueExposureLimitsResult.hardBlock || walletBehavioralControlsResult.hardBlock || mevExecutionQualityResult.hardBlock || tradingRouteIntegrityResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || statefulSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
-  const needsReview = !hardBlock && (assetIdentityResult.needsReview || assetContractRiskResult.needsReview || emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || rpcChainIntegrityResult.needsReview || gasSponsorshipFeeSafetyResult.needsReview || valueExposureLimitsResult.needsReview || walletBehavioralControlsResult.needsReview || mevExecutionQualityResult.needsReview || tradingRouteIntegrityResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || statefulSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
+  const hardBlock = emergencyControlsResult.hardBlock || instructionIntegrityResult.hardBlock || toolMcpIntegrityResult.hardBlock || delegationSafetyResult.hardBlock || rpcChainIntegrityResult.hardBlock || gasSponsorshipFeeSafetyResult.hardBlock || assetIdentityResult.hardBlock || assetContractRiskResult.hardBlock || valueExposureLimitsResult.hardBlock || walletBehavioralControlsResult.hardBlock || mevExecutionQualityResult.hardBlock || tradingRouteIntegrityResult.hardBlock || marketRiskSignalsResult.hardBlock || isBlockedAction || walletValidation.hardBlock || contractValidation.hardBlock || executionSimulation.hardBlock || statefulSimulation.hardBlock || executionIntegrityResult.hardBlock || tokenPermissionControlsResult.hardBlock || privilegedActionControlsResult.hardBlock || contractUpgradeSafetyResult.hardBlock || contractArgumentPoliciesResult.hardBlock || threatIntelligenceResult.hardBlock || oracleValidationResult.hardBlock || bridgeControlsResult.hardBlock || complianceControlsResult.hardBlock || x402PaymentControlsResult.hardBlock;
+  const needsReview = !hardBlock && (assetIdentityResult.needsReview || assetContractRiskResult.needsReview || emergencyControlsResult.needsReview || instructionIntegrityResult.needsReview || toolMcpIntegrityResult.needsReview || delegationSafetyResult.needsReview || rpcChainIntegrityResult.needsReview || gasSponsorshipFeeSafetyResult.needsReview || valueExposureLimitsResult.needsReview || walletBehavioralControlsResult.needsReview || mevExecutionQualityResult.needsReview || tradingRouteIntegrityResult.needsReview || marketRiskSignalsResult.needsReview || walletValidation.needsReview || contractValidation.needsReview || executionSimulation.needsReview || statefulSimulation.needsReview || executionIntegrityResult.needsReview || tokenPermissionControlsResult.needsReview || privilegedActionControlsResult.needsReview || contractUpgradeSafetyResult.needsReview || contractArgumentPoliciesResult.needsReview || threatIntelligenceResult.needsReview || oracleValidationResult.needsReview || bridgeControlsResult.needsReview || complianceControlsResult.needsReview || x402PaymentControlsResult.needsReview);
 
   const decision = hardBlock ? "Blocked" : needsReview ? "Review Required" : "Allowed";
   const riskScore = Math.min(99, Math.max(1, score));
@@ -631,13 +646,13 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     decision === "Allowed"
       ? "This action matches the active policy and can proceed to wallet signing."
       : decision === "Blocked"
-        ? "This action violates one or more hard policy, wallet-validation, contract-validation, token-permission, privileged-action, execution-integrity, fee-safety, threat-intelligence, oracle-validation, bridge-control, compliance-control, or x402-payment rules and must not execute."
+        ? "This action violates one or more hard policy, wallet-validation, contract-validation, token-permission, privileged-action, execution-integrity, fee-safety, threat-intelligence, oracle-validation, market-risk, bridge-control, compliance-control, or x402-payment rules and must not execute."
         : "This action is not automatically allowed. Magen3 requires remediation, independent verification, or human approval according to the active review-resolution strategy.";
   const recommendedAction =
     decision === "Allowed"
       ? "Proceed to wallet signing, then attach the real execution hash to the audit record."
       : decision === "Blocked"
-        ? "Do not execute. Correct the wallet, contract, token permission, privileged action, destination, lifecycle metadata, fee or sponsorship evidence, transaction state, threat-intelligence finding, oracle quote, bridge route, compliance evidence, x402 payment requirement, or request parameters, or update the policy only if authorized."
+        ? "Do not execute. Correct the wallet, contract, token permission, privileged action, destination, lifecycle metadata, fee or sponsorship evidence, transaction state, threat-intelligence finding, oracle quote, market-risk evidence, bridge route, compliance evidence, x402 payment requirement, or request parameters, or update the policy only if authorized."
         : "Pause execution. Follow the returned review-resolution instructions, then resubmit policy-compliant evidence or complete approval only when explicitly required.";
 
   return withStructuredResult({
@@ -674,6 +689,7 @@ export function evaluateAction({ request, agents, policies, auditLogs, emergency
     walletBehavioralControlsContext: walletBehavioralControlsResult.context,
     mevExecutionQualityContext: mevExecutionQualityResult.context,
     tradingRouteIntegrityContext: tradingRouteIntegrityResult.context,
+    marketRiskSignalsContext: marketRiskSignalsResult.context,
     emergencyControlsContext: emergencyControlsResult.context,
   });
 }
