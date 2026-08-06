@@ -1352,6 +1352,8 @@ export interface Magen3DecisionResult {
   assetIdentityContext?: Magen3AssetIdentityContext;
   /** Provider-backed structural evidence for the resolved asset contract. */
   assetContractRiskContext?: Magen3AssetContractRiskEvidence;
+  /** Deterministic rolling wallet and agent behavior evidence from prior Magen3 audits. */
+  walletBehavioralControlsContext?: Magen3WalletBehavioralControlsContext;
   /** Deterministic token-authority classification, policy limits, fingerprint, and permit replay state. */
   tokenPermissionControlsContext?: Magen3TokenPermissionControlsContext;
   /** Deterministic administrative-action classification, parameter fingerprint, policy, and Human Approval requirements. */
@@ -1362,6 +1364,26 @@ export interface Magen3DecisionResult {
   contractArgumentPoliciesContext?: Magen3ContractArgumentPoliciesContext;
 }
 
+
+export interface Magen3WalletBehavioralControlsContext {
+  schemaVersion: string;
+  evaluatedAt: string;
+  agentId: string;
+  executionWalletAddress?: string | null;
+  historyCount: number;
+  windowMinutes: number;
+  recentTransactionCount: number;
+  recentBlockedCount: number;
+  recentFailedCount: number;
+  target?: string | null;
+  newRecipient: boolean;
+  firstContractInteraction: boolean;
+  averageHistoricalAllowedAmount: number;
+  currentAmount: number;
+  historyFingerprint: string;
+  status: "not_required" | "passed" | "review_required" | "blocked";
+  config: Record<string, unknown>;
+}
 export interface Magen3IntentResponse {
   ok: boolean;
   executionApproved: boolean;
@@ -1384,6 +1406,8 @@ export interface Magen3IntentResponse {
   assetIdentity?: Magen3AssetIdentityContext;
   /** Structural asset-contract evidence retained in the decision and audit. */
   assetContractRisk?: Magen3AssetContractRiskEvidence;
+  /** Deterministic wallet behavioral evidence retained in the decision and audit. */
+  walletBehavioralControls?: Magen3WalletBehavioralControlsContext;
   /** Safe normalized simulation evidence is also retained in the audit log and result context. */
   statefulSimulation?: Magen3StatefulSimulationEvidence;
 }

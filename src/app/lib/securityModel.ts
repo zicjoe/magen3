@@ -795,3 +795,6 @@ export function deriveIntegrationHealth(
   const attention = checks.filter((check) => ["attention", "unavailable"].includes(check.status)).length;
   return { overall: attention === 0 ? "Healthy" : attention <= 2 ? "Needs attention" : "Degraded", checks };
 }
+
+
+export const walletBehavioralControlsMilestone = { name: "Wallet Behavioral Controls", status: "Foundation Available", description: "Deterministic rolling behavior checks using existing Magen3 audit history; no background monitoring." } as const;

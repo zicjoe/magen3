@@ -1395,6 +1395,7 @@ export async function createPostgresStore() {
           } : undefined,
           assetIdentity: result.assetIdentityContext || undefined,
           assetContractRisk: result.assetContractRiskContext && result.assetContractRiskContext.status !== "not_applicable" ? result.assetContractRiskContext : undefined,
+          walletBehavioralControls: result.walletBehavioralControlsContext && result.walletBehavioralControlsContext.status !== "not_required" ? result.walletBehavioralControlsContext : undefined,
           statefulSimulation: result.statefulSimulationContext && result.statefulSimulationContext.status !== "not_requested" ? result.statefulSimulationContext : undefined,
           valueExposure: result.valueExposureContext ? {
             basis: result.valueExposureContext.basis,

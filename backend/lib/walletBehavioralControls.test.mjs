@@ -1,0 +1,12 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { evaluateWalletBehavioralControls } from "./walletBehavioralControls.mjs";
+const now = new Date("2026-08-05T18:00:00Z");
+const basePolicy = { structuredRules:{ walletBehavioralControls:{ enabled:true, windowMinutes:60, minimumHistory:1 } } };
+const log = (o={}) => ({ id:"AUD1", agentId:"AG1", timestamp:"2026-08-05T17:30:00Z", decision:"Allowed", target:"0xaaa", amount:10, executionWalletAddress:"0xwallet", ...o });
+const req = (o={}) => ({ agentId:"AG1", executionWalletAddress:"0xwallet", target:"0xaaa", actionType:"Transfer", amount:10, ...o });
+test("skips when disabled",()=>{ const r=evaluateWalletBehavioralControls({request:req(),policy:{},auditLogs:[log()],now}); assert.equal(r.context.status,"not_required"); });
+test("reviews a new recipient",()=>{ const r=evaluateWalletBehavioralControls({request:req({target:"0xbbb"}),policy:basePolicy,auditLogs:[log()],now}); assert.equal(r.needsReview,true); assert.ok(r.findings.some(f=>f.rule==="New recipient")); });
+test("blocks repeated blocked attempts",()=>{ const p={structuredRules:{walletBehavioralControls:{enabled:true,maxBlockedAttemptsInWindow:2,repeatedBlockedAction:"block"}}}; const logs=[log({id:"1",decision:"Blocked"}),log({id:"2",decision:"Blocked"})]; const r=evaluateWalletBehavioralControls({request:req(),policy:p,auditLogs:logs,now}); assert.equal(r.hardBlock,true); });
+test("reviews unusual amount",()=>{ const p={structuredRules:{walletBehavioralControls:{enabled:true,minimumHistory:2,unusualAmountMultiplier:3,unusualAmountAction:"review"}}}; const logs=[log({id:"1",amount:10}),log({id:"2",amount:20})]; const r=evaluateWalletBehavioralControls({request:req({amount:100}),policy:p,auditLogs:logs,now}); assert.equal(r.needsReview,true); });
+test("passes normal behavior",()=>{ const r=evaluateWalletBehavioralControls({request:req(),policy:basePolicy,auditLogs:[log()],now}); assert.equal(r.hardBlock,false); assert.equal(r.needsReview,false); });

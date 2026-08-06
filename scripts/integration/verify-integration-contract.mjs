@@ -10,7 +10,8 @@ const sdkPackage = JSON.parse(read("packages/sdk-js/package.json"));
 const sdkSource = read("packages/sdk-js/src/index.ts");
 const statefulSimulationSource = read("backend/lib/statefulSimulation.mjs");
 const assetIdentitySource = read("backend/lib/assetIdentity.mjs");
-const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs");
+const assetContractRiskSource = read("backend/lib/assetContractRisk.mjs",
+  "backend/lib/walletBehavioralControls.mjs");
 const policySource = read("backend/lib/policyEngine.mjs");
 const mcpSource = read("packages/mcp-server/src/core.ts");
 const pythonSource = read("packages/sdk-python/src/magen3/client.py");
