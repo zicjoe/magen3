@@ -1,35 +1,73 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const RAW_API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+const API_BASE_URL = RAW_API_BASE_URL.trim().replace(/\/+$/, "");
+
+function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
+function responseDiagnostic(url: string, response: Response) {
+  const contentType = response.headers.get("content-type") || "unknown content type";
+  let host = url;
+  try {
+    host = new URL(url).host;
+  } catch {
+    // Keep the raw URL if it cannot be parsed.
+  }
+  return `${host} returned HTTP ${response.status} with ${contentType}`;
+}
+
+function shouldRetryRequest(method: string, attempt: number) {
+  return method === "GET" && attempt === 0;
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
+  const method = String(options.method || "GET").toUpperCase();
+  const requestUrl = buildApiUrl(path);
+  const headers = new Headers(options.headers || {});
+  headers.set("Accept", "application/json");
+  if (options.body != null && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
-  const rawBody = await response.text();
-  let payload: any = {};
+  let lastError: unknown;
 
-  if (rawBody) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      if (!response.ok) throw new Error(`Magen3 API error: ${response.status}`);
-      throw new Error("Magen3 API returned a non-JSON response.");
+      const response = await fetch(requestUrl, {
+        ...options,
+        method,
+        headers,
+        cache: method === "GET" ? "no-store" : options.cache,
+      });
+
+      const rawBody = await response.text();
+      let payload: any = {};
+
+      if (rawBody) {
+        try {
+          payload = JSON.parse(rawBody);
+        } catch {
+          if (!response.ok) throw new Error(`Magen3 API error: ${response.status}`);
+          throw new Error(`Magen3 API expected JSON, but ${responseDiagnostic(requestUrl, response)}.`);
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `Magen3 API error: ${response.status}`);
+      }
+
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error(`Magen3 API returned an invalid response body from ${requestUrl}.`);
+      }
+
+      return payload as T;
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryRequest(method, attempt)) break;
+      await new Promise((resolve) => setTimeout(resolve, 350));
     }
   }
 
-  if (!response.ok) {
-    throw new Error(payload?.error || `Magen3 API error: ${response.status}`);
-  }
-
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("Magen3 API returned an invalid response body.");
-  }
-
-  return payload as T;
+  throw lastError instanceof Error ? lastError : new Error("Magen3 API request failed.");
 }
 
 export const api = {

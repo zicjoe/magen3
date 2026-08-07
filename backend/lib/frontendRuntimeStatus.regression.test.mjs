@@ -45,10 +45,21 @@ test("Dashboard and Settings normalize runtime status props before reading statu
   }
 });
 
-test("API client does not silently convert malformed successful responses into empty objects", async () => {
+test("API client normalizes the deployed base URL and rejects non-JSON HTML without poisoning state", async () => {
   const api = await source(API_URL);
   assert.doesNotMatch(api, /response\.json\(\)\.catch\(\(\) => \(\{\}\)\)/);
-  assert.match(api, /const rawBody = await response\.text\(\)/);
-  assert.match(api, /Magen3 API returned a non-JSON response/);
+  assert.ok(api.includes('const API_BASE_URL = RAW_API_BASE_URL.trim().replace('));
+  assert.match(api, /headers\.set\("Accept", "application\/json"\)/);
+  assert.match(api, /options\.body != null && !headers\.has\("Content-Type"\)/);
+  assert.match(api, /cache: method === "GET" \? "no-store"/);
+  assert.match(api, /Magen3 API expected JSON, but/);
+  assert.match(api, /responseDiagnostic\(requestUrl, response\)/);
+  assert.match(api, /shouldRetryRequest\(method, attempt\)/);
   assert.match(api, /Magen3 API returned an invalid response body/);
+});
+
+test("large bootstrap history is not polled every six seconds", async () => {
+  const app = await source(APP_URL);
+  assert.doesNotMatch(app, /setInterval\(\(\) => void refresh\(\), 6000\)/);
+  assert.match(app, /setInterval\(\(\) => void refresh\(\), 30_000\)/);
 });

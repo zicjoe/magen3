@@ -12479,7 +12479,7 @@ export default function App() {
     };
 
     void refresh();
-    intervalId = setInterval(() => void refresh(), 6000);
+    intervalId = setInterval(() => void refresh(), 30_000);
 
     return () => {
       cancelled = true;
