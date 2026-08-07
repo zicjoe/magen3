@@ -2611,6 +2611,17 @@ function DashboardPage({
     );
   }
 
+  // Continuous Monitoring is additive. Never let malformed or missing optional
+  // monitoring payloads crash core Dashboard rendering in production.
+  const safeMonitoringState: MonitoringState = {
+    monitors: Array.isArray(monitoringState?.monitors) ? monitoringState.monitors : [],
+    alerts: Array.isArray(monitoringState?.alerts) ? monitoringState.alerts : [],
+  };
+  const safeContinuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus =
+    continuousRiskMonitoringStatus && typeof continuousRiskMonitoringStatus === "object"
+      ? continuousRiskMonitoringStatus
+      : { status: "unavailable", deterministic: true, schedulerEnabled: false };
+
   const dashboardStats = deriveDashboardStats(auditLogs, policies);
   const recentLogs = auditLogs.slice(0, 5);
   const today = new Date();
@@ -2769,7 +2780,7 @@ function DashboardPage({
     providerRequirements.compliance && complianceControlsStatus.status !== "available" ? "Compliance Controls" : "",
   ].filter(Boolean);
 
-  const openMonitoringAlerts = monitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || ""));
+  const openMonitoringAlerts = safeMonitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || ""));
   if (openMonitoringAlerts.length > 0) {
     attentionItems.push({
       id: "continuous-monitoring",
@@ -2845,8 +2856,8 @@ function DashboardPage({
     },
     {
       label: "Continuous monitoring",
-      detail: continuousRiskMonitoringStatus.status === "live" ? `${monitoringState.monitors.filter((item) => item.enabled !== false).length} active monitor${monitoringState.monitors.filter((item) => item.enabled !== false).length === 1 ? "" : "s"} · ${openMonitoringAlerts.length} open alert${openMonitoringAlerts.length === 1 ? "" : "s"}.` : "Continuous Risk Monitoring status could not be confirmed.",
-      status: continuousRiskMonitoringStatus.status !== "live" ? "unavailable" : openMonitoringAlerts.length > 0 ? "attention" : "operational",
+      detail: safeContinuousRiskMonitoringStatus.status === "live" ? `${safeMonitoringState.monitors.filter((item) => item.enabled !== false).length} active monitor${safeMonitoringState.monitors.filter((item) => item.enabled !== false).length === 1 ? "" : "s"} · ${openMonitoringAlerts.length} open alert${openMonitoringAlerts.length === 1 ? "" : "s"}.` : "Continuous Risk Monitoring status could not be confirmed.",
+      status: safeContinuousRiskMonitoringStatus.status !== "live" ? "unavailable" : openMonitoringAlerts.length > 0 ? "attention" : "operational",
     },
   ];
 
@@ -11921,6 +11932,17 @@ function SettingsPage({
   const [referenceCurrency, setReferenceCurrency] = useState(() => typeof window !== "undefined" ? (localStorage.getItem("magen3.referenceCurrency") || "USD") : "USD");
   const savePolicyDefaults = (unit: string, currency: string) => { setDefaultLimitUnit(unit); setReferenceCurrency(currency); localStorage.setItem("magen3.defaultLimitUnit", unit); localStorage.setItem("magen3.referenceCurrency", currency); };
 
+  // Monitoring is optional operational state. Settings must remain usable if a
+  // deployment returns no monitoring payload or a temporarily malformed one.
+  const safeMonitoringState: MonitoringState = {
+    monitors: Array.isArray(monitoringState?.monitors) ? monitoringState.monitors : [],
+    alerts: Array.isArray(monitoringState?.alerts) ? monitoringState.alerts : [],
+  };
+  const safeContinuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus =
+    continuousRiskMonitoringStatus && typeof continuousRiskMonitoringStatus === "object"
+      ? continuousRiskMonitoringStatus
+      : { status: "unavailable", deterministic: true, schedulerEnabled: false };
+
   const copySetting = useCallback(async (label: string, value: string) => {
     const copiedOk = await writeClipboard(value);
     setCopiedSetting(copiedOk ? label : "copy failed");
@@ -12024,17 +12046,17 @@ function SettingsPage({
       id: "monitoring",
       label: "Continuous Risk Monitoring",
       description: "Deterministic scheduled and manual evaluation of existing Magen3 state with deduplicated alerts and recovery detection.",
-      status: continuousRiskMonitoringStatus.status === "live" ? "Available" : "Unavailable",
+      status: safeContinuousRiskMonitoringStatus.status === "live" ? "Available" : "Unavailable",
       icon: <Activity size={17} />,
       details: [
-        ["Engine", continuousRiskMonitoringStatus.status || "unavailable"],
-        ["Deterministic", continuousRiskMonitoringStatus.deterministic ? "Yes" : "Unavailable"],
-        ["Scheduler", continuousRiskMonitoringStatus.scheduler?.enabled ? (continuousRiskMonitoringStatus.scheduler?.running ? "Enabled · running" : "Enabled") : "Disabled"],
-        ["Active monitors", String(monitoringState.monitors.filter((item) => item.enabled !== false).length)],
-        ["Open alerts", String(monitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || "")).length)],
-        ["Recovered alerts", String(monitoringState.alerts.filter((item) => item.status === "Recovered").length)],
+        ["Engine", safeContinuousRiskMonitoringStatus.status || "unavailable"],
+        ["Deterministic", safeContinuousRiskMonitoringStatus.deterministic ? "Yes" : "Unavailable"],
+        ["Scheduler", safeContinuousRiskMonitoringStatus.scheduler?.enabled ? (safeContinuousRiskMonitoringStatus.scheduler?.running ? "Enabled · running" : "Enabled") : "Disabled"],
+        ["Active monitors", String(safeMonitoringState.monitors.filter((item) => item.enabled !== false).length)],
+        ["Open alerts", String(safeMonitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || "")).length)],
+        ["Recovered alerts", String(safeMonitoringState.alerts.filter((item) => item.status === "Recovered").length)],
       ],
-      error: continuousRiskMonitoringStatus.error || "",
+      error: safeContinuousRiskMonitoringStatus.error || "",
       note: "Monitoring consumes existing bounded audit, reconciliation, provider, and policy state. It does not authorize execution or place operational monitoring evidence on Casper.",
     },
     {
@@ -12177,18 +12199,18 @@ function SettingsPage({
           <div className={`${CARD} p-5`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div><h2 className={SECTION_TITLE}>Continuous Monitoring Operations</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Create bounded per-agent monitors, run a deterministic evaluation, acknowledge alerts, and follow recovery without changing the per-intent authorization engine.</p></div>
-              <Btn variant="secondary" size="sm" onClick={() => { void api.runMonitoring({ walletAddress, force: true }).catch(() => undefined); }} disabled={!walletAddress || monitoringState.monitors.length === 0}>Run now</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => { void api.runMonitoring({ walletAddress, force: true }).catch(() => undefined); }} disabled={!walletAddress || safeMonitoringState.monitors.length === 0}>Run now</Btn>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <div className="space-y-2">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Agent monitors</div>
                 {agents.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">Register an agent before creating a continuous monitor.</div>}
-                {agents.slice(0, 8).map((agent) => { const monitor = monitoringState.monitors.find((item) => item.agentId === agent.id); return <div key={agent.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="min-w-0"><div className="truncate text-xs font-semibold text-[#F8FAFC]">{agent.name || agent.id}</div><div className="mt-1 text-[11px] text-[#64748B]">{monitor ? `${monitor.status || "Active"} · every ${monitor.cadenceSeconds || 300}s` : "No monitor configured"}</div></div>{!monitor && <Btn variant="secondary" size="sm" onClick={() => { void api.createMonitor({ walletAddress, agentId: agent.id, name: `${agent.name || agent.id} continuous monitor`, cadenceSeconds: 300 }).catch(() => undefined); }}>Create</Btn>}</div>; })}
+                {agents.slice(0, 8).map((agent) => { const monitor = safeMonitoringState.monitors.find((item) => item.agentId === agent.id); return <div key={agent.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="min-w-0"><div className="truncate text-xs font-semibold text-[#F8FAFC]">{agent.name || agent.id}</div><div className="mt-1 text-[11px] text-[#64748B]">{monitor ? `${monitor.status || "Active"} · every ${monitor.cadenceSeconds || 300}s` : "No monitor configured"}</div></div>{!monitor && <Btn variant="secondary" size="sm" onClick={() => { void api.createMonitor({ walletAddress, agentId: agent.id, name: `${agent.name || agent.id} continuous monitor`, cadenceSeconds: 300 }).catch(() => undefined); }}>Create</Btn>}</div>; })}
               </div>
               <div className="space-y-2">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Recent alerts</div>
-                {monitoringState.alerts.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">No monitoring alerts have been recorded.</div>}
-                {monitoringState.alerts.slice(0, 8).map((alert) => <div key={alert.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-semibold text-[#F8FAFC]">{alert.trigger || alert.category}</div><div className="mt-1 text-[11px] text-[#64748B]">{alert.severity} · {alert.status} · observed {alert.occurrenceCount || 1} time{(alert.occurrenceCount || 1) === 1 ? "" : "s"}</div></div>{alert.status === "Open" && <Btn variant="secondary" size="sm" onClick={() => { void api.updateMonitoringAlert(alert.id, { walletAddress, status: "Acknowledged", acknowledgementNote: "Acknowledged from Magen3 Settings." }).catch(() => undefined); }}>Acknowledge</Btn>}</div>{alert.suggestedResolution && <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">{alert.suggestedResolution}</div>}{alert.status === "Recovered" && <div className="mt-2 text-[11px] text-[#22C55E]">Recovered automatically after the monitored condition cleared.</div>}</div>)}
+                {safeMonitoringState.alerts.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">No monitoring alerts have been recorded.</div>}
+                {safeMonitoringState.alerts.slice(0, 8).map((alert) => <div key={alert.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-semibold text-[#F8FAFC]">{alert.trigger || alert.category}</div><div className="mt-1 text-[11px] text-[#64748B]">{alert.severity} · {alert.status} · observed {alert.occurrenceCount || 1} time{(alert.occurrenceCount || 1) === 1 ? "" : "s"}</div></div>{alert.status === "Open" && <Btn variant="secondary" size="sm" onClick={() => { void api.updateMonitoringAlert(alert.id, { walletAddress, status: "Acknowledged", acknowledgementNote: "Acknowledged from Magen3 Settings." }).catch(() => undefined); }}>Acknowledge</Btn>}</div>{alert.suggestedResolution && <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">{alert.suggestedResolution}</div>}{alert.status === "Recovered" && <div className="mt-2 text-[11px] text-[#22C55E]">Recovered automatically after the monitored condition cleared.</div>}</div>)}
               </div>
             </div>
           </div>

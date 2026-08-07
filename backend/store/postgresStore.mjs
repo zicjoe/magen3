@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { shieldModules } from "../data/seed.mjs";
 import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
@@ -35,6 +35,12 @@ function toDate(value) {
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
+}
+
+
+function walletAddressMatches(column, value) {
+  const normalizedWallet = normalizeWalletAddress(value);
+  return sql`lower(${column}) = lower(${normalizedWallet})`;
 }
 
 function requireWalletAddress(value) {
@@ -292,7 +298,7 @@ async function listEmergencyPauses(walletAddress, { activeOnly = false } = {}) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
   const rows = await db.select().from(emergencyPausesTable)
-    .where(eq(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
+    .where(walletAddressMatches(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
     .orderBy(desc(emergencyPausesTable.createdAt));
   const now = new Date();
   const pauses = [];
@@ -365,7 +371,7 @@ async function listAgents(walletAddress) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
   return (await db.select().from(agentsTable)
-    .where(eq(agentsTable.ownerWalletAddress, normalizedWallet))
+    .where(walletAddressMatches(agentsTable.ownerWalletAddress, normalizedWallet))
     .orderBy(desc(agentsTable.createdAt)))
     .map(normalizeAgent);
 }
@@ -383,7 +389,7 @@ async function listAuditLogs(walletAddress) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
   return (await db.select().from(auditLogsTable)
-    .where(eq(auditLogsTable.walletAddress, normalizedWallet))
+    .where(walletAddressMatches(auditLogsTable.walletAddress, normalizedWallet))
     .orderBy(desc(auditLogsTable.timestamp)))
     .map(normalizeAuditLog);
 }
@@ -565,8 +571,8 @@ export async function createPostgresStore() {
       if (normalizedWallet) {
         try {
           const [monitoringRows, monitoringAlertRows] = await Promise.all([
-            db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)),
-            db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
+            db.select().from(monitoringMonitorsTable).where(walletAddressMatches(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)),
+            db.select().from(monitoringAlertsTable).where(walletAddressMatches(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
           ]);
           monitoring = { monitors: monitoringRows, alerts: monitoringAlertRows, status: "available", error: "" };
         } catch (error) {
@@ -581,8 +587,8 @@ export async function createPostgresStore() {
     async listMonitoring(walletAddress) {
       const wallet = requireWalletAddress(walletAddress);
       const [monitors, alerts] = await Promise.all([
-        db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringMonitorsTable.createdAt)),
-        db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
+        db.select().from(monitoringMonitorsTable).where(walletAddressMatches(monitoringMonitorsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringMonitorsTable.createdAt)),
+        db.select().from(monitoringAlertsTable).where(walletAddressMatches(monitoringAlertsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
       ]);
       return { monitors, alerts };
     },
@@ -591,8 +597,8 @@ export async function createPostgresStore() {
       const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, String(agentId || "")));
       const agent = agentRows[0];
       if (!agent || agent.status === "Revoked" || !secretMatches(context.apiKey, agent.apiKeyHash)) { const e = new Error("Agent Gateway credentials are invalid for monitoring status"); e.status = agent ? 401 : 404; throw e; }
-      const monitors = (await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, agent.ownerWalletAddress))).filter((m) => m.agentId === agent.id);
-      const alerts = (await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, agent.ownerWalletAddress)).orderBy(desc(monitoringAlertsTable.lastObservedAt))).filter((a) => a.agentId === agent.id);
+      const monitors = (await db.select().from(monitoringMonitorsTable).where(walletAddressMatches(monitoringMonitorsTable.ownerWalletAddress, agent.ownerWalletAddress))).filter((m) => m.agentId === agent.id);
+      const alerts = (await db.select().from(monitoringAlertsTable).where(walletAddressMatches(monitoringAlertsTable.ownerWalletAddress, agent.ownerWalletAddress)).orderBy(desc(monitoringAlertsTable.lastObservedAt))).filter((a) => a.agentId === agent.id);
       return { ok: true, agentId: agent.id, monitors, alerts, summary: { monitors: monitors.length, openAlerts: alerts.filter((a) => ["Open", "Acknowledged", "Investigating"].includes(a.status)).length, recoveredAlerts: alerts.filter((a) => a.status === "Recovered").length } };
     },
 
@@ -620,7 +626,7 @@ export async function createPostgresStore() {
     async runMonitoringCycle(body = {}) {
       const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
       const now = new Date(body.now || Date.now());
-      let monitors = await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, wallet));
+      let monitors = await db.select().from(monitoringMonitorsTable).where(walletAddressMatches(monitoringMonitorsTable.ownerWalletAddress, wallet));
       monitors = monitors.filter((m) => m.enabled !== false && (!body.monitorId || m.id === body.monitorId));
       const results = [];
       for (const monitor of monitors) {
