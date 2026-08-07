@@ -138,11 +138,11 @@ export const api = {
     });
   },
 
-  executeX402Payment(request: Record<string, unknown>, apiKey: string) {
-    return requestJson(`${API_BASE_URL}/api/agent-gateway/x402/execute`, {
+  executeX402Payment(payment: Record<string, unknown>, apiKey: string) {
+    return request<any>("/api/agent-gateway/x402/execute", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-magen3-api-key": apiKey },
-      body: JSON.stringify(request),
+      headers: { "x-magen3-agent-key": apiKey },
+      body: JSON.stringify(payment),
     });
   },
   updateX402Settlement(settlement: Record<string, unknown>, apiKey: string) {

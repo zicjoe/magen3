@@ -89,3 +89,15 @@ The additive execution endpoint and lifecycle result create clean extension poin
 **Explicit confirmation:** Milestones 24–28 were not implemented.
 
 Recommended next starting point: extend the exact authorization record into base-unit reservation/capture/settlement accounting for Milestone 24 without changing the Milestone 23 facilitator and delivery pipeline.
+
+## Railway Build Hotfix — 2026-08-07
+
+A Railway production build exposed a frontend TypeScript regression in `src/app/lib/api.ts`: the newly added `executeX402Payment` method referenced an undefined `requestJson` helper. The method has been corrected to reuse the existing typed `request` helper and the established `x-magen3-agent-key` authentication header used by the Gateway.
+
+Verification after the hotfix:
+
+- `node --check backend/server.mjs` — passed.
+- `node --check backend/lib/x402LiveSettlement.mjs` — passed.
+- Focused x402 tests — 23 passed, 0 failed, 0 skipped.
+- `node scripts/integration/verify-integration-contract.mjs` — passed.
+- Fresh local dependency installation remained unavailable because the execution environment's internal pnpm registry returned HTTP 404 for pnpm 10.14.0. Therefore a dependency-backed local Vite build could not truthfully be rerun here. Railway had already demonstrated that `pnpm install --frozen-lockfile` succeeds against its build environment; the reported compile blocker itself has been removed.
