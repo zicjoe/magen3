@@ -471,6 +471,56 @@ interface X402PaymentControlsStatus {
   securityBoundary?: string;
 }
 
+const DEFAULT_THREAT_INTELLIGENCE_STATUS: ThreatIntelligenceStatus = {
+  status: "unavailable",
+  sourceType: "none",
+  sourceName: "No threat intelligence feed configured",
+  indicatorCount: 0,
+};
+
+const DEFAULT_ORACLE_VALIDATION_STATUS: OracleValidationStatus = {
+  status: "unavailable",
+  sourceType: "none",
+  sourceName: "No oracle feed configured",
+  observationCount: 0,
+  pairCount: 0,
+};
+
+const DEFAULT_COMPLIANCE_CONTROLS_STATUS: ComplianceControlsStatus = {
+  status: "unavailable",
+  sourceType: "none",
+  sourceName: "No compliance controls feed configured",
+  indicatorCount: 0,
+  jurisdictionCount: 0,
+};
+
+const DEFAULT_CONTINUOUS_RISK_MONITORING_STATUS: ContinuousRiskMonitoringStatus = {
+  status: "unavailable",
+  deterministic: true,
+  schedulerEnabled: false,
+};
+
+const DEFAULT_X402_PAYMENT_CONTROLS_STATUS: X402PaymentControlsStatus = {
+  status: "live-testnet",
+  protocolVersion: 2,
+  supportedSchemes: ["exact", "upto", "metered"],
+  requestBinding: true,
+  replayProtection: true,
+  settlementReporting: true,
+  liveSettlement: true,
+  controlledAuthorizations: true,
+  usageAccounting: true,
+  reservationCaptureRelease: true,
+  partialSettlement: true,
+  authorizationRevocation: true,
+  resourceDeliveryVerification: true,
+};
+
+function normalizeStatusObject<T extends object>(value: unknown, fallback: T): T {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ...fallback };
+  return { ...fallback, ...(value as Partial<T>) };
+}
+
 interface ReviewResolution {
   strategy: ReviewResolutionMode | string;
   mode: "not_required" | "blocked" | "agent_remediation" | "human_approval" | string;
@@ -2596,6 +2646,10 @@ function DashboardPage({
   onStartOnboarding: (mode: OnboardingSetupMode) => void;
 }) {
   const [showAllServices, setShowAllServices] = useState(false);
+  const safeThreatIntelligenceStatus = normalizeStatusObject(threatIntelligenceStatus, DEFAULT_THREAT_INTELLIGENCE_STATUS);
+  const safeOracleValidationStatus = normalizeStatusObject(oracleValidationStatus, DEFAULT_ORACLE_VALIDATION_STATUS);
+  const safeComplianceControlsStatus = normalizeStatusObject(complianceControlsStatus, DEFAULT_COMPLIANCE_CONTROLS_STATUS);
+  const safeX402PaymentControlsStatus = normalizeStatusObject(x402PaymentControlsStatus, { ...DEFAULT_X402_PAYMENT_CONTROLS_STATUS, status: "unavailable" });
 
   if (!walletConnected) {
     return (
@@ -2760,9 +2814,9 @@ function DashboardPage({
   }, { threat: false, oracle: false, compliance: false });
 
   const requiredUnavailableProviders = [
-    providerRequirements.threat && threatIntelligenceStatus.status !== "available" ? "Threat Intelligence" : "",
-    providerRequirements.oracle && oracleValidationStatus.status !== "available" ? "Oracle Validation" : "",
-    providerRequirements.compliance && complianceControlsStatus.status !== "available" ? "Compliance Controls" : "",
+    providerRequirements.threat && safeThreatIntelligenceStatus.status !== "available" ? "Threat Intelligence" : "",
+    providerRequirements.oracle && safeOracleValidationStatus.status !== "available" ? "Oracle Validation" : "",
+    providerRequirements.compliance && safeComplianceControlsStatus.status !== "available" ? "Compliance Controls" : "",
   ].filter(Boolean);
 
   if (requiredUnavailableProviders.length > 0) {
@@ -2813,18 +2867,18 @@ function DashboardPage({
     },
     {
       label: "Threat feed",
-      detail: threatIntelligenceStatus.status === "available" ? `${threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0} active indicators are available.` : threatIntelligenceStatus.status === "stale" ? "The configured threat feed is stale." : "No fresh threat feed is available.",
-      status: threatIntelligenceStatus.status === "available" ? "operational" : threatIntelligenceStatus.status === "stale" ? "attention" : "unavailable",
+      detail: safeThreatIntelligenceStatus.status === "available" ? `${safeThreatIntelligenceStatus.activeIndicatorCount ?? safeThreatIntelligenceStatus.indicatorCount ?? 0} active indicators are available.` : safeThreatIntelligenceStatus.status === "stale" ? "The configured threat feed is stale." : "No fresh threat feed is available.",
+      status: safeThreatIntelligenceStatus.status === "available" ? "operational" : safeThreatIntelligenceStatus.status === "stale" ? "attention" : "unavailable",
     },
     {
       label: "Oracle feed",
-      detail: oracleValidationStatus.status === "available" ? `${oracleValidationStatus.pairCount || 0} market pair${oracleValidationStatus.pairCount === 1 ? " is" : "s are"} available.` : oracleValidationStatus.status === "stale" ? "The configured oracle feed is stale." : "No fresh oracle feed is available.",
-      status: oracleValidationStatus.status === "available" ? "operational" : oracleValidationStatus.status === "stale" ? "attention" : "unavailable",
+      detail: safeOracleValidationStatus.status === "available" ? `${safeOracleValidationStatus.pairCount || 0} market pair${safeOracleValidationStatus.pairCount === 1 ? " is" : "s are"} available.` : safeOracleValidationStatus.status === "stale" ? "The configured oracle feed is stale." : "No fresh oracle feed is available.",
+      status: safeOracleValidationStatus.status === "available" ? "operational" : safeOracleValidationStatus.status === "stale" ? "attention" : "unavailable",
     },
     {
       label: "Compliance feed",
-      detail: complianceControlsStatus.status === "available" ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators across ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions.` : complianceControlsStatus.status === "stale" ? "The configured compliance feed is stale." : "No fresh compliance feed is available.",
-      status: complianceControlsStatus.status === "available" ? "operational" : complianceControlsStatus.status === "stale" ? "attention" : "unavailable",
+      detail: safeComplianceControlsStatus.status === "available" ? `${safeComplianceControlsStatus.activeIndicatorCount ?? safeComplianceControlsStatus.indicatorCount ?? 0} indicators across ${safeComplianceControlsStatus.activeJurisdictionCount ?? safeComplianceControlsStatus.jurisdictionCount ?? 0} jurisdictions.` : safeComplianceControlsStatus.status === "stale" ? "The configured compliance feed is stale." : "No fresh compliance feed is available.",
+      status: safeComplianceControlsStatus.status === "available" ? "operational" : safeComplianceControlsStatus.status === "stale" ? "attention" : "unavailable",
     },
   ];
 
@@ -2842,7 +2896,7 @@ function DashboardPage({
 
   const agentsWithActivePolicy = activeAgents.filter((agent) => Boolean(getActivePolicy(policies, agent.id))).length;
   const inactivePolicyCount = policies.filter((policy) => policy.status !== "Active").length;
-  const x402Ready = x402PaymentControlsStatus.status === "foundation-available";
+  const x402Ready = safeX402PaymentControlsStatus.status === "foundation-available";
   const trackedOnboardingAgents = activeAgents.filter((agent) => ["guided", "advanced"].includes(String(agent.capabilityConfiguration?.setupMode || "")));
   let onboardingCredentialSaved = false;
   try {
@@ -11891,6 +11945,10 @@ function SettingsPage({
   onResumeEmergencyPause: (id: string, reason: string) => Promise<unknown>;
 }) {
   type SettingsTab = "general" | "providers" | "emergency" | "developer";
+  const safeThreatIntelligenceStatus = normalizeStatusObject(threatIntelligenceStatus, DEFAULT_THREAT_INTELLIGENCE_STATUS);
+  const safeOracleValidationStatus = normalizeStatusObject(oracleValidationStatus, DEFAULT_ORACLE_VALIDATION_STATUS);
+  const safeComplianceControlsStatus = normalizeStatusObject(complianceControlsStatus, DEFAULT_COMPLIANCE_CONTROLS_STATUS);
+  const safeX402PaymentControlsStatus = normalizeStatusObject(x402PaymentControlsStatus, { ...DEFAULT_X402_PAYMENT_CONTROLS_STATUS, status: "unavailable" });
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [copiedSetting, setCopiedSetting] = useState("");
   const [expandedProvider, setExpandedProvider] = useState("");
@@ -11899,12 +11957,12 @@ function SettingsPage({
   const [referenceCurrency, setReferenceCurrency] = useState(() => typeof window !== "undefined" ? (localStorage.getItem("magen3.referenceCurrency") || "USD") : "USD");
   const savePolicyDefaults = (unit: string, currency: string) => { setDefaultLimitUnit(unit); setReferenceCurrency(currency); localStorage.setItem("magen3.defaultLimitUnit", unit); localStorage.setItem("magen3.referenceCurrency", currency); };
 
-  const oracleConfiguredProviderIds = Array.isArray(oracleValidationStatus?.configuredProviderIds) ? oracleValidationStatus.configuredProviderIds : [];
-  const oracleProviderCapabilities = Array.isArray(oracleValidationStatus?.providerCapabilities) ? oracleValidationStatus.providerCapabilities : [];
-  const oracleProviderStatuses = Array.isArray(oracleValidationStatus?.providerStatuses) ? oracleValidationStatus.providerStatuses : [];
-  const complianceConfiguredProviderIds = Array.isArray(complianceControlsStatus?.configuredProviderIds) ? complianceControlsStatus.configuredProviderIds : [];
-  const complianceAvailableProviderIds = Array.isArray(complianceControlsStatus?.availableProviderIds) ? complianceControlsStatus.availableProviderIds : [];
-  const complianceProviderCapabilities = Array.isArray(complianceControlsStatus?.providerCapabilities) ? complianceControlsStatus.providerCapabilities : [];
+  const oracleConfiguredProviderIds = Array.isArray(safeOracleValidationStatus?.configuredProviderIds) ? safeOracleValidationStatus.configuredProviderIds : [];
+  const oracleProviderCapabilities = Array.isArray(safeOracleValidationStatus?.providerCapabilities) ? safeOracleValidationStatus.providerCapabilities : [];
+  const oracleProviderStatuses = Array.isArray(safeOracleValidationStatus?.providerStatuses) ? safeOracleValidationStatus.providerStatuses : [];
+  const complianceConfiguredProviderIds = Array.isArray(safeComplianceControlsStatus?.configuredProviderIds) ? safeComplianceControlsStatus.configuredProviderIds : [];
+  const complianceAvailableProviderIds = Array.isArray(safeComplianceControlsStatus?.availableProviderIds) ? safeComplianceControlsStatus.availableProviderIds : [];
+  const complianceProviderCapabilities = Array.isArray(safeComplianceControlsStatus?.providerCapabilities) ? safeComplianceControlsStatus.providerCapabilities : [];
   const safeMonitoringState: MonitoringState = {
     monitors: Array.isArray(monitoringState?.monitors) ? monitoringState.monitors : [],
     alerts: Array.isArray(monitoringState?.alerts) ? monitoringState.alerts : [],
@@ -11961,55 +12019,55 @@ function SettingsPage({
       id: "threat",
       label: "Threat Intelligence",
       description: "Normalized operator-feed and provider evidence used by deterministic threat checks.",
-      status: threatIntelligenceStatus.status === "available" ? "Available" : "Unavailable",
+      status: safeThreatIntelligenceStatus.status === "available" ? "Available" : "Unavailable",
       icon: <ShieldAlert size={17} />,
       details: [
-        ["Source", threatIntelligenceStatus.sourceName || "No feed configured"],
-        ["Feed state", threatIntelligenceStatus.status || "unavailable"],
-        ["Active indicators", String(threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0)],
-        ["Feed records", String(threatIntelligenceStatus.indicatorCount || 0)],
-        ["Configured providers", threatIntelligenceStatus.configuredProviderIds?.join(", ") || "None"],
-        ["Available providers", threatIntelligenceStatus.availableProviderIds?.join(", ") || "None"],
-        ["Provider disagreement", threatIntelligenceStatus.providerDisagreement ? "Detected" : "None detected"],
+        ["Source", safeThreatIntelligenceStatus.sourceName || "No feed configured"],
+        ["Feed state", safeThreatIntelligenceStatus.status || "unavailable"],
+        ["Active indicators", String(safeThreatIntelligenceStatus.activeIndicatorCount ?? safeThreatIntelligenceStatus.indicatorCount ?? 0)],
+        ["Feed records", String(safeThreatIntelligenceStatus.indicatorCount || 0)],
+        ["Configured providers", safeThreatIntelligenceStatus.configuredProviderIds?.join(", ") || "None"],
+        ["Available providers", safeThreatIntelligenceStatus.availableProviderIds?.join(", ") || "None"],
+        ["Provider disagreement", safeThreatIntelligenceStatus.providerDisagreement ? "Detected" : "None detected"],
       ],
-      error: threatIntelligenceStatus.error || "",
+      error: safeThreatIntelligenceStatus.error || "",
       note: "Provider credentials and raw configured locations are never displayed.",
     },
     {
       id: "oracle",
       label: "Oracle Validation",
       description: "Price-feed observations used by market-sensitive policy checks.",
-      status: oracleValidationStatus.status === "available" ? "Available" : "Unavailable",
+      status: safeOracleValidationStatus.status === "available" ? "Available" : "Unavailable",
       icon: <Activity size={17} />,
       details: [
-        ["Source", oracleValidationStatus.sourceName || "No feed configured"],
-        ["Feed state", oracleValidationStatus.status || "unavailable"],
-        ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
-        ["Observations", String(oracleValidationStatus.observationCount || 0)],
+        ["Source", safeOracleValidationStatus.sourceName || "No feed configured"],
+        ["Feed state", safeOracleValidationStatus.status || "unavailable"],
+        ["Asset pairs", String(safeOracleValidationStatus.pairCount || 0)],
+        ["Observations", String(safeOracleValidationStatus.observationCount || 0)],
         ["Configured providers", oracleConfiguredProviderIds.join(", ") || "None"],
         ["Provider health", oracleProviderCapabilities.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
         ["Provider states", oracleProviderStatuses.map((item) => `${item.providerId || "provider"}: ${item.status || "unknown"}`).join(" · ") || "No request-scoped provider check"],
       ],
-      error: oracleValidationStatus.error || "",
+      error: safeOracleValidationStatus.error || "",
       note: "Pyth Hermes support is Preview until a deployment performs a genuine live provider request. Unavailable, unsupported, or stale evidence never becomes a zero-price pass.",
     },
     {
       id: "compliance",
       label: "Compliance Controls",
       description: "Opaque screening and jurisdiction evidence without raw personal identity data.",
-      status: complianceControlsStatus.status === "available" ? "Available" : "Unavailable",
+      status: safeComplianceControlsStatus.status === "available" ? "Available" : "Unavailable",
       icon: <ShieldCheck size={17} />,
       details: [
-        ["Source", complianceControlsStatus.sourceName || "No feed configured"],
-        ["Feed state", complianceControlsStatus.status || "unavailable"],
-        ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
-        ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
+        ["Source", safeComplianceControlsStatus.sourceName || "No feed configured"],
+        ["Feed state", safeComplianceControlsStatus.status || "unavailable"],
+        ["Active indicators", String(safeComplianceControlsStatus.activeIndicatorCount ?? safeComplianceControlsStatus.indicatorCount ?? 0)],
+        ["Jurisdiction rules", String(safeComplianceControlsStatus.activeJurisdictionCount ?? safeComplianceControlsStatus.jurisdictionCount ?? 0)],
         ["Configured providers", complianceConfiguredProviderIds.join(", ") || "None"],
         ["Available providers", complianceAvailableProviderIds.join(", ") || "None"],
         ["Provider health", complianceProviderCapabilities.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
-        ["Provider disagreement", complianceControlsStatus.providerDisagreement ? "Detected" : "None detected"],
+        ["Provider disagreement", safeComplianceControlsStatus.providerDisagreement ? "Detected" : "None detected"],
       ],
-      error: complianceControlsStatus.error || "",
+      error: safeComplianceControlsStatus.error || "",
       note: "OFAC-API provider support is Preview until a deployment performs a genuine credentialed provider request. Provider results are evidence, not legal conclusions; raw personal identity data and provider credentials are not shown here.",
     },
     {
@@ -12031,15 +12089,15 @@ function SettingsPage({
       id: "x402",
       label: "x402 Payment Controls",
       description: "Exact, upto, and metered x402 authorization with bounded accounting and testnet settlement.",
-      status: x402PaymentControlsStatus.status === "live-testnet" ? "Available" : x402PaymentControlsStatus.status === "foundation-available" ? "Foundation" : "Unavailable",
+      status: safeX402PaymentControlsStatus.status === "live-testnet" ? "Available" : safeX402PaymentControlsStatus.status === "foundation-available" ? "Foundation" : "Unavailable",
       icon: <Zap size={17} />,
       details: [
-        ["Protocol", `x402 v${x402PaymentControlsStatus.protocolVersion || 2}`],
-        ["Schemes", (x402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
-        ["Request binding", x402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
-        ["Settlement reporting", x402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
-        ["Bounded authorizations", x402PaymentControlsStatus.controlledAuthorizations ? "Enabled" : "Unavailable"],
-        ["Usage accounting", x402PaymentControlsStatus.usageAccounting ? "Enabled" : "Unavailable"],
+        ["Protocol", `x402 v${safeX402PaymentControlsStatus.protocolVersion || 2}`],
+        ["Schemes", (safeX402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
+        ["Request binding", safeX402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
+        ["Settlement reporting", safeX402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
+        ["Bounded authorizations", safeX402PaymentControlsStatus.controlledAuthorizations ? "Enabled" : "Unavailable"],
+        ["Usage accounting", safeX402PaymentControlsStatus.usageAccounting ? "Enabled" : "Unavailable"],
       ],
       error: "",
       note: "Magen3 does not receive signing keys or raw PAYMENT-SIGNATURE payloads.",
@@ -12255,12 +12313,12 @@ export default function App() {
   const [walletError, setWalletError] = useState("");
   const [accountDataError, setAccountDataError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
-  const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
-  const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
-  const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
-  const [continuousRiskMonitoringStatus, setContinuousRiskMonitoringStatus] = useState<ContinuousRiskMonitoringStatus>({ status: "unavailable", deterministic: true, schedulerEnabled: false });
+  const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>(() => ({ ...DEFAULT_THREAT_INTELLIGENCE_STATUS }));
+  const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>(() => ({ ...DEFAULT_ORACLE_VALIDATION_STATUS }));
+  const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>(() => ({ ...DEFAULT_COMPLIANCE_CONTROLS_STATUS }));
+  const [continuousRiskMonitoringStatus, setContinuousRiskMonitoringStatus] = useState<ContinuousRiskMonitoringStatus>(() => ({ ...DEFAULT_CONTINUOUS_RISK_MONITORING_STATUS }));
   const [monitoringState, setMonitoringState] = useState<MonitoringState>({ monitors: [], alerts: [] });
-  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "live-testnet", protocolVersion: 2, supportedSchemes: ["exact", "upto", "metered"], requestBinding: true, replayProtection: true, settlementReporting: true, liveSettlement: true, controlledAuthorizations: true, usageAccounting: true, reservationCaptureRelease: true, partialSettlement: true, authorizationRevocation: true, resourceDeliveryVerification: true });
+  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>(() => ({ ...DEFAULT_X402_PAYMENT_CONTROLS_STATUS }));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [developerMode, setDeveloperMode] = useState(() => {
     try {
@@ -12306,9 +12364,9 @@ export default function App() {
     const refreshThreatStatus = async () => {
       try {
         const payload = await api.threatIntelligenceStatus();
-        if (!cancelled) setThreatIntelligenceStatus(payload.threatIntelligence as ThreatIntelligenceStatus);
+        if (!cancelled) setThreatIntelligenceStatus(normalizeStatusObject(payload?.threatIntelligence, { ...DEFAULT_THREAT_INTELLIGENCE_STATUS, error: payload?.threatIntelligence ? "" : "Threat Intelligence status response is missing its payload." }));
       } catch {
-        if (!cancelled) setThreatIntelligenceStatus((previous) => ({ ...previous, status: "unavailable", error: "Threat Intelligence status endpoint is unavailable." }));
+        if (!cancelled) setThreatIntelligenceStatus((previous) => ({ ...normalizeStatusObject(previous, DEFAULT_THREAT_INTELLIGENCE_STATUS), status: "unavailable", error: "Threat Intelligence status endpoint is unavailable." }));
       }
     };
     void refreshThreatStatus();
@@ -12322,9 +12380,9 @@ export default function App() {
     const refreshOracleStatus = async () => {
       try {
         const payload = await api.oracleValidationStatus();
-        if (!cancelled) setOracleValidationStatus(payload.oracleValidation as OracleValidationStatus);
+        if (!cancelled) setOracleValidationStatus(normalizeStatusObject(payload?.oracleValidation, { ...DEFAULT_ORACLE_VALIDATION_STATUS, error: payload?.oracleValidation ? "" : "Oracle Validation status response is missing its payload." }));
       } catch {
-        if (!cancelled) setOracleValidationStatus((previous) => ({ ...previous, status: "unavailable", error: "Oracle Validation status endpoint is unavailable." }));
+        if (!cancelled) setOracleValidationStatus((previous) => ({ ...normalizeStatusObject(previous, DEFAULT_ORACLE_VALIDATION_STATUS), status: "unavailable", error: "Oracle Validation status endpoint is unavailable." }));
       }
     };
     void refreshOracleStatus();
@@ -12338,9 +12396,9 @@ export default function App() {
     const refreshComplianceStatus = async () => {
       try {
         const payload = await api.complianceControlsStatus();
-        if (!cancelled) setComplianceControlsStatus(payload.complianceControls as ComplianceControlsStatus);
+        if (!cancelled) setComplianceControlsStatus(normalizeStatusObject(payload?.complianceControls, { ...DEFAULT_COMPLIANCE_CONTROLS_STATUS, error: payload?.complianceControls ? "" : "Compliance Controls status response is missing its payload." }));
       } catch {
-        if (!cancelled) setComplianceControlsStatus((previous) => ({ ...previous, status: "unavailable", error: "Compliance Controls status endpoint is unavailable." }));
+        if (!cancelled) setComplianceControlsStatus((previous) => ({ ...normalizeStatusObject(previous, DEFAULT_COMPLIANCE_CONTROLS_STATUS), status: "unavailable", error: "Compliance Controls status endpoint is unavailable." }));
       }
     };
     void refreshComplianceStatus();
@@ -12354,9 +12412,9 @@ export default function App() {
     const refreshMonitoringStatus = async () => {
       try {
         const payload = await api.continuousRiskMonitoringStatus();
-        if (!cancelled) setContinuousRiskMonitoringStatus(payload.continuousRiskMonitoring as ContinuousRiskMonitoringStatus);
+        if (!cancelled) setContinuousRiskMonitoringStatus(normalizeStatusObject(payload?.continuousRiskMonitoring, { ...DEFAULT_CONTINUOUS_RISK_MONITORING_STATUS, error: payload?.continuousRiskMonitoring ? "" : "Continuous Risk Monitoring status response is missing its payload." }));
       } catch {
-        if (!cancelled) setContinuousRiskMonitoringStatus((previous) => ({ ...previous, status: "unavailable", error: "Continuous Risk Monitoring status endpoint is unavailable." }));
+        if (!cancelled) setContinuousRiskMonitoringStatus((previous) => ({ ...normalizeStatusObject(previous, DEFAULT_CONTINUOUS_RISK_MONITORING_STATUS), status: "unavailable", error: "Continuous Risk Monitoring status endpoint is unavailable." }));
       }
     };
     void refreshMonitoringStatus();
@@ -12369,9 +12427,9 @@ export default function App() {
     const refreshX402Status = async () => {
       try {
         const payload = await api.x402PaymentControlsStatus();
-        if (!cancelled) setX402PaymentControlsStatus(payload.x402PaymentControls as X402PaymentControlsStatus);
+        if (!cancelled) setX402PaymentControlsStatus(normalizeStatusObject(payload?.x402PaymentControls, { ...DEFAULT_X402_PAYMENT_CONTROLS_STATUS, status: payload?.x402PaymentControls ? DEFAULT_X402_PAYMENT_CONTROLS_STATUS.status : "unavailable" }));
       } catch {
-        if (!cancelled) setX402PaymentControlsStatus((previous) => ({ ...previous, status: "unavailable" }));
+        if (!cancelled) setX402PaymentControlsStatus((previous) => ({ ...normalizeStatusObject(previous, DEFAULT_X402_PAYMENT_CONTROLS_STATUS), status: "unavailable" }));
       }
     };
     void refreshX402Status();

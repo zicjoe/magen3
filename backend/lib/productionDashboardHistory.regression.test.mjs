@@ -15,8 +15,8 @@ test('Dashboard and Settings preserve the Milestone 25 core rendering contract',
   const settings = source.slice(settingsStart, settingsEnd);
   assert.doesNotMatch(dashboard, /monitoringState|continuousRiskMonitoringStatus/);
   assert.match(settings, /const safeMonitoringState: MonitoringState =/);
-  assert.match(settings, /Array\.isArray\(oracleValidationStatus\?\.providerCapabilities\)/);
-  assert.match(settings, /Array\.isArray\(complianceControlsStatus\?\.providerCapabilities\)/);
+  assert.match(settings, /Array\.isArray\(safeOracleValidationStatus\?\.providerCapabilities\)/);
+  assert.match(settings, /Array\.isArray\(safeComplianceControlsStatus\?\.providerCapabilities\)/);
   assert.match(source, /class PageErrorBoundary extends Component/);
 });
 

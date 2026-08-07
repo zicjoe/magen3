@@ -9,10 +9,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     },
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const rawBody = await response.text();
+  let payload: any = {};
+
+  if (rawBody) {
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      if (!response.ok) throw new Error(`Magen3 API error: ${response.status}`);
+      throw new Error("Magen3 API returned a non-JSON response.");
+    }
+  }
 
   if (!response.ok) {
     throw new Error(payload?.error || `Magen3 API error: ${response.status}`);
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Magen3 API returned an invalid response body.");
   }
 
   return payload as T;
