@@ -1,16 +1,20 @@
 const RAW_API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+// Keep the public Railway API URL for SDK/docs/integration surfaces, but do not make
+// production browsers call Railway cross-origin. Vercel proxies /api/* to Railway.
 const API_BASE_URL = RAW_API_BASE_URL.trim().replace(/\/+$/, "");
+const BROWSER_REQUEST_BASE_URL = import.meta.env.PROD ? "" : API_BASE_URL;
 
 function buildApiUrl(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE_URL}${normalizedPath}`;
+  return `${BROWSER_REQUEST_BASE_URL}${normalizedPath}`;
 }
 
 function responseDiagnostic(url: string, response: Response) {
   const contentType = response.headers.get("content-type") || "unknown content type";
-  let host = url;
+  const diagnosticUrl = response.url || url;
+  let host = diagnosticUrl;
   try {
-    host = new URL(url).host;
+    host = new URL(diagnosticUrl, typeof window !== "undefined" ? window.location.origin : API_BASE_URL).host;
   } catch {
     // Keep the raw URL if it cannot be parsed.
   }
