@@ -399,20 +399,9 @@ export async function runMigrations() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_policy_id ON emergency_pauses(policy_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_status ON emergency_pauses(status);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emergency_pauses_expires_at ON emergency_pauses(expires_at);`);
-}
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations()
-    .then(async () => {
-      console.log("Database migrations completed.");
-      await pool.end();
-    })
-    .catch(async (error) => {
-      console.error("Database migration failed:", error);
-      await pool.end();
-      process.exit(1);
-    });
-
+  // Milestone 28 monitoring storage must be created as part of the imported migration
+  // path used by Railway/server startup, not only when this file is executed directly.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS monitoring_monitors (
       id TEXT PRIMARY KEY, owner_wallet_address TEXT NOT NULL, agent_id TEXT NOT NULL DEFAULT '', name TEXT NOT NULL,
@@ -436,5 +425,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   `);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS monitoring_alerts_dedup_idx ON monitoring_alerts (monitor_id, deduplication_key);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS monitoring_monitors_due_idx ON monitoring_monitors (enabled, next_evaluation_at);`);
+}
 
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runMigrations()
+    .then(async () => {
+      console.log("Database migrations completed.");
+      await pool.end();
+    })
+    .catch(async (error) => {
+      console.error("Database migration failed:", error);
+      await pool.end();
+      process.exit(1);
+    });
 }

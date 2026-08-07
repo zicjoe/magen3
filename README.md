@@ -1128,3 +1128,9 @@ Pyth provider support is **Preview** until a deployment performs and verifies a 
 Magen3 includes a fixed-origin, server-authenticated compliance-provider adapter architecture with OFAC-API v4 screening as the first provider path. It screens supported blockchain identifiers without accepting raw natural-person identity data through the Agent Gateway. Provider evidence is normalized, freshness/confidence checked, bounded, hashed, and evaluated by existing deterministic Compliance Controls and Risk Assessment. The provider capability remains Preview until a genuine credentialed live request is verified. Continuous rescreening is intentionally deferred to Milestone 28.
 
 - Continuous Risk Monitoring: `docs/CONTINUOUS_RISK_MONITORING.md`
+
+### Local development Gateway startup
+
+`pnpm dev` starts both the Vite frontend and the Magen3 backend Gateway. The combined development launcher reads `.env` and `.env.local` for backend variables. If `DATABASE_URL` is not configured and `ALLOW_MEMORY_STORE` is not explicitly set, local development uses the repository's explicit temporary in-memory store and prints a warning. Production `start`/`railway:start` behavior remains strict and still requires persistent storage unless `ALLOW_MEMORY_STORE=true` is intentionally configured.
+
+If the UI shows **Gateway unavailable**, first confirm that a single `pnpm dev` process is running and that `http://localhost:8787/api/health` returns `ok: true`. If using a separately deployed frontend, `VITE_API_URL` must point to the deployed backend origin.

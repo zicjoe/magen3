@@ -557,9 +557,25 @@ export async function createPostgresStore() {
         listApprovals(normalizedWallet),
         listEmergencyPauses(normalizedWallet),
       ]);
-      const monitoringRows = normalizedWallet ? await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)) : [];
-      const monitoringAlertRows = normalizedWallet ? await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)) : [];
-      return { agents, policies, auditLogs, approvals, emergencyPauses, monitoring: { monitors: monitoringRows, alerts: monitoringAlertRows }, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
+
+      // Continuous monitoring is additive. A monitoring storage/configuration problem must
+      // never make legacy agents, policies, audits, approvals, or emergency controls
+      // disappear from the application bootstrap response.
+      let monitoring = { monitors: [], alerts: [], status: "available", error: "" };
+      if (normalizedWallet) {
+        try {
+          const [monitoringRows, monitoringAlertRows] = await Promise.all([
+            db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)),
+            db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
+          ]);
+          monitoring = { monitors: monitoringRows, alerts: monitoringAlertRows, status: "available", error: "" };
+        } catch (error) {
+          console.error("Continuous monitoring bootstrap degraded; core account history remains available.", error instanceof Error ? error.message : "Unknown monitoring storage error");
+          monitoring = { monitors: [], alerts: [], status: "unavailable", error: "Continuous monitoring state is temporarily unavailable." };
+        }
+      }
+
+      return { agents, policies, auditLogs, approvals, emergencyPauses, monitoring, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
     },
 
     async listMonitoring(walletAddress) {

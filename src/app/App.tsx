@@ -12388,8 +12388,13 @@ export default function App() {
         if (Array.isArray(payload.emergencyPauses)) setEmergencyPauses(payload.emergencyPauses as EmergencyPause[]);
         if (payload.monitoring && typeof payload.monitoring === "object") setMonitoringState({ monitors: Array.isArray(payload.monitoring.monitors) ? payload.monitoring.monitors : [], alerts: Array.isArray(payload.monitoring.alerts) ? payload.monitoring.alerts : [] });
         setApiOnline(true);
-      } catch {
-        if (!cancelled) setApiOnline(false);
+      } catch (error) {
+        if (!cancelled) {
+          // Bootstrap is account-data loading, not the Gateway health signal. A scoped
+          // persistence/module failure must not incorrectly relabel a healthy Railway
+          // Gateway as offline or erase already loaded account history.
+          setWalletError(error instanceof Error ? `Account data could not be refreshed: ${error.message}` : "Account data could not be refreshed.");
+        }
       }
     };
 
