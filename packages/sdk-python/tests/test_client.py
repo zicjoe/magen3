@@ -792,3 +792,14 @@ class TestX402MeteredUpto(unittest.TestCase):
         self.assertEqual(calls[0][2]["agentId"], "MAG-1")
         self.assertTrue(calls[1][1].endswith("/api/agent-gateway/x402/authorization-events"))
         self.assertEqual(calls[1][2]["idempotencyKey"], "k1")
+
+class TestProductionOracleStatus(unittest.TestCase):
+    def test_oracle_validation_status_method(self):
+        captured = []
+        def transport(method, url, headers, data, timeout):
+            captured.append((method, url))
+            return {"ok": True, "oracleValidation": {"status": "available", "configuredProviderIds": ["pyth_hermes"]}}
+        client = Magen3Client("https://api.example", "MAG-ORACLE", "secret", transport=transport)
+        result = client.get_oracle_validation_status()
+        self.assertTrue(captured[0][1].endswith("/api/oracle-validation/status"))
+        self.assertEqual(result["oracleValidation"]["configuredProviderIds"], ["pyth_hermes"])

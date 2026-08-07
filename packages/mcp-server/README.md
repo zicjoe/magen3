@@ -166,3 +166,7 @@ Submit that protected intent through `magen3_require_allowed`. Magen3 fetches an
 ### Threat Intelligence
 
 `magen3_get_threat_intelligence_status` reports sanitized provider capabilities and health for the production Threat Intelligence adapter layer. Provider secrets and raw responses are excluded.
+
+### Production Oracle Integration
+
+Use `magen3_get_oracle_validation_status` for sanitized provider capability and health state. Oracle providers supply evidence only; deterministic Magen3 policy remains the authorization authority.

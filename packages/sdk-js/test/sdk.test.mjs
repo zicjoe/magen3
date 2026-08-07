@@ -1250,3 +1250,11 @@ test("threat intelligence status exposes sanitized provider capabilities", async
   assert.match(capturedUrl, /\/api\/threat-intelligence\/status$/);
   assert.equal(result.threatIntelligence.availableProviderIds[0], "goplus");
 });
+
+test("oracle validation status exposes sanitized production provider capabilities", async () => {
+  let capturedUrl = "";
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-ORACLE", apiKey: "secret", fetch: async (url) => { capturedUrl = String(url); return new Response(JSON.stringify({ ok: true, oracleValidation: { status: "available", configuredProviderIds: ["pyth_hermes"], providerCapabilities: [{ id: "pyth_hermes", enabled: true, health: "ready" }] } }), { status: 200 }); } });
+  const result = await client.getOracleValidationStatus();
+  assert.match(capturedUrl, /\/api\/oracle-validation\/status$/);
+  assert.equal(result.oracleValidation.configuredProviderIds[0], "pyth_hermes");
+});

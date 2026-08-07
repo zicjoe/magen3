@@ -1116,3 +1116,9 @@ Magen3 supports bounded `upto` and `metered` x402 authorization accounting on to
 ### Production Threat Intelligence (Milestone 25)
 
 Magen3 now supports a production Threat Intelligence provider layer in addition to the existing operator feed. The first adapter targets GoPlus Address Security for chain-aware EVM addresses, with server-controlled provider origins, bounded evidence, cache isolation, rate limiting, circuit breaking, provider disagreement handling, and deterministic policy evaluation. See `docs/PRODUCTION_THREAT_INTELLIGENCE.md`.
+
+### Milestone 26 — Production Oracle Integration
+
+The Oracle Validation foundation now supports a production-oriented provider adapter architecture with Pyth Network Hermes as the first provider-backed path. Provider origins are server-controlled, feed IDs are mapped server-side, normalized provider evidence is bounded and hashed, and price-limit arithmetic uses integer-safe decimal scaling. Provider evidence never authorizes execution directly. See `docs/PRODUCTION_ORACLE_INTEGRATION.md`.
+
+Pyth provider support is **Preview** until a deployment performs and verifies a genuine live request with an explicitly configured feed ID. Mock fixtures do not make the capability Live.

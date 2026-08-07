@@ -251,3 +251,39 @@ test("loads local feeds, marks missing timestamps stale, and sanitizes public su
   assert.equal(summary.observationCount, 1);
   assert.equal("observations" in summary, false);
 });
+
+test("provider-required policy does not treat a legacy feed as production-provider evidence", () => {
+  const result = evaluateOracleValidation({
+    request: request(),
+    policy: policy({ oracleValidationProviderRequired: true, oracleValidationProviderUnavailableAction: "Block" }),
+    snapshot: feed([observation(0.025, "source-a"), observation(0.0251, "source-b")]),
+    now: NOW,
+  });
+  assert.equal(result.hardBlock, true);
+  assert.ok(result.findings.some((item) => item.rule === "Oracle provider requirement" && item.status === "fail"));
+});
+
+test("stablecoin peg policy blocks trusted-price evidence outside the configured peg range", () => {
+  const result = evaluateOracleValidation({
+    request: request({ asset: "USDC", oracleBaseAsset: "USDC", executionPrice: 0.90 }),
+    policy: policy({ oracleValidationMinSources: 1, oracleValidationStablecoinAssets: ["USDC"], oracleValidationStablecoinPegMinBps: 9800, oracleValidationStablecoinPegMaxBps: 10200 }),
+    snapshot: normalizeOracleFeed({ source: "peg-feed", generatedAt: NOW.toISOString(), observations: [{ baseAsset: "USDC", quoteAsset: "USD", price: "0.90", confidence: 99, source: "source-a", observedAt: NOW.toISOString() }] }, { now: NOW }),
+    now: NOW,
+  });
+  assert.equal(result.hardBlock, true);
+  assert.ok(result.findings.some((item) => item.rule === "Stablecoin peg validation" && item.status === "fail"));
+});
+
+test("production legacy remote feeds require an explicit hostname allowlist", async () => {
+  resetOracleValidationCache();
+  let called = false;
+  const snapshot = await getOracleValidationSnapshot({
+    force: true,
+    request: request(),
+    env: { NODE_ENV: "production", ORACLE_VALIDATION_FEED_URL: "https://unapproved.example/feed.json" },
+    now: NOW,
+    fetchImpl: async () => { called = true; throw new Error("must not fetch"); },
+  });
+  assert.equal(called, false);
+  assert.equal(snapshot.status, "unavailable");
+});

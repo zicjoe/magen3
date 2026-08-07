@@ -333,3 +333,7 @@ Use `create_x402_authorization()` after an Allowed x402 audit, then `apply_x402_
 ### Threat Intelligence status
 
 `client.get_threat_intelligence_status()` returns sanitized configured-provider, capability, and health information for Milestone 25. It does not expose credentials or raw provider payloads.
+
+### Oracle provider status
+
+Use `client.get_oracle_validation_status()` to inspect sanitized Production Oracle capability/provider state. Provider credentials and raw payloads are never returned.

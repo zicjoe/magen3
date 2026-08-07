@@ -386,3 +386,7 @@ After an `Allowed` x402 intent, use `createX402Authorization()` for `upto` or `m
 ### Threat Intelligence status
 
 `client.getThreatIntelligenceStatus()` returns sanitized configured-provider, capability, and health information for Milestone 25. It does not expose credentials or raw provider payloads.
+
+### Oracle provider status
+
+Use `await client.getOracleValidationStatus()` to inspect sanitized Production Oracle capability/provider state. Pyth Hermes provider support remains Preview until the deployment verifies a genuine live provider request.

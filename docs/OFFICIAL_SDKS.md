@@ -198,3 +198,7 @@ For Swap, Trade, Exchange, or Bridge actions, clients may include additive `acti
 ## Threat Intelligence provider status
 
 Milestone 25 adds `getThreatIntelligenceStatus()` to the JavaScript SDK and `get_threat_intelligence_status()` to the Python SDK. These methods return sanitized provider capability and health metadata only; provider credentials and raw provider responses are never returned.
+
+## Production Oracle provider status
+
+Milestone 26 adds `client.getOracleValidationStatus()` in the JavaScript SDK and `client.get_oracle_validation_status()` in Python. These return sanitized provider capabilities, provider health, feed state, and request-independent configuration information. Provider credentials and raw provider payloads are never exposed. Provider-backed Oracle evidence continues to flow through normal protected-intent responses in `oracleValidationContext`.

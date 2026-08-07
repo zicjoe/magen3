@@ -400,13 +400,16 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getThreatIntelligenceStatus" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getThreatIntelligenceStatus" | "getOracleValidationStatus" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
     },
     async getThreatIntelligenceStatus(): Promise<ToolTextResult> {
       try { return text(await client.getThreatIntelligenceStatus()); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getOracleValidationStatus(): Promise<ToolTextResult> {
+      try { return text(await client.getOracleValidationStatus()); } catch (error) { return text(errorPayload(error), true); }
     },
     async getIntentSchema(): Promise<ToolTextResult> {
       return text({
@@ -419,7 +422,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         gasSponsorshipFeeSafetyBoundary: "Gas Sponsorship & Fee Safety verifies bounded fee, approved sponsor or Paymaster, expiry, scope, payer, budgets, operation counts, and public evidence hashes. MCP never creates sponsorships, receives sponsor credentials, or relays raw sponsor signatures.",
         toolMcpIntegrityBoundary: "Tool & MCP Integrity verifies the exact approved server/tool identity, version, hashes, TLS, origin, credential scope, requested permissions, and agent capability boundary. MCP must never send server credentials, private keys, wallet signatures, or secret tool output to Magen3.",
         threatIntelligenceBoundary: "Threat Intelligence uses normalized evidence from operator feeds and server-controlled provider adapters such as GoPlus for supported EVM address subjects. Provider verdicts never authorize execution; stale, unavailable, unsupported, disagreement, and quorum states follow deterministic policy and never silently count as clean.",
-        oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
+        oracleValidationBoundary: "Oracle Validation consumes bounded normalized evidence from server-controlled provider adapters such as Pyth Hermes plus optional operator feeds. Providers supply evidence only; Magen3 deterministically enforces freshness, feed mapping, confidence, source disagreement, stablecoin peg, and price-deviation policy.",
         marketRiskSignalsBoundary: "Market Risk Signals evaluates only freshness-checked operator-configured provider evidence. MCP never fabricates metrics, and passing evidence does not guarantee future liquidity, price, ordering, settlement, or final execution quality.",
         bridgeControlsBoundary: "Bridge Controls validates route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         bridgeProviderIntegrationBoundary: "Real Bridge Provider Integration fetches Across testnet quotes and exact unsigned source transactions through the Magen3 backend, binds them to the protected intent, and can poll provider delivery status after source submission. MCP never supplies provider URLs or credentials, never signs or submits transactions, and a quote is not settlement.",

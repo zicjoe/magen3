@@ -341,6 +341,10 @@ class Magen3Client:
         """Return sanitized Threat Intelligence provider/feed capability status."""
         return self._request("GET", "/api/threat-intelligence/status")
 
+    def get_oracle_validation_status(self) -> Dict[str, Any]:
+        """Return sanitized production Oracle provider/feed capability status."""
+        return self._request("GET", "/api/oracle-validation/status")
+
     def get_bridge_provider_status(self) -> Dict[str, Any]:
         return self._request("GET", "/api/bridge-provider-integration/status")
 

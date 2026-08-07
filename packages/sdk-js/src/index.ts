@@ -247,6 +247,14 @@ export interface Magen3OracleQuote {
   executionPrice: number;
   /** ISO-8601 timestamp for the proposed execution quote. */
   quoteTimestamp?: string;
+  executionPriceDecimal?: string;
+  referencePriceDecimal?: string;
+  providerRequired?: boolean;
+  allowedProviders?: string[];
+  availableProviderIds?: string[];
+  providerStatuses?: Array<{ providerId?: string; status?: string; reason?: string; cached?: boolean }>;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; capabilities?: string[]; chainFamilies?: string[]; serverControlledOrigin?: string }>;
+  stablecoinPegBps?: number;
 }
 
 
@@ -2096,6 +2104,10 @@ export class Magen3Client {
 
   async getThreatIntelligenceStatus(): Promise<{ ok: boolean; threatIntelligence: Magen3ThreatIntelligenceContext }> {
     return this.request<{ ok: boolean; threatIntelligence: Magen3ThreatIntelligenceContext }>("/api/threat-intelligence/status", { method: "GET" });
+  }
+
+  async getOracleValidationStatus(): Promise<{ ok: boolean; oracleValidation: Magen3OracleValidationContext }> {
+    return this.request<{ ok: boolean; oracleValidation: Magen3OracleValidationContext }>("/api/oracle-validation/status", { method: "GET" });
   }
 
   async getBridgeProviderStatus(): Promise<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }> {

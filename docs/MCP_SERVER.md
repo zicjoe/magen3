@@ -176,3 +176,7 @@ For Swap, Trade, Exchange, or Bridge actions, clients may include additive `acti
 ## Production Threat Intelligence
 
 Use `magen3_get_threat_intelligence_status` to inspect sanitized Threat Intelligence provider capabilities and health. The tool never returns provider credentials, authorization headers, or unbounded raw provider evidence. Threat provider findings continue through the ordinary protected-intent decision engine.
+
+### Production Oracle status
+
+`magen3_get_oracle_validation_status` returns sanitized Oracle provider capability and health information. It does not fetch arbitrary client-supplied URLs, expose credentials, sign transactions, or convert a provider price into an authorization decision.

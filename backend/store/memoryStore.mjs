@@ -516,7 +516,7 @@ export function createMemoryStore() {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot({ request: body }),
-        getOracleValidationSnapshot(),
+        getOracleValidationSnapshot({ request: body }),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
       ]);
@@ -893,7 +893,7 @@ export function createMemoryStore() {
       };
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
         getThreatIntelligenceSnapshot({ request }),
-        getOracleValidationSnapshot(),
+        getOracleValidationSnapshot({ request }),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
       ]);

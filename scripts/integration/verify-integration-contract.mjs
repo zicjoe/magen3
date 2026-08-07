@@ -19,6 +19,9 @@ const marketRiskSignalsSource = read("backend/lib/marketRiskSignals.mjs");
 const bridgeProviderIntegrationSource = read("backend/lib/bridgeProviderIntegration.mjs");
 const threatIntelligenceSource = read("backend/lib/threatIntelligence.mjs");
 const threatProviderSource = read("backend/lib/threatIntelligenceProviders.mjs");
+const oracleValidationSource = read("backend/lib/oracleValidation.mjs");
+const oracleProviderSource = read("backend/lib/oracleProviders.mjs");
+const oracleDecimalSource = read("backend/lib/oracleDecimal.mjs");
 const serverSource = read("backend/server.mjs");
 const frontendApiSource = read("src/app/lib/api.ts");
 const mcpServerSource = read("packages/mcp-server/src/server.ts");
@@ -209,6 +212,32 @@ if (!app.includes("configuredProviderIds") || !app.includes('StatusBadge status=
 if (!envExample.includes("THREAT_INTELLIGENCE_GOPLUS_ENABLED=false") || !envExample.includes("THREAT_INTELLIGENCE_PROVIDER_MAX_RESPONSE_BYTES=")) fail(".env.example is missing Milestone 25 provider controls");
 if (!read("docs/PRODUCTION_THREAT_INTELLIGENCE.md").includes("Roadmap boundary")) fail("Production Threat Intelligence documentation is missing its roadmap boundary");
 if (!threatReport.includes("Milestones 26–28 were not implemented")) fail("Milestone 25 report is incomplete");
+
+
+const oracleReport = read("PRODUCTION_ORACLE_INTEGRATION_IMPLEMENTATION_REPORT.md");
+for (const required of ["https://hermes.pyth.network", "/api/latest_price_feeds", "ORACLE_PYTH_FEED_MAP_JSON", "collectOracleProviderEvidence", "ORACLE_PROVIDER_MAX_RESPONSE_BYTES", "CIRCUIT_OPEN"]) {
+  if (!oracleProviderSource.includes(required)) fail(`Production Oracle provider layer is missing: ${required}`);
+}
+for (const required of ["normalizeDecimal", "decimalToScaled", "deviationBps", "medianDecimal", "BigInt"]) {
+  if (!oracleDecimalSource.includes(required)) fail(`Production Oracle decimal safety is missing: ${required}`);
+}
+for (const required of ["oracleValidationProviderRequired", "oracleValidationAllowedProviders", "oracleValidationProviderUnavailableAction", "oracleValidationRequiredReferenceCurrency", "oracleValidationStablecoinAssets", "providerEvidence"]) {
+  if (!oracleValidationSource.includes(required)) fail(`Production Oracle deterministic policy support is missing: ${required}`);
+}
+if (!policySource.includes("evaluateOracleValidation")) fail("Oracle Validation is disconnected from the Risk Assessment/policy pipeline");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  if (!source.includes("getOracleValidationSnapshot({ request")) fail(`${name} does not collect request-scoped Oracle provider evidence`);
+}
+if (!serverSource.includes("GET /api/oracle-validation/status")) fail("Oracle Validation status route is missing");
+if (!sdkSource.includes("getOracleValidationStatus")) fail("JavaScript SDK Oracle status method is missing");
+if (!pythonSource.includes("get_oracle_validation_status")) fail("Python SDK Oracle status method is missing");
+if (!mcpSource.includes("getOracleValidationStatus") || !mcpServerSource.includes("magen3_get_oracle_validation_status")) fail("MCP Oracle provider status support is missing");
+if (!read("packages/mcp-server/dist/server.js").includes("magen3_get_oracle_validation_status")) fail("Generated MCP runtime is missing the Oracle status tool");
+if (!read("packages/sdk-js/dist/index.js").includes("getOracleValidationStatus")) fail("Generated JavaScript SDK runtime is missing Oracle status support");
+if (!app.includes("configuredProviderIds") || !app.includes("Pyth Hermes support is Preview")) fail("Frontend Oracle provider status/capability model is missing or dishonest");
+if (!envExample.includes("ORACLE_PYTH_ENABLED=false") || !envExample.includes("ORACLE_PROVIDER_MAX_RESPONSE_BYTES=") || !envExample.includes("ORACLE_VALIDATION_ALLOWED_FEED_HOSTS=")) fail(".env.example is missing Milestone 26 provider controls");
+if (!read("docs/PRODUCTION_ORACLE_INTEGRATION.md").includes("Roadmap boundary")) fail("Production Oracle Integration documentation is missing its roadmap boundary");
+if (!oracleReport.includes("Milestones 27–28 were not implemented")) fail("Milestone 26 report is incomplete");
 
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");

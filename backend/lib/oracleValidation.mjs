@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 import { readUtf8FileLimited } from "./safeFeedFile.mjs";
+import { collectOracleProviderEvidence, getOracleProviderCapabilities, resetOracleProviderRuntime } from "./oracleProviders.mjs";
+import { averageInteger, decimalToScaled, deviationBps as exactDeviationBps, divideDecimal, medianDecimal, normalizeDecimal, spreadBps as exactSpreadBps } from "./oracleDecimal.mjs";
 
 const DEFAULT_CACHE_TTL_MS = 60_000;
 const DEFAULT_MAX_FEED_AGE_MS = 5 * 60_000;
@@ -96,7 +98,9 @@ function normalizeObservation(raw, index, defaultSource, generatedAt) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const baseAsset = normalizeAsset(raw.baseAsset || raw.base || raw.fromAsset || raw.from);
   const quoteAsset = normalizeAsset(raw.quoteAsset || raw.quote || raw.toAsset || raw.to);
-  const price = Number(raw.price ?? raw.value ?? raw.rate);
+  let normalizedPrice;
+  try { normalizedPrice = normalizeDecimal(raw.normalizedPrice ?? raw.price ?? raw.value ?? raw.rate); } catch { return null; }
+  const price = Number(normalizedPrice);
   if (!baseAsset || !quoteAsset || baseAsset === quoteAsset || !Number.isFinite(price) || price <= 0) return null;
   const observedAtRaw = clean(raw.observedAt || raw.observed_at || raw.timestamp || generatedAt);
   const observedAtMs = Date.parse(observedAtRaw);
@@ -107,6 +111,13 @@ function normalizeObservation(raw, index, defaultSource, generatedAt) {
     baseAsset,
     quoteAsset,
     price,
+    normalizedPrice,
+    confidenceInterval: clean(raw.confidenceInterval || raw.confidence_interval),
+    providerId: clean(raw.providerId || raw.provider_id),
+    providerVersion: clean(raw.providerVersion || raw.provider_version),
+    feedIdentifier: clean(raw.feedIdentifier || raw.feed_identifier),
+    evidenceHash: clean(raw.evidenceHash || raw.evidence_hash),
+    cached: raw.cached === true,
     confidence: safeInteger(raw.confidence, 50, { min: 0, max: 100 }),
     source: clean(raw.source || raw.provider) || defaultSource || "oracle-source",
     observedAt: new Date(observedAtMs).toISOString(),
@@ -161,8 +172,16 @@ function cacheKey(source, env = process.env) {
 
 function validateRemoteUrl(value, env = process.env) {
   const url = new URL(value);
-  const localDevelopment = ["localhost", "127.0.0.1", "::1"].includes(url.hostname) && env.NODE_ENV !== "production";
+  const hostname = url.hostname.toLowerCase();
+  const localDevelopment = ["localhost", "127.0.0.1", "::1"].includes(hostname) && env.NODE_ENV !== "production";
   if (url.protocol !== "https:" && !localDevelopment) throw new Error("ORACLE_VALIDATION_FEED_URL must use HTTPS in production");
+  if (url.username || url.password) throw new Error("Oracle feed URLs must not contain credentials");
+  const privateHost = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|::1$|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)/i.test(hostname);
+  if (privateHost && !localDevelopment) throw new Error("Oracle feed URL cannot target a local or private host");
+  if (env.NODE_ENV === "production") {
+    const allowedHosts = clean(env.ORACLE_VALIDATION_ALLOWED_FEED_HOSTS).split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+    if (!allowedHosts.includes(hostname)) throw new Error("Oracle feed host is not in ORACLE_VALIDATION_ALLOWED_FEED_HOSTS");
+  }
   return url;
 }
 
@@ -204,49 +223,48 @@ function applyFreshness(snapshot, { env = process.env, now = new Date() } = {}) 
   };
 }
 
-export async function getOracleValidationSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
+export async function getOracleValidationSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date(), request = {} } = {}) {
   const source = configuredSource(env);
-  if (!source) {
-    return {
-      status: "unavailable",
-      sourceType: "none",
-      sourceName: "No oracle feed configured",
-      generatedAt: "",
-      fetchedAt: now.toISOString(),
-      observationCount: 0,
-      pairCount: 0,
-      observations: [],
-      ageMs: null,
-      maxAgeMs: safeInteger(env.ORACLE_VALIDATION_MAX_FEED_AGE_MS, DEFAULT_MAX_FEED_AGE_MS, { min: 1_000 }),
-      error: "Configure ORACLE_VALIDATION_FEED_JSON, ORACLE_VALIDATION_FEED_PATH, or ORACLE_VALIDATION_FEED_URL.",
-    };
+  let legacySnapshot = null;
+  if (source) {
+    const key = cacheKey(source, env);
+    const ttlMs = safeInteger(env.ORACLE_VALIDATION_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS, { min: 1_000, max: 60 * 60_000 });
+    if (!force && cached && cached.key === key && now.getTime() - cached.loadedAt < ttlMs) legacySnapshot = applyFreshness(cached.snapshot, { env, now });
+    else {
+      try {
+        const loaded = await loadConfiguredFeed(source, { env, fetchImpl, now });
+        cached = { key, loadedAt: now.getTime(), snapshot: loaded };
+        legacySnapshot = applyFreshness(loaded, { env, now });
+      } catch (cause) {
+        legacySnapshot = { status: "unavailable", sourceType: source.type, sourceName: source.type === "remote" ? new URL(source.value).hostname : source.type === "file" ? "Configured local oracle feed" : source.name, generatedAt: "", fetchedAt: now.toISOString(), observationCount: 0, pairCount: 0, observations: [], ageMs: null, maxAgeMs: safeInteger(env.ORACLE_VALIDATION_MAX_FEED_AGE_MS, DEFAULT_MAX_FEED_AGE_MS, { min: 1_000 }), error: cause instanceof Error ? cause.message : "Oracle feed could not be loaded." };
+      }
+    }
   }
-  const key = cacheKey(source, env);
-  const ttlMs = safeInteger(env.ORACLE_VALIDATION_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS, { min: 1_000, max: 60 * 60_000 });
-  if (!force && cached && cached.key === key && now.getTime() - cached.loadedAt < ttlMs) return applyFreshness(cached.snapshot, { env, now });
-  try {
-    const snapshot = await loadConfiguredFeed(source, { env, fetchImpl, now });
-    cached = { key, loadedAt: now.getTime(), snapshot };
-    return applyFreshness(snapshot, { env, now });
-  } catch (cause) {
-    return {
-      status: "unavailable",
-      sourceType: source.type,
-      sourceName: source.type === "remote" ? new URL(source.value).hostname : source.type === "file" ? "Configured local oracle feed" : source.name,
-      generatedAt: "",
-      fetchedAt: now.toISOString(),
-      observationCount: 0,
-      pairCount: 0,
-      observations: [],
-      ageMs: null,
-      maxAgeMs: safeInteger(env.ORACLE_VALIDATION_MAX_FEED_AGE_MS, DEFAULT_MAX_FEED_AGE_MS, { min: 1_000 }),
-      error: cause instanceof Error ? cause.message : "Oracle feed could not be loaded.",
-    };
-  }
+  const provider = await collectOracleProviderEvidence({ request, env, fetchImpl, now });
+  const providerObservations = provider.observations || [];
+  const legacyObservations = Array.isArray(legacySnapshot?.observations) ? legacySnapshot.observations : [];
+  const observations = [...legacyObservations, ...providerObservations].slice(0, MAX_OBSERVATIONS);
+  const providerAvailable = providerObservations.length > 0;
+  const legacyAvailable = legacySnapshot?.status === "available";
+  const generatedTimes = observations.map((item) => Date.parse(item.observedAt || "")).filter(Number.isFinite);
+  const generatedAt = generatedTimes.length ? new Date(Math.max(...generatedTimes)).toISOString() : legacySnapshot?.generatedAt || "";
+  const sourceType = providerAvailable && legacyAvailable ? "composite" : providerAvailable ? "provider" : legacySnapshot?.sourceType || "none";
+  const sourceName = providerAvailable && legacyAvailable ? "Configured feed + production oracle providers" : providerAvailable ? "Production oracle providers" : legacySnapshot?.sourceName || "No oracle provider or feed configured";
+  const status = providerAvailable || legacyAvailable ? "available" : legacySnapshot?.status === "stale" ? "stale" : "unavailable";
+  return {
+    status, sourceType, sourceName, generatedAt, fetchedAt: now.toISOString(), observationCount: observations.length,
+    pairCount: new Set(observations.map((item) => item.pair)).size, observations,
+    ageMs: generatedAt ? Math.max(0, now.getTime() - Date.parse(generatedAt)) : null,
+    maxAgeMs: safeInteger(env.ORACLE_VALIDATION_MAX_FEED_AGE_MS, DEFAULT_MAX_FEED_AGE_MS, { min: 1_000 }),
+    error: status === "unavailable" ? (legacySnapshot?.error || "No usable production oracle evidence is available for this request.") : legacySnapshot?.status === "stale" && !providerAvailable ? legacySnapshot.error : "",
+    providerEvidence: provider.evidence || [], providerStatuses: provider.providerStatuses || [], configuredProviderIds: provider.configuredProviderIds || [],
+    providerCapabilities: getOracleProviderCapabilities({ env }), requestedPair: provider.pair?.pair || "",
+  };
 }
 
 export function resetOracleValidationCache() {
   cached = null;
+  resetOracleProviderRuntime();
 }
 
 function safeSourceName(snapshot = {}) {
@@ -293,6 +311,10 @@ export function summarizeOracleValidationSnapshot(snapshot = {}) {
     ageMs: Number.isFinite(snapshot.ageMs) ? snapshot.ageMs : null,
     maxAgeMs: Number.isFinite(snapshot.maxAgeMs) ? snapshot.maxAgeMs : null,
     error: safePublicError(snapshot),
+    configuredProviderIds: Array.isArray(snapshot.configuredProviderIds) ? snapshot.configuredProviderIds.slice(0, 20) : [],
+    providerStatuses: Array.isArray(snapshot.providerStatuses) ? snapshot.providerStatuses.slice(0, 20).map((item) => ({ providerId: clean(item.providerId), status: clean(item.status), reason: clean(item.reason).slice(0, 160), cached: item.cached === true })) : [],
+    providerCapabilities: Array.isArray(snapshot.providerCapabilities) ? snapshot.providerCapabilities.slice(0, 20).map(({ serverControlledOrigin, ...item }) => ({ ...item, serverControlledOrigin })) : [],
+    requestedPair: clean(snapshot.requestedPair),
   };
 }
 
@@ -302,9 +324,20 @@ function finding({ status, severity = "info", rule, message, evidence = {}, reme
 
 function policyConfig(policy = {}) {
   const rules = policy.structuredRules && typeof policy.structuredRules === "object" ? policy.structuredRules : {};
+  const allowedProviders = Array.isArray(rules.oracleValidationAllowedProviders) ? rules.oracleValidationAllowedProviders.map((item) => clean(item).toLowerCase()).filter(Boolean).slice(0, 20) : [];
+  const stablecoinAssets = Array.isArray(rules.oracleValidationStablecoinAssets) ? rules.oracleValidationStablecoinAssets.map(normalizeAsset).filter(Boolean).slice(0, 50) : [];
   return {
     mode: normalizeMode(rules.oracleValidationMode),
     unavailableAction: normalizeUnavailableAction(rules.oracleValidationUnavailableAction),
+    providerUnavailableAction: normalizeUnavailableAction(rules.oracleValidationProviderUnavailableAction ?? rules.oracleValidationUnavailableAction),
+    providerDisagreementAction: normalizeUnavailableAction(rules.oracleValidationProviderDisagreementAction ?? rules.oracleValidationUnavailableAction),
+    providerRequired: rules.oracleValidationProviderRequired === true,
+    allowedProviders,
+    fallbackAllowed: rules.oracleValidationFallbackAllowed !== false,
+    requiredReferenceCurrency: normalizeAsset(rules.oracleValidationRequiredReferenceCurrency),
+    stablecoinAssets,
+    stablecoinPegMinBps: safeInteger(rules.oracleValidationStablecoinPegMinBps, 9700, { min: 1, max: 20_000 }),
+    stablecoinPegMaxBps: safeInteger(rules.oracleValidationStablecoinPegMaxBps, 10300, { min: 1, max: 20_000 }),
     maxAgeSeconds: safeInteger(rules.oracleValidationMaxAgeSeconds, 120, { min: 5, max: 86_400 }),
     maxDeviationBps: safeInteger(rules.oracleValidationMaxDeviationBps, 300, { min: 1, max: 10_000 }),
     maxSourceSpreadBps: safeInteger(rules.oracleValidationMaxSourceSpreadBps, 500, { min: 1, max: 10_000 }),
@@ -321,19 +354,13 @@ function isApplicable(request = {}) {
 function deriveIntentQuote(request = {}) {
   const baseAsset = normalizeAsset(request.oracleBaseAsset || request.asset);
   const quoteAsset = normalizeAsset(request.oracleQuoteAsset || request.outputAsset);
-  let executionPrice = Number(request.executionPrice);
-  if ((!Number.isFinite(executionPrice) || executionPrice <= 0) && Number(request.amount) > 0 && Number(request.expectedOutput) > 0) {
-    executionPrice = Number(request.expectedOutput) / Number(request.amount);
+  let executionPriceDecimal = "";
+  try { if (request.executionPrice !== null && request.executionPrice !== undefined && request.executionPrice !== "") executionPriceDecimal = normalizeDecimal(request.executionPrice); } catch {}
+  if (!executionPriceDecimal) {
+    try { executionPriceDecimal = divideDecimal(request.expectedOutput, request.amount, 18); } catch {}
   }
   const quoteTimestamp = clean(request.quoteTimestamp || request.transactionTimestamp);
-  return { baseAsset, quoteAsset, pair: pairKey(baseAsset, quoteAsset), executionPrice, quoteTimestamp };
-}
-
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  if (sorted.length === 0) return null;
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return { baseAsset, quoteAsset, pair: pairKey(baseAsset, quoteAsset), executionPriceDecimal, executionPrice: executionPriceDecimal ? Number(executionPriceDecimal) : null, quoteTimestamp };
 }
 
 function unavailableEffect(config) {
@@ -367,8 +394,14 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
     maxSourceSpreadBps: config.maxSourceSpreadBps,
     minConfidence: config.minConfidence,
     minSources: config.minSources,
+    providerRequired: config.providerRequired,
+    allowedProviders: config.allowedProviders,
+    fallbackAllowed: config.fallbackAllowed,
+    requiredReferenceCurrency: config.requiredReferenceCurrency,
     requestedPair: intent.pair,
-    executionPrice: Number.isFinite(intent.executionPrice) ? intent.executionPrice : null,
+    providerEvidence: Array.isArray(snapshot.providerEvidence) ? snapshot.providerEvidence.slice(0, 10).map((item) => ({ providerId: clean(item.providerId), providerVersion: clean(item.providerVersion), feedIdentifier: clean(item.feedIdentifier), canonicalAssetId: clean(item.canonicalAssetId), normalizedPrice: clean(item.normalizedPrice), confidenceInterval: clean(item.confidenceInterval), updateTimestamp: clean(item.updateTimestamp), retrievalTimestamp: clean(item.retrievalTimestamp), evidenceAgeMs: Number.isFinite(item.evidenceAgeMs) ? item.evidenceAgeMs : null, evidenceHash: clean(item.evidenceHash), cached: item.cached === true, fallback: item.fallback === true })) : [],
+    executionPrice: intent.executionPriceDecimal ? Number(intent.executionPriceDecimal) : null,
+    executionPriceDecimal: intent.executionPriceDecimal || "",
     referencePrice: null,
     deviationBps: null,
     sourceSpreadBps: null,
@@ -382,7 +415,7 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
   }
 
-  if (!intent.pair || !Number.isFinite(intent.executionPrice) || intent.executionPrice <= 0) {
+  if (!intent.pair || !intent.executionPriceDecimal) {
     const effect = modeEffect(config, "high");
     hardBlock ||= effect.hardBlock;
     needsReview ||= effect.needsReview;
@@ -394,7 +427,8 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
       severity: effect.severity,
       rule: "Oracle intent metadata",
       message,
-      evidence: { baseAsset: intent.baseAsset, quoteAsset: intent.quoteAsset, executionPrice: Number.isFinite(intent.executionPrice) ? intent.executionPrice : null },
+      evidence: { baseAsset: intent.baseAsset, quoteAsset: intent.quoteAsset, executionPrice: intent.executionPriceDecimal ? Number(intent.executionPriceDecimal) : null,
+    executionPriceDecimal: intent.executionPriceDecimal || "" },
       remediation: "Include action.oracle.baseAsset, quoteAsset, executionPrice, and quoteTimestamp, or provide outputAsset plus expectedOutput so Magen3 can derive the proposed price.",
     }));
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
@@ -423,6 +457,29 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
 
   findings.push(finding({ status: "pass", rule: "Oracle feed availability", message: `A fresh oracle feed is available from ${snapshot.sourceName || "the configured source"}.`, evidence: { generatedAt: snapshot.generatedAt, observationCount: snapshot.observationCount, pairCount: snapshot.pairCount } }));
   checksPassed.push("Fresh oracle feed available");
+
+  if (config.requiredReferenceCurrency && intent.quoteAsset !== config.requiredReferenceCurrency) {
+    const effect = modeEffect(config, "high"); hardBlock ||= effect.hardBlock; needsReview ||= effect.needsReview; scoreDelta += effect.hardBlock ? 20 : effect.needsReview ? 12 : 4;
+    const message = `Oracle reference currency ${intent.quoteAsset || "missing"} does not match required ${config.requiredReferenceCurrency}.`;
+    checksFailed.push(message); findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Oracle reference currency", message, evidence: { observed: intent.quoteAsset, expected: config.requiredReferenceCurrency }, remediation: `Request oracle evidence quoted in ${config.requiredReferenceCurrency}.` }));
+  }
+
+  const providerObservations = (Array.isArray(snapshot.observations) ? snapshot.observations : []).filter((item) => clean(item.providerId));
+  const availableProviderIds = [...new Set(providerObservations.map((item) => clean(item.providerId).toLowerCase()).filter(Boolean))];
+  context.availableProviderIds = availableProviderIds;
+  context.providerStatuses = Array.isArray(snapshot.providerStatuses) ? snapshot.providerStatuses.slice(0, 20) : [];
+  if (config.providerRequired && availableProviderIds.length === 0) {
+    const providerConfig = { ...config, unavailableAction: config.providerUnavailableAction };
+    const effect = unavailableEffect(providerConfig); hardBlock ||= effect.hardBlock; needsReview ||= effect.needsReview; scoreDelta += effect.hardBlock ? 30 : effect.needsReview ? 18 : 6;
+    const message = "Policy requires production oracle provider evidence, but no configured provider returned usable evidence.";
+    checksFailed.push(message); findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Oracle provider requirement", message, evidence: { providerStatuses: context.providerStatuses }, remediation: "Restore an allowed configured oracle provider/feed mapping or change the policy only with authorized approval." }));
+  }
+  if (config.allowedProviders.length && availableProviderIds.some((id) => !config.allowedProviders.includes(id))) {
+    const effect = modeEffect(config, "high"); hardBlock ||= effect.hardBlock; needsReview ||= effect.needsReview; scoreDelta += effect.hardBlock ? 24 : effect.needsReview ? 14 : 5;
+    const disallowed = availableProviderIds.filter((id) => !config.allowedProviders.includes(id));
+    const message = `Oracle evidence includes provider(s) not allowed by policy: ${disallowed.join(", ")}.`;
+    checksFailed.push(message); findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Oracle allowed providers", message, evidence: { allowedProviders: config.allowedProviders, observedProviders: availableProviderIds }, remediation: "Use only policy-approved oracle providers." }));
+  }
 
   const maxAgeMs = config.maxAgeSeconds * 1_000;
   const matching = (Array.isArray(snapshot.observations) ? snapshot.observations : []).filter((item) => {
@@ -455,12 +512,16 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
   }
   const independentObservations = [...observationsBySource.values()];
   const sourceNames = independentObservations.map((item) => item.source);
-  const prices = independentObservations.map((item) => item.price);
-  const referencePrice = median(prices);
-  const confidence = Math.round(independentObservations.reduce((sum, item) => sum + item.confidence, 0) / independentObservations.length);
-  const sourceSpreadBps = referencePrice ? Math.round(((Math.max(...prices) - Math.min(...prices)) / referencePrice) * 10_000) : null;
-  const deviationBps = referencePrice ? Math.round((Math.abs(intent.executionPrice - referencePrice) / referencePrice) * 10_000) : null;
-  Object.assign(context, { referencePrice, deviationBps, sourceSpreadBps, sourceCount: independentObservations.length, confidence });
+  const priceDecimals = independentObservations.map((item) => item.normalizedPrice || String(item.price));
+  const sortedPrices = [...priceDecimals].sort((a, b) => {
+    try { const da = exactDeviationBps(a, b); if (da === 0) return 0; return Number(a) < Number(b) ? -1 : 1; } catch { return 0; }
+  });
+  const referencePriceDecimal = medianDecimal(priceDecimals, 18);
+  const referencePrice = referencePriceDecimal ? Number(referencePriceDecimal) : null;
+  const confidence = averageInteger(independentObservations.map((item) => item.confidence));
+  const sourceSpreadBps = referencePriceDecimal ? exactSpreadBps(sortedPrices[0], sortedPrices[sortedPrices.length - 1], referencePriceDecimal, 18) : null;
+  const deviationBps = referencePriceDecimal ? exactDeviationBps(intent.executionPriceDecimal, referencePriceDecimal, 18) : null;
+  Object.assign(context, { referencePrice, referencePriceDecimal, deviationBps, sourceSpreadBps, sourceCount: independentObservations.length, confidence });
 
   if (independentObservations.length < config.minSources) {
     const effect = modeEffect(config, "high");
@@ -495,7 +556,7 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
     scoreDelta += effect.hardBlock ? 24 : effect.needsReview ? 14 : 5;
     const message = `Oracle sources disagree by ${sourceSpreadBps} bps, above the ${config.maxSourceSpreadBps} bps policy limit.`;
     checksFailed.push(message);
-    findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Oracle source consistency", message, evidence: { sourceSpreadBps, maximum: config.maxSourceSpreadBps, minimumPrice: Math.min(...prices), maximumPrice: Math.max(...prices), referencePrice }, remediation: "Pause until sources converge or investigate the outlier before authorizing execution." }));
+    findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Oracle source consistency", message, evidence: { sourceSpreadBps, maximum: config.maxSourceSpreadBps, minimumPrice: Number(sortedPrices[0]), maximumPrice: Number(sortedPrices[sortedPrices.length - 1]), referencePrice, referencePriceDecimal }, remediation: "Pause until sources converge or investigate the outlier before authorizing execution." }));
   } else {
     checksPassed.push(`Oracle source spread within ${config.maxSourceSpreadBps} bps`);
     findings.push(finding({ status: "pass", rule: "Oracle source consistency", message: `Oracle source spread is within policy at ${sourceSpreadBps ?? 0} bps.`, evidence: { sourceSpreadBps: sourceSpreadBps ?? 0, maximum: config.maxSourceSpreadBps } }));
@@ -524,6 +585,18 @@ export function evaluateOracleValidation({ request, policy, snapshot = {}, now =
     const message = "The execution quote has no quoteTimestamp, so its freshness cannot be verified.";
     checksFailed.push(message);
     findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Execution quote freshness", message, evidence: { maxAgeSeconds: config.maxAgeSeconds }, remediation: "Include a current ISO-8601 action.oracle.quoteTimestamp." }));
+  }
+
+  if (config.stablecoinAssets.includes(intent.baseAsset) && referencePriceDecimal && intent.quoteAsset === (config.requiredReferenceCurrency || "USD")) {
+    const pegBps = Number((decimalToScaled(referencePriceDecimal, 18) * 10_000n + (10n ** 18n) / 2n) / (10n ** 18n));
+    context.stablecoinPegBps = pegBps;
+    if (pegBps < config.stablecoinPegMinBps || pegBps > config.stablecoinPegMaxBps) {
+      const effect = modeEffect(config, "critical"); hardBlock ||= effect.hardBlock; needsReview ||= effect.needsReview; scoreDelta += effect.hardBlock ? 30 : effect.needsReview ? 18 : 6;
+      const message = `Stablecoin oracle reference is outside the configured peg range (${pegBps} bps).`;
+      checksFailed.push(message); findings.push(finding({ status: effect.status, severity: effect.severity, rule: "Stablecoin peg validation", message, evidence: { asset: intent.baseAsset, referenceCurrency: intent.quoteAsset, pegBps, minimum: config.stablecoinPegMinBps, maximum: config.stablecoinPegMaxBps }, remediation: "Do not treat the asset as at-peg until trusted oracle evidence returns within the configured range." }));
+    } else {
+      checksPassed.push("Stablecoin peg within policy"); findings.push(finding({ status: "pass", rule: "Stablecoin peg validation", message: "Stablecoin oracle reference is within the configured peg range.", evidence: { asset: intent.baseAsset, pegBps, minimum: config.stablecoinPegMinBps, maximum: config.stablecoinPegMaxBps } }));
+    }
   }
 
   if (deviationBps !== null && deviationBps > config.maxDeviationBps) {

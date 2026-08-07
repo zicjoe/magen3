@@ -408,6 +408,10 @@ interface OracleValidationStatus {
   ageMs?: number | null;
   maxAgeMs?: number | null;
   error?: string;
+  configuredProviderIds?: string[];
+  providerStatuses?: Array<{ providerId?: string; status?: string; reason?: string; cached?: boolean }>;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; capabilities?: string[]; chainFamilies?: string[] }>;
+  requestedPair?: string;
 }
 
 
@@ -11870,9 +11874,12 @@ function SettingsPage({
         ["Feed state", oracleValidationStatus.status || "unavailable"],
         ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
         ["Observations", String(oracleValidationStatus.observationCount || 0)],
+        ["Configured providers", oracleValidationStatus.configuredProviderIds?.join(", ") || "None"],
+        ["Provider health", oracleValidationStatus.providerCapabilities?.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
+        ["Provider states", oracleValidationStatus.providerStatuses?.map((item) => `${item.providerId}: ${item.status}`).join(" · ") || "No request-scoped provider check"],
       ],
       error: oracleValidationStatus.error || "",
-      note: "Unavailable or stale observations remain explicit and are never treated as a passing check.",
+      note: "Pyth Hermes support is Preview until a deployment performs a genuine live provider request. Unavailable, unsupported, or stale evidence never becomes a zero-price pass.",
     },
     {
       id: "compliance",
