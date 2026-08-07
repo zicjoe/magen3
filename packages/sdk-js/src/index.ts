@@ -2065,6 +2065,17 @@ export class Magen3Client {
     return this.request<{ ok: boolean; approval: Magen3ApprovalRequest }>(`/api/agent-gateway/approvals/${encodeURIComponent(id)}?agentId=${encodeURIComponent(this.agentId)}`, { method: "GET" });
   }
 
+  async executeX402Payment(input: { auditLogId: string; requestFingerprint: string; paymentPayload: Record<string, unknown>; paymentRequirements: Record<string, unknown>; attempt?: number; resourceBody?: string; resourceHeaders?: Record<string, string>; includeResourceBody?: boolean }): Promise<Record<string, unknown>> {
+    if (!input?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    if (!input?.requestFingerprint?.trim()) throw new TypeError("requestFingerprint is required");
+    if (!input.paymentPayload || typeof input.paymentPayload !== "object") throw new TypeError("paymentPayload is required after wallet signing");
+    if (!input.paymentRequirements || typeof input.paymentRequirements !== "object") throw new TypeError("paymentRequirements is required");
+    return this.request<Record<string, unknown>>("/api/agent-gateway/x402/execute", {
+      method: "POST",
+      body: JSON.stringify({ ...input, agentId: this.agentId }),
+    });
+  }
+
   async reportX402Settlement(update: Magen3X402SettlementUpdate): Promise<Record<string, unknown>> {
     if (!update?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
     if (!update?.requestFingerprint?.trim()) throw new TypeError("requestFingerprint is required");

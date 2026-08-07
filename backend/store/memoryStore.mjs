@@ -13,6 +13,7 @@ import { getMarketRiskSignalsSnapshot } from "../lib/marketRiskSignals.mjs";
 import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
+import { executeLiveX402 } from "../lib/x402LiveSettlement.mjs";
 import { buildReconciliationAuditPatch, reconciliationStatusSummary } from "../lib/executionReconciliation.mjs";
 import { getExecutionReconciliationPollingStatus, pollExecutionTransaction } from "../lib/executionReconciliationPoller.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
@@ -1871,6 +1872,26 @@ export function createMemoryStore() {
         attempt: Math.max(1, Number(auditLog.executionAttemptCount || auditLog.executionReconciliation?.attempt || 1)),
         note: String(body?.note || `Polled through ${observation.provider}.`).trim(),
       }, context);
+    },
+
+    async executeX402Lifecycle(id, body, context = {}) {
+      const agentId = String(body?.agentId || "").trim();
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const auditLog = auditLogs.find((log) => log.id === id && log.agentId === agentRecord.id);
+      if (!auditLog) { const e = new Error("x402 audit log not found for this connected agent"); e.status = 404; throw e; }
+      const result = await executeLiveX402({ auditLog, body });
+      const settlementStatus = result.status === "confirmed" ? "confirmed" : result.status === "uncertain" ? "uncertain" : "failed";
+      const updated = await this.updateX402Settlement(id, {
+        agentId,
+        requestFingerprint: body.requestFingerprint,
+        status: settlementStatus,
+        attempt: Math.max(1, Number(body.attempt || 1)),
+        transactionHash: result.settlement?.transactionHash || "",
+        resourceDelivered: result.resource?.delivered === true,
+        facilitatorReference: result.settlement?.responseHeader || "",
+        note: result.ok ? "x402 facilitator settlement and protected resource delivery verified." : `x402 lifecycle stopped at ${result.phase}.`,
+      }, context);
+      return { ...result, auditLog: updated.auditLog, settlementRecord: updated.settlement };
     },
 
     async updateX402Settlement(id, body, context = {}) {

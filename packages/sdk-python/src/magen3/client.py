@@ -267,6 +267,21 @@ class Magen3Client:
             raise ValueError("approval_or_audit_id is required")
         return self._request("GET", f"/api/agent-gateway/approvals/{quote(identifier)}?agentId={quote(self.agent_id)}")
 
+    def execute_x402_payment(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(request.get("auditLogId", "")).strip()
+        fingerprint = str(request.get("requestFingerprint", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        if not fingerprint:
+            raise ValueError("requestFingerprint is required")
+        if not isinstance(request.get("paymentPayload"), dict):
+            raise ValueError("paymentPayload is required after wallet signing")
+        if not isinstance(request.get("paymentRequirements"), dict):
+            raise ValueError("paymentRequirements is required")
+        payload = dict(request)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/x402/execute", payload)
+
     def report_x402_settlement(self, update: Dict[str, Any]) -> Dict[str, Any]:
         audit_log_id = str(update.get("auditLogId", "")).strip()
         fingerprint = str(update.get("requestFingerprint", "")).strip()

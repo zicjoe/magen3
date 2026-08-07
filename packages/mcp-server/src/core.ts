@@ -400,7 +400,7 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
@@ -462,6 +462,9 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
                 : `Approval is ${String(approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`;
         return text({ ...response, mcpGuidance: guidance });
       } catch (error) { return text(errorPayload(error), true); }
+    },
+    async executeX402Payment(input: Parameters<Magen3Client["executeX402Payment"]>[0]): Promise<ToolTextResult> {
+      try { return text(await client.executeX402Payment(input)); } catch (error) { return text(errorPayload(error), true); }
     },
     async reportX402Settlement(update: Parameters<Magen3Client["reportX402Settlement"]>[0]): Promise<ToolTextResult> {
       try { return text(await client.reportX402Settlement(update)); } catch (error) { return text(errorPayload(error), true); }

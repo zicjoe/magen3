@@ -672,7 +672,7 @@ const server = createServer(async (req, res) => {
           securityBoundary: "Only unsigned metadata is evaluated. Existing Privileged Action Controls, Human Approval, and organizational quorum are reused rather than duplicated."
         },
         x402PaymentControls: {
-          status: "foundation-available",
+          status: "live-testnet",
           protocolVersion: 2,
           supportedVersions: [2],
           supportedSchemes: ["exact"],
@@ -682,8 +682,12 @@ const server = createServer(async (req, res) => {
           timeoutBinding: true,
           replayProtection: true,
           settlementReporting: true,
+          liveSettlement: true,
+          resourceDeliveryVerification: true,
           settlementEndpoint: "/api/agent-gateway/x402/settlements",
-          note: "Magen3 authorizes x402 payments and reconciles reported settlement state. It does not hold signing keys or operate a facilitator."
+          executionEndpoint: "/api/agent-gateway/x402/execute",
+          network: "eip155:84532",
+          note: "Magen3 authorizes exact x402 payments, verifies signed authorizations through a server-configured testnet facilitator, settles on Base Sepolia, retries the protected resource, verifies delivery, and reconciles the lifecycle. Magen3 never holds signing keys."
         }
       });
     }
@@ -1500,6 +1504,14 @@ const server = createServer(async (req, res) => {
       const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
       if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
       return send(res, 200, await store.pollExecution(auditLogId, body, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/x402/execute") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.executeX402Lifecycle(auditLogId, body, { apiKey }));
     }
 
     if (route === "POST /api/agent-gateway/x402/settlements") {

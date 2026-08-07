@@ -149,6 +149,22 @@ for (const [file, contents] of publicDocs) {
   }
 }
 
+
+const x402LiveSource = read("backend/lib/x402LiveSettlement.mjs");
+for (const required of ["executeLiveX402", "eip155:84532", "/verify", "/settle", "resource_delivered", "X402_TESTNET_FACILITATOR_URL"]) {
+  if (!x402LiveSource.includes(required)) fail(`Live x402 implementation is missing: ${required}`);
+}
+if (!serverSource.includes("POST /api/agent-gateway/x402/execute")) fail("Live x402 execution route is missing");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  if (!source.includes("executeX402Lifecycle") || !source.includes("executeLiveX402")) fail(`${name} is missing live x402 lifecycle integration`);
+}
+if (!sdkSource.includes("executeX402Payment")) fail("JavaScript SDK live x402 method is missing");
+if (!pythonSource.includes("execute_x402_payment")) fail("Python SDK live x402 method is missing");
+if (!mcpServerSource.includes("magen3_execute_x402_payment")) fail("MCP live x402 tool is missing");
+if (!read("docs/LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT.md").includes("Roadmap boundary")) fail("Live x402 documentation is missing its roadmap boundary");
+if (!read("LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT_IMPLEMENTATION_REPORT.md").includes("Milestones 24–28 were not implemented")) fail("Milestone 23 report is incomplete");
+if (!envExample.includes("X402_TESTNET_FACILITATOR_URL=https://x402.org/facilitator")) fail(".env.example is missing live x402 testnet configuration");
+
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");
 console.log("Gateway URL semantics: API base URL only");

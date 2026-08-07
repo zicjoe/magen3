@@ -326,6 +326,18 @@ const approvalStatusSchema = z.object({
   approvalOrAuditId: z.string().min(1),
 });
 
+
+const x402ExecuteSchema = z.object({
+  auditLogId: z.string().min(1),
+  requestFingerprint: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i),
+  paymentPayload: z.record(z.string(), z.unknown()),
+  paymentRequirements: z.record(z.string(), z.unknown()),
+  attempt: z.number().int().positive().max(10).optional(),
+  resourceBody: z.string().max(250000).optional(),
+  resourceHeaders: z.record(z.string(), z.string().max(4096)).optional(),
+  includeResourceBody: z.boolean().optional(),
+}).strict();
+
 const x402SettlementSchema = z.object({
   auditLogId: z.string().min(1),
   status: z.enum(["submitted", "pending", "confirmed", "failed", "uncertain"]),
@@ -396,6 +408,7 @@ export function buildServer() {
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());
   server.registerTool("magen3_check_intent", { title: "Check Web3 Intent", description: "Evaluate an intent and return Allowed, Blocked, or Review Required. This writes an audit decision but does not enforce fail-closed behavior in the client.", inputSchema: intentSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (intent) => handlers.checkIntent(intent));
   server.registerTool("magen3_get_approval", { title: "Get Escalated Approval Status", description: "Poll an exact-bound approval workflow only when reviewResolution.humanActionRequired is true. Approval permits the authorized execution layer to continue only while the bound parameters and execution window remain valid.", inputSchema: approvalStatusSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async (input) => handlers.getApproval(input));
+  server.registerTool("magen3_execute_x402_payment", { title: "Execute Testnet x402 Payment", description: "After an Allowed x402 decision and wallet signing, verify the bound authorization with the server-configured testnet facilitator, settle it, retry the exact protected resource, verify delivery, and reconcile the audit. Mainnet and client-supplied facilitator URLs are rejected.", inputSchema: x402ExecuteSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (input) => handlers.executeX402Payment(input));
   server.registerTool("magen3_report_x402_settlement", { title: "Report x402 Settlement", description: "Reconcile the real facilitator settlement and resource-delivery state for a previously Allowed x402 payment. Never send PAYMENT-SIGNATURE or signed payment payloads.", inputSchema: x402SettlementSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportX402Settlement(update));
   server.registerTool("magen3_report_execution_reconciliation", { title: "Report Execution Reconciliation", description: "Report authenticated public execution state after authorization. Enforces transaction binding, retry limits, replacement links, confirmation/finality, delivery, refund, and monotonic transitions. Never send signed transactions or wallet secrets.", inputSchema: executionReconciliationSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportExecutionReconciliation(update));
   server.registerTool("magen3_poll_execution_reconciliation", { title: "Poll Execution Reconciliation", description: "Poll a bound transaction through a backend-configured Casper or EVM RPC adapter and apply the observation through the same reconciliation state machine. Provider URLs cannot be supplied by MCP clients.", inputSchema: executionReconciliationPollSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (options) => handlers.pollExecutionReconciliation(options));

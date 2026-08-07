@@ -430,6 +430,8 @@ interface X402PaymentControlsStatus {
   requestBinding?: boolean;
   replayProtection?: boolean;
   settlementReporting?: boolean;
+  liveSettlement?: boolean;
+  resourceDeliveryVerification?: boolean;
   securityBoundary?: string;
 }
 
@@ -3016,7 +3018,7 @@ function DashboardPage({
           {showAllServices ? "Show essential services" : `View all ${serviceItems.length} services`} <ChevronDown size={14} className={`transition-transform ${showAllServices ? "rotate-180" : ""}`} />
         </button>
         <div className="mt-3 rounded-lg border border-[#1E293B] bg-[#0B1220] px-3 py-2 text-xs text-[#64748B]">
-          x402 Payment Controls: {x402Ready ? "Foundation Available" : "Not currently confirmed"}. Provider availability never counts as a security pass by itself.
+          x402 Payment Controls: {x402Ready ? "Live Testnet" : "Not currently confirmed"}. Provider availability never counts as a security pass by itself.
         </div>
       </div>
     </div>
@@ -6306,7 +6308,7 @@ function X402PolicyFields({
     <div className="rounded-xl border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-[#F8FAFC]">x402 Payment Controls Foundation</div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Live x402 Testnet Authorization & Settlement</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind an HTTP 402 payment to the exact resource, merchant, recipient, network, token, amount, expiry, and request fingerprint before PAYMENT-SIGNATURE creation. Settlement is reconciled separately after payment.</p>
         </div>
         <StatusBadge status="Foundation Available" />
@@ -12053,7 +12055,7 @@ export default function App() {
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
   const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
-  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "foundation-available", protocolVersion: 2, supportedSchemes: ["exact"], requestBinding: true, replayProtection: true, settlementReporting: true });
+  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "live-testnet", protocolVersion: 2, supportedSchemes: ["exact"], requestBinding: true, replayProtection: true, settlementReporting: true, liveSettlement: true, resourceDeliveryVerification: true });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [developerMode, setDeveloperMode] = useState(() => {
     try {
