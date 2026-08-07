@@ -767,3 +767,17 @@ class ClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestX402MeteredUpto(unittest.TestCase):
+    def test_create_and_apply_authorization_event(self):
+        calls = []
+        def transport(method, url, headers, data, timeout):
+            calls.append((method, url, json.loads(data.decode())))
+            return {"ok": True}
+        client = Magen3Client("https://api.example", "MAG-1", "secret", transport=transport)
+        client.create_x402_authorization({"auditLogId":"AUD-1","mode":"upto","maximumAuthorizedAtomic":"1000"})
+        client.apply_x402_authorization_event({"auditLogId":"AUD-1","type":"reserve","eventId":"e1","idempotencyKey":"k1","amountAtomic":"500"})
+        self.assertTrue(calls[0][1].endswith("/api/agent-gateway/x402/authorizations"))
+        self.assertEqual(calls[0][2]["agentId"], "MAG-1")
+        self.assertTrue(calls[1][1].endswith("/api/agent-gateway/x402/authorization-events"))
+        self.assertEqual(calls[1][2]["idempotencyKey"], "k1")

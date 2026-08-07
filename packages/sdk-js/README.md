@@ -378,3 +378,7 @@ await client.pollBridgeProvider({
 ```
 
 The SDK does not accept provider URLs, API keys, private keys, signatures, or signed transactions for this flow. `bridgeProviderExecution` is returned only after an Allowed decision. Testnet quotes are not proof of destination delivery.
+
+## Metered / upto x402
+
+After an `Allowed` x402 intent, use `createX402Authorization()` for `upto` or `metered`, then `applyX402AuthorizationEvent()` for idempotent reserve/capture/settle/release/refund/usage/revoke/dispute updates. Amounts are positive base-unit integer strings.

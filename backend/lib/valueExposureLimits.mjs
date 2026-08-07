@@ -234,3 +234,32 @@ export function evaluateValueExposureLimits({ request = {}, policy = {}, auditLo
   checksPassed.push(message);
   return { hardBlock: false, needsReview: false, scoreDelta: 0, findings, checksPassed, checksFailed, context };
 }
+
+// Milestone 24 extension point: dedicated payment controls keep base-unit accounting,
+// while reusing Milestone 14 exposure semantics instead of creating a second vocabulary.
+export function buildReservedExposureSnapshot({ maximumAtomic = "0", reservedAtomic = "0", capturedAtomic = "0", settledAtomic = "0", releasedAtomic = "0", refundedAtomic = "0", asset = "", network = "" } = {}) {
+  const parse = (value, field) => {
+    const text = String(value ?? "0").trim();
+    if (!/^\d+$/.test(text)) throw new TypeError(`${field} must be a non-negative base-unit integer string`);
+    return BigInt(text);
+  };
+  const maximum = parse(maximumAtomic, "maximumAtomic");
+  const reserved = parse(reservedAtomic, "reservedAtomic");
+  const actual = parse(capturedAtomic, "capturedAtomic");
+  const settled = parse(settledAtomic, "settledAtomic");
+  const released = parse(releasedAtomic, "releasedAtomic");
+  const refunded = parse(refundedAtomic, "refundedAtomic");
+  return {
+    basis: "base-unit-integer",
+    asset: String(asset || "").trim().toUpperCase(),
+    network: String(network || "").trim().toLowerCase(),
+    maximumExposureAtomic: maximum.toString(),
+    reservedExposureAtomic: reserved.toString(),
+    actualExposureAtomic: actual.toString(),
+    settledExposureAtomic: settled.toString(),
+    releasedExposureAtomic: released.toString(),
+    refundedExposureAtomic: refunded.toString(),
+    remainingAuthorizationAtomic: (maximum >= actual ? maximum - actual : 0n).toString(),
+    netSettledExposureAtomic: (settled >= refunded ? settled - refunded : 0n).toString(),
+  };
+}

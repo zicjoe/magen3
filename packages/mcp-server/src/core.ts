@@ -400,7 +400,7 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
@@ -424,7 +424,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         executionIntegrityBoundary: "Execution Integrity evaluates unsigned intent lifecycle metadata, canonical fingerprints, replay state, and safe retries before signing. Never send wallet secrets or signatures.",
         approvalWorkflowBoundary: "Review Required means execution is paused, not automatically that a human is needed. Inspect reviewResolution.humanActionRequired: autonomous reviews require agent remediation and resubmission; only explicitly escalated reviews create an exact-intent approval request. Authorized reviewers respond through the Magen3 application. Approval never signs or broadcasts the transaction.",
         organizationalApprovalBoundary: "Approval tiers, named role groups, backup escalation, total quorum, execution delays, and signing windows are resolved deterministically by Magen3. MCP may report this state but cannot join an approver group, accelerate escalation, shorten a delay, extend a window, or submit a human approval response.",
-        x402PaymentControlsBoundary: "x402 Payment Controls authorizes payment requirements before signing and reconciles reported settlement afterward. Never send PAYMENT-SIGNATURE, signed payment payloads, private keys, mnemonics, or wallet approvals to Magen3.",
+        x402PaymentControlsBoundary: "x402 Payment Controls authorizes exact, bounded upto, and metered payment requirements before signing; usage accounting uses idempotent base-unit reservation/capture/settlement/release/refund events bound to one resource, provider, and session. Never send private keys, mnemonics, or wallet approvals to Magen3.",
         executionReconciliationBoundary: "Execution & Settlement Reconciliation accepts authenticated public transaction-state evidence after authorization, enforces monotonic state transitions, blocks unsafe retries, links replacements, and records finality, delivery, refund, and failure state. Optional polling uses only backend-configured RPC endpoints; MCP cannot supply provider URLs. MCP never sends raw signed transactions, wallet signatures, private keys, mnemonics, or sponsor credentials.",
         tokenPermissionControlsBoundary: "Token Permission Controls evaluate explicit unsigned authority metadata only. Never send permit signatures, wallet signatures, raw signed approvals, private keys, mnemonics, or wallet secrets to Magen3.",
       emergencyCircuitBreakerBoundary: "An active Emergency Circuit Breaker pause overrides ordinary authorization. Stop on Blocked or Review Required, surface the exact pause evidence, and never attempt retries or alternate tools to bypass it.",
@@ -462,6 +462,12 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
                 : `Approval is ${String(approval.reviewStatus).toLowerCase()}. Do not sign or execute the intent.`;
         return text({ ...response, mcpGuidance: guidance });
       } catch (error) { return text(errorPayload(error), true); }
+    },
+    async createX402Authorization(input: Parameters<Magen3Client["createX402Authorization"]>[0]): Promise<ToolTextResult> {
+      try { return text(await client.createX402Authorization(input)); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async applyX402AuthorizationEvent(input: Parameters<Magen3Client["applyX402AuthorizationEvent"]>[0]): Promise<ToolTextResult> {
+      try { return text(await client.applyX402AuthorizationEvent(input)); } catch (error) { return text(errorPayload(error), true); }
     },
     async executeX402Payment(input: Parameters<Magen3Client["executeX402Payment"]>[0]): Promise<ToolTextResult> {
       try { return text(await client.executeX402Payment(input)); } catch (error) { return text(errorPayload(error), true); }

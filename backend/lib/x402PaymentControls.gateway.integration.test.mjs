@@ -201,3 +201,44 @@ test("Gateway enforces monotonic x402 settlement reconciliation", async () => {
     /transaction hash cannot be changed/i,
   );
 });
+
+test("Gateway creates and accounts for a bounded upto x402 authorization", async () => {
+  const store = createMemoryStore();
+  const agent = await store.createAgent({ name: "x402 Upto Agent", type: "DeFi Agent", purpose: "Bounded machine payments", permissionLevel: "Limited Execution", walletAddress: OWNER_WALLET, executionCapabilities: ["Wallet Management", "dApp Interactions"] });
+  await store.createPolicy({
+    name: "x402 Upto Policy", agentId: agent.id, walletAddress: OWNER_WALLET, maxTransaction: 10, dailyLimit: 100, approvalThreshold: 8, trustedContracts: [], blockedActions: [], riskMode: "Balanced",
+    structuredRules: { x402ControlsEnabled: true, x402ControlMode: "Enforce", x402UnavailableAction: "Block", x402AllowedVersions: [2], x402AllowedSchemes: ["exact", "upto", "metered"], x402AllowedMethods: ["GET"], x402AllowedNetworks: ["eip155:84532"], x402AllowedAssets: ["USDC"], x402AllowedFacilitators: ["https://x402.org/facilitator"], x402AllowedMerchants: ["api.example.com"], x402AllowedRecipients: [PAY_TO], x402MaxPayment: 5, x402DailyLimit: 25, x402MonthlyLimit: 100, x402ReviewThreshold: 5, x402MaxPaymentsPerHour: 10, x402MaxAuthorizationLifetimeSeconds: 600, x402RequireHttps: true, x402RequirePaymentRequiredHash: true, x402RequireRequestId: true, threatIntelligenceMode: "Observe", threatIntelligenceUnavailableAction: "Warn", oracleValidationMode: "Observe", oracleValidationUnavailableAction: "Warn" }
+  });
+  const request = intent(agent.id, { scheme: "upto", mode: "upto", amountAtomic: "2000000", maximumAuthorizedAtomic: "2000000", requestId: `upto-${Date.now()}` });
+  request.action.amount = 2;
+  const allowed = await store.submitAgentGatewayIntent(request, { apiKey: agent.apiKey });
+  assert.equal(allowed.result.decision, "Allowed");
+  const created = await store.createX402Authorization(allowed.auditLog.id, { agentId: agent.id, mode: "upto", maximumAuthorizedAtomic: "2000000" }, { apiKey: agent.apiKey });
+  assert.equal(created.authorization.mode, "upto");
+  assert.equal(created.authorization.remainingAuthorizationAtomic, "2000000");
+  const reserved = await store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "reserve", amountAtomic: "1500000", eventId: "reserve-1", idempotencyKey: "reserve-1" }, { apiKey: agent.apiKey });
+  assert.equal(reserved.authorization.reservedAtomic, "1500000");
+  const captured = await store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "capture", amountAtomic: "1000000", eventId: "capture-1", idempotencyKey: "capture-1" }, { apiKey: agent.apiKey });
+  assert.equal(captured.authorization.capturedAtomic, "1000000");
+  assert.equal(captured.authorization.remainingAuthorizationAtomic, "1000000");
+});
+
+test("Gateway records metered usage idempotently and rejects cross-session reuse", async () => {
+  const store = createMemoryStore();
+  const agent = await store.createAgent({ name: "x402 Metered Agent", type: "DeFi Agent", purpose: "Metered machine payments", permissionLevel: "Limited Execution", walletAddress: OWNER_WALLET, executionCapabilities: ["Wallet Management", "dApp Interactions"] });
+  await store.createPolicy({
+    name: "x402 Metered Policy", agentId: agent.id, walletAddress: OWNER_WALLET, maxTransaction: 10, dailyLimit: 100, approvalThreshold: 8, trustedContracts: [], blockedActions: [], riskMode: "Balanced",
+    structuredRules: { x402ControlsEnabled: true, x402ControlMode: "Enforce", x402UnavailableAction: "Block", x402AllowedVersions: [2], x402AllowedSchemes: ["metered"], x402AllowedMethods: ["GET"], x402AllowedNetworks: ["eip155:84532"], x402AllowedAssets: ["USDC"], x402AllowedFacilitators: ["https://x402.org/facilitator"], x402AllowedMerchants: ["api.example.com"], x402AllowedRecipients: [PAY_TO], x402MaxPayment: 5, x402DailyLimit: 25, x402MonthlyLimit: 100, x402ReviewThreshold: 5, x402MaxPaymentsPerHour: 10, x402MaxAuthorizationLifetimeSeconds: 600, x402RequireHttps: true, x402RequirePaymentRequiredHash: true, x402RequireRequestId: true, threatIntelligenceMode: "Observe", threatIntelligenceUnavailableAction: "Warn", oracleValidationMode: "Observe", oracleValidationUnavailableAction: "Warn" }
+  });
+  const request = intent(agent.id, { scheme: "metered", mode: "metered", amountAtomic: "1000000", maximumAuthorizedAtomic: "1000000", usageUnit: "request", unitPriceAtomic: "100000", sessionId: "session-1", requestId: `metered-${Date.now()}` });
+  request.action.amount = 1;
+  const allowed = await store.submitAgentGatewayIntent(request, { apiKey: agent.apiKey });
+  assert.equal(allowed.result.decision, "Allowed");
+  const created = await store.createX402Authorization(allowed.auditLog.id, { agentId: agent.id, mode: "metered", maximumAuthorizedAtomic: "1000000", usageUnit: "request", unitPriceAtomic: "100000", sessionId: "session-1" }, { apiKey: agent.apiKey });
+  await store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "reserve", amountAtomic: "1000000", eventId: "reserve-metered", idempotencyKey: "reserve-metered" }, { apiKey: agent.apiKey });
+  const first = await store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "usage", usageQuantity: "2", unitPriceAtomic: "100000", eventId: "usage-1", idempotencyKey: "usage-1", sessionId: created.authorization.sessionId }, { apiKey: agent.apiKey });
+  assert.equal(first.authorization.capturedAtomic, "200000");
+  const duplicate = await store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "usage", usageQuantity: "2", unitPriceAtomic: "100000", eventId: "usage-1", idempotencyKey: "usage-1-duplicate" }, { apiKey: agent.apiKey });
+  assert.equal(duplicate.duplicate, true);
+  await assert.rejects(() => store.applyX402AuthorizationEvent(allowed.auditLog.id, { agentId: agent.id, type: "usage", usageQuantity: "1", unitPriceAtomic: "100000", eventId: "usage-2", idempotencyKey: "usage-2", sessionId: "other-session" }, { apiKey: agent.apiKey }), /sessionId/);
+});

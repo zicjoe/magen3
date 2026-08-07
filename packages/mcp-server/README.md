@@ -158,3 +158,7 @@ For Swap, Trade, Exchange, or Bridge actions, clients may include additive `acti
 Use `magen3_get_bridge_provider_status` to verify that the server-side Across testnet adapter and evidence-attestation key are configured. Use `magen3_request_bridge_provider_quote` with exact source/destination chain IDs, token addresses, base-unit input amount, depositor, recipient, and `tradeType: "exactInput"`. The response contains the protected Bridge metadata plus any approval transactions and the exact unsigned source transaction.
 
 Submit that protected intent through `magen3_require_allowed`. Magen3 fetches and attests the quote server-side; MCP must not invent provider evidence or send provider URLs, API keys, wallet secrets, signatures, or signed transactions. After the externally controlled wallet submits the exact Allowed source transaction, use `magen3_poll_bridge_provider` with the audit ID and source transaction hash. The polling tool applies provider observations through the existing reconciliation state machine and does not treat a quote as submission, settlement, or destination delivery.
+
+## Metered / upto x402 tools
+
+`magen3_create_x402_authorization` creates a bounded upto/metered authorization only from an Allowed audit. `magen3_apply_x402_authorization_event` applies idempotent reserve/capture/settle/release/refund/usage/revoke/dispute accounting while preserving resource/provider/session binding.

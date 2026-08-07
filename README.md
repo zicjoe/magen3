@@ -1108,3 +1108,7 @@ Magen3 can now evaluate freshness-checked provider evidence for volatility, liqu
 Magen3 now includes a testnet-only `across-testnet` adapter that fetches a real provider quote and exact unsigned source transaction through a server-controlled Across Swap API endpoint. The provider evidence is bound to the authenticated Bridge intent, evaluated by the existing Risk Assessment Engine, retained in the audit, and returned for external wallet signing only when the final decision is Allowed. After source submission, Magen3 can poll provider delivery state through the existing Execution & Settlement Reconciliation lifecycle.
 
 This capability is **Foundation Available**. Mainnet, wallet signing, automatic broadcast, gasless submission, additional bridge providers, embedded destination actions, and x402 are not part of this release. See `docs/REAL_BRIDGE_PROVIDER_INTEGRATION.md` and `REAL_BRIDGE_PROVIDER_INTEGRATION_IMPLEMENTATION_REPORT.md`.
+
+### Milestone 24 — Metered or upto x402 Payments
+
+Magen3 supports bounded `upto` and `metered` x402 authorization accounting on top of the existing exact Base Sepolia testnet path. See `docs/METERED_UPTO_X402_PAYMENTS.md`.

@@ -325,3 +325,7 @@ client.poll_bridge_provider({
 ```
 
 Provider endpoints and evidence-attestation secrets remain on the Magen3 backend. The Python client never signs, broadcasts, or accepts provider credentials.
+
+## Metered / upto x402
+
+Use `create_x402_authorization()` after an Allowed x402 audit, then `apply_x402_authorization_event()` for bounded idempotent accounting events. Amounts use base-unit integer strings.

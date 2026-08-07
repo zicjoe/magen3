@@ -267,6 +267,31 @@ class Magen3Client:
             raise ValueError("approval_or_audit_id is required")
         return self._request("GET", f"/api/agent-gateway/approvals/{quote(identifier)}?agentId={quote(self.agent_id)}")
 
+    def create_x402_authorization(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        audit_log_id = str(request.get("auditLogId", "")).strip()
+        mode = str(request.get("mode", "")).strip().lower()
+        maximum = str(request.get("maximumAuthorizedAtomic", "")).strip()
+        if not audit_log_id:
+            raise ValueError("auditLogId is required")
+        if mode not in {"upto", "metered"}:
+            raise ValueError("mode must be upto or metered")
+        if not maximum.isdigit() or int(maximum) <= 0:
+            raise ValueError("maximumAuthorizedAtomic must be a positive base-unit integer string")
+        payload = dict(request)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/x402/authorizations", payload)
+
+    def apply_x402_authorization_event(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        if not str(request.get("auditLogId", "")).strip():
+            raise ValueError("auditLogId is required")
+        if not str(request.get("eventId", "")).strip():
+            raise ValueError("eventId is required")
+        if not str(request.get("idempotencyKey", "")).strip():
+            raise ValueError("idempotencyKey is required")
+        payload = dict(request)
+        payload["agentId"] = self.agent_id
+        return self._request("POST", "/api/agent-gateway/x402/authorization-events", payload)
+
     def execute_x402_payment(self, request: Dict[str, Any]) -> Dict[str, Any]:
         audit_log_id = str(request.get("auditLogId", "")).strip()
         fingerprint = str(request.get("requestFingerprint", "")).strip()

@@ -165,6 +165,25 @@ if (!read("docs/LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT.md").includes("Roadma
 if (!read("LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT_IMPLEMENTATION_REPORT.md").includes("Milestones 24–28 were not implemented")) fail("Milestone 23 report is incomplete");
 if (!envExample.includes("X402_TESTNET_FACILITATOR_URL=https://x402.org/facilitator")) fail(".env.example is missing live x402 testnet configuration");
 
+
+const x402MeteredSource = read("backend/lib/x402MeteredPayments.mjs");
+for (const required of ["createX402Authorization", "applyX402AuthorizationEvent", "maximumAuthorizedAtomic", "reservedAtomic", "capturedAtomic", "settledAtomic", "refundedAtomic", "remainingAuthorizationAtomic", "idempotencyKey", "usageQuantity", "BigInt"]) {
+  if (!x402MeteredSource.includes(required)) fail(`Metered/upto x402 implementation is missing: ${required}`);
+}
+if (!serverSource.includes("POST /api/agent-gateway/x402/authorizations")) fail("x402 authorization route is missing");
+if (!serverSource.includes("POST /api/agent-gateway/x402/authorization-events")) fail("x402 authorization event route is missing");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  if (!source.includes("createX402Authorization") || !source.includes("applyX402AuthorizationEvent")) fail(`${name} is missing metered/upto x402 authorization integration`);
+}
+if (!sdkSource.includes("createX402Authorization") || !sdkSource.includes("applyX402AuthorizationEvent")) fail("JavaScript SDK metered/upto x402 methods are missing");
+if (!pythonSource.includes("create_x402_authorization") || !pythonSource.includes("apply_x402_authorization_event")) fail("Python SDK metered/upto x402 methods are missing");
+if (!mcpServerSource.includes("magen3_create_x402_authorization") || !mcpServerSource.includes("magen3_apply_x402_authorization_event")) fail("MCP metered/upto x402 tools are missing");
+if (!read("packages/mcp-server/dist/server.js").includes("magen3_create_x402_authorization")) fail("Generated MCP runtime is missing metered/upto x402 tools");
+if (!read("packages/sdk-js/dist/index.js").includes("createX402Authorization")) fail("Generated JavaScript SDK runtime is missing metered/upto x402 methods");
+if (!read("backend/lib/valueExposureLimits.mjs").includes("buildReservedExposureSnapshot")) fail("Milestone 14 exposure integration for reserved x402 exposure is missing");
+if (!read("docs/METERED_UPTO_X402_PAYMENTS.md").includes("Roadmap boundary")) fail("Metered/upto x402 documentation is missing its roadmap boundary");
+if (!read("METERED_UPTO_X402_PAYMENTS_IMPLEMENTATION_REPORT.md").includes("Milestones 25–28 were not implemented")) fail("Milestone 24 report is incomplete");
+
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");
 console.log("Gateway URL semantics: API base URL only");

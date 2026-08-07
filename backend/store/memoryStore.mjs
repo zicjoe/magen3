@@ -14,6 +14,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { executeLiveX402 } from "../lib/x402LiveSettlement.mjs";
+import { applyX402AuthorizationEvent, createX402Authorization, summarizeX402Authorization } from "../lib/x402MeteredPayments.mjs";
 import { buildReconciliationAuditPatch, reconciliationStatusSummary } from "../lib/executionReconciliation.mjs";
 import { getExecutionReconciliationPollingStatus, pollExecutionTransaction } from "../lib/executionReconciliationPoller.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
@@ -738,6 +739,12 @@ export function createMemoryStore() {
         complianceBeneficiaryVaspId: intent.complianceBeneficiaryVaspId,
         x402Version: intent.x402Version,
         x402Scheme: intent.x402Scheme,
+        x402Mode: intent.x402Mode,
+        x402MaximumAuthorizedAtomic: intent.x402MaximumAuthorizedAtomic,
+        x402UsageUnit: intent.x402UsageUnit,
+        x402UnitPriceAtomic: intent.x402UnitPriceAtomic,
+        x402SessionId: intent.x402SessionId,
+        x402ProviderId: intent.x402ProviderId,
         x402ResourceUrl: intent.x402ResourceUrl,
         x402HttpMethod: intent.x402HttpMethod,
         x402MerchantDomain: intent.x402MerchantDomain,
@@ -1277,6 +1284,12 @@ export function createMemoryStore() {
             x402: {
               version: intent.x402Version,
               scheme: intent.x402Scheme,
+              mode: intent.x402Mode || intent.x402Scheme || "exact",
+              maximumAuthorizedAtomic: intent.x402MaximumAuthorizedAtomic || intent.x402AmountAtomic,
+              usageUnit: intent.x402UsageUnit || "",
+              unitPriceAtomic: intent.x402UnitPriceAtomic || "",
+              sessionId: intent.x402SessionId || intent.x402RequestId || "",
+              providerId: intent.x402ProviderId || intent.x402MerchantDomain || "",
               resourceUrl: intent.x402ResourceUrl,
               method: intent.x402HttpMethod,
               merchantDomain: intent.x402MerchantDomain,
@@ -1872,6 +1885,50 @@ export function createMemoryStore() {
         attempt: Math.max(1, Number(auditLog.executionAttemptCount || auditLog.executionReconciliation?.attempt || 1)),
         note: String(body?.note || `Polled through ${observation.provider}.`).trim(),
       }, context);
+    },
+
+    async createX402Authorization(id, body, context = {}) {
+      const agentId = String(body?.agentId || "").trim();
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const auditLog = auditLogs.find((log) => log.id === id && log.agentId === agentRecord.id);
+      if (!auditLog) { const e = new Error("x402 audit log not found for this connected agent"); e.status = 404; throw e; }
+      const activePolicy = policies.find((item) => item.agentId === agentRecord.id && item.status === "Active") || {};
+      const authorization = createX402Authorization({ auditLog, body, policy: activePolicy });
+      auditLogs = auditLogs.map((log) => log.id === id ? {
+        ...log,
+        originalIntent: {
+          ...(log.originalIntent || {}),
+          action: { ...(log.originalIntent?.action || {}), x402: { ...(log.originalIntent?.action?.x402 || {}), authorization } },
+        },
+        executionStatus: `x402_authorization_${authorization.state}`,
+        executionNote: `${authorization.mode} x402 authorization ${authorization.authorizationId} is ${authorization.state}.`,
+        executionUpdatedAt: authorization.updatedAt || authorization.createdAt,
+      } : log);
+      const updated = auditLogs.find((log) => log.id === id);
+      return { ok: true, authorization: summarizeX402Authorization(authorization), auditLog: updated };
+    },
+
+    async applyX402AuthorizationEvent(id, body, context = {}) {
+      const agentId = String(body?.agentId || "").trim();
+      const agentRecord = requireGatewayAgent(agentId, context.apiKey);
+      const auditLog = auditLogs.find((log) => log.id === id && log.agentId === agentRecord.id);
+      if (!auditLog) { const e = new Error("x402 audit log not found for this connected agent"); e.status = 404; throw e; }
+      const currentX402 = auditLog.originalIntent?.action?.x402 || {};
+      const currentAuthorization = currentX402.authorization;
+      if (!currentAuthorization?.authorizationId) { const e = new Error("x402 payment authorization has not been created for this audit"); e.status = 404; throw e; }
+      const result = applyX402AuthorizationEvent(currentAuthorization, body);
+      auditLogs = auditLogs.map((log) => log.id === id ? {
+        ...log,
+        originalIntent: {
+          ...(log.originalIntent || {}),
+          action: { ...(log.originalIntent?.action || {}), x402: { ...currentX402, authorization: result.authorization } },
+        },
+        executionStatus: `x402_authorization_${result.authorization.state}`,
+        executionNote: result.duplicate ? `Duplicate x402 authorization event ${result.event.eventId} ignored.` : `x402 authorization event ${result.event.type} recorded.`,
+        executionUpdatedAt: result.authorization.updatedAt || new Date().toISOString(),
+      } : log);
+      const updated = auditLogs.find((log) => log.id === id);
+      return { ok: true, duplicate: result.duplicate, event: result.event, authorization: summarizeX402Authorization(result.authorization), auditLog: updated };
     },
 
     async executeX402Lifecycle(id, body, context = {}) {

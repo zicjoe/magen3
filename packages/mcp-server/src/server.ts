@@ -248,7 +248,13 @@ const actionSchema = z.object({
   }).strict().optional(),
   x402: z.object({
     version: z.number().int().positive(),
-    scheme: z.string().min(1),
+    scheme: z.enum(["exact", "upto", "metered"]).or(z.string().min(1)),
+    mode: z.enum(["exact", "upto", "metered"]).optional(),
+    maximumAuthorizedAtomic: z.string().regex(/^[1-9]\d*$/).optional(),
+    usageUnit: z.string().min(1).max(128).optional(),
+    unitPriceAtomic: z.string().regex(/^[1-9]\d*$/).optional(),
+    sessionId: z.string().min(1).max(160).optional(),
+    providerId: z.string().min(1).max(160).optional(),
     resourceUrl: z.string().url(),
     method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).or(z.string().min(1)),
     merchantDomain: z.string().min(1),
@@ -326,6 +332,37 @@ const approvalStatusSchema = z.object({
   approvalOrAuditId: z.string().min(1),
 });
 
+
+const x402AuthorizationCreateSchema = z.object({
+  auditLogId: z.string().min(1),
+  mode: z.enum(["upto", "metered"]),
+  maximumAuthorizedAtomic: z.string().regex(/^[1-9]\d*$/),
+  expiresAt: z.string().datetime().optional(),
+  authorizationId: z.string().min(1).max(160).optional(),
+  resourceId: z.string().min(1).max(160).optional(),
+  providerId: z.string().min(1).max(160).optional(),
+  sessionId: z.string().min(1).max(160).optional(),
+  usageUnit: z.string().min(1).max(128).optional(),
+  unitPriceAtomic: z.string().regex(/^[1-9]\d*$/).optional(),
+}).strict();
+
+const x402AuthorizationEventSchema = z.object({
+  auditLogId: z.string().min(1),
+  authorizationId: z.string().min(1).max(160).optional(),
+  type: z.enum(["reserve", "capture", "settle", "release", "refund", "usage", "revoke", "dispute"]),
+  eventId: z.string().min(1).max(160),
+  idempotencyKey: z.string().min(1).max(160),
+  amountAtomic: z.string().regex(/^[1-9]\d*$/).optional(),
+  usageQuantity: z.string().regex(/^[1-9]\d*$/).optional(),
+  unitPriceAtomic: z.string().regex(/^[1-9]\d*$/).optional(),
+  resourceId: z.string().min(1).max(160).optional(),
+  providerId: z.string().min(1).max(160).optional(),
+  sessionId: z.string().min(1).max(160).optional(),
+  resourceDeliveryReference: z.string().max(256).optional(),
+  providerAttestation: z.string().max(512).optional(),
+  evidenceHash: z.string().regex(/^(?:0x)?[0-9a-f]{64}$/i).optional(),
+  occurredAt: z.string().datetime().optional(),
+}).strict();
 
 const x402ExecuteSchema = z.object({
   auditLogId: z.string().min(1),
@@ -408,6 +445,8 @@ export function buildServer() {
   server.registerTool("magen3_get_intent_schema", { title: "Get Magen3 Intent Schema", description: "Return the intent fields and execution safety boundary.", inputSchema: z.object({}), annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async () => handlers.getIntentSchema());
   server.registerTool("magen3_check_intent", { title: "Check Web3 Intent", description: "Evaluate an intent and return Allowed, Blocked, or Review Required. This writes an audit decision but does not enforce fail-closed behavior in the client.", inputSchema: intentSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (intent) => handlers.checkIntent(intent));
   server.registerTool("magen3_get_approval", { title: "Get Escalated Approval Status", description: "Poll an exact-bound approval workflow only when reviewResolution.humanActionRequired is true. Approval permits the authorized execution layer to continue only while the bound parameters and execution window remain valid.", inputSchema: approvalStatusSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true } }, async (input) => handlers.getApproval(input));
+  server.registerTool("magen3_create_x402_authorization", { title: "Create Bounded x402 Authorization", description: "Create an upto or metered authorization only after an Allowed x402 intent. The authorization is bound to the protected audit, resource, provider, session, asset, network, recipient, expiry, and maximum base-unit amount.", inputSchema: x402AuthorizationCreateSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (input) => handlers.createX402Authorization(input));
+  server.registerTool("magen3_apply_x402_authorization_event", { title: "Apply x402 Authorization Event", description: "Apply an idempotent reserve, capture, settle, release, refund, metered usage, revoke, or dispute event to a bound x402 authorization while enforcing accounting invariants and cross-resource/provider/session isolation.", inputSchema: x402AuthorizationEventSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (input) => handlers.applyX402AuthorizationEvent(input));
   server.registerTool("magen3_execute_x402_payment", { title: "Execute Testnet x402 Payment", description: "After an Allowed x402 decision and wallet signing, verify the bound authorization with the server-configured testnet facilitator, settle it, retry the exact protected resource, verify delivery, and reconcile the audit. Mainnet and client-supplied facilitator URLs are rejected.", inputSchema: x402ExecuteSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async (input) => handlers.executeX402Payment(input));
   server.registerTool("magen3_report_x402_settlement", { title: "Report x402 Settlement", description: "Reconcile the real facilitator settlement and resource-delivery state for a previously Allowed x402 payment. Never send PAYMENT-SIGNATURE or signed payment payloads.", inputSchema: x402SettlementSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportX402Settlement(update));
   server.registerTool("magen3_report_execution_reconciliation", { title: "Report Execution Reconciliation", description: "Report authenticated public execution state after authorization. Enforces transaction binding, retry limits, replacement links, confirmation/finality, delivery, refund, and monotonic transitions. Never send signed transactions or wallet secrets.", inputSchema: executionReconciliationSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async (update) => handlers.reportExecutionReconciliation(update));

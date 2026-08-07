@@ -286,7 +286,13 @@ export interface Magen3ComplianceEvidence {
 
 export interface Magen3X402Payment {
   version: 2 | number;
-  scheme: "exact" | string;
+  scheme: "exact" | "upto" | "metered" | string;
+  mode?: "exact" | "upto" | "metered" | string;
+  maximumAuthorizedAtomic?: string;
+  usageUnit?: string;
+  unitPriceAtomic?: string;
+  sessionId?: string;
+  providerId?: string;
   resourceUrl: string;
   method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | string;
   merchantDomain: string;
@@ -1306,6 +1312,38 @@ export interface Magen3ContractArgumentPoliciesContext {
   approvalBindingNote?: string;
 }
 
+
+export interface Magen3X402AuthorizationCreate {
+  auditLogId: string;
+  mode: "upto" | "metered";
+  maximumAuthorizedAtomic: string;
+  expiresAt?: string;
+  authorizationId?: string;
+  resourceId?: string;
+  providerId?: string;
+  sessionId?: string;
+  usageUnit?: string;
+  unitPriceAtomic?: string;
+}
+
+export interface Magen3X402AuthorizationEvent {
+  auditLogId: string;
+  authorizationId?: string;
+  type: "reserve" | "capture" | "settle" | "release" | "refund" | "usage" | "revoke" | "dispute";
+  eventId: string;
+  idempotencyKey: string;
+  amountAtomic?: string;
+  usageQuantity?: string;
+  unitPriceAtomic?: string;
+  resourceId?: string;
+  providerId?: string;
+  sessionId?: string;
+  resourceDeliveryReference?: string;
+  providerAttestation?: string;
+  evidenceHash?: string;
+  occurredAt?: string;
+}
+
 export interface Magen3X402SettlementUpdate {
   auditLogId: string;
   status: "submitted" | "pending" | "confirmed" | "failed" | "uncertain";
@@ -2063,6 +2101,20 @@ export class Magen3Client {
     const id = approvalOrAuditId?.trim();
     if (!id) throw new TypeError("approvalOrAuditId is required");
     return this.request<{ ok: boolean; approval: Magen3ApprovalRequest }>(`/api/agent-gateway/approvals/${encodeURIComponent(id)}?agentId=${encodeURIComponent(this.agentId)}`, { method: "GET" });
+  }
+
+  async createX402Authorization(input: Magen3X402AuthorizationCreate): Promise<Record<string, unknown>> {
+    if (!input?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    if (!["upto", "metered"].includes(String(input.mode || "").toLowerCase())) throw new TypeError("mode must be upto or metered");
+    if (!/^[1-9]\d*$/.test(String(input.maximumAuthorizedAtomic || ""))) throw new TypeError("maximumAuthorizedAtomic must be a positive base-unit integer string");
+    return this.request<Record<string, unknown>>("/api/agent-gateway/x402/authorizations", { method: "POST", body: JSON.stringify({ ...input, agentId: this.agentId }) });
+  }
+
+  async applyX402AuthorizationEvent(input: Magen3X402AuthorizationEvent): Promise<Record<string, unknown>> {
+    if (!input?.auditLogId?.trim()) throw new TypeError("auditLogId is required");
+    if (!input?.eventId?.trim()) throw new TypeError("eventId is required");
+    if (!input?.idempotencyKey?.trim()) throw new TypeError("idempotencyKey is required");
+    return this.request<Record<string, unknown>>("/api/agent-gateway/x402/authorization-events", { method: "POST", body: JSON.stringify({ ...input, agentId: this.agentId }) });
   }
 
   async executeX402Payment(input: { auditLogId: string; requestFingerprint: string; paymentPayload: Record<string, unknown>; paymentRequirements: Record<string, unknown>; attempt?: number; resourceBody?: string; resourceHeaders?: Record<string, string>; includeResourceBody?: boolean }): Promise<Record<string, unknown>> {

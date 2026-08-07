@@ -432,6 +432,11 @@ interface X402PaymentControlsStatus {
   settlementReporting?: boolean;
   liveSettlement?: boolean;
   resourceDeliveryVerification?: boolean;
+  controlledAuthorizations?: boolean;
+  usageAccounting?: boolean;
+  reservationCaptureRelease?: boolean;
+  partialSettlement?: boolean;
+  authorizationRevocation?: boolean;
   securityBoundary?: string;
 }
 
@@ -11879,14 +11884,16 @@ function SettingsPage({
     {
       id: "x402",
       label: "x402 Payment Controls",
-      description: "Exact-payment request binding, replay protection, and settlement reporting capability.",
-      status: x402PaymentControlsStatus.status === "foundation-available" ? "Foundation" : "Unavailable",
+      description: "Exact, upto, and metered x402 authorization with bounded accounting and testnet settlement.",
+      status: x402PaymentControlsStatus.status === "live-testnet" ? "Available" : x402PaymentControlsStatus.status === "foundation-available" ? "Foundation" : "Unavailable",
       icon: <Zap size={17} />,
       details: [
         ["Protocol", `x402 v${x402PaymentControlsStatus.protocolVersion || 2}`],
         ["Schemes", (x402PaymentControlsStatus.supportedSchemes || ["exact"]).join(", ")],
         ["Request binding", x402PaymentControlsStatus.requestBinding ? "Enabled" : "Unavailable"],
         ["Settlement reporting", x402PaymentControlsStatus.settlementReporting ? "Enabled" : "Unavailable"],
+        ["Bounded authorizations", x402PaymentControlsStatus.controlledAuthorizations ? "Enabled" : "Unavailable"],
+        ["Usage accounting", x402PaymentControlsStatus.usageAccounting ? "Enabled" : "Unavailable"],
       ],
       error: "",
       note: "Magen3 does not receive signing keys or raw PAYMENT-SIGNATURE payloads.",
@@ -12055,7 +12062,7 @@ export default function App() {
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
   const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
-  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "live-testnet", protocolVersion: 2, supportedSchemes: ["exact"], requestBinding: true, replayProtection: true, settlementReporting: true, liveSettlement: true, resourceDeliveryVerification: true });
+  const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "live-testnet", protocolVersion: 2, supportedSchemes: ["exact", "upto", "metered"], requestBinding: true, replayProtection: true, settlementReporting: true, liveSettlement: true, controlledAuthorizations: true, usageAccounting: true, reservationCaptureRelease: true, partialSettlement: true, authorizationRevocation: true, resourceDeliveryVerification: true });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [developerMode, setDeveloperMode] = useState(() => {
     try {

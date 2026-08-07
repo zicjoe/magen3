@@ -1222,3 +1222,14 @@ test("bridge provider discovery and quote use authenticated server-controlled ro
   assert.equal(body.agentId, "MAG-BRIDGE");
   await assert.rejects(() => client.requestBridgeProviderQuote({ sourceChainId: 11155420, destinationChainId: 84532, inputToken: "0x3333333333333333333333333333333333333333", outputToken: "0x4444444444444444444444444444444444444444", amountAtomic: "1000000", depositor: "0x1111111111111111111111111111111111111111", recipient: "0x2222222222222222222222222222222222222222", providerUrl: "https://evil.example" }), /not accepted/);
 });
+
+test("creates bounded x402 authorization and applies metered event", async () => {
+  const calls = [];
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-1", apiKey: "secret", fetch: async (url, init) => { calls.push({ url: String(url), body: JSON.parse(init.body) }); return new Response(JSON.stringify({ ok: true }), { status: 200 }); } });
+  await client.createX402Authorization({ auditLogId: "AUD-1", mode: "metered", maximumAuthorizedAtomic: "1000000", usageUnit: "request", unitPriceAtomic: "100000" });
+  await client.applyX402AuthorizationEvent({ auditLogId: "AUD-1", type: "usage", eventId: "usage-1", idempotencyKey: "usage-1", usageQuantity: "2", unitPriceAtomic: "100000" });
+  assert.equal(calls[0].url, "https://api.example/api/agent-gateway/x402/authorizations");
+  assert.equal(calls[0].body.agentId, "MAG-1");
+  assert.equal(calls[1].url, "https://api.example/api/agent-gateway/x402/authorization-events");
+  assert.equal(calls[1].body.idempotencyKey, "usage-1");
+});

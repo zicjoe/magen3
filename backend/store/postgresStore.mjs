@@ -18,6 +18,7 @@ import { getComplianceControlsSnapshot } from "../lib/complianceControls.mjs";
 import { normalizeAgentGatewayIntent, gatewayNextAction, gatewayStatusFromDecision } from "../lib/agentGateway.mjs";
 import { mergeX402SettlementTransition, normalizeX402SettlementUpdate } from "../lib/x402PaymentControls.mjs";
 import { executeLiveX402 } from "../lib/x402LiveSettlement.mjs";
+import { applyX402AuthorizationEvent, createX402Authorization, summarizeX402Authorization } from "../lib/x402MeteredPayments.mjs";
 import { buildReconciliationAuditPatch, reconciliationStatusSummary } from "../lib/executionReconciliation.mjs";
 import { getExecutionReconciliationPollingStatus, pollExecutionTransaction } from "../lib/executionReconciliationPoller.mjs";
 import { legacyTypeFromCapabilities, normalizeExecutionCapabilities, recommendedPolicyTemplate } from "../lib/securityModel.mjs";
@@ -1126,6 +1127,12 @@ export async function createPostgresStore() {
         complianceBeneficiaryVaspId: intent.complianceBeneficiaryVaspId,
         x402Version: intent.x402Version,
         x402Scheme: intent.x402Scheme,
+        x402Mode: intent.x402Mode,
+        x402MaximumAuthorizedAtomic: intent.x402MaximumAuthorizedAtomic,
+        x402UsageUnit: intent.x402UsageUnit,
+        x402UnitPriceAtomic: intent.x402UnitPriceAtomic,
+        x402SessionId: intent.x402SessionId,
+        x402ProviderId: intent.x402ProviderId,
         x402ResourceUrl: intent.x402ResourceUrl,
         x402HttpMethod: intent.x402HttpMethod,
         x402MerchantDomain: intent.x402MerchantDomain,
@@ -1658,6 +1665,12 @@ export async function createPostgresStore() {
             x402: {
               version: intent.x402Version,
               scheme: intent.x402Scheme,
+              mode: intent.x402Mode || intent.x402Scheme || "exact",
+              maximumAuthorizedAtomic: intent.x402MaximumAuthorizedAtomic || intent.x402AmountAtomic,
+              usageUnit: intent.x402UsageUnit || "",
+              unitPriceAtomic: intent.x402UnitPriceAtomic || "",
+              sessionId: intent.x402SessionId || intent.x402RequestId || "",
+              providerId: intent.x402ProviderId || intent.x402MerchantDomain || "",
               resourceUrl: intent.x402ResourceUrl,
               method: intent.x402HttpMethod,
               merchantDomain: intent.x402MerchantDomain,
@@ -1909,6 +1922,12 @@ export async function createPostgresStore() {
         bridgeApprovalTransactions: intent.bridgeApprovalTransactions,
         x402Version: intent.x402Version,
         x402Scheme: intent.x402Scheme,
+        x402Mode: intent.x402Mode,
+        x402MaximumAuthorizedAtomic: intent.x402MaximumAuthorizedAtomic,
+        x402UsageUnit: intent.x402UsageUnit,
+        x402UnitPriceAtomic: intent.x402UnitPriceAtomic,
+        x402SessionId: intent.x402SessionId,
+        x402ProviderId: intent.x402ProviderId,
         x402ResourceUrl: intent.x402ResourceUrl,
         x402HttpMethod: intent.x402HttpMethod,
         x402MerchantDomain: intent.x402MerchantDomain,
@@ -2549,6 +2568,55 @@ export async function createPostgresStore() {
         attempt: Math.max(1, Number(auditLog.executionAttemptCount || auditLog.executionReconciliation?.attempt || 1)),
         note: String(body?.note || `Polled through ${observation.provider}.`).trim(),
       }, context);
+    },
+
+    async createX402Authorization(id, body, context = {}) {
+      const agentId = String(body?.agentId || "").trim();
+      if (!agentId) { const e = new Error("agentId is required for x402 authorization"); e.status = 400; throw e; }
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      const agentRecord = agentRows[0];
+      if (!agentRecord || !secretMatches(context.apiKey, agentRecord.apiKeyHash)) { const e = new Error("Invalid connected-agent credentials"); e.status = 401; throw e; }
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current || current.agentId !== agentRecord.id) { const e = new Error("x402 audit log not found for this connected agent"); e.status = 404; throw e; }
+      const policyRows = await db.select().from(policiesTable).where(and(eq(policiesTable.agentId, agentId), eq(policiesTable.status, "Active")));
+      const currentAudit = normalizeAuditLog(current);
+      const authorization = createX402Authorization({ auditLog: currentAudit, body, policy: policyRows[0] || {} });
+      const currentIntent = current.originalIntent && typeof current.originalIntent === "object" ? current.originalIntent : {};
+      const currentAction = currentIntent.action && typeof currentIntent.action === "object" ? currentIntent.action : {};
+      const currentX402 = currentAction.x402 && typeof currentAction.x402 === "object" ? currentAction.x402 : {};
+      const nextIntent = { ...currentIntent, action: { ...currentAction, x402: { ...currentX402, authorization } } };
+      const [auditRow] = await db.update(auditLogsTable).set({
+        originalIntent: nextIntent,
+        executionStatus: `x402_authorization_${authorization.state}`,
+        executionNote: `${authorization.mode} x402 authorization ${authorization.authorizationId} is ${authorization.state}.`,
+        executionUpdatedAt: new Date(authorization.updatedAt || authorization.createdAt),
+      }).where(eq(auditLogsTable.id, id)).returning();
+      return { ok: true, authorization: summarizeX402Authorization(authorization), auditLog: normalizeAuditLog(auditRow) };
+    },
+
+    async applyX402AuthorizationEvent(id, body, context = {}) {
+      const agentId = String(body?.agentId || "").trim();
+      if (!agentId) { const e = new Error("agentId is required for x402 authorization event"); e.status = 400; throw e; }
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      const agentRecord = agentRows[0];
+      if (!agentRecord || !secretMatches(context.apiKey, agentRecord.apiKeyHash)) { const e = new Error("Invalid connected-agent credentials"); e.status = 401; throw e; }
+      const rows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.id, id));
+      const current = rows[0];
+      if (!current || current.agentId !== agentRecord.id) { const e = new Error("x402 audit log not found for this connected agent"); e.status = 404; throw e; }
+      const currentIntent = current.originalIntent && typeof current.originalIntent === "object" ? current.originalIntent : {};
+      const currentAction = currentIntent.action && typeof currentIntent.action === "object" ? currentIntent.action : {};
+      const currentX402 = currentAction.x402 && typeof currentAction.x402 === "object" ? currentAction.x402 : {};
+      if (!currentX402.authorization?.authorizationId) { const e = new Error("x402 payment authorization has not been created for this audit"); e.status = 404; throw e; }
+      const result = applyX402AuthorizationEvent(currentX402.authorization, body);
+      const nextIntent = { ...currentIntent, action: { ...currentAction, x402: { ...currentX402, authorization: result.authorization } } };
+      const [auditRow] = await db.update(auditLogsTable).set({
+        originalIntent: nextIntent,
+        executionStatus: `x402_authorization_${result.authorization.state}`,
+        executionNote: result.duplicate ? `Duplicate x402 authorization event ${result.event.eventId} ignored.` : `x402 authorization event ${result.event.type} recorded.`,
+        executionUpdatedAt: new Date(result.authorization.updatedAt || Date.now()),
+      }).where(eq(auditLogsTable.id, id)).returning();
+      return { ok: true, duplicate: result.duplicate, event: result.event, authorization: summarizeX402Authorization(result.authorization), auditLog: normalizeAuditLog(auditRow) };
     },
 
     async executeX402Lifecycle(id, body, context = {}) {

@@ -53,3 +53,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - [Trading Route Integrity](TRADING_ROUTE_INTEGRITY.md) — deterministic quote, router, path, pool, fee-recipient, calldata, and payload binding for Milestone 20.
 - [Market Risk Signals](MARKET_RISK_SIGNALS.md) — configured-provider market-condition evidence and deterministic policy enforcement for Milestone 21.
 - `REAL_BRIDGE_PROVIDER_INTEGRATION.md` — Across testnet quote retrieval, exact unsigned source-transaction binding, provider evidence attestation, Allowed-only execution handoff, and destination-delivery reconciliation.
+
+- [Metered or upto x402 Payments](./METERED_UPTO_X402_PAYMENTS.md) — bounded upto/metered authorization, usage idempotency, reservation/capture/settlement/release/refund accounting.

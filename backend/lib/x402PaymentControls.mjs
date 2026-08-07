@@ -163,9 +163,10 @@ export function classifyX402Recipient(value, network = "") {
 
 export function buildX402RequestFingerprint(input = {}) {
   const resource = canonicalizeX402ResourceUrl(input.resourceUrl || input.x402ResourceUrl);
-  const canonical = [
+  const mode = normalizeScheme(input.mode || input.x402Mode || input.scheme || input.x402Scheme);
+  const canonicalParts = [
     String(input.version ?? input.x402Version ?? ""),
-    normalizeScheme(input.scheme || input.x402Scheme),
+    mode,
     normalizeMethod(input.method || input.x402HttpMethod),
     resource.canonical,
     normalizeMerchant(input.merchantDomain || input.x402MerchantDomain || resource.hostname),
@@ -179,8 +180,17 @@ export function buildX402RequestFingerprint(input = {}) {
     normalizeHash(input.requestBodyHash || input.x402RequestBodyHash),
     normalizeHash(input.paymentRequiredHash || input.x402PaymentRequiredHash),
     clean(input.requestId || input.nonce || input.x402RequestId),
-  ].join("\n");
-  return createHash("sha256").update(canonical).digest("hex");
+  ];
+  // Preserve the Milestone 23 exact-payment fingerprint byte-for-byte. New bounded
+  // authorization fields extend only upto/metered fingerprints.
+  if (mode !== "exact") canonicalParts.push(
+    clean(input.maximumAuthorizedAtomic || input.x402MaximumAuthorizedAtomic),
+    clean(input.usageUnit || input.x402UsageUnit),
+    clean(input.unitPriceAtomic || input.x402UnitPriceAtomic),
+    clean(input.sessionId || input.x402SessionId),
+    clean(input.providerId || input.x402ProviderId),
+  );
+  return createHash("sha256").update(canonicalParts.join("\n")).digest("hex");
 }
 
 function finding({ status, severity = "info", rule, message, evidence = {}, remediation = "" }) {
@@ -311,7 +321,13 @@ export function evaluateX402PaymentControls({ request = {}, policy = {}, auditLo
   }
 
   const version = String(request.x402Version ?? "").trim();
-  const scheme = normalizeScheme(request.x402Scheme);
+  const scheme = normalizeScheme(request.x402Mode || request.x402Scheme);
+  const mode = scheme;
+  const maximumAuthorizedAtomic = clean(request.x402MaximumAuthorizedAtomic || request.x402AmountAtomic);
+  const usageUnit = clean(request.x402UsageUnit);
+  const unitPriceAtomic = clean(request.x402UnitPriceAtomic);
+  const sessionId = clean(request.x402SessionId || request.x402RequestId);
+  const providerId = clean(request.x402ProviderId || request.x402MerchantDomain);
   const method = normalizeMethod(request.x402HttpMethod);
   const resource = canonicalizeX402ResourceUrl(request.x402ResourceUrl);
   const merchantDomain = normalizeMerchant(request.x402MerchantDomain || resource.hostname);
@@ -319,7 +335,7 @@ export function evaluateX402PaymentControls({ request = {}, policy = {}, auditLo
   const network = normalizeNetwork(request.x402Network);
   const asset = normalizeAsset(request.x402Asset || request.asset);
   const facilitator = normalizeFacilitator(request.x402Facilitator);
-  const amountAtomic = clean(request.x402AmountAtomic);
+  const amountAtomic = mode === "exact" ? clean(request.x402AmountAtomic) : maximumAuthorizedAtomic;
   const assetDecimals = config.assetDecimals[asset];
   const derivedAmount = atomicToDisplay(amountAtomic, assetDecimals);
   const submittedDisplayAmount = finiteNumber(request.amount, null);
@@ -339,13 +355,19 @@ export function evaluateX402PaymentControls({ request = {}, policy = {}, auditLo
   const paymentRequiredHash = normalizeHash(request.x402PaymentRequiredHash);
   const clientFingerprint = normalizeHash(request.x402RequestFingerprint);
   const computedFingerprint = buildX402RequestFingerprint({
-    version, scheme, method, resourceUrl: resource.canonical || request.x402ResourceUrl, merchantDomain, payTo, asset, network,
+    version, scheme, mode, maximumAuthorizedAtomic, usageUnit, unitPriceAtomic, sessionId, providerId, method, resourceUrl: resource.canonical || request.x402ResourceUrl, merchantDomain, payTo, asset, network,
     amountAtomic,
     validUntil: Number.isFinite(validUntilMs) ? new Date(validUntilMs).toISOString() : clean(validUntilRaw),
     maxTimeoutSeconds,
     requirementsReceivedAt: requirementsReceivedAtRaw,
     requestBodyHash, paymentRequiredHash, requestId,
   });
+  if (mode === "metered" && (!usageUnit || !/^[1-9]\d*$/.test(unitPriceAtomic))) {
+    applyUnavailable(state, config, { rule: "Metered pricing binding", message: "Metered x402 authorization requires a usage unit and positive atomic unit price.", evidence: { usageUnit, unitPriceAtomic }, remediation: "Provide deterministic usageUnit and unitPriceAtomic fields before authorization." });
+  } else if (mode === "metered") {
+    pass(state, "Metered pricing binding", "Metered usage unit and atomic unit price are bound.", { usageUnit, unitPriceAtomic });
+  }
+
   const settlementStatus = normalizeSettlementStatus(request.x402SettlementStatus);
   const settlementAttempt = safeInteger(request.x402SettlementAttempt, 0, { min: 0, max: 10_000 });
   const recipient = classifyX402Recipient(payTo, network);

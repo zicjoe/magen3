@@ -675,7 +675,7 @@ const server = createServer(async (req, res) => {
           status: "live-testnet",
           protocolVersion: 2,
           supportedVersions: [2],
-          supportedSchemes: ["exact"],
+          supportedSchemes: ["exact", "upto", "metered"],
           supportedRecipientFamilies: ["EVM", "Solana"],
           requestBinding: true,
           atomicAmountValidation: true,
@@ -683,11 +683,18 @@ const server = createServer(async (req, res) => {
           replayProtection: true,
           settlementReporting: true,
           liveSettlement: true,
+          controlledAuthorizations: true,
+          usageAccounting: true,
+          reservationCaptureRelease: true,
+          partialSettlement: true,
+          authorizationRevocation: true,
           resourceDeliveryVerification: true,
           settlementEndpoint: "/api/agent-gateway/x402/settlements",
           executionEndpoint: "/api/agent-gateway/x402/execute",
+          authorizationEndpoint: "/api/agent-gateway/x402/authorizations",
+          authorizationEventEndpoint: "/api/agent-gateway/x402/authorization-events",
           network: "eip155:84532",
-          note: "Magen3 authorizes exact x402 payments, verifies signed authorizations through a server-configured testnet facilitator, settles on Base Sepolia, retries the protected resource, verifies delivery, and reconciles the lifecycle. Magen3 never holds signing keys."
+          note: "Magen3 supports exact one-time x402 payments plus bounded upto and metered authorizations with base-unit reservation, capture, settlement, release, refund, usage idempotency, revocation, and reconciliation. Live facilitator settlement remains Base Sepolia testnet only. Magen3 never holds signing keys."
         }
       });
     }
@@ -1504,6 +1511,22 @@ const server = createServer(async (req, res) => {
       const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
       if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
       return send(res, 200, await store.pollExecution(auditLogId, body, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/x402/authorizations") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 201, await store.createX402Authorization(auditLogId, body, { apiKey }));
+    }
+
+    if (route === "POST /api/agent-gateway/x402/authorization-events") {
+      const apiKey = readAgentGatewayKey(req);
+      const body = await readJson(req);
+      const auditLogId = String(body.auditLogId || body.audit_log_id || "").trim();
+      if (!auditLogId) return send(res, 400, { error: "auditLogId is required" });
+      return send(res, 200, await store.applyX402AuthorizationEvent(auditLogId, body, { apiKey }));
     }
 
     if (route === "POST /api/agent-gateway/x402/execute") {
