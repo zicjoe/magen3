@@ -257,7 +257,6 @@ export function createMemoryStore() {
         auditLogs: scopedAuditLogs(walletAddress),
         approvals: scopedApprovals(walletAddress),
         emergencyPauses: scopedEmergencyPauses(walletAddress),
-        monitoring: { monitors: monitoringMonitors.filter((m) => m.ownerWalletAddress === normalizeWalletAddress(walletAddress)), alerts: monitoringAlerts.filter((a) => a.ownerWalletAddress === normalizeWalletAddress(walletAddress)) },
         shieldModules,
         dashboardStats: dashboardStats(walletAddress),
       };

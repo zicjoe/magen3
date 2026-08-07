@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactElement, type ReactNode } from "react";
+import { Component, useState, useEffect, useCallback, useMemo, type ReactElement, type ReactNode } from "react";
 import {
   Shield,
   ShieldCheck,
@@ -2569,8 +2569,6 @@ function DashboardPage({
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
-  continuousRiskMonitoringStatus,
-  monitoringState,
   x402PaymentControlsStatus,
   auditLogs,
   policies,
@@ -2588,8 +2586,6 @@ function DashboardPage({
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
-  continuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus;
-  monitoringState: MonitoringState;
   x402PaymentControlsStatus: X402PaymentControlsStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
@@ -2610,17 +2606,6 @@ function DashboardPage({
       />
     );
   }
-
-  // Continuous Monitoring is additive. Never let malformed or missing optional
-  // monitoring payloads crash core Dashboard rendering in production.
-  const safeMonitoringState: MonitoringState = {
-    monitors: Array.isArray(monitoringState?.monitors) ? monitoringState.monitors : [],
-    alerts: Array.isArray(monitoringState?.alerts) ? monitoringState.alerts : [],
-  };
-  const safeContinuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus =
-    continuousRiskMonitoringStatus && typeof continuousRiskMonitoringStatus === "object"
-      ? continuousRiskMonitoringStatus
-      : { status: "unavailable", deterministic: true, schedulerEnabled: false };
 
   const dashboardStats = deriveDashboardStats(auditLogs, policies);
   const recentLogs = auditLogs.slice(0, 5);
@@ -2780,19 +2765,6 @@ function DashboardPage({
     providerRequirements.compliance && complianceControlsStatus.status !== "available" ? "Compliance Controls" : "",
   ].filter(Boolean);
 
-  const openMonitoringAlerts = safeMonitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || ""));
-  if (openMonitoringAlerts.length > 0) {
-    attentionItems.push({
-      id: "continuous-monitoring",
-      title: `${openMonitoringAlerts.length} continuous risk alert${openMonitoringAlerts.length === 1 ? " needs" : "s need"} attention`,
-      description: openMonitoringAlerts[0]?.trigger || "A deterministic monitoring rule matched existing Magen3 state.",
-      action: "Review monitoring",
-      page: "settings",
-      tone: openMonitoringAlerts.some((item) => ["High", "Critical"].includes(item.severity || "")) ? "critical" : "warning",
-      icon: <Activity size={18} />,
-    });
-  }
-
   if (requiredUnavailableProviders.length > 0) {
     attentionItems.push({
       id: "providers",
@@ -2853,11 +2825,6 @@ function DashboardPage({
       label: "Compliance feed",
       detail: complianceControlsStatus.status === "available" ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators across ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions.` : complianceControlsStatus.status === "stale" ? "The configured compliance feed is stale." : "No fresh compliance feed is available.",
       status: complianceControlsStatus.status === "available" ? "operational" : complianceControlsStatus.status === "stale" ? "attention" : "unavailable",
-    },
-    {
-      label: "Continuous monitoring",
-      detail: safeContinuousRiskMonitoringStatus.status === "live" ? `${safeMonitoringState.monitors.filter((item) => item.enabled !== false).length} active monitor${safeMonitoringState.monitors.filter((item) => item.enabled !== false).length === 1 ? "" : "s"} · ${openMonitoringAlerts.length} open alert${openMonitoringAlerts.length === 1 ? "" : "s"}.` : "Continuous Risk Monitoring status could not be confirmed.",
-      status: safeContinuousRiskMonitoringStatus.status !== "live" ? "unavailable" : openMonitoringAlerts.length > 0 ? "attention" : "operational",
     },
   ];
 
@@ -11932,16 +11899,19 @@ function SettingsPage({
   const [referenceCurrency, setReferenceCurrency] = useState(() => typeof window !== "undefined" ? (localStorage.getItem("magen3.referenceCurrency") || "USD") : "USD");
   const savePolicyDefaults = (unit: string, currency: string) => { setDefaultLimitUnit(unit); setReferenceCurrency(currency); localStorage.setItem("magen3.defaultLimitUnit", unit); localStorage.setItem("magen3.referenceCurrency", currency); };
 
-  // Monitoring is optional operational state. Settings must remain usable if a
-  // deployment returns no monitoring payload or a temporarily malformed one.
+  const oracleConfiguredProviderIds = Array.isArray(oracleValidationStatus?.configuredProviderIds) ? oracleValidationStatus.configuredProviderIds : [];
+  const oracleProviderCapabilities = Array.isArray(oracleValidationStatus?.providerCapabilities) ? oracleValidationStatus.providerCapabilities : [];
+  const oracleProviderStatuses = Array.isArray(oracleValidationStatus?.providerStatuses) ? oracleValidationStatus.providerStatuses : [];
+  const complianceConfiguredProviderIds = Array.isArray(complianceControlsStatus?.configuredProviderIds) ? complianceControlsStatus.configuredProviderIds : [];
+  const complianceAvailableProviderIds = Array.isArray(complianceControlsStatus?.availableProviderIds) ? complianceControlsStatus.availableProviderIds : [];
+  const complianceProviderCapabilities = Array.isArray(complianceControlsStatus?.providerCapabilities) ? complianceControlsStatus.providerCapabilities : [];
   const safeMonitoringState: MonitoringState = {
     monitors: Array.isArray(monitoringState?.monitors) ? monitoringState.monitors : [],
     alerts: Array.isArray(monitoringState?.alerts) ? monitoringState.alerts : [],
   };
-  const safeContinuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus =
-    continuousRiskMonitoringStatus && typeof continuousRiskMonitoringStatus === "object"
-      ? continuousRiskMonitoringStatus
-      : { status: "unavailable", deterministic: true, schedulerEnabled: false };
+  const safeContinuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus = continuousRiskMonitoringStatus && typeof continuousRiskMonitoringStatus === "object"
+    ? continuousRiskMonitoringStatus
+    : { status: "unavailable", deterministic: true, schedulerEnabled: false };
 
   const copySetting = useCallback(async (label: string, value: string) => {
     const copiedOk = await writeClipboard(value);
@@ -12016,9 +11986,9 @@ function SettingsPage({
         ["Feed state", oracleValidationStatus.status || "unavailable"],
         ["Asset pairs", String(oracleValidationStatus.pairCount || 0)],
         ["Observations", String(oracleValidationStatus.observationCount || 0)],
-        ["Configured providers", oracleValidationStatus.configuredProviderIds?.join(", ") || "None"],
-        ["Provider health", oracleValidationStatus.providerCapabilities?.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
-        ["Provider states", oracleValidationStatus.providerStatuses?.map((item) => `${item.providerId}: ${item.status}`).join(" · ") || "No request-scoped provider check"],
+        ["Configured providers", oracleConfiguredProviderIds.join(", ") || "None"],
+        ["Provider health", oracleProviderCapabilities.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
+        ["Provider states", oracleProviderStatuses.map((item) => `${item.providerId || "provider"}: ${item.status || "unknown"}`).join(" · ") || "No request-scoped provider check"],
       ],
       error: oracleValidationStatus.error || "",
       note: "Pyth Hermes support is Preview until a deployment performs a genuine live provider request. Unavailable, unsupported, or stale evidence never becomes a zero-price pass.",
@@ -12034,30 +12004,28 @@ function SettingsPage({
         ["Feed state", complianceControlsStatus.status || "unavailable"],
         ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
         ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
-        ["Configured providers", complianceControlsStatus.configuredProviderIds?.join(", ") || "None"],
-        ["Available providers", complianceControlsStatus.availableProviderIds?.join(", ") || "None"],
-        ["Provider health", complianceControlsStatus.providerCapabilities?.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
+        ["Configured providers", complianceConfiguredProviderIds.join(", ") || "None"],
+        ["Available providers", complianceAvailableProviderIds.join(", ") || "None"],
+        ["Provider health", complianceProviderCapabilities.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
         ["Provider disagreement", complianceControlsStatus.providerDisagreement ? "Detected" : "None detected"],
       ],
       error: complianceControlsStatus.error || "",
-      note: "OFAC-API provider support is Preview until a deployment performs a genuine credentialed provider request. Provider results are evidence, not legal conclusions; Magen3 stores bounded status/evidence hashes rather than raw personal identity data.",
+      note: "OFAC-API provider support is Preview until a deployment performs a genuine credentialed provider request. Provider results are evidence, not legal conclusions; raw personal identity data and provider credentials are not shown here.",
     },
     {
       id: "monitoring",
       label: "Continuous Risk Monitoring",
-      description: "Deterministic scheduled and manual evaluation of existing Magen3 state with deduplicated alerts and recovery detection.",
+      description: "Deterministic monitoring of existing Magen3 state with bounded alerts and recovery detection.",
       status: safeContinuousRiskMonitoringStatus.status === "live" ? "Available" : "Unavailable",
       icon: <Activity size={17} />,
       details: [
         ["Engine", safeContinuousRiskMonitoringStatus.status || "unavailable"],
-        ["Deterministic", safeContinuousRiskMonitoringStatus.deterministic ? "Yes" : "Unavailable"],
-        ["Scheduler", safeContinuousRiskMonitoringStatus.scheduler?.enabled ? (safeContinuousRiskMonitoringStatus.scheduler?.running ? "Enabled · running" : "Enabled") : "Disabled"],
+        ["Scheduler", safeContinuousRiskMonitoringStatus.scheduler?.enabled ? "Enabled" : "Disabled"],
         ["Active monitors", String(safeMonitoringState.monitors.filter((item) => item.enabled !== false).length)],
         ["Open alerts", String(safeMonitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || "")).length)],
-        ["Recovered alerts", String(safeMonitoringState.alerts.filter((item) => item.status === "Recovered").length)],
       ],
       error: safeContinuousRiskMonitoringStatus.error || "",
-      note: "Monitoring consumes existing bounded audit, reconciliation, provider, and policy state. It does not authorize execution or place operational monitoring evidence on Casper.",
+      note: "Monitoring is loaded independently from core account history and cannot authorize execution or suppress bootstrap data.",
     },
     {
       id: "x402",
@@ -12198,20 +12166,12 @@ function SettingsPage({
           </div>
           <div className={`${CARD} p-5`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div><h2 className={SECTION_TITLE}>Continuous Monitoring Operations</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Create bounded per-agent monitors, run a deterministic evaluation, acknowledge alerts, and follow recovery without changing the per-intent authorization engine.</p></div>
+              <div><h2 className={SECTION_TITLE}>Continuous Monitoring Operations</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Monitoring is intentionally separate from the legacy account bootstrap. A monitoring outage cannot hide agents, policies, or audit history.</p></div>
               <Btn variant="secondary" size="sm" onClick={() => { void api.runMonitoring({ walletAddress, force: true }).catch(() => undefined); }} disabled={!walletAddress || safeMonitoringState.monitors.length === 0}>Run now</Btn>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              <div className="space-y-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Agent monitors</div>
-                {agents.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">Register an agent before creating a continuous monitor.</div>}
-                {agents.slice(0, 8).map((agent) => { const monitor = safeMonitoringState.monitors.find((item) => item.agentId === agent.id); return <div key={agent.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="min-w-0"><div className="truncate text-xs font-semibold text-[#F8FAFC]">{agent.name || agent.id}</div><div className="mt-1 text-[11px] text-[#64748B]">{monitor ? `${monitor.status || "Active"} · every ${monitor.cadenceSeconds || 300}s` : "No monitor configured"}</div></div>{!monitor && <Btn variant="secondary" size="sm" onClick={() => { void api.createMonitor({ walletAddress, agentId: agent.id, name: `${agent.name || agent.id} continuous monitor`, cadenceSeconds: 300 }).catch(() => undefined); }}>Create</Btn>}</div>; })}
-              </div>
-              <div className="space-y-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Recent alerts</div>
-                {safeMonitoringState.alerts.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">No monitoring alerts have been recorded.</div>}
-                {safeMonitoringState.alerts.slice(0, 8).map((alert) => <div key={alert.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-semibold text-[#F8FAFC]">{alert.trigger || alert.category}</div><div className="mt-1 text-[11px] text-[#64748B]">{alert.severity} · {alert.status} · observed {alert.occurrenceCount || 1} time{(alert.occurrenceCount || 1) === 1 ? "" : "s"}</div></div>{alert.status === "Open" && <Btn variant="secondary" size="sm" onClick={() => { void api.updateMonitoringAlert(alert.id, { walletAddress, status: "Acknowledged", acknowledgementNote: "Acknowledged from Magen3 Settings." }).catch(() => undefined); }}>Acknowledge</Btn>}</div>{alert.suggestedResolution && <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">{alert.suggestedResolution}</div>}{alert.status === "Recovered" && <div className="mt-2 text-[11px] text-[#22C55E]">Recovered automatically after the monitored condition cleared.</div>}</div>)}
-              </div>
+              <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4 text-xs text-[#94A3B8]">{safeMonitoringState.monitors.length} monitor{safeMonitoringState.monitors.length === 1 ? "" : "s"} configured for this wallet.</div>
+              <div className="rounded-xl border border-[#1E293B] bg-[#0B1220] p-4 text-xs text-[#94A3B8]">{safeMonitoringState.alerts.length} monitoring alert{safeMonitoringState.alerts.length === 1 ? "" : "s"} recorded.</div>
             </div>
           </div>
         </div>
@@ -12244,6 +12204,45 @@ function SettingsPage({
   );
 }
 
+class PageErrorBoundary extends Component<
+  { page: Page; children: ReactNode; onNavigate: (page: Page) => void },
+  { error: string }
+> {
+  state = { error: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error.message : "This panel could not be rendered." };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("Magen3 panel render failure", error);
+  }
+
+  componentDidUpdate(previous: { page: Page }) {
+    if (previous.page !== this.props.page && this.state.error) this.setState({ error: "" });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className={`${CARD} mx-auto max-w-3xl p-6`}>
+        <div className="flex items-start gap-3">
+          <AlertTriangle size={20} className="mt-0.5 shrink-0 text-[#F59E0B]" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[#F8FAFC]">This panel could not be rendered</div>
+            <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">The rest of Magen3 is still running. This usually means this panel received an unexpected optional-data shape.</p>
+            <div className="mt-3 rounded-lg border border-[#F59E0B]/20 bg-[#F59E0B]/5 p-3 font-mono text-[11px] text-[#FCD34D]">{this.state.error}</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Btn variant="secondary" size="sm" onClick={() => this.setState({ error: "" })}>Retry panel</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => this.props.onNavigate("shields")}>Open Agent Shield</Btn>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 // ──────────────────────────────────────────────────────────
 // App Shell
 // ──────────────────────────────────────────────────────────
@@ -12254,6 +12253,7 @@ export default function App() {
   const [walletAddress, setWalletAddress] = useState("");
   const [walletConnecting, setWalletConnecting] = useState(false);
   const [walletError, setWalletError] = useState("");
+  const [accountDataError, setAccountDataError] = useState("");
   const [apiOnline, setApiOnline] = useState(false);
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
@@ -12389,6 +12389,7 @@ export default function App() {
       setApprovals([]);
       setEmergencyPauses([]);
       setMonitoringState({ monitors: [], alerts: [] });
+      setAccountDataError("");
       return () => {
         cancelled = true;
       };
@@ -12408,14 +12409,13 @@ export default function App() {
         if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
         if (Array.isArray(payload.approvals)) setApprovals(payload.approvals as ApprovalRequest[]);
         if (Array.isArray(payload.emergencyPauses)) setEmergencyPauses(payload.emergencyPauses as EmergencyPause[]);
-        if (payload.monitoring && typeof payload.monitoring === "object") setMonitoringState({ monitors: Array.isArray(payload.monitoring.monitors) ? payload.monitoring.monitors : [], alerts: Array.isArray(payload.monitoring.alerts) ? payload.monitoring.alerts : [] });
+        const warnings = Array.isArray(payload.bootstrapWarnings) ? payload.bootstrapWarnings.filter(Boolean) : [];
+        setAccountDataError(warnings.length ? `Some account data could not be refreshed: ${warnings.join(" · ")}` : "");
         setApiOnline(true);
       } catch (error) {
         if (!cancelled) {
-          // Bootstrap is account-data loading, not the Gateway health signal. A scoped
-          // persistence/module failure must not incorrectly relabel a healthy Railway
-          // Gateway as offline or erase already loaded account history.
-          setWalletError(error instanceof Error ? `Account data could not be refreshed: ${error.message}` : "Account data could not be refreshed.");
+          // Account history loading is intentionally distinct from Gateway health.
+          setAccountDataError(error instanceof Error ? `Account data could not be refreshed: ${error.message}` : "Account data could not be refreshed.");
         }
       }
     };
@@ -12423,6 +12423,39 @@ export default function App() {
     void refresh();
     intervalId = setInterval(() => void refresh(), 6000);
 
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [walletConnected, walletAddress]);
+
+  // Continuous monitoring is deliberately loaded outside the legacy account bootstrap.
+  // The Milestone 25 bootstrap contract remains the source of truth for agents, policies,
+  // audits, approvals, and emergency controls; monitoring is an additive optional surface.
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    if (!walletConnected || !walletAddress) {
+      setMonitoringState({ monitors: [], alerts: [] });
+      return () => { cancelled = true; };
+    }
+
+    const refreshMonitoring = async () => {
+      try {
+        const payload = await api.monitoring(walletAddress);
+        if (cancelled) return;
+        setMonitoringState({
+          monitors: Array.isArray(payload?.monitors) ? payload.monitors : [],
+          alerts: Array.isArray(payload?.alerts) ? payload.alerts : [],
+        });
+      } catch {
+        if (!cancelled) setMonitoringState({ monitors: [], alerts: [] });
+      }
+    };
+
+    void refreshMonitoring();
+    intervalId = setInterval(() => void refreshMonitoring(), 15000);
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
@@ -12489,6 +12522,7 @@ export default function App() {
     setWalletConnected(false);
     setWalletAddress("");
     setWalletError("");
+    setAccountDataError("");
   }, []);
 
   const onRegisterAgent = useCallback(async (agent: AgentRegistrationDraft) => {
@@ -12753,8 +12787,6 @@ export default function App() {
         threatIntelligenceStatus={threatIntelligenceStatus}
         oracleValidationStatus={oracleValidationStatus}
         complianceControlsStatus={complianceControlsStatus}
-        continuousRiskMonitoringStatus={continuousRiskMonitoringStatus}
-        monitoringState={monitoringState}
         x402PaymentControlsStatus={x402PaymentControlsStatus}
         auditLogs={auditLogs}
         policies={policies}
@@ -12877,17 +12909,24 @@ export default function App() {
           walletError={walletError}
         />
         <main className={`flex-1 overflow-auto ${page === "docs" ? "p-0" : "p-6"}`}>
-          {page === "docs" ? (
-            <DocsPage />
-          ) : !walletConnected ? (
-            <WalletConnectionRequired
-              onConnectWallet={connectWallet}
-              walletConnecting={walletConnecting}
-              walletError={walletError}
-            />
-          ) : (
-            pageComponents[page as Exclude<Page, "landing" | "docs">]
+          {walletConnected && accountDataError && page !== "docs" && (
+            <div className="mx-auto mb-4 max-w-6xl rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/5 px-4 py-3 text-xs leading-relaxed text-[#FCD34D]">
+              {accountDataError}
+            </div>
           )}
+          <PageErrorBoundary page={page} onNavigate={navigate}>
+            {page === "docs" ? (
+              <DocsPage />
+            ) : !walletConnected ? (
+              <WalletConnectionRequired
+                onConnectWallet={connectWallet}
+                walletConnecting={walletConnecting}
+                walletError={walletError}
+              />
+            ) : (
+              pageComponents[page as Exclude<Page, "landing" | "docs">]
+            )}
+          </PageErrorBoundary>
         </main>
       </div>
     </div>

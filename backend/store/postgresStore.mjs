@@ -40,7 +40,7 @@ function normalizeWalletAddress(value) {
 
 function walletAddressMatches(column, value) {
   const normalizedWallet = normalizeWalletAddress(value);
-  return sql`lower(${column}) = lower(${normalizedWallet})`;
+  return sql`lower(trim(${column})) = lower(trim(${normalizedWallet}))`;
 }
 
 function requireWalletAddress(value) {
@@ -297,9 +297,14 @@ function pauseDbValues(pause) {
 async function listEmergencyPauses(walletAddress, { activeOnly = false } = {}) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
-  const rows = await db.select().from(emergencyPausesTable)
-    .where(walletAddressMatches(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
+  let rows = await db.select().from(emergencyPausesTable)
+    .where(eq(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
     .orderBy(desc(emergencyPausesTable.createdAt));
+  if (rows.length === 0) {
+    rows = await db.select().from(emergencyPausesTable)
+      .where(walletAddressMatches(emergencyPausesTable.ownerWalletAddress, normalizedWallet))
+      .orderBy(desc(emergencyPausesTable.createdAt));
+  }
   const now = new Date();
   const pauses = [];
   for (const row of rows) {
@@ -370,10 +375,17 @@ function applyAutomaticPauseToResult(result, pause) {
 async function listAgents(walletAddress) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
-  return (await db.select().from(agentsTable)
-    .where(walletAddressMatches(agentsTable.ownerWalletAddress, normalizedWallet))
-    .orderBy(desc(agentsTable.createdAt)))
-    .map(normalizeAgent);
+  // Preserve the exact Milestone 25 ownership query as the primary production path.
+  // Only broaden matching when no exact row exists, so legacy behavior stays intact.
+  let rows = await db.select().from(agentsTable)
+    .where(eq(agentsTable.ownerWalletAddress, normalizedWallet))
+    .orderBy(desc(agentsTable.createdAt));
+  if (rows.length === 0) {
+    rows = await db.select().from(agentsTable)
+      .where(walletAddressMatches(agentsTable.ownerWalletAddress, normalizedWallet))
+      .orderBy(desc(agentsTable.createdAt));
+  }
+  return rows.map(normalizeAgent);
 }
 
 async function listPolicies(walletAddress) {
@@ -388,10 +400,15 @@ async function listPolicies(walletAddress) {
 async function listAuditLogs(walletAddress) {
   const normalizedWallet = normalizeWalletAddress(walletAddress);
   if (!normalizedWallet) return [];
-  return (await db.select().from(auditLogsTable)
-    .where(walletAddressMatches(auditLogsTable.walletAddress, normalizedWallet))
-    .orderBy(desc(auditLogsTable.timestamp)))
-    .map(normalizeAuditLog);
+  let rows = await db.select().from(auditLogsTable)
+    .where(eq(auditLogsTable.walletAddress, normalizedWallet))
+    .orderBy(desc(auditLogsTable.timestamp));
+  if (rows.length === 0) {
+    rows = await db.select().from(auditLogsTable)
+      .where(walletAddressMatches(auditLogsTable.walletAddress, normalizedWallet))
+      .orderBy(desc(auditLogsTable.timestamp));
+  }
+  return rows.map(normalizeAuditLog);
 }
 
 async function persistAuditApproval(review) {
@@ -556,32 +573,25 @@ export async function createPostgresStore() {
 
     async bootstrap(walletAddress) {
       const normalizedWallet = normalizeWalletAddress(walletAddress);
-      const [agents, policies, auditLogs, approvals, emergencyPauses] = await Promise.all([
+      const labels = ["agents", "policies", "audit logs", "approvals", "emergency controls"];
+      const results = await Promise.allSettled([
         listAgents(normalizedWallet),
         listPolicies(normalizedWallet),
         listAuditLogs(normalizedWallet),
         listApprovals(normalizedWallet),
         listEmergencyPauses(normalizedWallet),
       ]);
-
-      // Continuous monitoring is additive. A monitoring storage/configuration problem must
-      // never make legacy agents, policies, audits, approvals, or emergency controls
-      // disappear from the application bootstrap response.
-      let monitoring = { monitors: [], alerts: [], status: "available", error: "" };
-      if (normalizedWallet) {
-        try {
-          const [monitoringRows, monitoringAlertRows] = await Promise.all([
-            db.select().from(monitoringMonitorsTable).where(walletAddressMatches(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)),
-            db.select().from(monitoringAlertsTable).where(walletAddressMatches(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
-          ]);
-          monitoring = { monitors: monitoringRows, alerts: monitoringAlertRows, status: "available", error: "" };
-        } catch (error) {
-          console.error("Continuous monitoring bootstrap degraded; core account history remains available.", error instanceof Error ? error.message : "Unknown monitoring storage error");
-          monitoring = { monitors: [], alerts: [], status: "unavailable", error: "Continuous monitoring state is temporarily unavailable." };
-        }
-      }
-
-      return { agents, policies, auditLogs, approvals, emergencyPauses, monitoring, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
+      const value = (index) => results[index]?.status === "fulfilled" && Array.isArray(results[index].value) ? results[index].value : [];
+      const agents = value(0);
+      const policies = value(1);
+      const auditLogs = value(2);
+      const approvals = value(3);
+      const emergencyPauses = value(4);
+      const bootstrapWarnings = results.flatMap((result, index) => result.status === "rejected"
+        ? [`${labels[index]} unavailable${result.reason?.message ? `: ${String(result.reason.message).slice(0, 180)}` : ""}`]
+        : []);
+      for (const warning of bootstrapWarnings) console.error("Magen3 bootstrap degraded:", warning);
+      return { agents, policies, auditLogs, approvals, emergencyPauses, bootstrapWarnings, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
     },
 
     async listMonitoring(walletAddress) {

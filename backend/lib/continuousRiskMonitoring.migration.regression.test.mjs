@@ -22,12 +22,14 @@ test("Railway imported migration path creates continuous monitoring tables", () 
   assert.equal(source.indexOf("CREATE TABLE IF NOT EXISTS monitoring_monitors", monitorTable + 1), -1, "monitoring table DDL should not be duplicated in a direct-only path");
 });
 
-test("Postgres bootstrap isolates optional monitoring failure from core historical data", () => {
+test("legacy bootstrap remains independent from optional continuous monitoring", () => {
   const source = fs.readFileSync(storePath, "utf8");
   const bootstrapStart = source.indexOf("async bootstrap(walletAddress)");
-  const monitoringTry = source.indexOf("try {", source.indexOf("let monitoring =", bootstrapStart));
-  const returnIndex = source.indexOf("return { agents, policies, auditLogs, approvals, emergencyPauses, monitoring", bootstrapStart);
-  assert.ok(bootstrapStart >= 0 && monitoringTry > bootstrapStart && returnIndex > monitoringTry);
-  assert.match(source.slice(bootstrapStart, returnIndex), /core account history remains available/);
-  assert.match(source.slice(bootstrapStart, returnIndex), /Continuous monitoring state is temporarily unavailable/);
+  const monitoringStart = source.indexOf("async listMonitoring(walletAddress)", bootstrapStart);
+  assert.ok(bootstrapStart >= 0 && monitoringStart > bootstrapStart);
+  const bootstrapSource = source.slice(bootstrapStart, monitoringStart);
+  assert.doesNotMatch(bootstrapSource, /monitoringMonitorsTable|monitoringAlertsTable|monitoring:/);
+  assert.match(bootstrapSource, /agents, policies, auditLogs, approvals, emergencyPauses/);
+  assert.match(bootstrapSource, /Promise\.allSettled/);
+  assert.match(source.slice(monitoringStart, monitoringStart + 1500), /monitoringMonitorsTable/);
 });
