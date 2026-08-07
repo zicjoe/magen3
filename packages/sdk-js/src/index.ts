@@ -998,6 +998,21 @@ export interface Magen3ComplianceControlsContext {
   jurisdictionCount?: number;
   activeJurisdictionCount?: number;
   error?: string;
+  configuredProviderIds?: string[];
+  availableProviderIds?: string[];
+  providerStatuses?: Array<{ providerId?: string; status?: string; subjectRole?: string; reason?: string; cached?: boolean; verdict?: string }>;
+  providerDisagreement?: boolean;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; capabilities?: string[]; subjectTypes?: string[]; chainFamilies?: string[]; serverControlledOrigin?: string }>;
+  providerEvidence?: Array<{ providerId?: string; subjectRole?: string; subjectType?: string; category?: string; severity?: string; confidence?: number; providerClaim?: string; evidenceTimestamp?: string; evidenceExpiry?: string; evidenceHash?: string; cached?: boolean; manualReviewStatus?: string; falsePositiveStatus?: string }>;
+  providerRequired?: boolean;
+  providerUnavailableAction?: "Warn" | "Review" | "Block" | string;
+  providerDisagreementAction?: "Warn" | "Review" | "Block" | string;
+  allowedProviders?: string[];
+  blockedCategories?: string[];
+  reviewCategories?: string[];
+  minimumProviderConfidence?: number;
+  maxProviderEvidenceAgeSeconds?: number;
+  manualReviewRequired?: boolean;
   mode?: "Observe" | "Review" | "Enforce" | string;
   unavailableAction?: "Warn" | "Review" | "Block" | string;
   originatorJurisdiction?: string;
@@ -2108,6 +2123,10 @@ export class Magen3Client {
 
   async getOracleValidationStatus(): Promise<{ ok: boolean; oracleValidation: Magen3OracleValidationContext }> {
     return this.request<{ ok: boolean; oracleValidation: Magen3OracleValidationContext }>("/api/oracle-validation/status", { method: "GET" });
+  }
+
+  async getComplianceControlsStatus(): Promise<{ ok: boolean; complianceControls: Magen3ComplianceControlsContext }> {
+    return this.request<{ ok: boolean; complianceControls: Magen3ComplianceControlsContext }>("/api/compliance-controls/status", { method: "GET" });
   }
 
   async getBridgeProviderStatus(): Promise<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }> {

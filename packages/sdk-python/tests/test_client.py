@@ -803,3 +803,15 @@ class TestProductionOracleStatus(unittest.TestCase):
         result = client.get_oracle_validation_status()
         self.assertTrue(captured[0][1].endswith("/api/oracle-validation/status"))
         self.assertEqual(result["oracleValidation"]["configuredProviderIds"], ["pyth_hermes"])
+
+
+class TestProductionComplianceStatus(unittest.TestCase):
+    def test_compliance_controls_status_method(self):
+        captured = []
+        def transport(method, url, headers, data, timeout):
+            captured.append((method, url))
+            return {"ok": True, "complianceControls": {"status": "available", "configuredProviderIds": ["ofac_api"]}}
+        client = Magen3Client("https://api.example", "MAG-COMPLIANCE", "secret", transport=transport)
+        result = client.get_compliance_controls_status()
+        self.assertTrue(captured[0][1].endswith("/api/compliance-controls/status"))
+        self.assertEqual(result["complianceControls"]["configuredProviderIds"], ["ofac_api"])

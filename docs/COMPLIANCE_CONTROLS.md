@@ -143,3 +143,11 @@ Compliance Controls emits structured findings with `pass`, `warning`, `fail`, `u
 - Exact matching does not discover aliases, derived account hashes, beneficial ownership, or related entities.
 - A clear screening status or feed no-match is not a guarantee of compliance.
 - Operators remain responsible for provider due diligence, data licensing, retention, privacy, and jurisdiction-specific legal review.
+
+## Milestone 27 — production compliance provider screening
+
+Milestone 27 adds a server-controlled compliance-provider adapter layer to the existing Compliance Controls engine. The first adapter targets OFAC-API v4 screening at the fixed origin `https://api.ofac-api.com`; the provider API key is read only from server environment configuration. Provider results are normalized into bounded evidence and remain provider claims, not legal conclusions or direct authorization decisions.
+
+The provider layer supports request-scoped blockchain subjects, capability/status discovery, freshness, confidence thresholds, deterministic provider-unavailable/disagreement policy actions, bounded caching, timeout/retry/rate-limit controls, circuit breaking, and false-positive/manual-review workflow metadata. The original configured-feed and non-sensitive attestation paths remain backward compatible.
+
+See `docs/PRODUCTION_COMPLIANCE_PROVIDER.md` for configuration, evidence, privacy, security, SDK/MCP, and known live-verification limitations. Continuous rescreening and background compliance monitoring are intentionally outside this milestone.

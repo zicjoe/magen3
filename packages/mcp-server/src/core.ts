@@ -400,7 +400,7 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getThreatIntelligenceStatus" | "getOracleValidationStatus" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getThreatIntelligenceStatus" | "getOracleValidationStatus" | "getComplianceControlsStatus" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
@@ -410,6 +410,14 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
     },
     async getOracleValidationStatus(): Promise<ToolTextResult> {
       try { return text(await client.getOracleValidationStatus()); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getComplianceControlsStatus(): Promise<ToolTextResult> {
+      try {
+        return text({
+          ...(await client.getComplianceControlsStatus()),
+          providerBoundary: "Compliance providers supply screening evidence only. Magen3 policy and Risk Assessment determine execution handling; this status is not a legal conclusion.",
+        });
+      } catch (error) { return text(errorPayload(error), true); }
     },
     async getIntentSchema(): Promise<ToolTextResult> {
       return text({
@@ -423,6 +431,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         toolMcpIntegrityBoundary: "Tool & MCP Integrity verifies the exact approved server/tool identity, version, hashes, TLS, origin, credential scope, requested permissions, and agent capability boundary. MCP must never send server credentials, private keys, wallet signatures, or secret tool output to Magen3.",
         threatIntelligenceBoundary: "Threat Intelligence uses normalized evidence from operator feeds and server-controlled provider adapters such as GoPlus for supported EVM address subjects. Provider verdicts never authorize execution; stale, unavailable, unsupported, disagreement, and quorum states follow deterministic policy and never silently count as clean.",
         oracleValidationBoundary: "Oracle Validation consumes bounded normalized evidence from server-controlled provider adapters such as Pyth Hermes plus optional operator feeds. Providers supply evidence only; Magen3 deterministically enforces freshness, feed mapping, confidence, source disagreement, stablecoin peg, and price-deviation policy.",
+        complianceProviderBoundary: "Compliance providers supply bounded screening evidence only. Magen3 does not make legal conclusions; policy determines Warn, Review Required, or Blocked. Never send names, identity documents, or provider credentials through MCP.",
         marketRiskSignalsBoundary: "Market Risk Signals evaluates only freshness-checked operator-configured provider evidence. MCP never fabricates metrics, and passing evidence does not guarantee future liquidity, price, ordering, settlement, or final execution quality.",
         bridgeControlsBoundary: "Bridge Controls validates route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",
         bridgeProviderIntegrationBoundary: "Real Bridge Provider Integration fetches Across testnet quotes and exact unsigned source transactions through the Magen3 backend, binds them to the protected intent, and can poll provider delivery status after source submission. MCP never supplies provider URLs or credentials, never signs or submits transactions, and a quote is not settlement.",

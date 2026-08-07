@@ -337,3 +337,7 @@ Use `create_x402_authorization()` after an Allowed x402 audit, then `apply_x402_
 ### Oracle provider status
 
 Use `client.get_oracle_validation_status()` to inspect sanitized Production Oracle capability/provider state. Provider credentials and raw payloads are never returned.
+
+
+### Production Compliance Provider (Milestone 27)
+The SDK exposes a sanitized compliance-provider status endpoint. Provider credentials and raw provider payloads are never returned. OFAC-API v4 screening support is Preview until live credentials are configured and a genuine provider request is verified. Provider results are evidence only; Magen3 policy remains responsible for Allowed, Review Required, or Blocked.

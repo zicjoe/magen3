@@ -170,3 +170,7 @@ Submit that protected intent through `magen3_require_allowed`. Magen3 fetches an
 ### Production Oracle Integration
 
 Use `magen3_get_oracle_validation_status` for sanitized provider capability and health state. Oracle providers supply evidence only; deterministic Magen3 policy remains the authorization authority.
+
+
+### Compliance provider status
+`magen3_get_compliance_controls_status` returns sanitized provider capability, configuration, health, and feed state. It never returns provider API keys, raw identity data, or unbounded provider payloads. Provider claims never directly authorize execution.

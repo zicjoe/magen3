@@ -428,6 +428,11 @@ interface ComplianceControlsStatus {
   ageMs?: number | null;
   maxAgeMs?: number | null;
   error?: string;
+  configuredProviderIds?: string[];
+  availableProviderIds?: string[];
+  providerStatuses?: Array<{ providerId?: string; status?: string; subjectRole?: string; reason?: string; cached?: boolean; verdict?: string }>;
+  providerDisagreement?: boolean;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; capabilities?: string[]; subjectTypes?: string[]; chainFamilies?: string[] }>;
 }
 
 interface X402PaymentControlsStatus {
@@ -4737,7 +4742,7 @@ function AgentRegistrationWizard({
                     </div>
                   </div>
                   <div className="rounded-xl border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-3 text-xs leading-relaxed text-[#94A3B8]">
-                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls Foundation rules are added in Review mode. External feeds, current non-sensitive compliance evidence, and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and legal compliance guarantees are not represented as Live.
+                    Enforced now: maximum transaction, daily limit, review threshold, blocked actions, trusted targets, risk mode, wallet validation, contract validation, and deterministic execution preflight. Threat Intelligence, Oracle Validation, Bridge Controls, and Compliance Controls provider rules are added in Review mode. External feeds, current non-sensitive compliance evidence, and complete provider-supplied bridge metadata are still required for operational checks. Policy-specific maximum slippage, full stateful simulation, provider solvency, cross-chain delivery verification, and legal compliance guarantees are not represented as Live.
                   </div>
                 </>
               )}
@@ -5780,7 +5785,7 @@ function ApprovalPolicyFields({
           <div className="text-sm font-semibold text-[#F8FAFC]">Policy & Approval Controls · Review Resolution</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Choose how Review Required conditions are resolved. Autonomous remediation keeps routine agent workflows automated; Human Approval & Quorum remains available for explicit governance and exceptional risk.</p>
         </div>
-        <StatusBadge status="Foundation Available" />
+        <StatusBadge status="Preview" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <SelectField label="Review Resolution Strategy" value={String(values.reviewResolutionMode ?? "Autonomous")} onChange={(value) => onChange({ reviewResolutionMode: value })} options={["Autonomous", "Balanced", "Human Governed"]} />
@@ -6086,7 +6091,7 @@ function RpcChainIntegrityPolicyFields({
           <div className="text-sm font-semibold text-[#F8FAFC]">Execution Integrity · RPC & Chain Integrity</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Bind authorization to approved RPC providers, the expected chain identity, fresh synchronized blocks, multi-provider agreement, and auditable failover evidence.</p>
         </div>
-        <StatusBadge status="Foundation Available" />
+        <StatusBadge status="Preview" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <SelectField label="Enable Controls" value={String(values.rpcIntegrityEnabled ?? "")} onChange={(value) => onChange({ rpcIntegrityEnabled: value })} options={["Yes", "No"]} />
@@ -6371,10 +6376,10 @@ function CompliancePolicyFields({
     <div className="rounded-xl border border-[#34D399]/20 bg-[#34D399]/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-[#F8FAFC]">Compliance Controls Foundation</div>
+          <div className="text-sm font-semibold text-[#F8FAFC]">Compliance Controls + Provider Screening</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Evaluate non-sensitive attestation statuses, opaque Travel Rule references, jurisdiction and counterparty policy, screening evidence, and exact configured matches. Do not submit names, identity documents, or other personal data.</p>
         </div>
-        <StatusBadge status="Foundation Available" />
+        <StatusBadge status="Preview" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <SelectField label="Enable Controls" value={String(values.complianceControlsEnabled ?? "")} onChange={(value) => onChange({ complianceControlsEnabled: value })} options={["Yes", "No"]} />
@@ -6394,6 +6399,16 @@ function CompliancePolicyFields({
         <TextareaField label="Blocked Jurisdictions" value={String(values.complianceBlockedJurisdictions ?? "")} onChange={(value) => onChange({ complianceBlockedJurisdictions: value })} />
         <TextareaField label="Allowed Counterparty Types" value={String(values.complianceAllowedCounterpartyTypes ?? "")} onChange={(value) => onChange({ complianceAllowedCounterpartyTypes: value })} />
         <TextareaField label="Accepted Evidence Providers" value={String(values.complianceAcceptedProviders ?? "")} onChange={(value) => onChange({ complianceAcceptedProviders: value })} />
+        <SelectField label="Require Production Provider" value={String(values.complianceProviderRequired ?? "No")} onChange={(value) => onChange({ complianceProviderRequired: value })} options={["Yes", "No"]} />
+        <SelectField label="Provider Unavailable" value={String(values.complianceProviderUnavailableAction ?? "Review")} onChange={(value) => onChange({ complianceProviderUnavailableAction: value })} options={["Warn", "Review", "Block"]} />
+        <SelectField label="Provider Disagreement" value={String(values.complianceProviderDisagreementAction ?? "Review")} onChange={(value) => onChange({ complianceProviderDisagreementAction: value })} options={["Warn", "Review", "Block"]} />
+        <InputField label="Minimum Provider Confidence (%)" value={String(values.complianceMinimumProviderConfidence ?? "95")} onChange={(value) => onChange({ complianceMinimumProviderConfidence: value })} type="number" />
+        <InputField label="Max Provider Evidence Age (sec)" value={String(values.complianceMaxProviderEvidenceAgeSeconds ?? "86400")} onChange={(value) => onChange({ complianceMaxProviderEvidenceAgeSeconds: value })} type="number" />
+        <SelectField label="Manual Review After Provider Check" value={String(values.complianceManualReviewRequired ?? "No")} onChange={(value) => onChange({ complianceManualReviewRequired: value })} options={["Yes", "No"]} />
+        <TextareaField label="Allowed Production Providers" value={String(values.complianceAllowedProviders ?? "")} onChange={(value) => onChange({ complianceAllowedProviders: value })} />
+        <TextareaField label="Blocked Provider Categories" value={String(values.complianceBlockedCategories ?? "sanctions-related")} onChange={(value) => onChange({ complianceBlockedCategories: value })} />
+        <TextareaField label="Review Provider Categories" value={String(values.complianceReviewCategories ?? "")} onChange={(value) => onChange({ complianceReviewCategories: value })} />
+        <TextareaField label="Authorized False-positive Evidence Hashes" value={String(values.complianceFalsePositiveOverrides ?? "")} onChange={(value) => onChange({ complianceFalsePositiveOverrides: value })} />
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-[#64748B]">This configuration provides deterministic execution controls and audit evidence. It does not determine legal obligations or guarantee compliance.</p>
     </div>
@@ -6669,6 +6684,16 @@ function PoliciesPage({
     complianceMaxAttestationAgeSeconds: "86400",
     complianceMaxScreeningAgeSeconds: "3600",
     complianceMaximumRiskRating: "Medium",
+    complianceProviderRequired: "No",
+    complianceProviderUnavailableAction: "Review",
+    complianceProviderDisagreementAction: "Review",
+    complianceAllowedProviders: "ofac_api",
+    complianceBlockedCategories: "sanctions-related",
+    complianceReviewCategories: "",
+    complianceMinimumProviderConfidence: "95",
+    complianceMaxProviderEvidenceAgeSeconds: "86400",
+    complianceManualReviewRequired: "No",
+    complianceFalsePositiveOverrides: "",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
   });
@@ -6927,6 +6952,16 @@ function PoliciesPage({
     complianceMaxAttestationAgeSeconds: "86400",
     complianceMaxScreeningAgeSeconds: "3600",
     complianceMaximumRiskRating: "Medium",
+    complianceProviderRequired: "No",
+    complianceProviderUnavailableAction: "Review",
+    complianceProviderDisagreementAction: "Review",
+    complianceAllowedProviders: "ofac_api",
+    complianceBlockedCategories: "sanctions-related",
+    complianceReviewCategories: "",
+    complianceMinimumProviderConfidence: "95",
+    complianceMaxProviderEvidenceAgeSeconds: "86400",
+    complianceManualReviewRequired: "No",
+    complianceFalsePositiveOverrides: "",
     blockedActions: [] as string[],
     riskMode: "Balanced" as RiskMode,
     status: "Active" as "Active" | "Inactive",
@@ -7210,6 +7245,16 @@ function PoliciesPage({
         complianceMaxAttestationAgeSeconds: Math.max(60, Number(form.complianceMaxAttestationAgeSeconds) || 86400),
         complianceMaxScreeningAgeSeconds: Math.max(60, Number(form.complianceMaxScreeningAgeSeconds) || 3600),
         complianceMaximumRiskRating: form.complianceMaximumRiskRating,
+        complianceProviderRequired: form.complianceProviderRequired === "Yes",
+        complianceProviderUnavailableAction: form.complianceProviderUnavailableAction,
+        complianceProviderDisagreementAction: form.complianceProviderDisagreementAction,
+        complianceAllowedProviders: form.complianceAllowedProviders.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceBlockedCategories: form.complianceBlockedCategories.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceReviewCategories: form.complianceReviewCategories.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceMinimumProviderConfidence: Math.max(0, Math.min(100, Number(form.complianceMinimumProviderConfidence) || 95)),
+        complianceMaxProviderEvidenceAgeSeconds: Math.max(60, Number(form.complianceMaxProviderEvidenceAgeSeconds) || 86400),
+        complianceManualReviewRequired: form.complianceManualReviewRequired === "Yes",
+        complianceFalsePositiveOverrides: form.complianceFalsePositiveOverrides.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
       },
     });
     setForm({
@@ -7462,6 +7507,16 @@ function PoliciesPage({
       complianceMaxAttestationAgeSeconds: "86400",
       complianceMaxScreeningAgeSeconds: "3600",
       complianceMaximumRiskRating: "Medium",
+    complianceProviderRequired: "No",
+    complianceProviderUnavailableAction: "Review",
+    complianceProviderDisagreementAction: "Review",
+    complianceAllowedProviders: "ofac_api",
+    complianceBlockedCategories: "sanctions-related",
+    complianceReviewCategories: "",
+    complianceMinimumProviderConfidence: "95",
+    complianceMaxProviderEvidenceAgeSeconds: "86400",
+    complianceManualReviewRequired: "No",
+    complianceFalsePositiveOverrides: "",
       blockedActions: [],
       riskMode: "Balanced",
     });
@@ -7714,6 +7769,16 @@ function PoliciesPage({
       complianceMaxAttestationAgeSeconds: String(typeof policy.structuredRules?.complianceMaxAttestationAgeSeconds === "number" ? policy.structuredRules.complianceMaxAttestationAgeSeconds : 86400),
       complianceMaxScreeningAgeSeconds: String(typeof policy.structuredRules?.complianceMaxScreeningAgeSeconds === "number" ? policy.structuredRules.complianceMaxScreeningAgeSeconds : 3600),
       complianceMaximumRiskRating: typeof policy.structuredRules?.complianceMaximumRiskRating === "string" ? policy.structuredRules.complianceMaximumRiskRating : "Medium",
+      complianceProviderRequired: policy.structuredRules?.complianceProviderRequired === true ? "Yes" : "No",
+      complianceProviderUnavailableAction: typeof policy.structuredRules?.complianceProviderUnavailableAction === "string" ? policy.structuredRules.complianceProviderUnavailableAction : "Review",
+      complianceProviderDisagreementAction: typeof policy.structuredRules?.complianceProviderDisagreementAction === "string" ? policy.structuredRules.complianceProviderDisagreementAction : "Review",
+      complianceAllowedProviders: Array.isArray(policy.structuredRules?.complianceAllowedProviders) ? (policy.structuredRules.complianceAllowedProviders as string[]).join("\n") : "ofac_api",
+      complianceBlockedCategories: Array.isArray(policy.structuredRules?.complianceBlockedCategories) ? (policy.structuredRules.complianceBlockedCategories as string[]).join("\n") : "sanctions-related",
+      complianceReviewCategories: Array.isArray(policy.structuredRules?.complianceReviewCategories) ? (policy.structuredRules.complianceReviewCategories as string[]).join("\n") : "",
+      complianceMinimumProviderConfidence: String(typeof policy.structuredRules?.complianceMinimumProviderConfidence === "number" ? policy.structuredRules.complianceMinimumProviderConfidence : 95),
+      complianceMaxProviderEvidenceAgeSeconds: String(typeof policy.structuredRules?.complianceMaxProviderEvidenceAgeSeconds === "number" ? policy.structuredRules.complianceMaxProviderEvidenceAgeSeconds : 86400),
+      complianceManualReviewRequired: policy.structuredRules?.complianceManualReviewRequired === true ? "Yes" : "No",
+      complianceFalsePositiveOverrides: Array.isArray(policy.structuredRules?.complianceFalsePositiveOverrides) ? (policy.structuredRules.complianceFalsePositiveOverrides as string[]).join("\n") : "",
       blockedActions: policy.blockedActions,
       riskMode: policy.riskMode,
       status: policy.status,
@@ -7985,6 +8050,16 @@ function PoliciesPage({
         complianceMaxAttestationAgeSeconds: Math.max(60, Number(editForm.complianceMaxAttestationAgeSeconds) || 86400),
         complianceMaxScreeningAgeSeconds: Math.max(60, Number(editForm.complianceMaxScreeningAgeSeconds) || 3600),
         complianceMaximumRiskRating: editForm.complianceMaximumRiskRating,
+        complianceProviderRequired: editForm.complianceProviderRequired === "Yes",
+        complianceProviderUnavailableAction: editForm.complianceProviderUnavailableAction,
+        complianceProviderDisagreementAction: editForm.complianceProviderDisagreementAction,
+        complianceAllowedProviders: editForm.complianceAllowedProviders.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceBlockedCategories: editForm.complianceBlockedCategories.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceReviewCategories: editForm.complianceReviewCategories.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
+        complianceMinimumProviderConfidence: Math.max(0, Math.min(100, Number(editForm.complianceMinimumProviderConfidence) || 95)),
+        complianceMaxProviderEvidenceAgeSeconds: Math.max(60, Number(editForm.complianceMaxProviderEvidenceAgeSeconds) || 86400),
+        complianceManualReviewRequired: editForm.complianceManualReviewRequired === "Yes",
+        complianceFalsePositiveOverrides: editForm.complianceFalsePositiveOverrides.split("\n").map((item) => item.trim().toLowerCase()).filter(Boolean),
       },
     });
     setEditingPolicy(null);
@@ -11892,9 +11967,13 @@ function SettingsPage({
         ["Feed state", complianceControlsStatus.status || "unavailable"],
         ["Active indicators", String(complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0)],
         ["Jurisdiction rules", String(complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0)],
+        ["Configured providers", complianceControlsStatus.configuredProviderIds?.join(", ") || "None"],
+        ["Available providers", complianceControlsStatus.availableProviderIds?.join(", ") || "None"],
+        ["Provider health", complianceControlsStatus.providerCapabilities?.map((item) => `${item.name || item.id}: ${item.health || "unknown"}`).join(" · ") || "No provider enabled"],
+        ["Provider disagreement", complianceControlsStatus.providerDisagreement ? "Detected" : "None detected"],
       ],
       error: complianceControlsStatus.error || "",
-      note: "Magen3 stores status evidence and opaque references, not names or identity documents.",
+      note: "OFAC-API provider support is Preview until a deployment performs a genuine credentialed provider request. Provider results are evidence, not legal conclusions; Magen3 stores bounded status/evidence hashes rather than raw personal identity data.",
     },
     {
       id: "x402",

@@ -738,3 +738,9 @@ Optional provider polling is available at `POST /api/agent-gateway/executions/po
 ## Market Risk Signals
 
 For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.
+
+## Milestone 27 compliance provider evidence
+
+The existing `POST /api/agent-gateway/intents` route remains the protection entry point. When Compliance Controls and production provider screening are configured, the backend derives supported blockchain screening subjects from the protected request, obtains provider evidence through server-controlled adapters, normalizes and sanitizes it, then evaluates it through the existing Compliance Controls/Risk Assessment path. Request-controlled provider URLs and credentials are not accepted.
+
+`GET /api/compliance-controls/status` exposes bounded configuration, capability, availability, and provider-health summaries for authorized product/SDK/MCP surfaces. It does not expose raw provider payloads or credentials.

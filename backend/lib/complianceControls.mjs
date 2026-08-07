@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { canonicalThreatIdentity } from "./threatIntelligence.mjs";
 import { readUtf8FileLimited } from "./safeFeedFile.mjs";
+import { collectComplianceSubjects, getComplianceProviderCapabilities, resetComplianceProviderRuntime, screenComplianceSubjectsWithProviders } from "./complianceProviders.mjs";
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_MAX_FEED_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -297,7 +298,7 @@ function applyFreshness(snapshot, { env = process.env, now = new Date() } = {}) 
   return { ...snapshot, status: "stale", ageMs, maxAgeMs, error: `Compliance feed is older than ${Math.round(maxAgeMs / 3_600_000)} hours` };
 }
 
-export async function getComplianceControlsSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
+async function getConfiguredComplianceControlsSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
   const source = configuredSource(env);
   const cacheKey = sourceCacheKey(source, env);
   const cacheTtlMs = safeInteger(env.COMPLIANCE_CONTROLS_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS, { min: 1_000, max: 24 * 60 * 60 * 1_000 });
@@ -346,8 +347,43 @@ export async function getComplianceControlsSnapshot({ force = false, env = proce
   }
 }
 
+
+function mergeComplianceProviderSnapshot(base, providerResult, subjects, now) {
+  const providerEvidence = Array.isArray(providerResult?.providerEvidence) ? providerResult.providerEvidence : [];
+  const providerAvailable = providerEvidence.length > 0;
+  const baseAvailable = base?.status === "available";
+  const configuredProviderIds = Array.isArray(providerResult?.providerIds) ? providerResult.providerIds : [];
+  const availableProviderIds = [...new Set(providerEvidence.map((item) => item.providerId).filter(Boolean))];
+  let status = base?.status || "unavailable";
+  if (providerAvailable) status = "available";
+  return {
+    ...base,
+    status,
+    sourceType: providerAvailable && baseAvailable ? "combined" : providerAvailable ? "provider" : base?.sourceType,
+    sourceName: providerAvailable && baseAvailable ? "Operator feed + production compliance provider evidence" : providerAvailable ? "Production compliance providers" : base?.sourceName,
+    generatedAt: providerAvailable ? now.toISOString() : base?.generatedAt,
+    fetchedAt: now.toISOString(),
+    providerEvidence,
+    providerStatuses: Array.isArray(providerResult?.providerStatuses) ? providerResult.providerStatuses : [],
+    configuredProviderIds,
+    availableProviderIds,
+    providerDisagreement: Boolean(providerResult?.providerDisagreement),
+    providerDisagreements: Array.isArray(providerResult?.providerDisagreements) ? providerResult.providerDisagreements : [],
+    checkedSubjects: subjects.map((item) => ({ role: item.role, subjectType: item.subjectType, canonical: item.canonical, chainFamily: item.chainFamily, chainId: item.chainId })),
+  };
+}
+
+export async function getComplianceControlsSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date(), request = null } = {}) {
+  const base = await getConfiguredComplianceControlsSnapshot({ force, env, fetchImpl, now });
+  if (!request || typeof request !== "object") return { ...base, providerCapabilities: getComplianceProviderCapabilities({ env }) };
+  const subjects = collectComplianceSubjects(request);
+  const providerResult = await screenComplianceSubjectsWithProviders(subjects, { env, fetchImpl, now });
+  return { ...mergeComplianceProviderSnapshot(base, providerResult, subjects, now), providerCapabilities: getComplianceProviderCapabilities({ env }) };
+}
+
 export function resetComplianceControlsCache() {
   cached = null;
+  resetComplianceProviderRuntime();
 }
 
 function safeSourceName(snapshot = {}) {
@@ -395,6 +431,11 @@ export function summarizeComplianceControlsSnapshot(snapshot = {}, now = new Dat
     ageMs: Number.isFinite(snapshot.ageMs) ? snapshot.ageMs : null,
     maxAgeMs: Number.isFinite(snapshot.maxAgeMs) ? snapshot.maxAgeMs : null,
     error: safePublicError(snapshot),
+    configuredProviderIds: Array.isArray(snapshot.configuredProviderIds) ? snapshot.configuredProviderIds.slice(0, 10) : [],
+    availableProviderIds: Array.isArray(snapshot.availableProviderIds) ? snapshot.availableProviderIds.slice(0, 10) : [],
+    providerStatuses: Array.isArray(snapshot.providerStatuses) ? snapshot.providerStatuses.slice(0, 20).map((item) => ({ providerId: clean(item.providerId), status: clean(item.status), subjectRole: clean(item.subjectRole), reason: clean(item.reason).slice(0, 160), cached: item.cached === true, verdict: clean(item.verdict) })) : [],
+    providerDisagreement: Boolean(snapshot.providerDisagreement),
+    providerCapabilities: Array.isArray(snapshot.providerCapabilities) ? snapshot.providerCapabilities.slice(0, 10).map((item) => ({ id: item.id, name: item.name, version: item.version, enabled: item.enabled, configured: item.configured, health: item.health, capabilities: item.capabilities, subjectTypes: item.subjectTypes, chainFamilies: item.chainFamilies, serverControlledOrigin: item.serverControlledOrigin })) : [],
   };
 }
 
@@ -420,6 +461,16 @@ function policySettings(policy = {}) {
     maxAttestationAgeSeconds: safeInteger(rules.complianceMaxAttestationAgeSeconds, 30 * 24 * 60 * 60, { min: 60, max: 365 * 24 * 60 * 60 }),
     maxScreeningAgeSeconds: safeInteger(rules.complianceMaxScreeningAgeSeconds, 24 * 60 * 60, { min: 60, max: 30 * 24 * 60 * 60 }),
     maximumRiskRating: normalizeRiskRating(rules.complianceMaximumRiskRating || "Medium"),
+    providerRequired: rules.complianceProviderRequired === true,
+    providerUnavailableAction: normalizeUnavailableAction(rules.complianceProviderUnavailableAction || rules.complianceUnavailableAction),
+    providerDisagreementAction: normalizeUnavailableAction(rules.complianceProviderDisagreementAction || "Review"),
+    allowedProviders: list(rules.complianceAllowedProviders, lower, 20),
+    blockedCategories: list(rules.complianceBlockedCategories, lower, 50),
+    reviewCategories: list(rules.complianceReviewCategories, lower, 50),
+    minProviderConfidence: safeInteger(rules.complianceMinimumProviderConfidence, 95, { min: 0, max: 100 }),
+    maxProviderEvidenceAgeSeconds: safeInteger(rules.complianceMaxProviderEvidenceAgeSeconds, 24 * 60 * 60, { min: 60, max: 30 * 24 * 60 * 60 }),
+    manualReviewRequired: rules.complianceManualReviewRequired === true,
+    falsePositiveOverrides: new Set(list(rules.complianceFalsePositiveOverrides, lower, 100)),
   };
 }
 
@@ -603,6 +654,16 @@ export function evaluateComplianceControls({ request = {}, policy = {}, snapshot
     ...feedSummary,
     mode: settings.mode,
     unavailableAction: settings.unavailableAction,
+    providerRequired: settings.providerRequired,
+    providerUnavailableAction: settings.providerUnavailableAction,
+    providerDisagreementAction: settings.providerDisagreementAction,
+    allowedProviders: settings.allowedProviders,
+    blockedCategories: settings.blockedCategories,
+    reviewCategories: settings.reviewCategories,
+    minimumProviderConfidence: settings.minProviderConfidence,
+    maxProviderEvidenceAgeSeconds: settings.maxProviderEvidenceAgeSeconds,
+    manualReviewRequired: settings.manualReviewRequired,
+    providerEvidence: [],
     requiredActions: settings.requiredActions,
     requireOriginatorAttestation: settings.requireOriginatorAttestation,
     requireBeneficiaryAttestation: settings.requireBeneficiaryAttestation,
@@ -702,6 +763,51 @@ export function evaluateComplianceControls({ request = {}, policy = {}, snapshot
         pass(state, "Sanctions screening result", "A current clear screening result from an accepted provider is present.", { status: compliance.screening.status, provider: compliance.screening.provider, reference: compliance.screening.reference, screenedAt: compliance.screening.screenedAt });
       }
     }
+  }
+
+  const providerEvidence = Array.isArray(snapshot.providerEvidence) ? snapshot.providerEvidence : [];
+  context.providerEvidence = providerEvidence.slice(0, 20).map((item) => ({ providerId: item.providerId, subjectRole: item.subjectRole, subjectType: item.subjectType, category: item.riskCategories?.[0] || "", severity: item.providerSeverity, confidence: item.providerConfidence, providerClaim: item.providerClaim, evidenceTimestamp: item.evidenceTimestamp, evidenceExpiry: item.evidenceExpiry, evidenceHash: item.evidenceHash, cached: item.cached === true, manualReviewStatus: item.manualReviewStatus, falsePositiveStatus: item.falsePositiveStatus }));
+  const usableProviderEvidence = providerEvidence.filter((item) => {
+    if (settings.allowedProviders.length > 0 && !settings.allowedProviders.includes(lower(item.providerId))) return false;
+    const at = Date.parse(item.evidenceTimestamp || "");
+    if (!Number.isFinite(at) || now.getTime() - at > settings.maxProviderEvidenceAgeSeconds * 1000 || at - now.getTime() > MAX_FUTURE_SKEW_MS) return false;
+    return Number(item.providerConfidence || 0) >= settings.minProviderConfidence;
+  });
+  const providerStatuses = Array.isArray(snapshot.providerStatuses) ? snapshot.providerStatuses : [];
+  const configuredProviders = Array.isArray(snapshot.configuredProviderIds) ? snapshot.configuredProviderIds : [];
+  const providerFailures = providerStatuses.filter((item) => !["available"].includes(lower(item.status)));
+
+  for (const item of usableProviderEvidence) {
+    const override = settings.falsePositiveOverrides.has(lower(item.evidenceHash));
+    const categories = (Array.isArray(item.riskCategories) ? item.riskCategories : []).map(lower);
+    const sanitizedEvidence = { providerId: item.providerId, subjectRole: item.subjectRole, subjectType: item.subjectType, categories, severity: item.providerSeverity, confidence: item.providerConfidence, providerClaim: item.providerClaim, evidenceTimestamp: item.evidenceTimestamp, evidenceHash: item.evidenceHash, cached: item.cached === true, override };
+    if (override) {
+      forceReview(state, { rule: "Compliance provider false-positive override", message: "A configured false-positive override applies to provider evidence and requires accountable review.", evidence: sanitizedEvidence, remediation: "Confirm the authorized override and document the reviewer decision before execution." });
+      continue;
+    }
+    const blocked = categories.some((category) => settings.blockedCategories.includes(category));
+    const review = categories.some((category) => settings.reviewCategories.includes(category));
+    if (blocked) forceBlock(state, { rule: "Compliance provider category", message: "Compliance provider evidence matches a policy-blocked risk category.", evidence: sanitizedEvidence, remediation: "Stop execution and escalate the provider claim to the authorized compliance reviewer. This is provider evidence, not a legal conclusion." });
+    else if (review || item.providerVerdict === "match") forceReview(state, { rule: "Compliance provider screening", message: "Compliance provider evidence reports a potential match requiring manual review.", evidence: sanitizedEvidence, remediation: "Pause execution for authorized review of the provider claim. Do not treat the provider result itself as a legal conclusion." });
+    else pass(state, "Compliance provider screening", "Configured compliance provider returned no policy-relevant match for the screened subject.", sanitizedEvidence);
+  }
+
+  if (snapshot.providerDisagreement) {
+    const details = { rule: "Compliance provider disagreement", message: "Configured compliance providers disagree for at least one screened subject.", evidence: { disagreement: true }, remediation: "Pause or block according to policy and reconcile the provider evidence before execution." };
+    if (settings.providerDisagreementAction === "Block") forceBlock(state, details);
+    else if (settings.providerDisagreementAction === "Review") forceReview(state, details);
+    else state.findings.push(finding({ ...details, status: "warning", severity: "low" }));
+  }
+
+  if (settings.providerRequired && usableProviderEvidence.length === 0) {
+    const details = { rule: "Compliance provider availability", message: configuredProviders.length === 0 ? "Compliance provider evidence is required but no provider is configured." : "Compliance provider evidence is required but no fresh qualifying result is available.", evidence: { configuredProviderIds: configuredProviders, providerStatuses: providerFailures.slice(0, 10).map((item) => ({ providerId: item.providerId, status: item.status, subjectRole: item.subjectRole })) }, remediation: "Configure an approved provider and obtain fresh screening evidence before retrying." };
+    if (settings.providerUnavailableAction === "Block") forceBlock(state, details);
+    else if (settings.providerUnavailableAction === "Review") forceReview(state, details);
+    else state.findings.push(finding({ ...details, status: "unavailable", severity: "low" }));
+  }
+
+  if (settings.manualReviewRequired && usableProviderEvidence.length > 0 && !state.hardBlock) {
+    forceReview(state, { rule: "Compliance manual review", message: "The active compliance policy requires manual review after provider screening.", evidence: { providerEvidenceCount: usableProviderEvidence.length }, remediation: "Obtain approval from an authorized compliance reviewer before execution." });
   }
 
   const activeIndicators = activeEntries(Array.isArray(snapshot.indicators) ? snapshot.indicators : [], now);

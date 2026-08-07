@@ -579,3 +579,13 @@ test("MCP exposes sanitized production Oracle status", async () => {
   assert.match(result.content[0].text, /pyth_hermes/i);
   assert.doesNotMatch(result.content[0].text, /api[_-]?key|bearer secret/i);
 });
+
+test("MCP exposes sanitized production Compliance Provider status", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }), checkIntent: async () => ({ ok: true }), requireAllowed: async () => ({ ok: true }), getApproval: async () => ({ ok: true }), reportX402Settlement: async () => ({ ok: true }), executeX402Payment: async () => ({ ok: true }), createX402Authorization: async () => ({ ok: true }), applyX402AuthorizationEvent: async () => ({ ok: true }), reportExecutionReconciliation: async () => ({ ok: true }), pollExecutionReconciliation: async () => ({ ok: true }), getThreatIntelligenceStatus: async () => ({ ok: true }), getOracleValidationStatus: async () => ({ ok: true }), getComplianceControlsStatus: async () => ({ ok: true, complianceControls: { status: "available", configuredProviderIds: ["ofac_api"], availableProviderIds: ["ofac_api"], providerCapabilities: [{ id: "ofac_api", health: "ready", origin: "https://api.ofac-api.com" }] } }), getBridgeProviderStatus: async () => ({ ok: true }), requestBridgeProviderQuote: async () => ({ ok: true }), pollBridgeProvider: async () => ({ ok: true }),
+  });
+  const result = await handlers.getComplianceControlsStatus();
+  assert.match(result.content[0].text, /ofac_api/i);
+  assert.match(result.content[0].text, /legal conclusion/i);
+  assert.doesNotMatch(result.content[0].text, /api[_-]?key|bearer secret/i);
+});

@@ -222,7 +222,8 @@ export const PROTECTION_MODULE_CATALOG: ProtectionArea[] = [
     controls: [
       { id: "threat-screening", name: "Threat-intelligence screening", description: "Freshness-checked exact wallet, account-hash, Contract Hash, and Package Hash indicators.", status: "Foundation Available", configurable: true },
       { id: "compliance-evidence", name: "Compliance evidence controls", description: "Non-sensitive attestations, Travel Rule status, jurisdictions, counterparties, screening, and risk ratings.", status: "Foundation Available", configurable: true },
-      { id: "managed-risk-providers", name: "Managed provider adapters", description: "Corroborated reputation, sanctions, exploit, and jurisdiction-specific rule sources.", status: "Planned", configurable: true },
+      { id: "compliance-provider-screening", name: "Production compliance provider screening", description: "Server-controlled provider adapters contribute fresh, sanitized blockchain screening evidence to deterministic Compliance Controls and Risk Assessment.", status: "Preview", configurable: true },
+      { id: "managed-risk-providers", name: "Additional managed compliance providers", description: "Additional corroborated compliance provider adapters beyond the current OFAC-API screening path.", status: "Planned", configurable: true },
     ],
   }),
 ];

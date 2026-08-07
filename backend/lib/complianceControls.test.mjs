@@ -222,3 +222,26 @@ test("loads a local feed and sanitizes public file paths and errors", async () =
   assert.equal(summary.error.includes(path), false);
   assert.equal("indicators" in summary, false);
 });
+
+test("provider-required policy follows configured provider-unavailable action", () => {
+  const result = evaluateComplianceControls({
+    request: request({ complianceScreeningStatus: "Not Provided", complianceScreeningProvider: "", complianceScreeningReference: "", complianceScreenedAt: "" }),
+    policy: policy({ complianceProviderRequired: true, complianceProviderUnavailableAction: "Block", complianceRequireSanctionsScreening: false }),
+    snapshot: { status: "unavailable", sourceType: "none", indicators: [], restrictedJurisdictions: [], configuredProviderIds: ["ofac_api"], providerEvidence: [], providerStatuses: [{ providerId: "ofac_api", status: "authentication_unavailable" }] },
+    now: NOW,
+  });
+  assert.equal(result.hardBlock, true);
+  assert.equal(result.findings.some((item) => item.rule === "Compliance provider availability"), true);
+});
+
+test("provider sanctions claim requires review and never directly authorizes", () => {
+  const result = evaluateComplianceControls({
+    request: request({ complianceScreeningStatus: "Not Provided", complianceScreeningProvider: "", complianceScreeningReference: "", complianceScreenedAt: "" }),
+    policy: policy({ complianceProviderRequired: true, complianceRequireSanctionsScreening: false, complianceAllowedProviders: ["ofac_api"], complianceMinimumProviderConfidence: 95 }),
+    snapshot: { status: "available", sourceType: "provider", indicators: [], restrictedJurisdictions: [], configuredProviderIds: ["ofac_api"], providerStatuses: [{ providerId: "ofac_api", status: "available" }], providerEvidence: [{ providerId: "ofac_api", providerVersion: "v4-screen", subjectRole: "target", subjectType: "evm-address", providerVerdict: "match", riskCategories: ["sanctions-related"], providerSeverity: "High", providerConfidence: 99, providerClaim: "Potential match", evidenceTimestamp: NOW.toISOString(), evidenceExpiry: new Date(NOW.getTime()+3600000).toISOString(), evidenceHash: "a".repeat(64), cached: false }] },
+    now: NOW,
+  });
+  assert.equal(result.hardBlock, false);
+  assert.equal(result.needsReview, true);
+  assert.equal(result.findings.some((item) => item.rule === "Compliance provider screening"), true);
+});

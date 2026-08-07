@@ -870,7 +870,7 @@ export async function createPostgresStore() {
         getThreatIntelligenceSnapshot({ request: body }),
         getOracleValidationSnapshot({ request: body }),
         getMarketRiskSignalsSnapshot(),
-        getComplianceControlsSnapshot(),
+        getComplianceControlsSnapshot({ request: body }),
       ]);
       const result = evaluatePolicy({
         request: {
@@ -1283,7 +1283,7 @@ export async function createPostgresStore() {
         getThreatIntelligenceSnapshot({ request }),
         getOracleValidationSnapshot({ request }),
         getMarketRiskSignalsSnapshot(),
-        getComplianceControlsSnapshot(),
+        getComplianceControlsSnapshot({ request }),
       ]);
       const agent = agents.find((item) => item.id === intent.agentId);
       const policy = policies.find((item) => item.agentId === intent.agentId && item.status === "Active");

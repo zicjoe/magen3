@@ -1258,3 +1258,12 @@ test("oracle validation status exposes sanitized production provider capabilitie
   assert.match(capturedUrl, /\/api\/oracle-validation\/status$/);
   assert.equal(result.oracleValidation.configuredProviderIds[0], "pyth_hermes");
 });
+
+
+test("compliance controls status exposes sanitized production provider capabilities", async () => {
+  let capturedUrl = "";
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-COMPLIANCE", apiKey: "secret", fetch: async (url) => { capturedUrl = String(url); return new Response(JSON.stringify({ ok: true, complianceControls: { status: "available", configuredProviderIds: ["ofac_api"], providerCapabilities: [{ id: "ofac_api", enabled: true, configured: true, health: "ready" }] } }), { status: 200 }); } });
+  const result = await client.getComplianceControlsStatus();
+  assert.match(capturedUrl, /\/api\/compliance-controls\/status$/);
+  assert.equal(result.complianceControls.configuredProviderIds[0], "ofac_api");
+});

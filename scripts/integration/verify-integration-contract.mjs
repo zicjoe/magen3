@@ -22,6 +22,8 @@ const threatProviderSource = read("backend/lib/threatIntelligenceProviders.mjs")
 const oracleValidationSource = read("backend/lib/oracleValidation.mjs");
 const oracleProviderSource = read("backend/lib/oracleProviders.mjs");
 const oracleDecimalSource = read("backend/lib/oracleDecimal.mjs");
+const complianceControlsSource = read("backend/lib/complianceControls.mjs");
+const complianceProviderSource = read("backend/lib/complianceProviders.mjs");
 const serverSource = read("backend/server.mjs");
 const frontendApiSource = read("src/app/lib/api.ts");
 const mcpServerSource = read("packages/mcp-server/src/server.ts");
@@ -238,6 +240,29 @@ if (!app.includes("configuredProviderIds") || !app.includes("Pyth Hermes support
 if (!envExample.includes("ORACLE_PYTH_ENABLED=false") || !envExample.includes("ORACLE_PROVIDER_MAX_RESPONSE_BYTES=") || !envExample.includes("ORACLE_VALIDATION_ALLOWED_FEED_HOSTS=")) fail(".env.example is missing Milestone 26 provider controls");
 if (!read("docs/PRODUCTION_ORACLE_INTEGRATION.md").includes("Roadmap boundary")) fail("Production Oracle Integration documentation is missing its roadmap boundary");
 if (!oracleReport.includes("Milestones 27–28 were not implemented")) fail("Milestone 26 report is incomplete");
+
+
+const complianceReport = read("PRODUCTION_COMPLIANCE_PROVIDER_IMPLEMENTATION_REPORT.md");
+for (const required of ["https://api.ofac-api.com", "/v4/screen", "COMPLIANCE_OFAC_API_KEY", "screenComplianceSubjectsWithProviders", "COMPLIANCE_PROVIDER_MAX_RESPONSE_BYTES", "CIRCUIT_OPEN"]) {
+  if (!complianceProviderSource.includes(required)) fail(`Production Compliance provider layer is missing: ${required}`);
+}
+for (const required of ["complianceProviderRequired", "complianceAllowedProviders", "complianceProviderUnavailableAction", "complianceProviderDisagreementAction", "complianceMinimumProviderConfidence", "complianceMaxProviderEvidenceAgeSeconds", "complianceFalsePositiveOverrides", "providerEvidence"]) {
+  if (!complianceControlsSource.includes(required)) fail(`Production Compliance deterministic policy support is missing: ${required}`);
+}
+if (!policySource.includes("evaluateComplianceControls")) fail("Compliance Controls are disconnected from the Risk Assessment/policy pipeline");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  if (!source.includes("getComplianceControlsSnapshot({ request")) fail(`${name} does not collect request-scoped Compliance provider evidence`);
+}
+if (!serverSource.includes("GET /api/compliance-controls/status")) fail("Compliance provider status route is missing");
+if (!sdkSource.includes("getComplianceControlsStatus")) fail("JavaScript SDK Compliance status method is missing");
+if (!pythonSource.includes("get_compliance_controls_status")) fail("Python SDK Compliance status method is missing");
+if (!mcpSource.includes("getComplianceControlsStatus") || !mcpServerSource.includes("magen3_get_compliance_controls_status")) fail("MCP Compliance provider status support is missing");
+if (!read("packages/mcp-server/dist/server.js").includes("magen3_get_compliance_controls_status")) fail("Generated MCP runtime is missing the Compliance status tool");
+if (!read("packages/sdk-js/dist/index.js").includes("getComplianceControlsStatus")) fail("Generated JavaScript SDK runtime is missing Compliance status support");
+if (!app.includes("OFAC-API provider support is Preview") || !app.includes("providerDisagreement")) fail("Frontend Compliance provider status/capability model is missing or dishonest");
+if (!envExample.includes("COMPLIANCE_OFAC_API_ENABLED=false") || !envExample.includes("COMPLIANCE_PROVIDER_MAX_RESPONSE_BYTES=")) fail(".env.example is missing Milestone 27 provider controls");
+if (!read("docs/PRODUCTION_COMPLIANCE_PROVIDER.md").includes("Roadmap boundary")) fail("Production Compliance Provider documentation is missing its roadmap boundary");
+if (!complianceReport.includes("Milestone 28 was not implemented")) fail("Milestone 27 report is incomplete");
 
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");

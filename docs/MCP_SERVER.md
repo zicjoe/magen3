@@ -180,3 +180,7 @@ Use `magen3_get_threat_intelligence_status` to inspect sanitized Threat Intellig
 ### Production Oracle status
 
 `magen3_get_oracle_validation_status` returns sanitized Oracle provider capability and health information. It does not fetch arbitrary client-supplied URLs, expose credentials, sign transactions, or convert a provider price into an authorization decision.
+
+## Production Compliance Provider status tool
+
+Milestone 27 adds `magen3_get_compliance_controls_status`. It returns bounded Compliance Controls/provider configuration and health state through the SDK and does not expose provider API keys, authorization headers, or raw screening payloads. Provider matches remain evidence evaluated by Magen3 policy and Risk Assessment.

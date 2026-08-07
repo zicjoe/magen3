@@ -55,3 +55,5 @@ Historic build notes, recording scripts, and old walkthroughs live in `archive/`
 - `REAL_BRIDGE_PROVIDER_INTEGRATION.md` — Across testnet quote retrieval, exact unsigned source-transaction binding, provider evidence attestation, Allowed-only execution handoff, and destination-delivery reconciliation.
 
 - [Metered or upto x402 Payments](./METERED_UPTO_X402_PAYMENTS.md) — bounded upto/metered authorization, usage idempotency, reservation/capture/settlement/release/refund accounting.
+
+- `PRODUCTION_COMPLIANCE_PROVIDER.md` — Milestone 27 server-controlled compliance-provider architecture, deterministic policy integration, privacy/security model, configuration, and limitations.

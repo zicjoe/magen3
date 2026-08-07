@@ -518,7 +518,7 @@ export function createMemoryStore() {
         getThreatIntelligenceSnapshot({ request: body }),
         getOracleValidationSnapshot({ request: body }),
         getMarketRiskSignalsSnapshot(),
-        getComplianceControlsSnapshot(),
+        getComplianceControlsSnapshot({ request: body }),
       ]);
       const result = evaluatePolicy({
         request: {
@@ -895,7 +895,7 @@ export function createMemoryStore() {
         getThreatIntelligenceSnapshot({ request }),
         getOracleValidationSnapshot({ request }),
         getMarketRiskSignalsSnapshot(),
-        getComplianceControlsSnapshot(),
+        getComplianceControlsSnapshot({ request }),
       ]);
       const walletAgents = scopedAgents(walletAddress);
       const walletPolicies = scopedPolicies(walletAddress);

@@ -345,6 +345,10 @@ class Magen3Client:
         """Return sanitized production Oracle provider/feed capability status."""
         return self._request("GET", "/api/oracle-validation/status")
 
+    def get_compliance_controls_status(self) -> Dict[str, Any]:
+        """Return sanitized production Compliance provider/feed capability status."""
+        return self._request("GET", "/api/compliance-controls/status")
+
     def get_bridge_provider_status(self) -> Dict[str, Any]:
         return self._request("GET", "/api/bridge-provider-integration/status")
 

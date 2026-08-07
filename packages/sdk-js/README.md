@@ -390,3 +390,7 @@ After an `Allowed` x402 intent, use `createX402Authorization()` for `upto` or `m
 ### Oracle provider status
 
 Use `await client.getOracleValidationStatus()` to inspect sanitized Production Oracle capability/provider state. Pyth Hermes provider support remains Preview until the deployment verifies a genuine live provider request.
+
+
+### Production Compliance Provider (Milestone 27)
+The SDK exposes a sanitized compliance-provider status endpoint. Provider credentials and raw provider payloads are never returned. OFAC-API v4 screening support is Preview until live credentials are configured and a genuine provider request is verified. Provider results are evidence only; Magen3 policy remains responsible for Allowed, Review Required, or Blocked.

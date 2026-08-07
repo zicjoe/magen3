@@ -1122,3 +1122,7 @@ Magen3 now supports a production Threat Intelligence provider layer in addition 
 The Oracle Validation foundation now supports a production-oriented provider adapter architecture with Pyth Network Hermes as the first provider-backed path. Provider origins are server-controlled, feed IDs are mapped server-side, normalized provider evidence is bounded and hashed, and price-limit arithmetic uses integer-safe decimal scaling. Provider evidence never authorizes execution directly. See `docs/PRODUCTION_ORACLE_INTEGRATION.md`.
 
 Pyth provider support is **Preview** until a deployment performs and verifies a genuine live request with an explicitly configured feed ID. Mock fixtures do not make the capability Live.
+
+
+### Milestone 27 — Production Compliance Provider
+Magen3 includes a fixed-origin, server-authenticated compliance-provider adapter architecture with OFAC-API v4 screening as the first provider path. It screens supported blockchain identifiers without accepting raw natural-person identity data through the Agent Gateway. Provider evidence is normalized, freshness/confidence checked, bounded, hashed, and evaluated by existing deterministic Compliance Controls and Risk Assessment. The provider capability remains Preview until a genuine credentialed live request is verified. Continuous rescreening is intentionally deferred to Milestone 28.
