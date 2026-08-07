@@ -1233,3 +1233,20 @@ test("creates bounded x402 authorization and applies metered event", async () =>
   assert.equal(calls[1].url, "https://api.example/api/agent-gateway/x402/authorization-events");
   assert.equal(calls[1].body.idempotencyKey, "usage-1");
 });
+
+
+test("threat intelligence status exposes sanitized provider capabilities", async () => {
+  let capturedUrl = "";
+  const client = new Magen3Client({
+    gatewayUrl: "https://api.example",
+    agentId: "MAG-THREAT",
+    apiKey: "secret",
+    fetch: async (url) => {
+      capturedUrl = String(url);
+      return new Response(JSON.stringify({ ok: true, threatIntelligence: { status: "available", configuredProviderIds: ["goplus"], availableProviderIds: ["goplus"], providerCapabilities: [{ id: "goplus", enabled: true, health: "ready" }] } }), { status: 200 });
+    },
+  });
+  const result = await client.getThreatIntelligenceStatus();
+  assert.match(capturedUrl, /\/api\/threat-intelligence\/status$/);
+  assert.equal(result.threatIntelligence.availableProviderIds[0], "goplus");
+});

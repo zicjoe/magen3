@@ -63,3 +63,7 @@ MAGEN3_API_KEY=YOUR_PRIVATE_AGENT_KEY
 ```
 
 Never put the API key in browser code, a `VITE_` variable, screenshots, or committed files.
+
+## Milestone 25 Threat Intelligence providers
+
+Provider origins are configured only by Magen3. To enable the GoPlus EVM address-security adapter, set `THREAT_INTELLIGENCE_GOPLUS_ENABLED=true` or include `goplus` in `THREAT_INTELLIGENCE_PROVIDERS`. `GOPLUS_API_KEY` may be supplied server-side when required. Configure provider timeout, retry, cache, rate-limit, response-size and circuit-breaker bounds with the `THREAT_INTELLIGENCE_PROVIDER_*` variables documented in `.env.example`.

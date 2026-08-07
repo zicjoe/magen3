@@ -208,3 +208,7 @@ Do not present the synthetic record as a real malicious wallet or contract.
 - Monitor false positives and expired indicators.
 - Keep the feed under the one-megabyte and 10,000-indicator safety limits.
 - Treat a no-match result as absence of a configured exact indicator, not proof of safety.
+
+## Milestone 25 production provider upgrade
+
+See `docs/PRODUCTION_THREAT_INTELLIGENCE.md` for the provider registry, GoPlus EVM address-security adapter, normalized evidence model, provider disagreement/availability semantics, cache isolation, policy controls, and roadmap boundary. The original operator-configured feed remains supported for backward compatibility.

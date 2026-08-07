@@ -69,7 +69,7 @@ export const INTENT_SCHEMA_DESCRIPTION = {
   gasSponsorshipFeeSafety: "When execution uses a relayer, sponsor, or EVM Paymaster, include action.feeSafety with bounded fee, payer, expiry, scope, and public evidence hashes from a trusted transaction adapter. MCP never creates sponsorships, stores sponsor credentials, or relays raw signatures.",
   emergencyCircuitBreaker: "Magen3 evaluates active scoped pause state before authorization and again before execution confirmation. A Blocked or Review Required pause must never be bypassed. Pause creation and resume are owner-wallet administrative operations exposed through the Magen3 application and REST API, not through the agent MCP execution tool.",
   executionIntegrity: "For exact-once authorization, include action.lifecycle with a unique intent ID, idempotency key, creation time, expiry, optional sequence, retry/replacement reference, and optional client fingerprint. Magen3 always computes its own canonical fingerprint.",
-  threatIntelligence: "Magen3 screens normalized wallet and contract identities against a configured freshness-checked feed. The response may include sanitized threatIntelligenceContext and structured Threat Intelligence findings.",
+  threatIntelligence: "Magen3 screens chain-aware wallets, contracts, asset contracts, domains, URL origins, RPC endpoints, routers, bridge/payment counterparties, and resource providers against operator feeds and enabled server-controlled provider adapters. Provider evidence is normalized; Magen3 policy remains the deterministic decision authority.",
   oracleValidation: "For priced swaps and DeFi intents, include action.outputAsset plus action.oracle. Magen3 compares the proposed execution price with a configured freshness-checked multi-source oracle feed and returns structured Oracle Validation findings.",
   mevExecutionQuality: "For Swap actions, include action.executionQuality with quote timestamp/expiry, deadline, price impact, simulated output, and execution channel. Magen3 enforces deterministic freshness, slippage, deviation, and mempool-exposure rules.",
   tradingRouteIntegrity: "For Swap actions, include action.tradingRoute with the exact quote ID, router, ordered token path and pools, amounts, fee recipients, and payload/calldata hashes. Magen3 deterministically binds the authorized route to the final simulated payload; MCP never invents route evidence.",
@@ -400,10 +400,13 @@ function mcpDecisionGuidance(response: Magen3IntentResponse): string {
     || `${userMessage} Stop. Do not sign, submit, retry unchanged, or bypass Magen3.`;
 }
 
-export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
+export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "checkIntent" | "requireAllowed" | "getApproval" | "reportX402Settlement" | "executeX402Payment" | "createX402Authorization" | "applyX402AuthorizationEvent" | "reportExecutionReconciliation" | "pollExecutionReconciliation" | "getThreatIntelligenceStatus" | "getBridgeProviderStatus" | "requestBridgeProviderQuote" | "pollBridgeProvider">) {
   return {
     async verifyAgent(): Promise<ToolTextResult> {
       try { return text(await client.verifyAgent()); } catch (error) { return text(errorPayload(error), true); }
+    },
+    async getThreatIntelligenceStatus(): Promise<ToolTextResult> {
+      try { return text(await client.getThreatIntelligenceStatus()); } catch (error) { return text(errorPayload(error), true); }
     },
     async getIntentSchema(): Promise<ToolTextResult> {
       return text({
@@ -415,7 +418,7 @@ export function createToolHandlers(client: Pick<Magen3Client, "verifyAgent" | "c
         rpcChainIntegrityBoundary: "RPC & Chain Integrity verifies adapter-supplied provider identity, expected network binding, TLS, synchronization, block freshness, quorum agreement, transaction or contract-state consistency, and auditable failover. MCP never fabricates provider observations, certifies an RPC operator, or treats unavailable evidence as a pass.",
         gasSponsorshipFeeSafetyBoundary: "Gas Sponsorship & Fee Safety verifies bounded fee, approved sponsor or Paymaster, expiry, scope, payer, budgets, operation counts, and public evidence hashes. MCP never creates sponsorships, receives sponsor credentials, or relays raw sponsor signatures.",
         toolMcpIntegrityBoundary: "Tool & MCP Integrity verifies the exact approved server/tool identity, version, hashes, TLS, origin, credential scope, requested permissions, and agent capability boundary. MCP must never send server credentials, private keys, wallet signatures, or secret tool output to Magen3.",
-        threatIntelligenceBoundary: "Threat Intelligence uses deterministic exact matches from the operator-configured feed. Stale or unavailable feeds never count as a pass.",
+        threatIntelligenceBoundary: "Threat Intelligence uses normalized evidence from operator feeds and server-controlled provider adapters such as GoPlus for supported EVM address subjects. Provider verdicts never authorize execution; stale, unavailable, unsupported, disagreement, and quorum states follow deterministic policy and never silently count as clean.",
         oracleValidationBoundary: "Oracle Validation compares declared execution prices with the operator-configured feed. It does not certify an oracle provider, guarantee market truth, or replace full stateful execution simulation.",
         marketRiskSignalsBoundary: "Market Risk Signals evaluates only freshness-checked operator-configured provider evidence. MCP never fabricates metrics, and passing evidence does not guarantee future liquidity, price, ordering, settlement, or final execution quality.",
         bridgeControlsBoundary: "Bridge Controls validates route metadata and configured policy boundaries. It does not certify bridge solvency, destination-chain finality, or message delivery.",

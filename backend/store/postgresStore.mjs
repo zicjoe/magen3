@@ -867,7 +867,7 @@ export async function createPostgresStore() {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [agents, policies, auditLogs, emergencyPauses] = await Promise.all([listAgents(walletAddress), listPolicies(walletAddress), listAuditLogs(walletAddress), listEmergencyPauses(walletAddress, { activeOnly: true })]);
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
-        getThreatIntelligenceSnapshot(),
+        getThreatIntelligenceSnapshot({ request: body }),
         getOracleValidationSnapshot(),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
@@ -1280,7 +1280,7 @@ export async function createPostgresStore() {
         agentOwnerWalletAddress: walletAddress,
       };
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
-        getThreatIntelligenceSnapshot(),
+        getThreatIntelligenceSnapshot({ request }),
         getOracleValidationSnapshot(),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),

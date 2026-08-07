@@ -382,3 +382,7 @@ The SDK does not accept provider URLs, API keys, private keys, signatures, or si
 ## Metered / upto x402
 
 After an `Allowed` x402 intent, use `createX402Authorization()` for `upto` or `metered`, then `applyX402AuthorizationEvent()` for idempotent reserve/capture/settle/release/refund/usage/revoke/dispute updates. Amounts are positive base-unit integer strings.
+
+### Threat Intelligence status
+
+`client.getThreatIntelligenceStatus()` returns sanitized configured-provider, capability, and health information for Milestone 25. It does not expose credentials or raw provider payloads.

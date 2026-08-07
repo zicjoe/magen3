@@ -194,3 +194,7 @@ The TypeScript SDK exposes `reportExecutionReconciliation` and `pollExecutionRec
 ## Market Risk Signals
 
 For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.
+
+## Threat Intelligence provider status
+
+Milestone 25 adds `getThreatIntelligenceStatus()` to the JavaScript SDK and `get_threat_intelligence_status()` to the Python SDK. These methods return sanitized provider capability and health metadata only; provider credentials and raw provider responses are never returned.

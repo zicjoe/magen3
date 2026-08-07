@@ -1112,3 +1112,7 @@ This capability is **Foundation Available**. Mainnet, wallet signing, automatic 
 ### Milestone 24 — Metered or upto x402 Payments
 
 Magen3 supports bounded `upto` and `metered` x402 authorization accounting on top of the existing exact Base Sepolia testnet path. See `docs/METERED_UPTO_X402_PAYMENTS.md`.
+
+### Production Threat Intelligence (Milestone 25)
+
+Magen3 now supports a production Threat Intelligence provider layer in addition to the existing operator feed. The first adapter targets GoPlus Address Security for chain-aware EVM addresses, with server-controlled provider origins, bounded evidence, cache isolation, rate limiting, circuit breaking, provider disagreement handling, and deterministic policy evaluation. See `docs/PRODUCTION_THREAT_INTELLIGENCE.md`.

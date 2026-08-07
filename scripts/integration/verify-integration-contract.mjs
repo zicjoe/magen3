@@ -17,6 +17,8 @@ const mevExecutionQualitySource = read("backend/lib/mevExecutionQuality.mjs");
 const tradingRouteIntegritySource = read("backend/lib/tradingRouteIntegrity.mjs");
 const marketRiskSignalsSource = read("backend/lib/marketRiskSignals.mjs");
 const bridgeProviderIntegrationSource = read("backend/lib/bridgeProviderIntegration.mjs");
+const threatIntelligenceSource = read("backend/lib/threatIntelligence.mjs");
+const threatProviderSource = read("backend/lib/threatIntelligenceProviders.mjs");
 const serverSource = read("backend/server.mjs");
 const frontendApiSource = read("src/app/lib/api.ts");
 const mcpServerSource = read("packages/mcp-server/src/server.ts");
@@ -183,6 +185,30 @@ if (!read("packages/sdk-js/dist/index.js").includes("createX402Authorization")) 
 if (!read("backend/lib/valueExposureLimits.mjs").includes("buildReservedExposureSnapshot")) fail("Milestone 14 exposure integration for reserved x402 exposure is missing");
 if (!read("docs/METERED_UPTO_X402_PAYMENTS.md").includes("Roadmap boundary")) fail("Metered/upto x402 documentation is missing its roadmap boundary");
 if (!read("METERED_UPTO_X402_PAYMENTS_IMPLEMENTATION_REPORT.md").includes("Milestones 25–28 were not implemented")) fail("Milestone 24 report is incomplete");
+
+
+
+const threatReport = read("PRODUCTION_THREAT_INTELLIGENCE_IMPLEMENTATION_REPORT.md");
+for (const required of ["https://api.gopluslabs.io", "/api/v1/address_security/", "screenThreatSubjectsWithProviders", "THREAT_INTELLIGENCE_PROVIDER_MAX_RESPONSE_BYTES", "circuit"]) {
+  if (!threatProviderSource.includes(required)) fail(`Production Threat Intelligence provider layer is missing: ${required}`);
+}
+for (const required of ["collectThreatSubjects", "threatIntelligenceAllowedProviders", "threatIntelligenceProviderDisagreementAction", "threatIntelligenceMaxEvidenceAgeSeconds", "threatIntelligenceFalsePositiveOverrides"]) {
+  if (!threatIntelligenceSource.includes(required)) fail(`Production Threat Intelligence deterministic policy support is missing: ${required}`);
+}
+if (!policySource.includes("evaluateThreatIntelligence")) fail("Threat Intelligence is disconnected from the Risk Assessment/policy pipeline");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  if (!source.includes("getThreatIntelligenceSnapshot({ request")) fail(`${name} does not collect request-scoped provider evidence`);
+}
+if (!serverSource.includes("GET /api/threat-intelligence/status")) fail("Threat Intelligence status route is missing");
+if (!sdkSource.includes("getThreatIntelligenceStatus")) fail("JavaScript SDK Threat Intelligence status method is missing");
+if (!pythonSource.includes("get_threat_intelligence_status")) fail("Python SDK Threat Intelligence status method is missing");
+if (!mcpSource.includes("getThreatIntelligenceStatus") || !mcpServerSource.includes("magen3_get_threat_intelligence_status")) fail("MCP Threat Intelligence provider status support is missing");
+if (!read("packages/mcp-server/dist/server.js").includes("magen3_get_threat_intelligence_status")) fail("Generated MCP runtime is missing the Threat Intelligence status tool");
+if (!read("packages/sdk-js/dist/index.js").includes("getThreatIntelligenceStatus")) fail("Generated JavaScript SDK runtime is missing Threat Intelligence status support");
+if (!app.includes("configuredProviderIds") || !app.includes('StatusBadge status="Preview"')) fail("Frontend Threat Intelligence provider status/capability model is missing");
+if (!envExample.includes("THREAT_INTELLIGENCE_GOPLUS_ENABLED=false") || !envExample.includes("THREAT_INTELLIGENCE_PROVIDER_MAX_RESPONSE_BYTES=")) fail(".env.example is missing Milestone 25 provider controls");
+if (!read("docs/PRODUCTION_THREAT_INTELLIGENCE.md").includes("Roadmap boundary")) fail("Production Threat Intelligence documentation is missing its roadmap boundary");
+if (!threatReport.includes("Milestones 26–28 were not implemented")) fail("Milestone 25 report is incomplete");
 
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");

@@ -765,6 +765,17 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not accepted"):
             client.poll_bridge_provider({"auditLogId": "AUD-1", "providerUrl": "https://evil.example"})
 
+
+    def test_threat_intelligence_status_method(self):
+        captured = []
+        def transport(method, url, headers, data, timeout):
+            captured.append((method, url))
+            return {"ok": True, "threatIntelligence": {"status": "available", "availableProviderIds": ["goplus"]}}
+        client = Magen3Client("https://api.example", "MAG-THREAT", "secret", transport=transport)
+        result = client.get_threat_intelligence_status()
+        self.assertTrue(captured[0][1].endswith("/api/threat-intelligence/status"))
+        self.assertEqual(result["threatIntelligence"]["availableProviderIds"], ["goplus"])
+
 if __name__ == "__main__":
     unittest.main()
 

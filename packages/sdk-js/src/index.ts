@@ -877,12 +877,20 @@ export interface Magen3PipelineStage {
 
 export interface Magen3ThreatIntelligenceMatch {
   entityRole?: string;
+  subjectType?: string;
+  chainFamily?: string;
+  chainId?: string;
   kind?: string;
   indicatorId?: string;
   severity?: Magen3FindingSeverity;
   confidence?: number;
   categories?: string[];
   source?: string;
+  providerId?: string;
+  providerVersion?: string;
+  evidenceHash?: string;
+  cached?: boolean;
+  providerVerdict?: string;
 }
 
 export interface Magen3ThreatIntelligenceContext {
@@ -898,9 +906,26 @@ export interface Magen3ThreatIntelligenceContext {
   error?: string;
   mode?: "Observe" | "Review" | "Enforce" | string;
   unavailableAction?: "Warn" | "Review" | "Block" | string;
+  providerUnavailableAction?: "Warn" | "Review" | "Block" | string;
+  providerDisagreementAction?: "Warn" | "Review" | "Block" | string;
+  unknownSubjectAction?: "Warn" | "Review" | "Block" | string;
+  required?: boolean;
   minConfidence?: number;
-  checkedEntities?: Array<{ role?: string; kind?: string; canonical?: string }>;
+  maxEvidenceAgeSeconds?: number;
+  minimumProviderQuorum?: number;
+  allowedProviders?: string[];
+  blockedCategories?: string[];
+  reviewCategories?: string[];
+  cacheAllowed?: boolean;
+  configuredProviderIds?: string[];
+  availableProviderIds?: string[];
+  providerDisagreement?: boolean;
+  providerStatuses?: Array<{ providerId?: string; providerName?: string; status?: string; availableSubjects?: number; unsupportedSubjects?: number; failedSubjects?: number }>;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; subjectTypes?: string[]; chainFamilies?: string[] }>;
+  checkedEntities?: Array<{ role?: string; kind?: string; subjectType?: string; canonical?: string; chainFamily?: string; chainId?: string }>;
   matchedIndicators?: Magen3ThreatIntelligenceMatch[];
+  overriddenIndicators?: Array<{ indicatorId?: string; evidenceHash?: string; providerId?: string }>;
+  evidenceFreshnessRejected?: Array<{ indicatorId?: string; providerId?: string; ageSeconds?: number }>;
 }
 
 
@@ -2068,6 +2093,10 @@ export class Magen3Client {
     });
   }
 
+
+  async getThreatIntelligenceStatus(): Promise<{ ok: boolean; threatIntelligence: Magen3ThreatIntelligenceContext }> {
+    return this.request<{ ok: boolean; threatIntelligence: Magen3ThreatIntelligenceContext }>("/api/threat-intelligence/status", { method: "GET" });
+  }
 
   async getBridgeProviderStatus(): Promise<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }> {
     return this.request<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }>("/api/bridge-provider-integration/status", { method: "GET" });

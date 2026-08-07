@@ -162,3 +162,7 @@ Submit that protected intent through `magen3_require_allowed`. Magen3 fetches an
 ## Metered / upto x402 tools
 
 `magen3_create_x402_authorization` creates a bounded upto/metered authorization only from an Allowed audit. `magen3_apply_x402_authorization_event` applies idempotent reserve/capture/settle/release/refund/usage/revoke/dispute accounting while preserving resource/provider/session binding.
+
+### Threat Intelligence
+
+`magen3_get_threat_intelligence_status` reports sanitized provider capabilities and health for the production Threat Intelligence adapter layer. Provider secrets and raw responses are excluded.

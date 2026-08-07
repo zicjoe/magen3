@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { classifyCasperWalletIdentifier } from "./walletValidation.mjs";
 import { classifyCasperContractIdentifier } from "./contractValidation.mjs";
 import { readUtf8FileLimited } from "./safeFeedFile.mjs";
+import { screenThreatSubjectsWithProviders, getThreatIntelligenceProviderCapabilities, resetThreatIntelligenceProviderState } from "./threatIntelligenceProviders.mjs";
 
 const SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1_000;
@@ -101,9 +102,37 @@ async function readRemoteBodyLimited(response) {
   }
 }
 
-export function canonicalThreatIdentity(value, typeHint = "") {
+export function canonicalThreatIdentity(value, typeHint = "", options = {}) {
   const raw = clean(value);
   if (!raw) return null;
+  const hint = clean(typeHint).toLowerCase();
+  const chainId = clean(options.chainId || options.chain_id);
+
+  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) {
+    const normalized = raw.toLowerCase();
+    const subjectType = hint.includes("token") || hint.includes("asset") ? "asset_contract" : hint.includes("router") ? "router" : hint.includes("recipient") ? "payment_recipient" : hint.includes("contract") ? "contract" : "wallet";
+    return { canonical: `evm:${chainId || "unknown"}:${normalized}`, value: raw, normalized, kind: "evm-address", label: "EVM address", subjectType, chainFamily: "evm", chainId };
+  }
+
+  if (hint.includes("url") || hint.includes("origin") || /^https?:\/\//i.test(raw)) {
+    try {
+      const url = new URL(raw);
+      if (!["https:", "http:"].includes(url.protocol)) return null;
+      const origin = url.origin.toLowerCase();
+      return { canonical: `url-origin:${origin}`, value: raw, normalized: origin, kind: "url-origin", label: "URL origin", subjectType: "url_origin", chainFamily: "web", chainId: "" };
+    } catch { return null; }
+  }
+  if (hint.includes("domain") || hint.includes("hostname")) {
+    const normalized = raw.toLowerCase().replace(/\.$/, "");
+    if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(normalized)) return null;
+    return { canonical: `domain:${normalized}`, value: raw, normalized, kind: "domain", label: "Domain", subjectType: "domain", chainFamily: "web", chainId: "" };
+  }
+  if (hint.includes("protocol") || hint.includes("provider")) {
+    const normalized = raw.toLowerCase().replace(/[^a-z0-9._:-]+/g, "-").replace(/^-|-$/g, "");
+    if (!normalized || normalized.length > 160) return null;
+    const subjectType = hint.includes("bridge") ? "bridge_provider" : hint.includes("resource") ? "resource_provider" : "protocol";
+    return { canonical: `${subjectType}:${normalized}`, value: raw, normalized, kind: subjectType, label: subjectType.replace(/_/g, " "), subjectType, chainFamily: "agnostic", chainId: "" };
+  }
 
   const wallet = classifyCasperWalletIdentifier(raw, { allowAccountHash: true });
   if (wallet.valid) {
@@ -113,6 +142,9 @@ export function canonicalThreatIdentity(value, typeHint = "") {
       normalized: wallet.normalized,
       kind: wallet.kind,
       label: wallet.label,
+      subjectType: "wallet",
+      chainFamily: "casper",
+      chainId: chainId || clean(options.chainName),
     };
   }
 
@@ -124,16 +156,60 @@ export function canonicalThreatIdentity(value, typeHint = "") {
       normalized: contract.normalized,
       kind: contract.kind,
       label: contract.label,
+      subjectType: hint.includes("asset") || hint.includes("token") ? "asset_contract" : "contract",
+      chainFamily: "casper",
+      chainId: chainId || clean(options.chainName),
     };
   }
 
   return null;
 }
 
+function inferChainContext(request = {}) {
+  const x402Network = clean(request.x402?.network || request.payment?.network);
+  const executionNetwork = clean(request.executionNetwork || request.network || request.targetChain);
+  const rawChainId = clean(request.chainId || request.executionChainId || request.rpcIntegrity?.chainId || request.rpcIntegrity?.expectedChainId || request.bridge?.sourceChainId || (x402Network.startsWith("eip155:") ? x402Network.split(":")[1] : ""));
+  const evmHint = x402Network.startsWith("eip155:") || /^eip155:/i.test(executionNetwork) || /^\d+$/.test(rawChainId) || /evm|ethereum|base|arbitrum|optimism|polygon|bsc/i.test(executionNetwork);
+  return { chainFamily: evmHint ? "evm" : /casper/i.test(executionNetwork) || clean(request.chainName) ? "casper" : "agnostic", chainId: rawChainId, chainName: clean(request.chainName || executionNetwork) };
+}
+
+export function collectThreatSubjects(request = {}) {
+  const chain = inferChainContext(request);
+  const candidates = [];
+  const push = (role, value, typeHint = "", options = {}) => {
+    const identity = canonicalThreatIdentity(value, typeHint, { chainId: options.chainId ?? chain.chainId, chainName: options.chainName ?? chain.chainName });
+    if (identity) candidates.push({ ...identity, role, subjectType: options.subjectType || identity.subjectType || "unknown", chainFamily: options.chainFamily || identity.chainFamily || chain.chainFamily, chainId: clean(options.chainId ?? identity.chainId ?? chain.chainId) });
+  };
+  push("execution-wallet", request.executionWalletAddress || request.walletAddress, "wallet");
+  push("target", request.target, request.contractIdentifierType || request.targetType || "");
+  push("asset-contract", request.assetContractAddress || request.assetIdentity?.contractAddress || request.assetIdentity?.assetContractAddress, "asset contract", { subjectType: "asset_contract" });
+  push("router", request.tradingRoute?.router || request.router, "router", { subjectType: "router" });
+  push("bridge-recipient", request.bridge?.recipient || request.bridge?.destinationAddress, "recipient", { subjectType: "bridge_recipient", chainId: request.bridge?.destinationChainId || chain.chainId, chainFamily: "evm" });
+  push("bridge-provider", request.bridge?.providerId || request.bridge?.provider, "bridge provider", { subjectType: "bridge_provider", chainFamily: "agnostic", chainId: "" });
+  push("x402-payer", request.x402?.payer, "wallet", { subjectType: "wallet" });
+  push("x402-recipient", request.x402?.payTo || request.x402?.recipient, "payment recipient", { subjectType: "payment_recipient", chainId: x402ChainId(request.x402?.network) || chain.chainId, chainFamily: request.x402?.network?.startsWith?.("eip155:") ? "evm" : chain.chainFamily });
+  push("resource-origin", request.x402?.resource || request.x402?.resourceUrl || request.resourceUrl, "url origin", { subjectType: "url_origin", chainFamily: "web", chainId: "" });
+  push("resource-provider", request.x402?.merchant || request.resourceProvider, "domain", { subjectType: "domain", chainFamily: "web", chainId: "" });
+  push("rpc-endpoint", request.rpcIntegrity?.selectedEndpoint || request.rpcIntegrity?.endpoint, "url origin", { subjectType: "rpc_endpoint", chainFamily: "web", chainId: chain.chainId });
+  push("token-spender", request.tokenPermission?.spender, "contract", { subjectType: "contract" });
+  const seen = new Set();
+  return candidates.filter((subject) => {
+    const key = `${subject.role}|${subject.canonical}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 20);
+}
+
+function x402ChainId(network) {
+  const value = clean(network);
+  return value.startsWith("eip155:") ? value.slice("eip155:".length) : "";
+}
+
 function normalizeIndicator(raw, index = 0) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const value = clean(raw.value || raw.identifier || raw.address || raw.hash);
-  const identity = canonicalThreatIdentity(value, raw.identifierType || raw.identifier_type || raw.type || "");
+  const identity = canonicalThreatIdentity(value, raw.identifierType || raw.identifier_type || raw.subjectType || raw.subject_type || raw.type || "", { chainId: raw.chainId || raw.chain_id || "", chainName: raw.chainName || raw.chain_name || "" });
   if (!identity) return null;
 
   const expiresAt = clean(raw.expiresAt || raw.expires_at);
@@ -143,6 +219,15 @@ function normalizeIndicator(raw, index = 0) {
     value,
     canonical: identity.canonical,
     kind: identity.kind,
+    subjectType: identity.subjectType || clean(raw.subjectType || raw.subject_type) || "unknown",
+    chainFamily: identity.chainFamily || clean(raw.chainFamily || raw.chain_family) || "agnostic",
+    chainId: identity.chainId || clean(raw.chainId || raw.chain_id),
+    providerId: clean(raw.providerId || raw.provider_id) || "operator-feed",
+    providerVersion: clean(raw.providerVersion || raw.provider_version || raw.version),
+    evidenceHash: clean(raw.evidenceHash || raw.evidence_hash),
+    cached: Boolean(raw.cached),
+    providerVerdict: clean(raw.providerVerdict || raw.provider_verdict),
+    retrievalTimestamp: clean(raw.retrievalTimestamp || raw.retrieval_timestamp),
     label: clean(raw.label || raw.name) || "Threat indicator match",
     description: clean(raw.description || raw.message),
     severity: normalizeSeverity(raw.severity),
@@ -284,7 +369,7 @@ function applyFreshness(snapshot, { env = process.env, now = new Date() } = {}) 
   };
 }
 
-export async function getThreatIntelligenceSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
+async function getConfiguredThreatFeedSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date() } = {}) {
   const source = configuredSource(env);
   const cacheKey = sourceCacheKey(source, env);
   const cacheTtlMs = safeInteger(env.THREAT_INTELLIGENCE_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS, { min: 1_000, max: 24 * 60 * 60 * 1_000 });
@@ -339,8 +424,58 @@ export async function getThreatIntelligenceSnapshot({ force = false, env = proce
   }
 }
 
+function mergeThreatSnapshots(base, providerResult, subjects, now = new Date()) {
+  const providerEvidence = Array.isArray(providerResult?.evidence) ? providerResult.evidence : [];
+  const providerIndicators = Array.isArray(providerResult?.indicators) ? providerResult.indicators : [];
+  const indicators = [...(Array.isArray(base?.indicators) ? base.indicators : []), ...providerIndicators];
+  const providerIds = [...new Set([...(base?.status === "available" || base?.status === "stale" ? ["operator-feed"] : []), ...(providerResult?.providerIds || [])])];
+  const availableProviderIds = [...new Set([...(base?.status === "available" ? ["operator-feed"] : []), ...providerEvidence.map((item) => item.providerId).filter(Boolean)])];
+  const verdicts = new Map();
+  for (const evidence of providerEvidence) {
+    const list = verdicts.get(evidence.subject) || [];
+    list.push({ providerId: evidence.providerId, verdict: evidence.providerVerdict });
+    verdicts.set(evidence.subject, list);
+  }
+  const disagreements = [...verdicts.entries()].flatMap(([subject, entries]) => {
+    const values = new Set(entries.map((entry) => entry.verdict).filter(Boolean));
+    return values.size > 1 ? [{ subject, entries }] : [];
+  });
+  const providerConfigured = (providerResult?.providerIds || []).length > 0;
+  const providerAvailable = providerEvidence.length > 0;
+  let status = base?.status || "unavailable";
+  if (providerAvailable && status !== "available") status = "available";
+  if (!providerAvailable && providerConfigured && status === "unavailable" && providerResult?.status === "unsupported") status = "unavailable";
+  return {
+    ...base,
+    status,
+    sourceType: providerAvailable && base?.status === "available" ? "combined" : providerAvailable ? "provider" : base?.sourceType,
+    sourceName: providerAvailable && base?.status === "available" ? "Operator feed + production provider evidence" : providerAvailable ? "Production threat-intelligence providers" : base?.sourceName,
+    generatedAt: providerAvailable ? now.toISOString() : base?.generatedAt,
+    fetchedAt: now.toISOString(),
+    indicatorCount: indicators.length,
+    indicators,
+    providerEvidence,
+    providerStatuses: providerResult?.providerStatuses || [],
+    configuredProviderIds: providerIds,
+    availableProviderIds,
+    providerErrors: providerResult?.errors || [],
+    providerDisagreement: disagreements.length > 0,
+    providerDisagreements: disagreements,
+    checkedSubjects: subjects.map((item) => ({ role: item.role, subjectType: item.subjectType, canonical: item.canonical, chainFamily: item.chainFamily, chainId: item.chainId })),
+  };
+}
+
+export async function getThreatIntelligenceSnapshot({ force = false, env = process.env, fetchImpl = globalThis.fetch, now = new Date(), request = null } = {}) {
+  const base = await getConfiguredThreatFeedSnapshot({ force, env, fetchImpl, now });
+  if (!request || typeof request !== "object") return { ...base, providerCapabilities: getThreatIntelligenceProviderCapabilities({ env }) };
+  const subjects = collectThreatSubjects(request);
+  const providerResult = await screenThreatSubjectsWithProviders(subjects, { env, fetchImpl, now, force });
+  return { ...mergeThreatSnapshots(base, providerResult, subjects, now), providerCapabilities: getThreatIntelligenceProviderCapabilities({ env }) };
+}
+
 export function resetThreatIntelligenceCache() {
   cached = null;
+  resetThreatIntelligenceProviderState();
 }
 
 function safeSourceName(snapshot = {}) {
@@ -361,6 +496,7 @@ function safeSourceName(snapshot = {}) {
 }
 
 function safePublicError(snapshot = {}) {
+  if (snapshot.status === "available") return "";
   const error = clean(snapshot.error);
   if (!error) return "";
   if (snapshot.status === "stale" && /older than|timestamp is too far in the future/i.test(error)) return error;
@@ -388,15 +524,39 @@ export function summarizeThreatIntelligenceSnapshot(snapshot = {}, now = new Dat
     ageMs: Number.isFinite(snapshot.ageMs) ? snapshot.ageMs : null,
     maxAgeMs: Number.isFinite(snapshot.maxAgeMs) ? snapshot.maxAgeMs : null,
     error: safePublicError(snapshot),
+    configuredProviderIds: Array.isArray(snapshot.configuredProviderIds) ? snapshot.configuredProviderIds.slice(0, 10) : [],
+    availableProviderIds: Array.isArray(snapshot.availableProviderIds) ? snapshot.availableProviderIds.slice(0, 10) : [],
+    providerStatuses: Array.isArray(snapshot.providerStatuses) ? snapshot.providerStatuses.slice(0, 10) : [],
+    providerDisagreement: Boolean(snapshot.providerDisagreement),
+    providerCapabilities: Array.isArray(snapshot.providerCapabilities) ? snapshot.providerCapabilities.map((item) => ({ id: item.id, name: item.name, version: item.version, enabled: item.enabled, configured: item.configured, health: item.health, subjectTypes: item.subjectTypes, chainFamilies: item.chainFamilies })) : [],
   };
+}
+
+function normalizePolicyList(value, limit = 50) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => clean(item).toLowerCase())
+    .filter(Boolean)
+    .slice(0, limit);
 }
 
 function policySettings(policy = {}) {
   const rules = policy.structuredRules && typeof policy.structuredRules === "object" ? policy.structuredRules : {};
+  const unavailableAction = normalizeUnavailableAction(rules.threatIntelligenceUnavailableAction);
   return {
     mode: normalizeMode(rules.threatIntelligenceMode),
-    unavailableAction: normalizeUnavailableAction(rules.threatIntelligenceUnavailableAction),
+    required: Boolean(rules.threatIntelligenceRequired),
+    unavailableAction,
+    providerUnavailableAction: normalizeUnavailableAction(rules.threatIntelligenceProviderUnavailableAction || rules.threatIntelligenceUnavailableAction),
+    disagreementAction: normalizeUnavailableAction(rules.threatIntelligenceProviderDisagreementAction || "Review"),
+    unknownSubjectAction: normalizeUnavailableAction(rules.threatIntelligenceUnknownSubjectAction || "Warn"),
     minConfidence: safeInteger(rules.threatIntelligenceMinConfidence, 70, { min: 0, max: 100 }),
+    maxEvidenceAgeSeconds: safeInteger(rules.threatIntelligenceMaxEvidenceAgeSeconds, 86_400, { min: 60, max: 30 * 86_400 }),
+    minProviderQuorum: safeInteger(rules.threatIntelligenceMinimumProviderQuorum, 1, { min: 1, max: 10 }),
+    allowedProviders: normalizePolicyList(rules.threatIntelligenceAllowedProviders, 20),
+    blockedCategories: normalizePolicyList(rules.threatIntelligenceBlockedCategories, 30),
+    reviewCategories: normalizePolicyList(rules.threatIntelligenceReviewCategories, 30),
+    cacheAllowed: rules.threatIntelligenceCacheAllowed !== false,
+    falsePositiveOverrides: new Set(normalizePolicyList(rules.threatIntelligenceFalsePositiveOverrides, 100)),
   };
 }
 
@@ -405,17 +565,7 @@ function finding({ status, severity = "info", rule, message, evidence = {}, reme
 }
 
 function requestEntities(request = {}) {
-  const candidates = [
-    { role: "execution-wallet", value: request.executionWalletAddress || request.walletAddress, typeHint: "" },
-    { role: "target", value: request.target, typeHint: request.contractIdentifierType || "" },
-  ];
-  const seen = new Set();
-  return candidates.flatMap((candidate) => {
-    const identity = canonicalThreatIdentity(candidate.value, candidate.typeHint);
-    if (!identity || seen.has(identity.canonical)) return [];
-    seen.add(identity.canonical);
-    return [{ ...identity, role: candidate.role }];
-  });
+  return collectThreatSubjects(request);
 }
 
 function activeIndicators(snapshot = {}, now = new Date()) {
@@ -438,126 +588,221 @@ export function evaluateThreatIntelligence({ request = {}, policy = {}, snapshot
   const context = {
     ...summarizeThreatIntelligenceSnapshot(snapshot, now),
     mode: settings.mode,
+    required: settings.required,
     unavailableAction: settings.unavailableAction,
+    providerUnavailableAction: settings.providerUnavailableAction,
+    providerDisagreementAction: settings.disagreementAction,
+    unknownSubjectAction: settings.unknownSubjectAction,
     minConfidence: settings.minConfidence,
-    checkedEntities: entities.map((entity) => ({ role: entity.role, kind: entity.kind, canonical: entity.canonical })),
+    maxEvidenceAgeSeconds: settings.maxEvidenceAgeSeconds,
+    minimumProviderQuorum: settings.minProviderQuorum,
+    allowedProviders: settings.allowedProviders,
+    blockedCategories: settings.blockedCategories,
+    reviewCategories: settings.reviewCategories,
+    cacheAllowed: settings.cacheAllowed,
+    checkedEntities: entities.map((entity) => ({ role: entity.role, kind: entity.kind, subjectType: entity.subjectType, canonical: entity.canonical, chainFamily: entity.chainFamily, chainId: entity.chainId })),
     matchedIndicators: [],
+    overriddenIndicators: [],
+    evidenceFreshnessRejected: [],
+  };
+
+  const applyConfiguredAction = (action, { rule, message, evidence, remediation, severity = "medium", scoreBlock = 35, scoreReview = 14, scoreWarn = 2 }) => {
+    if (action === "Block") {
+      findings.push(finding({ status: "fail", severity: severity === "low" ? "high" : severity, rule, message, evidence, remediation }));
+      checksFailed.push(message);
+      hardBlock = true;
+      scoreDelta += scoreBlock;
+    } else if (action === "Review") {
+      findings.push(finding({ status: "unavailable", severity, rule, message, evidence, remediation }));
+      checksFailed.push(message);
+      needsReview = true;
+      scoreDelta += scoreReview;
+    } else {
+      findings.push(finding({ status: "unavailable", severity: "low", rule, message, evidence, remediation }));
+      scoreDelta += scoreWarn;
+    }
   };
 
   if (entities.length === 0) {
-    findings.push(finding({
-      status: "skipped",
-      rule: "Threat intelligence applicability",
-      message: "Threat intelligence matching was skipped because no valid wallet or contract identity was available.",
-      evidence: { actionType: request.actionType || "", targetType: request.targetType || "" },
-      remediation: "Correct wallet or contract identifiers so the target can be screened.",
-    }));
+    const message = "Threat intelligence could not normalize a supported subject from this request.";
+    if (settings.required || settings.unknownSubjectAction !== "Warn") {
+      applyConfiguredAction(settings.unknownSubjectAction, {
+        rule: "Threat subject normalization",
+        message,
+        evidence: { actionType: request.actionType || "", targetType: request.targetType || "", policyAction: settings.unknownSubjectAction },
+        remediation: "Provide a supported chain-aware wallet, contract, asset contract, URL origin, domain, RPC endpoint, router, bridge provider, or payment recipient identifier.",
+      });
+    } else {
+      findings.push(finding({
+        status: "skipped",
+        rule: "Threat intelligence applicability",
+        message,
+        evidence: { actionType: request.actionType || "", targetType: request.targetType || "" },
+        remediation: "Provide a supported subject when threat screening is required for this action.",
+      }));
+    }
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
   }
 
   findings.push(finding({
     status: "pass",
     rule: "Threat intelligence applicability",
-    message: `${entities.length} normalized wallet or contract ${entities.length === 1 ? "identity is" : "identities are"} available for exact-match screening.`,
+    message: `${entities.length} chain-aware threat subject${entities.length === 1 ? " is" : "s are"} available for deterministic screening.`,
     evidence: { entities: context.checkedEntities },
   }));
 
-  if (!["available"].includes(snapshot.status)) {
+  if (snapshot.status !== "available") {
     const unavailableStatus = snapshot.status === "stale" ? "stale" : "unavailable";
     const message = unavailableStatus === "stale"
-      ? "The configured threat intelligence feed is stale, so current reputation could not be confirmed."
-      : "No usable threat intelligence feed is available for this request.";
-    const evidence = { ...summarizeThreatIntelligenceSnapshot(snapshot, now), policyAction: settings.unavailableAction };
-
-    if (settings.unavailableAction === "Block") {
-      findings.push(finding({
-        status: "fail",
-        severity: "high",
-        rule: "Threat feed availability",
-        message,
-        evidence,
-        remediation: "Restore a fresh trusted feed or change the policy only after authorized risk review.",
-      }));
-      checksFailed.push(message);
-      hardBlock = true;
-      scoreDelta += 35;
-    } else if (settings.unavailableAction === "Review") {
-      findings.push(finding({
-        status: "unavailable",
-        severity: "medium",
-        rule: "Threat feed availability",
-        message,
-        evidence,
-        remediation: "Pause for human review or restore a fresh trusted threat feed before retrying.",
-      }));
-      checksFailed.push(message);
-      needsReview = true;
-      scoreDelta += 14;
-    } else {
-      findings.push(finding({
-        status: "unavailable",
-        severity: "low",
-        rule: "Threat feed availability",
-        message,
-        evidence,
-        remediation: "Configure or restore a trusted feed to add reputation signals. The module did not count this as a pass.",
-      }));
-      scoreDelta += 2;
-    }
-
+      ? "Configured threat intelligence evidence is stale, so current reputation could not be confirmed."
+      : "No usable threat intelligence evidence is available for this request.";
+    applyConfiguredAction(settings.unavailableAction, {
+      rule: "Threat feed availability",
+      message,
+      evidence: { ...summarizeThreatIntelligenceSnapshot(snapshot, now), policyAction: settings.unavailableAction },
+      remediation: "Restore a fresh trusted provider or operator feed, or change the policy only after authorized risk review.",
+      severity: "medium",
+    });
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
   }
 
-  const active = activeIndicators(snapshot, now);
-  const activeCount = active.length;
+  const summary = summarizeThreatIntelligenceSnapshot(snapshot, now);
   findings.push(finding({
     status: "pass",
-    rule: "Threat feed availability",
-    message: `Threat intelligence feed ${snapshot.sourceName || "configured source"} is available with ${activeCount} active record${activeCount === 1 ? "" : "s"}.`,
-    evidence: summarizeThreatIntelligenceSnapshot(snapshot, now),
+    rule: "Threat intelligence availability",
+    message: `Threat intelligence evidence is available from ${summary.availableProviderIds?.length || 0} active provider source${summary.availableProviderIds?.length === 1 ? "" : "s"}.`,
+    evidence: summary,
   }));
-  checksPassed.push("Threat intelligence feed is available and fresh");
+  checksPassed.push("Threat intelligence evidence is available");
 
-  const indicatorMap = new Map(active.map((indicator) => [indicator.canonical, indicator]));
-  const matches = entities.flatMap((entity) => {
-    const indicator = indicatorMap.get(entity.canonical);
-    return indicator ? [{ entity, indicator }] : [];
+  const allowedProviders = settings.allowedProviders.length ? new Set(settings.allowedProviders) : null;
+  const availableProviders = (Array.isArray(snapshot.availableProviderIds) ? snapshot.availableProviderIds : [])
+    .map((value) => clean(value).toLowerCase())
+    .filter((value) => !allowedProviders || allowedProviders.has(value));
+  const uniqueAvailableProviders = [...new Set(availableProviders)];
+  const configuredRequiredProviders = allowedProviders ? [...allowedProviders] : [];
+  const missingRequiredProviders = configuredRequiredProviders.filter((id) => !uniqueAvailableProviders.includes(id));
+  const providerQuorumMissing = uniqueAvailableProviders.length < settings.minProviderQuorum;
+  if ((missingRequiredProviders.length > 0 || providerQuorumMissing) && (settings.required || settings.allowedProviders.length > 0 || settings.minProviderQuorum > 1)) {
+    const message = missingRequiredProviders.length
+      ? `Required threat-intelligence provider evidence is unavailable: ${missingRequiredProviders.join(", ")}.`
+      : `Threat-intelligence provider quorum requires ${settings.minProviderQuorum} source(s), but only ${uniqueAvailableProviders.length} are available.`;
+    applyConfiguredAction(settings.providerUnavailableAction, {
+      rule: "Threat provider availability",
+      message,
+      evidence: { requiredProviders: configuredRequiredProviders, availableProviders: uniqueAvailableProviders, minimumProviderQuorum: settings.minProviderQuorum, policyAction: settings.providerUnavailableAction, providerStatuses: summary.providerStatuses },
+      remediation: "Restore the required provider configuration or explicitly revise the policy after authorized review.",
+    });
+  }
+
+  if (snapshot.providerDisagreement) {
+    const message = "Configured threat-intelligence providers disagree for at least one exact screened subject.";
+    applyConfiguredAction(settings.disagreementAction, {
+      rule: "Threat provider disagreement",
+      message,
+      evidence: { policyAction: settings.disagreementAction, disagreementCount: Array.isArray(snapshot.providerDisagreements) ? snapshot.providerDisagreements.length : 1 },
+      remediation: "Investigate provider disagreement before changing provider quorum or enforcement policy.",
+      scoreBlock: 40,
+      scoreReview: 18,
+      scoreWarn: 6,
+    });
+  }
+
+  const maxEvidenceAgeMs = settings.maxEvidenceAgeSeconds * 1000;
+  const active = activeIndicators(snapshot, now).filter((indicator) => {
+    const providerId = clean(indicator.providerId || (indicator.source === snapshot.sourceName ? "operator-feed" : "operator-feed")).toLowerCase();
+    if (allowedProviders && !allowedProviders.has(providerId)) return false;
+    const timestamp = clean(indicator.retrievalTimestamp || indicator.lastSeenAt || snapshot.generatedAt);
+    const timestampMs = Date.parse(timestamp);
+    if (Number.isFinite(timestampMs) && now.getTime() - timestampMs > maxEvidenceAgeMs) {
+      context.evidenceFreshnessRejected.push({ indicatorId: indicator.id, providerId, ageSeconds: Math.max(0, Math.floor((now.getTime() - timestampMs) / 1000)) });
+      return false;
+    }
+    return true;
   });
+  if (context.evidenceFreshnessRejected.length > 0) {
+    const message = `${context.evidenceFreshnessRejected.length} threat indicator${context.evidenceFreshnessRejected.length === 1 ? " was" : "s were"} rejected because provider evidence exceeded the policy freshness limit.`;
+    findings.push(finding({
+      status: "warning",
+      severity: "medium",
+      rule: "Threat evidence freshness",
+      message,
+      evidence: { maximumEvidenceAgeSeconds: settings.maxEvidenceAgeSeconds, rejected: context.evidenceFreshnessRejected.slice(0, 20) },
+      remediation: "Refresh provider evidence before relying on stale indicators.",
+    }));
+    scoreDelta += 4;
+  }
+
+  const matches = entities.flatMap((entity) => active.flatMap((indicator) => indicator.canonical === entity.canonical ? [{ entity, indicator }] : []));
   context.matchedIndicators = matches.map(({ entity, indicator }) => ({
     entityRole: entity.role,
+    subjectType: entity.subjectType,
+    chainFamily: entity.chainFamily,
+    chainId: entity.chainId,
     kind: entity.kind,
     indicatorId: indicator.id,
     severity: indicator.severity,
     confidence: indicator.confidence,
     categories: indicator.categories,
     source: indicator.source || snapshot.sourceName,
+    providerId: indicator.providerId || "operator-feed",
+    providerVersion: indicator.providerVersion || "",
+    evidenceHash: indicator.evidenceHash || "",
+    cached: Boolean(indicator.cached),
+    providerVerdict: indicator.providerVerdict || "",
   }));
 
+  const enforceableMatches = matches.filter(({ indicator }) => {
+    const id = clean(indicator.id).toLowerCase();
+    const hash = clean(indicator.evidenceHash).toLowerCase();
+    if (settings.falsePositiveOverrides.has(id) || (hash && settings.falsePositiveOverrides.has(hash))) {
+      context.overriddenIndicators.push({ indicatorId: indicator.id, evidenceHash: indicator.evidenceHash || "", providerId: indicator.providerId || "operator-feed" });
+      return false;
+    }
+    return true;
+  });
+  if (context.overriddenIndicators.length > 0) {
+    findings.push(finding({
+      status: "warning",
+      severity: "medium",
+      rule: "Threat false-positive override",
+      message: `${context.overriddenIndicators.length} matched indicator${context.overriddenIndicators.length === 1 ? " is" : "s are"} suppressed by an explicit policy override.`,
+      evidence: { overrides: context.overriddenIndicators.slice(0, 20) },
+      remediation: "Keep overrides time-bounded operationally and remove them when the investigation is resolved.",
+    }));
+    scoreDelta += 4;
+  }
+
   if (matches.length === 0) {
-    const message = "No active exact-match threat indicator was found for the screened wallet or contract identities.";
+    const message = "No active exact-match threat indicator was found for the screened subjects in the available evidence.";
     findings.push(finding({
       status: "pass",
       rule: "Known threat indicator match",
       message,
-      evidence: { checkedEntities: context.checkedEntities, source: snapshot.sourceName, generatedAt: snapshot.generatedAt },
+      evidence: { checkedEntities: context.checkedEntities, availableProviders: uniqueAvailableProviders, generatedAt: snapshot.generatedAt },
     }));
     checksPassed.push(message);
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
   }
+  if (enforceableMatches.length === 0) return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
 
-  const rankedMatches = [...matches].sort((a, b) => {
+  const rankedMatches = [...enforceableMatches].sort((a, b) => {
     const severityDelta = SEVERITY_RANK[b.indicator.severity] - SEVERITY_RANK[a.indicator.severity];
     return severityDelta || b.indicator.confidence - a.indicator.confidence;
   });
-  // Choose the strongest match that meets the policy confidence threshold. A
-  // low-confidence critical signal must not hide a high-confidence high signal.
   const strongest = rankedMatches.find(({ indicator }) => indicator.confidence >= settings.minConfidence) || rankedMatches[0];
   const { entity, indicator } = strongest;
+  const categories = (Array.isArray(indicator.categories) ? indicator.categories : []).map((value) => clean(value).toLowerCase());
   const belowConfidence = indicator.confidence < settings.minConfidence;
   const highSeverity = ["critical", "high"].includes(indicator.severity);
   const mediumSeverity = indicator.severity === "medium";
+  const blockedByCategory = categories.some((category) => settings.blockedCategories.includes(category));
+  const reviewByCategory = categories.some((category) => settings.reviewCategories.includes(category));
   const evidence = {
     entityRole: entity.role,
+    subjectType: entity.subjectType,
+    chainFamily: entity.chainFamily,
+    chainId: entity.chainId,
     identifierKind: entity.kind,
     indicatorId: indicator.id,
     label: indicator.label,
@@ -567,6 +812,10 @@ export function evaluateThreatIntelligence({ request = {}, policy = {}, snapshot
     minimumConfidence: settings.minConfidence,
     categories: indicator.categories,
     source: indicator.source || snapshot.sourceName,
+    providerId: indicator.providerId || "operator-feed",
+    providerVersion: indicator.providerVersion || "",
+    evidenceHash: indicator.evidenceHash || "",
+    cached: Boolean(indicator.cached),
     firstSeenAt: indicator.firstSeenAt,
     lastSeenAt: indicator.lastSeenAt,
     references: indicator.references,
@@ -575,60 +824,32 @@ export function evaluateThreatIntelligence({ request = {}, policy = {}, snapshot
 
   if (belowConfidence) {
     const message = `A ${indicator.severity} threat indicator matched, but its ${indicator.confidence}% confidence is below the policy threshold of ${settings.minConfidence}%.`;
-    findings.push(finding({
-      status: "warning",
-      severity: "medium",
-      rule: "Known threat indicator match",
-      message,
-      evidence,
-      remediation: "Review the indicator evidence and lower the confidence threshold only through an authorized policy change.",
-    }));
+    findings.push(finding({ status: "warning", severity: "medium", rule: "Known threat indicator match", message, evidence, remediation: "Review the evidence; lower the confidence threshold only through an authorized policy change." }));
     checksFailed.push(message);
     scoreDelta += 8;
     return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
   }
 
-  if (settings.mode === "Enforce" && highSeverity) {
-    const message = `Execution target matched a ${indicator.severity}-severity threat indicator: ${indicator.label}.`;
-    findings.push(finding({
-      status: "fail",
-      severity: indicator.severity,
-      rule: "Known threat indicator match",
-      message,
-      evidence,
-      remediation: "Do not execute. Use a verified alternative target or remove the indicator only after authorized investigation confirms it is a false positive.",
-    }));
+  if (blockedByCategory || (settings.mode === "Enforce" && highSeverity)) {
+    const categoryText = blockedByCategory ? ` a blocked policy category (${categories.filter((item) => settings.blockedCategories.includes(item)).join(", ")})` : ` ${indicator.severity}-severity`;
+    const message = `Execution subject matched${categoryText} threat indicator: ${indicator.label}.`;
+    findings.push(finding({ status: "fail", severity: highSeverity ? indicator.severity : "high", rule: blockedByCategory ? "Blocked threat category" : "Known threat indicator match", message, evidence, remediation: "Do not execute. Use a verified alternative subject or apply a documented false-positive override only after authorized investigation." }));
     checksFailed.push(message);
     hardBlock = true;
     scoreDelta += indicator.severity === "critical" ? 55 : 45;
-  } else if ((settings.mode === "Enforce" && mediumSeverity) || (settings.mode === "Review" && ["critical", "high", "medium"].includes(indicator.severity))) {
-    const message = `Execution target matched a ${indicator.severity}-severity threat indicator and requires review: ${indicator.label}.`;
-    findings.push(finding({
-      status: "warning",
-      severity: indicator.severity,
-      rule: "Known threat indicator match",
-      message,
-      evidence,
-      remediation: "Pause execution and investigate the indicator evidence before approving or updating the policy.",
-    }));
+  } else if (reviewByCategory || (settings.mode === "Enforce" && mediumSeverity) || (settings.mode === "Review" && ["critical", "high", "medium"].includes(indicator.severity))) {
+    const message = `Execution subject matched a threat indicator and requires review: ${indicator.label}.`;
+    findings.push(finding({ status: "warning", severity: indicator.severity, rule: reviewByCategory ? "Review threat category" : "Known threat indicator match", message, evidence, remediation: "Pause execution and investigate provider evidence before approving or changing policy." }));
     checksFailed.push(message);
     needsReview = true;
     scoreDelta += highSeverity ? 28 : 18;
   } else {
     const message = `Threat intelligence observed a ${indicator.severity}-severity exact match: ${indicator.label}.`;
-    findings.push(finding({
-      status: "warning",
-      severity: indicator.severity,
-      rule: "Known threat indicator match",
-      message,
-      evidence,
-      remediation: settings.mode === "Observe"
-        ? "Review the match and change Threat Intelligence mode to Review or Enforce if this signal should affect authorization."
-        : "Review the indicator evidence before execution.",
-    }));
+    findings.push(finding({ status: "warning", severity: indicator.severity, rule: "Known threat indicator match", message, evidence, remediation: settings.mode === "Observe" ? "Review the match and change policy mode if this category should affect authorization." : "Review the indicator evidence before execution." }));
     checksFailed.push(message);
     scoreDelta += highSeverity ? 16 : 8;
   }
 
   return { findings, checksPassed, checksFailed, scoreDelta, hardBlock, needsReview, context };
 }
+

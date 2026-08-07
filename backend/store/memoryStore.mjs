@@ -515,7 +515,7 @@ export function createMemoryStore() {
     async analyzeAction(body) {
       const walletAddress = requireWalletAddress(body.walletAddress);
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
-        getThreatIntelligenceSnapshot(),
+        getThreatIntelligenceSnapshot({ request: body }),
         getOracleValidationSnapshot(),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),
@@ -892,7 +892,7 @@ export function createMemoryStore() {
         agentOwnerWalletAddress: walletAddress,
       };
       const [threatIntelligence, oracleValidation, marketRiskSignals, complianceControls] = await Promise.all([
-        getThreatIntelligenceSnapshot(),
+        getThreatIntelligenceSnapshot({ request }),
         getOracleValidationSnapshot(),
         getMarketRiskSignalsSnapshot(),
         getComplianceControlsSnapshot(),

@@ -547,3 +547,26 @@ test("MCP requests protected bridge provider quotes without signing or provider 
   assert.equal(captured.amountAtomic, "1000000");
   assert.match(result.content[0].text, /does not sign or submit/i);
 });
+
+
+test("MCP exposes sanitized production Threat Intelligence status", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }),
+    checkIntent: async () => ({ ok: true }),
+    requireAllowed: async () => ({ ok: true }),
+    getApproval: async () => ({ ok: true }),
+    reportX402Settlement: async () => ({ ok: true }),
+    executeX402Payment: async () => ({ ok: true }),
+    createX402Authorization: async () => ({ ok: true }),
+    applyX402AuthorizationEvent: async () => ({ ok: true }),
+    reportExecutionReconciliation: async () => ({ ok: true }),
+    pollExecutionReconciliation: async () => ({ ok: true }),
+    getThreatIntelligenceStatus: async () => ({ ok: true, threatIntelligence: { status: "available", availableProviderIds: ["goplus"], providerCapabilities: [{ id: "goplus", enabled: true, health: "ready" }] } }),
+    getBridgeProviderStatus: async () => ({ ok: true }),
+    requestBridgeProviderQuote: async () => ({ ok: true }),
+    pollBridgeProvider: async () => ({ ok: true }),
+  });
+  const result = await handlers.getThreatIntelligenceStatus();
+  assert.match(result.content[0].text, /goplus/i);
+  assert.doesNotMatch(result.content[0].text, /api[_-]?key|bearer secret/i);
+});

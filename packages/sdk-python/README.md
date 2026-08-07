@@ -329,3 +329,7 @@ Provider endpoints and evidence-attestation secrets remain on the Magen3 backend
 ## Metered / upto x402
 
 Use `create_x402_authorization()` after an Allowed x402 audit, then `apply_x402_authorization_event()` for bounded idempotent accounting events. Amounts use base-unit integer strings.
+
+### Threat Intelligence status
+
+`client.get_threat_intelligence_status()` returns sanitized configured-provider, capability, and health information for Milestone 25. It does not expose credentials or raw provider payloads.

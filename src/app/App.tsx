@@ -390,6 +390,11 @@ interface ThreatIntelligenceStatus {
   ageMs?: number | null;
   maxAgeMs?: number | null;
   error?: string;
+  configuredProviderIds?: string[];
+  availableProviderIds?: string[];
+  providerStatuses?: Array<{ providerId?: string; status?: string; reason?: string }>;
+  providerDisagreement?: boolean;
+  providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; subjectTypes?: string[]; chainFamilies?: string[] }>;
 }
 
 interface OracleValidationStatus {
@@ -8212,7 +8217,7 @@ function PoliciesPage({
           <div className="text-sm font-semibold text-[#F8FAFC]">Threat Intelligence</div>
           <p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">Choose how exact provider indicators affect authorization when threat data is present or unavailable.</p>
         </div>
-        <StatusBadge status="Foundation Available" />
+        <StatusBadge status="Preview" />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <SelectField label="Match Handling" value={values.threatIntelligenceMode} onChange={(value) => onChange({ threatIntelligenceMode: value })} options={["Observe", "Review", "Enforce"]} />
@@ -10002,7 +10007,7 @@ Content-Type: application/json
               <section id="threat-intelligence-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
                 <h2 className={SECTION_TITLE}>Threat Intelligence Foundation</h2>
                 <p className="mt-2 text-sm leading-relaxed text-[#94A3B8]">
-                  Magen3 can screen normalized Casper wallet, account-hash, Contract Hash, and Package Hash identifiers against an operator-configured JSON feed. Matching is deterministic and exact. A no-match result means only that the configured feed contained no exact indicator for the submitted form; it is not proof that a target is safe.
+                  Magen3 normalizes chain-aware wallets, contracts, asset contracts, domains, protected-resource origins, RPC hosts, routers, bridge providers, payment recipients, and other execution counterparties before screening them. Operator feeds remain supported, while production provider adapters can contribute bounded evidence that is independently normalized and evaluated by deterministic Magen3 policy. Provider verdicts never authorize execution by themselves.
                 </p>
                 <div className="mt-5 grid gap-3 md:grid-cols-3">
                   {[
@@ -10013,7 +10018,7 @@ Content-Type: application/json
                     <div key={title} className={`${CARD} p-4`}><h3 className="text-sm font-semibold text-[#F8FAFC]">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#94A3B8]">{description}</p></div>
                   ))}
                 </div>
-                <div className="mt-5"><DocsCallout type="warning">A stale or unavailable feed never counts as a pass. Policies can Warn, require Review, or Block when the feed cannot be used. No external provider is bundled, so the module remains Foundation Available.</DocsCallout></div>
+                <div className="mt-5"><DocsCallout type="warning">A stale, unavailable, malformed, unsupported, rate-limited, or disagreeing provider result never masquerades as a clean pass. GoPlus is available as a server-controlled EVM address-security adapter when enabled; the UI remains Preview until a deployment has actually configured and exercised a live provider.</DocsCallout></div>
               </section>
 
               <section id="agent-shield-doc" className="scroll-mt-8 border-t border-[#1E293B] pt-10">
@@ -11839,7 +11844,7 @@ function SettingsPage({
     {
       id: "threat",
       label: "Threat Intelligence",
-      description: "Configured indicator-feed observations used by deterministic threat checks.",
+      description: "Normalized operator-feed and provider evidence used by deterministic threat checks.",
       status: threatIntelligenceStatus.status === "available" ? "Available" : "Unavailable",
       icon: <ShieldAlert size={17} />,
       details: [
@@ -11847,6 +11852,9 @@ function SettingsPage({
         ["Feed state", threatIntelligenceStatus.status || "unavailable"],
         ["Active indicators", String(threatIntelligenceStatus.activeIndicatorCount ?? threatIntelligenceStatus.indicatorCount ?? 0)],
         ["Feed records", String(threatIntelligenceStatus.indicatorCount || 0)],
+        ["Configured providers", threatIntelligenceStatus.configuredProviderIds?.join(", ") || "None"],
+        ["Available providers", threatIntelligenceStatus.availableProviderIds?.join(", ") || "None"],
+        ["Provider disagreement", threatIntelligenceStatus.providerDisagreement ? "Detected" : "None detected"],
       ],
       error: threatIntelligenceStatus.error || "",
       note: "Provider credentials and raw configured locations are never displayed.",

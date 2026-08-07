@@ -172,3 +172,7 @@ Use `magen3_report_execution_reconciliation` to report authenticated public tran
 ## Market Risk Signals
 
 For Swap, Trade, Exchange, or Bridge actions, clients may include additive `action.marketRisk` selectors such as the exact base/output assets, canonical asset IDs, network, venue, and pool. Volatility, liquidity, spread, divergence, depeg, imbalance, and manipulation metrics must come from the server-configured feed; clients and MCP tools must never invent those values. Responses may include `marketRiskSignalsContext` and `marketRiskSignals`. See `docs/MARKET_RISK_SIGNALS.md`.
+
+## Production Threat Intelligence
+
+Use `magen3_get_threat_intelligence_status` to inspect sanitized Threat Intelligence provider capabilities and health. The tool never returns provider credentials, authorization headers, or unbounded raw provider evidence. Threat provider findings continue through the ordinary protected-intent decision engine.

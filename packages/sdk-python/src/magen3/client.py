@@ -337,6 +337,10 @@ class Magen3Client:
         payload["agentId"] = self.agent_id
         return self._request("POST", "/api/agent-gateway/executions/poll", payload)
 
+    def get_threat_intelligence_status(self) -> Dict[str, Any]:
+        """Return sanitized Threat Intelligence provider/feed capability status."""
+        return self._request("GET", "/api/threat-intelligence/status")
+
     def get_bridge_provider_status(self) -> Dict[str, Any]:
         return self._request("GET", "/api/bridge-provider-integration/status")
 
