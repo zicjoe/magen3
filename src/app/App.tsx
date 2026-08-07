@@ -435,6 +435,23 @@ interface ComplianceControlsStatus {
   providerCapabilities?: Array<{ id?: string; name?: string; version?: string; enabled?: boolean; configured?: boolean; health?: string; capabilities?: string[]; subjectTypes?: string[]; chainFamilies?: string[] }>;
 }
 
+interface ContinuousRiskMonitoringStatus {
+  status?: string;
+  milestone?: number;
+  deterministic?: boolean;
+  schedulerEnabled?: boolean;
+  minimumCadenceSeconds?: number;
+  categories?: string[];
+  supports?: string[];
+  scheduler?: { enabled?: boolean; running?: boolean; inProgress?: boolean; intervalMs?: number };
+  error?: string;
+}
+
+interface MonitoringState {
+  monitors: Array<{ id?: string; agentId?: string; name?: string; status?: string; enabled?: boolean; cadenceSeconds?: number; lastEvaluatedAt?: string; nextEvaluationAt?: string }>;
+  alerts: Array<{ id?: string; monitorId?: string; agentId?: string; severity?: string; category?: string; trigger?: string; status?: string; recoveryStatus?: string; lastObservedAt?: string; occurrenceCount?: number; suggestedResolution?: string }>;
+}
+
 interface X402PaymentControlsStatus {
   status?: "foundation-available" | string;
   protocolVersion?: number;
@@ -2552,6 +2569,8 @@ function DashboardPage({
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
+  continuousRiskMonitoringStatus,
+  monitoringState,
   x402PaymentControlsStatus,
   auditLogs,
   policies,
@@ -2569,6 +2588,8 @@ function DashboardPage({
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
+  continuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus;
+  monitoringState: MonitoringState;
   x402PaymentControlsStatus: X402PaymentControlsStatus;
   auditLogs: AuditLog[];
   policies: Policy[];
@@ -2748,6 +2769,19 @@ function DashboardPage({
     providerRequirements.compliance && complianceControlsStatus.status !== "available" ? "Compliance Controls" : "",
   ].filter(Boolean);
 
+  const openMonitoringAlerts = monitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || ""));
+  if (openMonitoringAlerts.length > 0) {
+    attentionItems.push({
+      id: "continuous-monitoring",
+      title: `${openMonitoringAlerts.length} continuous risk alert${openMonitoringAlerts.length === 1 ? " needs" : "s need"} attention`,
+      description: openMonitoringAlerts[0]?.trigger || "A deterministic monitoring rule matched existing Magen3 state.",
+      action: "Review monitoring",
+      page: "settings",
+      tone: openMonitoringAlerts.some((item) => ["High", "Critical"].includes(item.severity || "")) ? "critical" : "warning",
+      icon: <Activity size={18} />,
+    });
+  }
+
   if (requiredUnavailableProviders.length > 0) {
     attentionItems.push({
       id: "providers",
@@ -2808,6 +2842,11 @@ function DashboardPage({
       label: "Compliance feed",
       detail: complianceControlsStatus.status === "available" ? `${complianceControlsStatus.activeIndicatorCount ?? complianceControlsStatus.indicatorCount ?? 0} indicators across ${complianceControlsStatus.activeJurisdictionCount ?? complianceControlsStatus.jurisdictionCount ?? 0} jurisdictions.` : complianceControlsStatus.status === "stale" ? "The configured compliance feed is stale." : "No fresh compliance feed is available.",
       status: complianceControlsStatus.status === "available" ? "operational" : complianceControlsStatus.status === "stale" ? "attention" : "unavailable",
+    },
+    {
+      label: "Continuous monitoring",
+      detail: continuousRiskMonitoringStatus.status === "live" ? `${monitoringState.monitors.filter((item) => item.enabled !== false).length} active monitor${monitoringState.monitors.filter((item) => item.enabled !== false).length === 1 ? "" : "s"} · ${openMonitoringAlerts.length} open alert${openMonitoringAlerts.length === 1 ? "" : "s"}.` : "Continuous Risk Monitoring status could not be confirmed.",
+      status: continuousRiskMonitoringStatus.status !== "live" ? "unavailable" : openMonitoringAlerts.length > 0 ? "attention" : "operational",
     },
   ];
 
@@ -11844,6 +11883,8 @@ function SettingsPage({
   threatIntelligenceStatus,
   oracleValidationStatus,
   complianceControlsStatus,
+  continuousRiskMonitoringStatus,
+  monitoringState,
   x402PaymentControlsStatus,
   emergencyPauses,
   walletAddress,
@@ -11860,6 +11901,8 @@ function SettingsPage({
   threatIntelligenceStatus: ThreatIntelligenceStatus;
   oracleValidationStatus: OracleValidationStatus;
   complianceControlsStatus: ComplianceControlsStatus;
+  continuousRiskMonitoringStatus: ContinuousRiskMonitoringStatus;
+  monitoringState: MonitoringState;
   x402PaymentControlsStatus: X402PaymentControlsStatus;
   emergencyPauses: EmergencyPause[];
   walletAddress: string;
@@ -11891,6 +11934,8 @@ function SettingsPage({
     ["Threat Intelligence Status", `${api.baseUrl}/api/threat-intelligence/status`],
     ["Oracle Validation Status", `${api.baseUrl}/api/oracle-validation/status`],
     ["Compliance Controls Status", `${api.baseUrl}/api/compliance-controls/status`],
+    ["Continuous Risk Monitoring Status", `${api.baseUrl}/api/continuous-risk-monitoring/status`],
+    ["Monitoring & Alerts", `${api.baseUrl}/api/monitoring?walletAddress=YOUR_WALLET`],
     ["Execution Integrity Status", `${api.baseUrl}/api/execution-integrity/status`],
     ["Trading Route Integrity Status", `${api.baseUrl}/api/trading-route-integrity/status`],
     ["Market Risk Signals Status", `${api.baseUrl}/api/market-risk-signals/status`],
@@ -11974,6 +12019,23 @@ function SettingsPage({
       ],
       error: complianceControlsStatus.error || "",
       note: "OFAC-API provider support is Preview until a deployment performs a genuine credentialed provider request. Provider results are evidence, not legal conclusions; Magen3 stores bounded status/evidence hashes rather than raw personal identity data.",
+    },
+    {
+      id: "monitoring",
+      label: "Continuous Risk Monitoring",
+      description: "Deterministic scheduled and manual evaluation of existing Magen3 state with deduplicated alerts and recovery detection.",
+      status: continuousRiskMonitoringStatus.status === "live" ? "Available" : "Unavailable",
+      icon: <Activity size={17} />,
+      details: [
+        ["Engine", continuousRiskMonitoringStatus.status || "unavailable"],
+        ["Deterministic", continuousRiskMonitoringStatus.deterministic ? "Yes" : "Unavailable"],
+        ["Scheduler", continuousRiskMonitoringStatus.scheduler?.enabled ? (continuousRiskMonitoringStatus.scheduler?.running ? "Enabled · running" : "Enabled") : "Disabled"],
+        ["Active monitors", String(monitoringState.monitors.filter((item) => item.enabled !== false).length)],
+        ["Open alerts", String(monitoringState.alerts.filter((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status || "")).length)],
+        ["Recovered alerts", String(monitoringState.alerts.filter((item) => item.status === "Recovered").length)],
+      ],
+      error: continuousRiskMonitoringStatus.error || "",
+      note: "Monitoring consumes existing bounded audit, reconciliation, provider, and policy state. It does not authorize execution or place operational monitoring evidence on Casper.",
     },
     {
       id: "x402",
@@ -12112,6 +12174,24 @@ function SettingsPage({
               return <div key={service.id} className={index > 0 ? "border-t border-[#1E293B]" : ""}><button type="button" onClick={() => setExpandedProvider(expanded ? "" : service.id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-[#111827]/45"><span className={`rounded-lg border p-2 ${providerClass(service.status)}`}>{service.icon}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-[#F8FAFC]">{service.label}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${providerClass(service.status)}`}>{service.status}</span></span><span className="mt-1 block text-xs leading-relaxed text-[#94A3B8]">{service.description}</span></span><ChevronDown size={16} className={`shrink-0 text-[#64748B] transition-transform ${expanded ? "rotate-180" : ""}`} /></button>{expanded && <div className="border-t border-[#1E293B] bg-[#050B14] p-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{service.details.map(([label, value]) => <div key={label} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div><div className="mt-1 break-words text-sm text-[#F8FAFC]">{value}</div></div>)}</div>{service.error && <div className="mt-3 rounded-lg border border-[#F59E0B]/25 bg-[#F59E0B]/5 p-3 text-xs leading-relaxed text-[#FCD34D]">{service.error}</div>}<div className="mt-3 text-[11px] leading-relaxed text-[#64748B]">{service.note}</div></div>}</div>;
             })}
           </div>
+          <div className={`${CARD} p-5`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div><h2 className={SECTION_TITLE}>Continuous Monitoring Operations</h2><p className="mt-1 max-w-3xl text-xs leading-relaxed text-[#94A3B8]">Create bounded per-agent monitors, run a deterministic evaluation, acknowledge alerts, and follow recovery without changing the per-intent authorization engine.</p></div>
+              <Btn variant="secondary" size="sm" onClick={() => { void api.runMonitoring({ walletAddress, force: true }).catch(() => undefined); }} disabled={!walletAddress || monitoringState.monitors.length === 0}>Run now</Btn>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Agent monitors</div>
+                {agents.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">Register an agent before creating a continuous monitor.</div>}
+                {agents.slice(0, 8).map((agent) => { const monitor = monitoringState.monitors.find((item) => item.agentId === agent.id); return <div key={agent.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="min-w-0"><div className="truncate text-xs font-semibold text-[#F8FAFC]">{agent.name || agent.id}</div><div className="mt-1 text-[11px] text-[#64748B]">{monitor ? `${monitor.status || "Active"} · every ${monitor.cadenceSeconds || 300}s` : "No monitor configured"}</div></div>{!monitor && <Btn variant="secondary" size="sm" onClick={() => { void api.createMonitor({ walletAddress, agentId: agent.id, name: `${agent.name || agent.id} continuous monitor`, cadenceSeconds: 300 }).catch(() => undefined); }}>Create</Btn>}</div>; })}
+              </div>
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">Recent alerts</div>
+                {monitoringState.alerts.length === 0 && <div className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3 text-xs text-[#94A3B8]">No monitoring alerts have been recorded.</div>}
+                {monitoringState.alerts.slice(0, 8).map((alert) => <div key={alert.id} className="rounded-lg border border-[#1E293B] bg-[#0B1220] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-semibold text-[#F8FAFC]">{alert.trigger || alert.category}</div><div className="mt-1 text-[11px] text-[#64748B]">{alert.severity} · {alert.status} · observed {alert.occurrenceCount || 1} time{(alert.occurrenceCount || 1) === 1 ? "" : "s"}</div></div>{alert.status === "Open" && <Btn variant="secondary" size="sm" onClick={() => { void api.updateMonitoringAlert(alert.id, { walletAddress, status: "Acknowledged", acknowledgementNote: "Acknowledged from Magen3 Settings." }).catch(() => undefined); }}>Acknowledge</Btn>}</div>{alert.suggestedResolution && <div className="mt-2 text-[11px] leading-relaxed text-[#94A3B8]">{alert.suggestedResolution}</div>}{alert.status === "Recovered" && <div className="mt-2 text-[11px] text-[#22C55E]">Recovered automatically after the monitored condition cleared.</div>}</div>)}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -12156,6 +12236,8 @@ export default function App() {
   const [threatIntelligenceStatus, setThreatIntelligenceStatus] = useState<ThreatIntelligenceStatus>({ status: "unavailable", sourceType: "none", sourceName: "No threat intelligence feed configured", indicatorCount: 0 });
   const [oracleValidationStatus, setOracleValidationStatus] = useState<OracleValidationStatus>({ status: "unavailable", sourceType: "none", sourceName: "No oracle feed configured", observationCount: 0, pairCount: 0 });
   const [complianceControlsStatus, setComplianceControlsStatus] = useState<ComplianceControlsStatus>({ status: "unavailable", sourceType: "none", sourceName: "No compliance controls feed configured", indicatorCount: 0, jurisdictionCount: 0 });
+  const [continuousRiskMonitoringStatus, setContinuousRiskMonitoringStatus] = useState<ContinuousRiskMonitoringStatus>({ status: "unavailable", deterministic: true, schedulerEnabled: false });
+  const [monitoringState, setMonitoringState] = useState<MonitoringState>({ monitors: [], alerts: [] });
   const [x402PaymentControlsStatus, setX402PaymentControlsStatus] = useState<X402PaymentControlsStatus>({ status: "live-testnet", protocolVersion: 2, supportedSchemes: ["exact", "upto", "metered"], requestBinding: true, replayProtection: true, settlementReporting: true, liveSettlement: true, controlledAuthorizations: true, usageAccounting: true, reservationCaptureRelease: true, partialSettlement: true, authorizationRevocation: true, resourceDeliveryVerification: true });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [developerMode, setDeveloperMode] = useState(() => {
@@ -12246,6 +12328,22 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    const refreshMonitoringStatus = async () => {
+      try {
+        const payload = await api.continuousRiskMonitoringStatus();
+        if (!cancelled) setContinuousRiskMonitoringStatus(payload.continuousRiskMonitoring as ContinuousRiskMonitoringStatus);
+      } catch {
+        if (!cancelled) setContinuousRiskMonitoringStatus((previous) => ({ ...previous, status: "unavailable", error: "Continuous Risk Monitoring status endpoint is unavailable." }));
+      }
+    };
+    void refreshMonitoringStatus();
+    intervalId = setInterval(() => void refreshMonitoringStatus(), 60_000);
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     const refreshX402Status = async () => {
       try {
         const payload = await api.x402PaymentControlsStatus();
@@ -12268,6 +12366,7 @@ export default function App() {
       setAuditLogs([]);
       setApprovals([]);
       setEmergencyPauses([]);
+      setMonitoringState({ monitors: [], alerts: [] });
       return () => {
         cancelled = true;
       };
@@ -12287,6 +12386,7 @@ export default function App() {
         if (Array.isArray(payload.auditLogs)) setAuditLogs(payload.auditLogs as AuditLog[]);
         if (Array.isArray(payload.approvals)) setApprovals(payload.approvals as ApprovalRequest[]);
         if (Array.isArray(payload.emergencyPauses)) setEmergencyPauses(payload.emergencyPauses as EmergencyPause[]);
+        if (payload.monitoring && typeof payload.monitoring === "object") setMonitoringState({ monitors: Array.isArray(payload.monitoring.monitors) ? payload.monitoring.monitors : [], alerts: Array.isArray(payload.monitoring.alerts) ? payload.monitoring.alerts : [] });
         setApiOnline(true);
       } catch {
         if (!cancelled) setApiOnline(false);
@@ -12626,6 +12726,8 @@ export default function App() {
         threatIntelligenceStatus={threatIntelligenceStatus}
         oracleValidationStatus={oracleValidationStatus}
         complianceControlsStatus={complianceControlsStatus}
+        continuousRiskMonitoringStatus={continuousRiskMonitoringStatus}
+        monitoringState={monitoringState}
         x402PaymentControlsStatus={x402PaymentControlsStatus}
         auditLogs={auditLogs}
         policies={policies}
@@ -12712,6 +12814,8 @@ export default function App() {
         threatIntelligenceStatus={threatIntelligenceStatus}
         oracleValidationStatus={oracleValidationStatus}
         complianceControlsStatus={complianceControlsStatus}
+        continuousRiskMonitoringStatus={continuousRiskMonitoringStatus}
+        monitoringState={monitoringState}
         x402PaymentControlsStatus={x402PaymentControlsStatus}
         emergencyPauses={emergencyPauses}
         walletAddress={walletAddress}

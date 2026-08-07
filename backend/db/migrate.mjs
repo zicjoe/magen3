@@ -412,4 +412,29 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await pool.end();
       process.exit(1);
     });
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS monitoring_monitors (
+      id TEXT PRIMARY KEY, owner_wallet_address TEXT NOT NULL, agent_id TEXT NOT NULL DEFAULT '', name TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '', subject_type TEXT NOT NULL DEFAULT 'Agent', categories JSONB NOT NULL DEFAULT '[]'::jsonb,
+      cadence_seconds INTEGER NOT NULL DEFAULT 300, enabled BOOLEAN NOT NULL DEFAULT TRUE, severity_threshold TEXT NOT NULL DEFAULT 'Medium',
+      automated_actions JSONB NOT NULL DEFAULT '{}'::jsonb, configuration JSONB NOT NULL DEFAULT '{}'::jsonb, checkpoint JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'Active', last_evaluated_at TIMESTAMPTZ, next_evaluation_at TIMESTAMPTZ, last_error TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS monitoring_alerts (
+      id TEXT PRIMARY KEY, monitor_id TEXT NOT NULL, owner_wallet_address TEXT NOT NULL, agent_id TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL, subject_type TEXT NOT NULL, severity TEXT NOT NULL, category TEXT NOT NULL, trigger TEXT NOT NULL,
+      evidence JSONB NOT NULL DEFAULT '{}'::jsonb, evidence_hash TEXT NOT NULL, first_observed_at TIMESTAMPTZ NOT NULL, last_observed_at TIMESTAMPTZ NOT NULL,
+      occurrence_count INTEGER NOT NULL DEFAULT 1, deduplication_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Open',
+      acknowledgement JSONB NOT NULL DEFAULT '{}'::jsonb, assigned_reviewer TEXT NOT NULL DEFAULT '', recovery_status TEXT NOT NULL DEFAULT 'Active',
+      automated_action JSONB NOT NULL DEFAULT '{}'::jsonb, audit_reference TEXT NOT NULL DEFAULT '', suggested_resolution TEXT NOT NULL DEFAULT '', history JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS monitoring_alerts_dedup_idx ON monitoring_alerts (monitor_id, deduplication_key);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS monitoring_monitors_due_idx ON monitoring_monitors (enabled, next_evaluation_at);`);
+
 }

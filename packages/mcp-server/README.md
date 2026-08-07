@@ -174,3 +174,7 @@ Use `magen3_get_oracle_validation_status` for sanitized provider capability and 
 
 ### Compliance provider status
 `magen3_get_compliance_controls_status` returns sanitized provider capability, configuration, health, and feed state. It never returns provider API keys, raw identity data, or unbounded provider payloads. Provider claims never directly authorize execution.
+
+### Continuous Risk Monitoring
+
+`magen3_get_continuous_risk_monitoring_status` returns deterministic capability and scheduler state. `magen3_get_monitoring_alerts` returns bounded alerts only for the configured Agent ID/API key. MCP cannot create provider endpoints, credentials, monitoring evidence, or automated authorization decisions.

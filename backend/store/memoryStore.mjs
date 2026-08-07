@@ -23,6 +23,7 @@ import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallen
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 import { assertAgentDeletionAllowed } from "../lib/agentDeletion.mjs";
+import { acknowledgeMonitoringAlert, evaluateMonitor, normalizeMonitorDefinition, reconcileMonitoringAlerts, selectAuthorizedMonitoringAction } from "../lib/continuousRiskMonitoring.mjs";
 
 function normalizeWalletAddress(value) {
   return String(value || "").trim();
@@ -77,6 +78,8 @@ export function createMemoryStore() {
   let gatewayRequests = [];
   let emergencyPauses = [];
   let approvalSignatureChallenges = [];
+  let monitoringMonitors = [];
+  let monitoringAlerts = [];
 
   function publicAgent(agent, extra = {}) {
     if (!agent) return agent;
@@ -254,9 +257,103 @@ export function createMemoryStore() {
         auditLogs: scopedAuditLogs(walletAddress),
         approvals: scopedApprovals(walletAddress),
         emergencyPauses: scopedEmergencyPauses(walletAddress),
+        monitoring: { monitors: monitoringMonitors.filter((m) => m.ownerWalletAddress === normalizeWalletAddress(walletAddress)), alerts: monitoringAlerts.filter((a) => a.ownerWalletAddress === normalizeWalletAddress(walletAddress)) },
         shieldModules,
         dashboardStats: dashboardStats(walletAddress),
       };
+    },
+
+    async listMonitoring(walletAddress) {
+      const wallet = requireWalletAddress(walletAddress);
+      return {
+        monitors: monitoringMonitors.filter((m) => m.ownerWalletAddress === wallet),
+        alerts: monitoringAlerts.filter((a) => a.ownerWalletAddress === wallet).sort((a,b) => String(b.lastObservedAt).localeCompare(String(a.lastObservedAt))),
+      };
+    },
+
+    async getAgentMonitoring(agentId, context = {}) {
+      const agent = requireGatewayAgent(agentId, context.apiKey);
+      const monitors = monitoringMonitors.filter((m) => m.ownerWalletAddress === agent.ownerWalletAddress && m.agentId === agent.id);
+      const monitorIds = new Set(monitors.map((m) => m.id));
+      const alerts = monitoringAlerts.filter((a) => a.ownerWalletAddress === agent.ownerWalletAddress && a.agentId === agent.id && monitorIds.has(a.monitorId));
+      return { ok: true, agentId: agent.id, monitors, alerts, summary: { monitors: monitors.length, openAlerts: alerts.filter((a) => ["Open", "Acknowledged", "Investigating"].includes(a.status)).length, recoveredAlerts: alerts.filter((a) => a.status === "Recovered").length } };
+    },
+
+    async createMonitor(body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const agent = agents.find((a) => a.id === String(body.agentId || "") && a.ownerWalletAddress === wallet);
+      if (!agent) { const e = new Error("Monitoring agent not found for the connected wallet."); e.status = 404; throw e; }
+      const now = new Date();
+      const monitor = normalizeMonitorDefinition({ ...body, id: makeId("MON"), ownerWalletAddress: wallet, subject: body.subject || agent.id, createdAt: now, updatedAt: now, nextEvaluationAt: now }, { now });
+      monitoringMonitors.unshift({ ...monitor, checkpoint: {}, lastError: "" });
+      return monitoringMonitors[0];
+    },
+
+    async updateMonitor(id, body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const index = monitoringMonitors.findIndex((m) => m.id === id && m.ownerWalletAddress === wallet);
+      if (index < 0) { const e = new Error("Monitoring definition not found."); e.status = 404; throw e; }
+      const current = monitoringMonitors[index];
+      const next = normalizeMonitorDefinition({ ...current, ...body, id: current.id, ownerWalletAddress: wallet, agentId: current.agentId, updatedAt: new Date() });
+      monitoringMonitors[index] = { ...current, ...next };
+      return monitoringMonitors[index];
+    },
+
+    async runMonitoringCycle(body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const now = new Date(body.now || Date.now());
+      const selected = monitoringMonitors.filter((m) => m.ownerWalletAddress === wallet && m.enabled !== false && (!body.monitorId || m.id === body.monitorId));
+      const results = [];
+      for (const monitor of selected) {
+        if (!body.force && monitor.nextEvaluationAt && new Date(monitor.nextEvaluationAt).getTime() > now.getTime()) continue;
+        const agent = agents.find((a) => a.id === monitor.agentId && a.ownerWalletAddress === wallet) || null;
+        const policy = policies.find((p) => p.agentId === monitor.agentId && p.status === "Active" && p.ownerWalletAddress === wallet) || null;
+        const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([getThreatIntelligenceSnapshot(), getOracleValidationSnapshot(), getComplianceControlsSnapshot()]);
+        const evaluation = evaluateMonitor({ monitor, agent: agent ? publicAgent(agent) : null, policy, auditLogs: scopedAuditLogs(wallet).filter((a) => a.agentId === monitor.agentId), providerSnapshots: { threatIntelligence, oracleValidation, complianceControls }, checkpoint: monitor.checkpoint || {}, now });
+        const existing = monitoringAlerts.filter((a) => a.monitorId === monitor.id);
+        const reconciled = reconcileMonitoringAlerts({ monitor, observations: evaluation.observations, existingAlerts: existing, now });
+        for (const item of reconciled.upserts) {
+          const idx = monitoringAlerts.findIndex((a) => a.monitorId === monitor.id && a.deduplicationKey === item.deduplicationKey);
+          if (idx >= 0) monitoringAlerts[idx] = { ...monitoringAlerts[idx], ...item }; else monitoringAlerts.unshift({ ...item, id: makeId("ALT") });
+        }
+        for (const item of reconciled.recoveries) { const idx = monitoringAlerts.findIndex((a) => a.id === item.id); if (idx >= 0) monitoringAlerts[idx] = item; }
+        let automatedAction = null;
+        const action = selectAuthorizedMonitoringAction({ monitor, policy, observations: evaluation.observations });
+        if (action) {
+          const existingPause = emergencyPauses.find((pause) => pause.agentId === monitor.agentId && pause.scopeType === action.scopeType && pause.status === "Active");
+          if (!existingPause) {
+            const created = await this.createEmergencyPause({ walletAddress: wallet, agentId: monitor.agentId, scopeType: action.scopeType, scopeValue: action.scopeType === "Agent" ? monitor.agentId : action.scopeType, enforcementAction: action.enforcementAction, reason: `Continuous Risk Monitoring authorized ${action.key} after a deterministic ${evaluation.observations.find((item) => ["High","Critical"].includes(item.severity))?.category || "risk"} alert.`, triggerRule: `Continuous Risk Monitoring: ${action.key}`, triggerEvidence: { monitorId: monitor.id, observationHashes: evaluation.observations.slice(0, 8).map((item) => item.evidenceHash) } });
+            automatedAction = { type: action.key, status: "executed", pauseId: created.emergencyPause?.id || "", auditReference: created.auditLog?.id || "", executedAt: now.toISOString() };
+          } else automatedAction = { type: action.key, status: "already-active", pauseId: existingPause.id, executedAt: now.toISOString() };
+          const target = monitoringAlerts.find((item) => item.monitorId === monitor.id && ["Open", "Acknowledged", "Investigating"].includes(item.status) && ["High", "Critical"].includes(item.severity));
+          if (target) {
+            target.automatedAction = automatedAction;
+            target.auditReference = automatedAction.auditReference || target.auditReference || "";
+            target.history = [...(Array.isArray(target.history) ? target.history : []), { at: now.toISOString(), event: "automated_action", action: automatedAction.type, status: automatedAction.status }].slice(-50);
+            target.updatedAt = now.toISOString();
+          }
+        }
+        const nextEvaluationAt = new Date(now.getTime() + monitor.cadenceSeconds * 1000).toISOString();
+        const mi = monitoringMonitors.findIndex((m) => m.id === monitor.id);
+        monitoringMonitors[mi] = { ...monitor, checkpoint: evaluation.checkpoint, lastEvaluatedAt: evaluation.evaluatedAt, nextEvaluationAt, lastError: "", updatedAt: now.toISOString() };
+        results.push({ monitorId: monitor.id, observations: evaluation.observations.length, automatedAction, alertsOpen: monitoringAlerts.filter((a) => a.monitorId === monitor.id && ["Open","Acknowledged","Investigating"].includes(a.status)).length, evaluatedAt: evaluation.evaluatedAt, nextEvaluationAt });
+      }
+      return { ok: true, evaluated: results.length, results };
+    },
+
+    async runScheduledMonitoringCycle({ now = new Date() } = {}) {
+      const owners = [...new Set(monitoringMonitors.filter((m) => m.enabled !== false).map((m) => m.ownerWalletAddress).filter(Boolean))];
+      const results = [];
+      for (const walletAddress of owners) results.push(await this.runMonitoringCycle({ walletAddress, now, force: false }));
+      return { ok: true, tenantsEvaluated: owners.length, monitorsEvaluated: results.reduce((sum, item) => sum + Number(item.evaluated || 0), 0) };
+    },
+
+    async updateMonitoringAlert(id, body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const index = monitoringAlerts.findIndex((a) => a.id === id && a.ownerWalletAddress === wallet);
+      if (index < 0) { const e = new Error("Monitoring alert not found."); e.status = 404; throw e; }
+      monitoringAlerts[index] = acknowledgeMonitoringAlert(monitoringAlerts[index], body);
+      return monitoringAlerts[index];
     },
 
     async connectWallet() {

@@ -987,6 +987,18 @@ export interface Magen3BridgeControlsContext {
 }
 
 
+
+export interface Magen3MonitoringAlert {
+  id?: string; monitorId?: string; subject?: string; subjectType?: string; severity?: string; category?: string; trigger?: string; evidenceHash?: string; firstObservedAt?: string; lastObservedAt?: string; occurrenceCount?: number; status?: "Open" | "Acknowledged" | "Investigating" | "Resolved" | "Suppressed" | "Recovered" | string; recoveryStatus?: string; suggestedResolution?: string;
+}
+
+export interface Magen3MonitoringStatus {
+  agentId?: string;
+  monitors?: Array<{ id?: string; name?: string; status?: string; enabled?: boolean; cadenceSeconds?: number; lastEvaluatedAt?: string; nextEvaluationAt?: string; categories?: string[] }>;
+  alerts?: Magen3MonitoringAlert[];
+  summary?: { monitors?: number; openAlerts?: number; recoveredAlerts?: number };
+}
+
 export interface Magen3ComplianceControlsContext {
   status?: "available" | "stale" | "unavailable" | string;
   sourceType?: "inline" | "file" | "remote" | "none" | string;
@@ -2127,6 +2139,14 @@ export class Magen3Client {
 
   async getComplianceControlsStatus(): Promise<{ ok: boolean; complianceControls: Magen3ComplianceControlsContext }> {
     return this.request<{ ok: boolean; complianceControls: Magen3ComplianceControlsContext }>("/api/compliance-controls/status", { method: "GET" });
+  }
+
+  async getContinuousRiskMonitoringStatus(): Promise<{ ok: boolean; continuousRiskMonitoring: Record<string, unknown> }> {
+    return this.request("/api/continuous-risk-monitoring/status", { method: "GET" });
+  }
+
+  async getMonitoringStatus(): Promise<Magen3MonitoringStatus & { ok: boolean }> {
+    return this.request(`/api/agent-gateway/monitoring?agentId=${encodeURIComponent(this.agentId)}`, { method: "GET" });
   }
 
   async getBridgeProviderStatus(): Promise<{ ok: boolean; bridgeProviderIntegration: Magen3BridgeProviderStatus }> {

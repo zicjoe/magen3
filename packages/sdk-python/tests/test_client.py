@@ -815,3 +815,16 @@ class TestProductionComplianceStatus(unittest.TestCase):
         result = client.get_compliance_controls_status()
         self.assertTrue(captured[0][1].endswith("/api/compliance-controls/status"))
         self.assertEqual(result["complianceControls"]["configuredProviderIds"], ["ofac_api"])
+
+class TestContinuousRiskMonitoring(unittest.TestCase):
+    def test_monitoring_status_methods(self):
+        captured = []
+        def transport(method, url, headers, data, timeout):
+            captured.append((method, url, headers))
+            if url.endswith("/api/continuous-risk-monitoring/status"):
+                return {"ok": True, "continuousRiskMonitoring": {"status": "live", "deterministic": True}}
+            return {"ok": True, "agentId": "MAG-MON", "monitors": [{"id": "MON-1"}], "alerts": []}
+        client = Magen3Client("https://api.example", "MAG-MON", "secret", transport=transport)
+        self.assertEqual(client.get_continuous_risk_monitoring_status()["continuousRiskMonitoring"]["status"], "live")
+        self.assertEqual(client.get_monitoring_status()["monitors"][0]["id"], "MON-1")
+        self.assertIn("/api/agent-gateway/monitoring?agentId=MAG-MON", captured[1][1])

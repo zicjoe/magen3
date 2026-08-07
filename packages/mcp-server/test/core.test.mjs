@@ -589,3 +589,15 @@ test("MCP exposes sanitized production Compliance Provider status", async () => 
   assert.match(result.content[0].text, /legal conclusion/i);
   assert.doesNotMatch(result.content[0].text, /api[_-]?key|bearer secret/i);
 });
+
+test("MCP exposes bounded Continuous Risk Monitoring capability and agent alerts", async () => {
+  const handlers = createToolHandlers({
+    verifyAgent: async () => ({ ok: true }), checkIntent: async () => ({ ok: true }), requireAllowed: async () => ({ ok: true }), getApproval: async () => ({ ok: true }), reportX402Settlement: async () => ({ ok: true }), executeX402Payment: async () => ({ ok: true }), createX402Authorization: async () => ({ ok: true }), applyX402AuthorizationEvent: async () => ({ ok: true }), reportExecutionReconciliation: async () => ({ ok: true }), pollExecutionReconciliation: async () => ({ ok: true }), getThreatIntelligenceStatus: async () => ({ ok: true }), getOracleValidationStatus: async () => ({ ok: true }), getComplianceControlsStatus: async () => ({ ok: true }), getContinuousRiskMonitoringStatus: async () => ({ ok: true, continuousRiskMonitoring: { status: "live", deterministic: true } }), getMonitoringStatus: async () => ({ ok: true, agentId: "MAG-MON", monitors: [{ id: "MON-1" }], alerts: [{ id: "ALT-1", severity: "High", category: "execution", evidenceHash: "abc" }], summary: { openAlerts: 1 } }), getBridgeProviderStatus: async () => ({ ok: true }), requestBridgeProviderQuote: async () => ({ ok: true }), pollBridgeProvider: async () => ({ ok: true }),
+  });
+  const capability = await handlers.getContinuousRiskMonitoringStatus();
+  assert.match(capability.content[0].text, /live/i);
+  const alerts = await handlers.getMonitoringStatus();
+  assert.match(alerts.content[0].text, /ALT-1/);
+  assert.match(alerts.content[0].text, /does not authorize execution/i);
+  assert.doesNotMatch(alerts.content[0].text, /private key|bearer secret/i);
+});

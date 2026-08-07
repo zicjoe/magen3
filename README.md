@@ -1126,3 +1126,5 @@ Pyth provider support is **Preview** until a deployment performs and verifies a 
 
 ### Milestone 27 — Production Compliance Provider
 Magen3 includes a fixed-origin, server-authenticated compliance-provider adapter architecture with OFAC-API v4 screening as the first provider path. It screens supported blockchain identifiers without accepting raw natural-person identity data through the Agent Gateway. Provider evidence is normalized, freshness/confidence checked, bounded, hashed, and evaluated by existing deterministic Compliance Controls and Risk Assessment. The provider capability remains Preview until a genuine credentialed live request is verified. Continuous rescreening is intentionally deferred to Milestone 28.
+
+- Continuous Risk Monitoring: `docs/CONTINUOUS_RISK_MONITORING.md`

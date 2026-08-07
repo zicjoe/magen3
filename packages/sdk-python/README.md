@@ -341,3 +341,7 @@ Use `client.get_oracle_validation_status()` to inspect sanitized Production Orac
 
 ### Production Compliance Provider (Milestone 27)
 The SDK exposes a sanitized compliance-provider status endpoint. Provider credentials and raw provider payloads are never returned. OFAC-API v4 screening support is Preview until live credentials are configured and a genuine provider request is verified. Provider results are evidence only; Magen3 policy remains responsible for Allowed, Review Required, or Blocked.
+
+### Continuous Risk Monitoring (Milestone 28)
+
+Use `client.get_continuous_risk_monitoring_status()` for public capability/scheduler state and `client.get_monitoring_status()` for API-key-authenticated, agent-scoped monitors and alerts. Returned evidence is bounded and sanitized.

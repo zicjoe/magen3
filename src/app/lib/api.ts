@@ -73,6 +73,26 @@ export const api = {
     return request<{ ok: boolean; complianceControls: Record<string, unknown> }>("/api/compliance-controls/status");
   },
 
+  continuousRiskMonitoringStatus() {
+    return request<{ ok: boolean; continuousRiskMonitoring: Record<string, unknown> }>("/api/continuous-risk-monitoring/status");
+  },
+
+  monitoring(walletAddress: string) {
+    return request<any>(`/api/monitoring?walletAddress=${encodeURIComponent(walletAddress)}`);
+  },
+
+  createMonitor(body: Record<string, unknown>) {
+    return request<any>("/api/monitoring/monitors", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  runMonitoring(body: Record<string, unknown>) {
+    return request<any>("/api/monitoring/run", { method: "POST", body: JSON.stringify(body) });
+  },
+
+  updateMonitoringAlert(id: string, body: Record<string, unknown>) {
+    return request<any>(`/api/monitoring/alerts/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(body) });
+  },
+
   executionIntegrityStatus() {
     return request<{ ok: boolean; executionIntegrity: Record<string, unknown> }>("/api/execution-integrity/status");
   },

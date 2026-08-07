@@ -1267,3 +1267,16 @@ test("compliance controls status exposes sanitized production provider capabilit
   assert.match(capturedUrl, /\/api\/compliance-controls\/status$/);
   assert.equal(result.complianceControls.configuredProviderIds[0], "ofac_api");
 });
+
+test("continuous risk monitoring status and authenticated agent monitoring use bounded backend routes", async () => {
+  const calls = [];
+  const client = new Magen3Client({ gatewayUrl: "https://api.example", agentId: "MAG-MON", apiKey: "secret", fetch: async (url, init = {}) => {
+    calls.push({ url: String(url), headers: init.headers || {} });
+    if (String(url).includes("continuous-risk-monitoring")) return new Response(JSON.stringify({ ok: true, continuousRiskMonitoring: { status: "live", deterministic: true } }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true, agentId: "MAG-MON", monitors: [{ id: "MON-1" }], alerts: [], summary: { monitors: 1, openAlerts: 0 } }), { status: 200 });
+  } });
+  assert.equal((await client.getContinuousRiskMonitoringStatus()).continuousRiskMonitoring.status, "live");
+  const state = await client.getMonitoringStatus();
+  assert.equal(state.monitors.length, 1);
+  assert.match(calls[1].url, /\/api\/agent-gateway\/monitoring\?agentId=MAG-MON$/);
+});

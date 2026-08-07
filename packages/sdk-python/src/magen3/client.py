@@ -349,6 +349,14 @@ class Magen3Client:
         """Return sanitized production Compliance provider/feed capability status."""
         return self._request("GET", "/api/compliance-controls/status")
 
+    def get_continuous_risk_monitoring_status(self) -> Dict[str, Any]:
+        """Return Continuous Risk Monitoring capability and scheduler status."""
+        return self._request("GET", "/api/continuous-risk-monitoring/status")
+
+    def get_monitoring_status(self) -> Dict[str, Any]:
+        """Return this connected agent's bounded monitors and alert state."""
+        return self._request("GET", f"/api/agent-gateway/monitoring?agentId={quote(self.agent_id)}")
+
     def get_bridge_provider_status(self) -> Dict[str, Any]:
         return self._request("GET", "/api/bridge-provider-integration/status")
 

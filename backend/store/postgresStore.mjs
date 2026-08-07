@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { shieldModules } from "../data/seed.mjs";
 import { db } from "../db/client.mjs";
 import { runMigrations } from "../db/migrate.mjs";
-import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, approvalSignatureChallengesTable, auditLogsTable, emergencyPausesTable, policiesTable } from "../db/schema.mjs";
+import { actionReviewsTable, agentGatewayRequestsTable, agentsTable, approvalSignatureChallengesTable, auditLogsTable, emergencyPausesTable, policiesTable, monitoringMonitorsTable, monitoringAlertsTable } from "../db/schema.mjs";
 import { apiKeyPreview, hashSecret, makeApiKey, makeId, makePseudoHash, secretMatches } from "../lib/ids.mjs";
 import { buildAuditDecisionPayload, isRealDeployHash, validateDeployHash } from "../casper/auditPayload.mjs";
 import { initialDecisionProofState, recordDecisionProof } from "../casper/decisionRelayer.mjs";
@@ -27,6 +27,7 @@ import { approvalSignatureChallengePublicSummary, createApprovalSignatureChallen
 import { automaticPauseFinding, detectAutomaticEmergencyTrigger, evaluateEmergencyControls } from "../lib/emergencyControls.mjs";
 import { buildEmergencyAuditLog, createEmergencyResumeApproval, normalizeEmergencyPauseInput, publicEmergencyPause } from "../lib/emergencyPauseWorkflow.mjs";
 import { assertAgentDeletionAllowed } from "../lib/agentDeletion.mjs";
+import { acknowledgeMonitoringAlert, evaluateMonitor, normalizeMonitorDefinition, reconcileMonitoringAlerts, selectAuthorizedMonitoringAction } from "../lib/continuousRiskMonitoring.mjs";
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value || Date.now());
@@ -556,7 +557,114 @@ export async function createPostgresStore() {
         listApprovals(normalizedWallet),
         listEmergencyPauses(normalizedWallet),
       ]);
-      return { agents, policies, auditLogs, approvals, emergencyPauses, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
+      const monitoringRows = normalizedWallet ? await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, normalizedWallet)) : [];
+      const monitoringAlertRows = normalizedWallet ? await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, normalizedWallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)) : [];
+      return { agents, policies, auditLogs, approvals, emergencyPauses, monitoring: { monitors: monitoringRows, alerts: monitoringAlertRows }, shieldModules, dashboardStats: deriveDashboardStats(policies, auditLogs, emergencyPauses) };
+    },
+
+    async listMonitoring(walletAddress) {
+      const wallet = requireWalletAddress(walletAddress);
+      const [monitors, alerts] = await Promise.all([
+        db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringMonitorsTable.createdAt)),
+        db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, wallet)).orderBy(desc(monitoringAlertsTable.lastObservedAt)),
+      ]);
+      return { monitors, alerts };
+    },
+
+    async getAgentMonitoring(agentId, context = {}) {
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, String(agentId || "")));
+      const agent = agentRows[0];
+      if (!agent || agent.status === "Revoked" || !secretMatches(context.apiKey, agent.apiKeyHash)) { const e = new Error("Agent Gateway credentials are invalid for monitoring status"); e.status = agent ? 401 : 404; throw e; }
+      const monitors = (await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, agent.ownerWalletAddress))).filter((m) => m.agentId === agent.id);
+      const alerts = (await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.ownerWalletAddress, agent.ownerWalletAddress)).orderBy(desc(monitoringAlertsTable.lastObservedAt))).filter((a) => a.agentId === agent.id);
+      return { ok: true, agentId: agent.id, monitors, alerts, summary: { monitors: monitors.length, openAlerts: alerts.filter((a) => ["Open", "Acknowledged", "Investigating"].includes(a.status)).length, recoveredAlerts: alerts.filter((a) => a.status === "Recovered").length } };
+    },
+
+    async createMonitor(body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, String(body.agentId || "")));
+      const agent = agentRows.find((a) => a.ownerWalletAddress === wallet);
+      if (!agent) { const e = new Error("Monitoring agent not found for the connected wallet."); e.status = 404; throw e; }
+      const now = new Date();
+      const monitor = normalizeMonitorDefinition({ ...body, id: makeId("MON"), ownerWalletAddress: wallet, subject: body.subject || agent.id, createdAt: now, updatedAt: now, nextEvaluationAt: now }, { now });
+      const [row] = await db.insert(monitoringMonitorsTable).values({ ...monitor, checkpoint: {}, lastError: "", createdAt: now, updatedAt: now, nextEvaluationAt: now, lastEvaluatedAt: null }).returning();
+      return row;
+    },
+
+    async updateMonitor(id, body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const rows = await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.id, id));
+      const current = rows.find((m) => m.ownerWalletAddress === wallet);
+      if (!current) { const e = new Error("Monitoring definition not found."); e.status = 404; throw e; }
+      const next = normalizeMonitorDefinition({ ...current, ...body, id: current.id, ownerWalletAddress: wallet, agentId: current.agentId, updatedAt: new Date() });
+      const [row] = await db.update(monitoringMonitorsTable).set({ name: next.name, subject: next.subject, subjectType: next.subjectType, categories: next.categories, cadenceSeconds: next.cadenceSeconds, enabled: next.enabled, severityThreshold: next.severityThreshold, automatedActions: next.automatedActions, configuration: next.configuration, status: next.status, updatedAt: new Date() }).where(eq(monitoringMonitorsTable.id, id)).returning();
+      return row;
+    },
+
+    async runMonitoringCycle(body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const now = new Date(body.now || Date.now());
+      let monitors = await db.select().from(monitoringMonitorsTable).where(eq(monitoringMonitorsTable.ownerWalletAddress, wallet));
+      monitors = monitors.filter((m) => m.enabled !== false && (!body.monitorId || m.id === body.monitorId));
+      const results = [];
+      for (const monitor of monitors) {
+        if (!body.force && monitor.nextEvaluationAt && new Date(monitor.nextEvaluationAt).getTime() > now.getTime()) continue;
+        const agentRows = await db.select().from(agentsTable).where(eq(agentsTable.id, monitor.agentId));
+        const agentRow = agentRows.find((a) => a.ownerWalletAddress === wallet) || null;
+        const policyRows = await db.select().from(policiesTable).where(eq(policiesTable.agentId, monitor.agentId));
+        const policy = policyRows.find((p) => p.status === "Active") || null;
+        const audits = (await db.select().from(auditLogsTable).where(eq(auditLogsTable.agentId, monitor.agentId)).orderBy(desc(auditLogsTable.timestamp))).filter((a) => a.walletAddress === wallet || a.agentOwnerWalletAddress === wallet).slice(0, 250).map(normalizeAuditLog);
+        const [threatIntelligence, oracleValidation, complianceControls] = await Promise.all([getThreatIntelligenceSnapshot(), getOracleValidationSnapshot(), getComplianceControlsSnapshot()]);
+        const evaluation = evaluateMonitor({ monitor, agent: agentRow ? normalizeAgent(agentRow) : null, policy: policy ? normalizePolicy(policy) : null, auditLogs: audits, providerSnapshots: { threatIntelligence, oracleValidation, complianceControls }, checkpoint: monitor.checkpoint || {}, now });
+        const existing = await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.monitorId, monitor.id));
+        const reconciled = reconcileMonitoringAlerts({ monitor, observations: evaluation.observations, existingAlerts: existing, now });
+        for (const item of reconciled.upserts) {
+          const found = existing.find((a) => a.deduplicationKey === item.deduplicationKey);
+          const values = { ...item, automatedAction: item.automatedAction || {}, firstObservedAt: new Date(item.firstObservedAt), lastObservedAt: new Date(item.lastObservedAt), createdAt: new Date(item.createdAt), updatedAt: new Date(item.updatedAt) };
+          if (found) await db.update(monitoringAlertsTable).set({ severity: values.severity, trigger: values.trigger, evidence: values.evidence, evidenceHash: values.evidenceHash, lastObservedAt: values.lastObservedAt, occurrenceCount: values.occurrenceCount, recoveryStatus: values.recoveryStatus, history: values.history || [], updatedAt: values.updatedAt }).where(eq(monitoringAlertsTable.id, found.id));
+          else await db.insert(monitoringAlertsTable).values({ ...values, id: makeId("ALT") });
+        }
+        for (const item of reconciled.recoveries) await db.update(monitoringAlertsTable).set({ status: "Recovered", recoveryStatus: "Recovered", lastObservedAt: new Date(item.lastObservedAt), history: item.history || [], updatedAt: new Date(item.updatedAt) }).where(eq(monitoringAlertsTable.id, item.id));
+        let automatedAction = null;
+        const action = selectAuthorizedMonitoringAction({ monitor, policy: policy ? normalizePolicy(policy) : null, observations: evaluation.observations });
+        if (action) {
+          const activePauses = await listEmergencyPauses(wallet, { activeOnly: true });
+          const existingPause = activePauses.find((pause) => pause.agentId === monitor.agentId && pause.scopeType === action.scopeType);
+          if (!existingPause) {
+            const created = await this.createEmergencyPause({ walletAddress: wallet, agentId: monitor.agentId, scopeType: action.scopeType, scopeValue: action.scopeType === "Agent" ? monitor.agentId : action.scopeType, enforcementAction: action.enforcementAction, reason: `Continuous Risk Monitoring authorized ${action.key} after a deterministic ${evaluation.observations.find((item) => ["High","Critical"].includes(item.severity))?.category || "risk"} alert.`, triggerRule: `Continuous Risk Monitoring: ${action.key}`, triggerEvidence: { monitorId: monitor.id, observationHashes: evaluation.observations.slice(0, 8).map((item) => item.evidenceHash) } });
+            automatedAction = { type: action.key, status: "executed", pauseId: created.emergencyPause?.id || "", auditReference: created.auditLog?.id || "", executedAt: now.toISOString() };
+          } else automatedAction = { type: action.key, status: "already-active", pauseId: existingPause.id, executedAt: now.toISOString() };
+          const targetRows = await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.monitorId, monitor.id));
+          const target = targetRows.find((item) => ["Open", "Acknowledged", "Investigating"].includes(item.status) && ["High", "Critical"].includes(item.severity));
+          if (target) {
+            const history = [...(Array.isArray(target.history) ? target.history : []), { at: now.toISOString(), event: "automated_action", action: automatedAction.type, status: automatedAction.status }].slice(-50);
+            await db.update(monitoringAlertsTable).set({ automatedAction, auditReference: automatedAction.auditReference || target.auditReference || "", history, updatedAt: now }).where(eq(monitoringAlertsTable.id, target.id));
+          }
+        }
+        const nextEvaluationAt = new Date(now.getTime() + Number(monitor.cadenceSeconds || 300) * 1000);
+        await db.update(monitoringMonitorsTable).set({ checkpoint: evaluation.checkpoint, lastEvaluatedAt: now, nextEvaluationAt, lastError: "", updatedAt: now }).where(eq(monitoringMonitorsTable.id, monitor.id));
+        const alertRows = await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.monitorId, monitor.id));
+        results.push({ monitorId: monitor.id, observations: evaluation.observations.length, automatedAction, alertsOpen: alertRows.filter((a) => ["Open","Acknowledged","Investigating"].includes(a.status)).length, evaluatedAt: now.toISOString(), nextEvaluationAt: nextEvaluationAt.toISOString() });
+      }
+      return { ok: true, evaluated: results.length, results };
+    },
+
+    async runScheduledMonitoringCycle({ now = new Date() } = {}) {
+      const rows = await db.select().from(monitoringMonitorsTable);
+      const owners = [...new Set(rows.filter((m) => m.enabled !== false).map((m) => m.ownerWalletAddress).filter(Boolean))];
+      const results = [];
+      for (const walletAddress of owners) results.push(await this.runMonitoringCycle({ walletAddress, now, force: false }));
+      return { ok: true, tenantsEvaluated: owners.length, monitorsEvaluated: results.reduce((sum, item) => sum + Number(item.evaluated || 0), 0) };
+    },
+
+    async updateMonitoringAlert(id, body = {}) {
+      const wallet = requireWalletAddress(body.walletAddress || body.ownerWalletAddress);
+      const rows = await db.select().from(monitoringAlertsTable).where(eq(monitoringAlertsTable.id, id));
+      const current = rows.find((a) => a.ownerWalletAddress === wallet);
+      if (!current) { const e = new Error("Monitoring alert not found."); e.status = 404; throw e; }
+      const next = acknowledgeMonitoringAlert(current, body);
+      const [row] = await db.update(monitoringAlertsTable).set({ status: next.status, acknowledgement: next.acknowledgement || {}, assignedReviewer: next.assignedReviewer || "", history: next.history || [], updatedAt: new Date(next.updatedAt) }).where(eq(monitoringAlertsTable.id, id)).returning();
+      return row;
     },
 
     async connectWallet() {

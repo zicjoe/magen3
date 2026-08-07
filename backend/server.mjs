@@ -8,6 +8,8 @@ import { getComplianceControlsSnapshot, summarizeComplianceControlsSnapshot } fr
 import { getRpcChainIntegrityStatus } from "./lib/rpcChainIntegrity.mjs";
 import { getGasSponsorshipFeeSafetyStatus } from "./lib/gasSponsorshipFeeSafety.mjs";
 import { discoverBridgeProviderChains, discoverBridgeProviderTokens, getBridgeProviderIntegrationStatus, requestBridgeProviderQuote } from "./lib/bridgeProviderIntegration.mjs";
+import { continuousRiskMonitoringStatus } from "./lib/continuousRiskMonitoring.mjs";
+import { monitoringSchedulerStatus, startMonitoringScheduler } from "./lib/monitoringScheduler.mjs";
 
 const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8787);
 const ALLOWED_ORIGIN = process.env.CORS_ORIGIN || "*";
@@ -168,6 +170,7 @@ function readAgentGatewayKey(req) {
 }
 
 const store = await createStore();
+startMonitoringScheduler(store);
 
 const server = createServer(async (req, res) => {
   try {
@@ -279,6 +282,44 @@ const server = createServer(async (req, res) => {
     if (route === "GET /api/compliance-controls/status") {
       const snapshot = await getComplianceControlsSnapshot();
       return send(res, 200, { ok: true, complianceControls: summarizeComplianceControlsSnapshot(snapshot) });
+    }
+
+    if (route === "GET /api/continuous-risk-monitoring/status") {
+      return send(res, 200, { ok: true, continuousRiskMonitoring: { ...continuousRiskMonitoringStatus(), scheduler: monitoringSchedulerStatus() } });
+    }
+
+    if (route === "GET /api/monitoring") {
+      const walletAddress = String(url.searchParams.get("walletAddress") || "").trim();
+      return send(res, 200, { ok: true, ...(await store.listMonitoring(walletAddress)) });
+    }
+
+    if (route === "GET /api/agent-gateway/monitoring") {
+      const apiKey = readAgentGatewayKey(req);
+      const agentId = String(url.searchParams.get("agentId") || "").trim();
+      if (!agentId) return send(res, 400, { error: "agentId is required" });
+      return send(res, 200, await store.getAgentMonitoring(agentId, { apiKey }));
+    }
+
+    if (route === "POST /api/monitoring/monitors") {
+      const body = await readJson(req);
+      return send(res, 201, { ok: true, monitor: await store.createMonitor(body) });
+    }
+
+    if (route === "POST /api/monitoring/run") {
+      const body = await readJson(req);
+      return send(res, 200, await store.runMonitoringCycle(body));
+    }
+
+    const updateMonitorMatch = url.pathname.match(/^\/api\/monitoring\/monitors\/([^/]+)$/);
+    if (req.method === "POST" && updateMonitorMatch) {
+      const body = await readJson(req);
+      return send(res, 200, { ok: true, monitor: await store.updateMonitor(updateMonitorMatch[1], body) });
+    }
+
+    const updateMonitoringAlertMatch = url.pathname.match(/^\/api\/monitoring\/alerts\/([^/]+)$/);
+    if (req.method === "POST" && updateMonitoringAlertMatch) {
+      const body = await readJson(req);
+      return send(res, 200, { ok: true, alert: await store.updateMonitoringAlert(updateMonitoringAlertMatch[1], body) });
     }
 
     if (route === "GET /api/execution-integrity/status") {

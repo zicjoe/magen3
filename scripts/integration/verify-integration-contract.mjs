@@ -24,6 +24,10 @@ const oracleProviderSource = read("backend/lib/oracleProviders.mjs");
 const oracleDecimalSource = read("backend/lib/oracleDecimal.mjs");
 const complianceControlsSource = read("backend/lib/complianceControls.mjs");
 const complianceProviderSource = read("backend/lib/complianceProviders.mjs");
+const continuousRiskMonitoringSource = read("backend/lib/continuousRiskMonitoring.mjs");
+const monitoringSchedulerSource = read("backend/lib/monitoringScheduler.mjs");
+const dbSchemaSource = read("backend/db/schema.mjs");
+const dbMigrationSource = read("backend/db/migrate.mjs");
 const serverSource = read("backend/server.mjs");
 const frontendApiSource = read("src/app/lib/api.ts");
 const mcpServerSource = read("packages/mcp-server/src/server.ts");
@@ -263,6 +267,30 @@ if (!app.includes("OFAC-API provider support is Preview") || !app.includes("prov
 if (!envExample.includes("COMPLIANCE_OFAC_API_ENABLED=false") || !envExample.includes("COMPLIANCE_PROVIDER_MAX_RESPONSE_BYTES=")) fail(".env.example is missing Milestone 27 provider controls");
 if (!read("docs/PRODUCTION_COMPLIANCE_PROVIDER.md").includes("Roadmap boundary")) fail("Production Compliance Provider documentation is missing its roadmap boundary");
 if (!complianceReport.includes("Milestone 28 was not implemented")) fail("Milestone 27 report is incomplete");
+
+
+
+// Milestone 28 — Continuous Risk Monitoring
+for (const required of ["evaluateMonitor", "reconcileMonitoringAlerts", "acknowledgeMonitoringAlert", "selectAuthorizedMonitoringAction", "deduplicationKey", "Recovered", "configuration-drift", "x402-settlement", "bridge-delivery", "oracle", "compliance", "threat-intelligence"]) {
+  if (!continuousRiskMonitoringSource.includes(required)) fail(`Continuous Risk Monitoring engine is missing: ${required}`);
+}
+for (const required of ["MONITORING_SCHEDULER_ENABLED", "MONITORING_SCHEDULER_INTERVAL_MS", "running", "unref"]) {
+  if (!monitoringSchedulerSource.includes(required)) fail(`Continuous Risk Monitoring scheduler safety is missing: ${required}`);
+}
+if (!dbSchemaSource.includes("monitoringMonitorsTable") || !dbSchemaSource.includes("monitoringAlertsTable") || !dbSchemaSource.includes("deduplicationKey") || !dbSchemaSource.includes("history")) fail("Monitoring persistence schema is incomplete");
+if (!dbMigrationSource.includes("monitoring_monitors") || !dbMigrationSource.includes("monitoring_alerts")) fail("Monitoring additive migration is missing");
+for (const [name, source] of [["memory store", memoryStoreSource], ["PostgreSQL store", postgresStoreSource]]) {
+  for (const required of ["runMonitoringCycle", "runScheduledMonitoringCycle", "getThreatIntelligenceSnapshot", "getOracleValidationSnapshot", "getComplianceControlsSnapshot", "createEmergencyPause"]) if (!source.includes(required)) fail(`${name} monitoring integration is missing: ${required}`);
+}
+for (const required of ["/api/continuous-risk-monitoring/status", "/api/agent-gateway/monitoring", "/api/monitoring/monitors", "/api/monitoring/run", "updateMonitoringAlertMatch", "startMonitoringScheduler"]) if (!serverSource.includes(required)) fail(`Monitoring server wiring is missing: ${required}`);
+for (const required of ["getContinuousRiskMonitoringStatus", "getMonitoringStatus"]) if (!sdkSource.includes(required) || !read("packages/sdk-js/dist/index.js").includes(required)) fail(`JavaScript SDK monitoring support is missing: ${required}`);
+for (const required of ["get_continuous_risk_monitoring_status", "get_monitoring_status"]) if (!pythonSource.includes(required)) fail(`Python SDK monitoring support is missing: ${required}`);
+if (!mcpSource.includes("getContinuousRiskMonitoringStatus") || !mcpSource.includes("getMonitoringStatus") || !mcpServerSource.includes("magen3_get_continuous_risk_monitoring_status") || !mcpServerSource.includes("magen3_get_monitoring_alerts")) fail("MCP monitoring support is missing");
+if (!read("packages/mcp-server/dist/server.js").includes("magen3_get_monitoring_alerts")) fail("Generated MCP runtime is missing monitoring alerts tool");
+if (!frontendApiSource.includes("continuousRiskMonitoringStatus") || !frontendApiSource.includes("runMonitoring") || !app.includes("Continuous Monitoring Operations") || !securityModelSource.includes("continuousRiskMonitoringMilestone")) fail("Frontend monitoring capability/operations integration is incomplete");
+if (!envExample.includes("MONITORING_SCHEDULER_ENABLED=false") || !envExample.includes("MONITORING_SCHEDULER_INTERVAL_MS=")) fail(".env.example is missing monitoring scheduler controls");
+if (!read("docs/CONTINUOUS_RISK_MONITORING.md").includes("Security and privacy")) fail("Continuous Risk Monitoring documentation is incomplete");
+if (!read("CONTINUOUS_RISK_MONITORING_IMPLEMENTATION_REPORT.md").includes("Milestone 28")) fail("Milestone 28 implementation report is missing or incomplete");
 
 console.log("Magen3 integration contract verified.");
 console.log("Canonical variables: MAGEN3_GATEWAY_URL, MAGEN3_AGENT_ID, MAGEN3_API_KEY");
