@@ -11,7 +11,7 @@ const mcpCoreSource = await read("packages/mcp-server/src/core.ts");
 
 const requiredOverrides = {
   postcss: "8.5.23",
-  "fast-uri": "3.1.4",
+  "fast-uri": "3.1.5",
   "@hono/node-server": "2.0.12",
   hono: "4.12.32",
   "ip-address": "10.3.1",
@@ -58,6 +58,8 @@ const forbiddenLockResolutions = [
   "postcss: 8.5.18",
   "fast-uri@3.1.3",
   "fast-uri: 3.1.3",
+  "fast-uri@3.1.4",
+  "fast-uri: 3.1.4",
   "@hono/node-server@1.19.14",
   "hono@4.12.30",
   "ip-address@10.2.0",

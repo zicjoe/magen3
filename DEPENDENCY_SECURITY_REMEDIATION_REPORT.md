@@ -1,3 +1,5 @@
+> Superseded by `DEPENDENCY_AND_CODEQL_SECURITY_FOLLOWUP_REPORT.md` for the later fast-uri advisory and CodeQL finding.
+
 # Magen3 Dependency Security Remediation Report
 
 Date: 2026-08-08
@@ -16,7 +18,7 @@ No database schema, agent ownership, API-key format, Agent Gateway route, policy
 
 | Package | Previous resolution | Hardened resolution | Reason |
 |---|---:|---:|---|
-| `fast-uri` | 3.1.3 | 3.1.4 | Fix host-confusion/backslash authority parsing advisory while staying on the compatible v3 line. |
+| `fast-uri` | 3.1.3 | 3.1.5 | Fix host-confusion/backslash authority parsing advisory while staying on the compatible v3 line; follow-up advisory requires 3.1.5. |
 | `postcss` | 8.5.18 | 8.5.23 | Includes follow-up security behavior that does not load a source map when `opts.from` is absent. |
 | `nanoid` | 3.3.15 | 3.3.16 | Compatible transitive resolution used by the hardened PostCSS tree. |
 | `@hono/node-server` | 1.19.14 | 2.0.12 | Moves above the Windows encoded-backslash/static path traversal fix and later 2.x security fixes. |
@@ -33,7 +35,7 @@ The root `pnpm.overrides` now pins:
 ```json
 {
   "postcss": "8.5.23",
-  "fast-uri": "3.1.4",
+  "fast-uri": "3.1.5",
   "@hono/node-server": "2.0.12",
   "hono": "4.12.32",
   "ip-address": "10.3.1"

@@ -4,6 +4,29 @@ import { resolve } from "node:path";
 const read = (file) => readFileSync(resolve(file), "utf8");
 const fail = (message) => { throw new Error(message); };
 
+const envValue = (source, name) => {
+  const match = source.match(new RegExp(`^${name}=([^\n\r]*)$`, "m"));
+  return match?.[1]?.trim() || "";
+};
+
+const exactHttpsUrl = (value, { hostname, pathname }) => {
+  try {
+    const parsed = new URL(value);
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname === hostname &&
+      parsed.port === "" &&
+      parsed.pathname === pathname &&
+      parsed.search === "" &&
+      parsed.hash === "" &&
+      parsed.username === "" &&
+      parsed.password === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
 const app = read("src/app/App.tsx");
 const securityModelSource = read("src/app/lib/securityModel.ts");
 const envExample = read(".env.example");
@@ -104,11 +127,37 @@ if (!securityModelSource.includes('name: "Asset market-risk signals"') || !secur
 if (!read("backend/server.mjs").includes("GET /api/market-risk-signals/status")) fail("Market Risk Signals status endpoint is missing");
 if (!read("backend/server.mjs").includes("marketRiskSignals: summarizeMarketRiskSignalsSnapshot")) fail("Market Risk Signals are missing from service health");
 if (!read("src/app/lib/api.ts").includes("marketRiskSignalsStatus")) fail("Frontend API client is missing Market Risk Signals status support");
-if (!bridgeProviderIntegrationSource.includes('const ADAPTER_ID = "across-testnet"') || !bridgeProviderIntegrationSource.includes('DEFAULT_BASE_URL = "https://testnet.across.to/api"')) fail("Across testnet bridge adapter is missing or incorrectly configured");
+const bridgeBaseUrlMatch = bridgeProviderIntegrationSource.match(/DEFAULT_BASE_URL\s*=\s*["']([^"']+)["']/);
+let bridgeBaseUrl = null;
+try {
+  bridgeBaseUrl = bridgeBaseUrlMatch?.[1] ? new URL(bridgeBaseUrlMatch[1]) : null;
+} catch {
+  bridgeBaseUrl = null;
+}
+if (
+  !bridgeProviderIntegrationSource.includes('const ADAPTER_ID = "across-testnet"') ||
+  bridgeBaseUrl?.protocol !== "https:" ||
+  bridgeBaseUrl?.hostname !== "testnet.across.to" ||
+  bridgeBaseUrl?.port !== "" ||
+  bridgeBaseUrl?.pathname !== "/api" ||
+  bridgeBaseUrl?.search !== "" ||
+  bridgeBaseUrl?.hash !== ""
+) fail("Across testnet bridge adapter is missing or incorrectly configured");
 for (const required of ["/swap/approval", "/swap/chains", "/swap/tokens", "/deposit/status", "exactInput", "requestBindingHash", "routeFingerprint", "payloadHash", "evidenceHash", "BRIDGE_PROVIDER_EVIDENCE_SECRET"]) {
   if (!bridgeProviderIntegrationSource.includes(required)) fail(`Bridge Provider Integration is missing ${required}`);
 }
-if (bridgeProviderIntegrationSource.includes("https://app.across.to/api")) fail("Milestone 22 must not enable Across mainnet");
+const bridgeUrlLiterals = bridgeProviderIntegrationSource.match(/https?:\/\/[^\s"'`\\)]+/g) || [];
+for (const bridgeUrlLiteral of bridgeUrlLiterals) {
+  let parsedBridgeUrl = null;
+  try {
+    parsedBridgeUrl = new URL(bridgeUrlLiteral);
+  } catch {
+    continue;
+  }
+  if (parsedBridgeUrl.hostname === "app.across.to" && parsedBridgeUrl.pathname.startsWith("/api")) {
+    fail("Milestone 22 must not enable Across mainnet");
+  }
+}
 const defaultBridgeChainMatch = bridgeProviderIntegrationSource.match(/DEFAULT_TESTNET_CHAIN_IDS\s*=\s*\[([^\]]+)\]/);
 const defaultBridgeChainIds = new Set(defaultBridgeChainMatch?.[1]?.match(/\d+/g) || []);
 const envBridgeChainMatch = envExample.match(/BRIDGE_PROVIDER_ALLOWED_TESTNET_CHAIN_IDS=([^\n]+)/);
@@ -143,7 +192,10 @@ if (!securityModelSource.includes('name: "Real bridge provider integration"') ||
 for (const required of ["bridgeProviderIntegrationStatus", "bridgeProviderChains", "bridgeProviderTokens", "requestBridgeProviderQuote", "pollBridgeProvider"]) {
   if (!frontendApiSource.includes(required)) fail(`Frontend API client is missing Bridge Provider Integration support: ${required}`);
 }
-if (!envExample.includes("BRIDGE_PROVIDER_EVIDENCE_SECRET=") || !envExample.includes("BRIDGE_PROVIDER_ACROSS_BASE_URL=https://testnet.across.to/api")) fail(".env.example is missing Milestone 22 bridge-provider configuration");
+if (
+  !envExample.includes("BRIDGE_PROVIDER_EVIDENCE_SECRET=") ||
+  !exactHttpsUrl(envValue(envExample, "BRIDGE_PROVIDER_ACROSS_BASE_URL"), { hostname: "testnet.across.to", pathname: "/api" })
+) fail(".env.example is missing Milestone 22 bridge-provider configuration");
 if (!app.includes("reviewResolutionMode")) fail("Policy and onboarding UI do not expose review-resolution strategy");
 if (!app.includes("humanActionRequired")) fail("Public agent guidance does not distinguish autonomous remediation from human escalation");
 if (!app.includes("agentMessage")) fail("Public agent integration guidance does not expose the user-ready decision explanation");
@@ -174,7 +226,7 @@ if (!pythonSource.includes("execute_x402_payment")) fail("Python SDK live x402 m
 if (!mcpServerSource.includes("magen3_execute_x402_payment")) fail("MCP live x402 tool is missing");
 if (!read("docs/LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT.md").includes("Roadmap boundary")) fail("Live x402 documentation is missing its roadmap boundary");
 if (!read("LIVE_X402_TESTNET_AUTHORIZATION_SETTLEMENT_IMPLEMENTATION_REPORT.md").includes("Milestones 24–28 were not implemented")) fail("Milestone 23 report is incomplete");
-if (!envExample.includes("X402_TESTNET_FACILITATOR_URL=https://x402.org/facilitator")) fail(".env.example is missing live x402 testnet configuration");
+if (!exactHttpsUrl(envValue(envExample, "X402_TESTNET_FACILITATOR_URL"), { hostname: "x402.org", pathname: "/facilitator" })) fail(".env.example is missing live x402 testnet configuration");
 
 
 const x402MeteredSource = read("backend/lib/x402MeteredPayments.mjs");

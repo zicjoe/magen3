@@ -6,7 +6,7 @@ const lockfile = await readFile(new URL("../../pnpm-lock.yaml", import.meta.url)
 
 const expectedOverrides = {
   postcss: "8.5.23",
-  "fast-uri": "3.1.4",
+  "fast-uri": "3.1.5",
   "@hono/node-server": "2.0.12",
   hono: "4.12.32",
   "ip-address": "10.3.1",
@@ -34,6 +34,7 @@ for (const vulnerable of [
   "postcss@8.5.15", "postcss: 8.5.15",
   "postcss@8.5.18", "postcss: 8.5.18",
   "fast-uri@3.1.3", "fast-uri: 3.1.3",
+  "fast-uri@3.1.4", "fast-uri: 3.1.4",
   "@hono/node-server@1.19.14",
   "hono@4.12.30",
   "ip-address@10.2.0",
@@ -70,7 +71,6 @@ if (marketRiskSource.includes("request.marketRiskFeedUrl") || marketRiskSource.i
 
 const bridgeProviderSource = await readFile(new URL("../../backend/lib/bridgeProviderIntegration.mjs", import.meta.url), "utf8");
 for (const required of [
-  'const DEFAULT_BASE_URL = "https://testnet.across.to/api"',
   "BRIDGE_PROVIDER_ALLOWED_TESTNET_CHAIN_IDS",
   "BRIDGE_PROVIDER_EVIDENCE_SECRET",
   "createHmac",
@@ -81,6 +81,23 @@ for (const required of [
   'environment: "testnet"',
 ]) {
   if (!bridgeProviderSource.includes(required)) throw new Error(`Bridge Provider Integration is missing security control: ${required}`);
+}
+const bridgeBaseUrlMatch = bridgeProviderSource.match(/DEFAULT_BASE_URL\s*=\s*["']([^"']+)["']/);
+let bridgeBaseUrl = null;
+try {
+  bridgeBaseUrl = bridgeBaseUrlMatch?.[1] ? new URL(bridgeBaseUrlMatch[1]) : null;
+} catch {
+  bridgeBaseUrl = null;
+}
+if (
+  bridgeBaseUrl?.protocol !== "https:" ||
+  bridgeBaseUrl?.hostname !== "testnet.across.to" ||
+  bridgeBaseUrl?.port !== "" ||
+  bridgeBaseUrl?.pathname !== "/api" ||
+  bridgeBaseUrl?.search !== "" ||
+  bridgeBaseUrl?.hash !== ""
+) {
+  throw new Error("Bridge Provider Integration must use the exact Across testnet API base URL");
 }
 for (const forbidden of ["request.providerUrl", "request.rpcUrl", "request.apiKey", "request.authorization"]) {
   if (bridgeProviderSource.includes(forbidden)) throw new Error(`Bridge Provider Integration accepts request-controlled provider configuration: ${forbidden}`);

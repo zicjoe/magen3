@@ -1,3 +1,5 @@
+> Superseded by `DEPENDENCY_AND_CODEQL_SECURITY_FOLLOWUP_REPORT.md` for the later fast-uri advisory and CodeQL finding.
+
 # Magen3 Security Alert Remediation Report
 
 ## Release scope
@@ -32,10 +34,10 @@ It does not change:
 ### fast-uri
 
 - Previous resolution: `3.1.3`
-- Patched resolution: `3.1.4`
+- Patched resolution: `3.1.5`
 - Advisory: `GHSA-v2hh-gcrm-f6hx`
 
-`package.json` now pins the patched 3.x version through a pnpm override, and the AJV dependency snapshot in `pnpm-lock.yaml` resolves `fast-uri` to `3.1.4`.
+`package.json` now pins the patched 3.x version through a pnpm override, and the AJV dependency snapshot in `pnpm-lock.yaml` resolves `fast-uri` to `3.1.5`.
 
 ## CodeQL remediation
 
