@@ -3,6 +3,12 @@ import { constants } from "node:fs";
 
 const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const lockfile = await readFile(new URL("../../pnpm-lock.yaml", import.meta.url), "utf8");
+const FAST_URI_3_1_5_INTEGRITY =
+  "sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==";
+const packagesSection = lockfile.split("\nsnapshots:")[0];
+if (!packagesSection.includes(`fast-uri@3.1.5:\n    resolution: {integrity: ${FAST_URI_3_1_5_INTEGRITY}}`)) {
+  throw new Error("pnpm-lock.yaml has an invalid fast-uri@3.1.5 packages entry for frozen installs");
+}
 
 const expectedOverrides = {
   postcss: "8.5.23",

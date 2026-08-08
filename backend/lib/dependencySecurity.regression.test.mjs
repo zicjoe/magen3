@@ -53,5 +53,12 @@ test("lockfile contains patched resolutions and excludes superseded vulnerable v
     "nanoid@3.3.15",
   ]) assert.equal(lock.includes(old), false, old);
 
+  const packagesSection = lock.split("\nsnapshots:")[0];
+  assert.match(
+    packagesSection,
+    /fast-uri@3\.1\.5:\n\s+resolution: \{integrity: sha512-gHwA1O9LDIcKunMKhObS\/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==\}/,
+  );
+  assert.equal(packagesSection.includes("fast-uri@3.1.5: {}"), false);
+
   assert.match(lock, /express-rate-limit: 8\.5\.2\(express@5\.2\.1\)[\s\S]*?ip-address: 10\.3\.1/);
 });

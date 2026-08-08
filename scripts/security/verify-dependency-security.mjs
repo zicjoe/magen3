@@ -8,6 +8,8 @@ const mcpPackageJson = JSON.parse(await read("packages/mcp-server/package.json")
 const lockfile = await read("pnpm-lock.yaml");
 const mcpServerSource = await read("packages/mcp-server/src/server.ts");
 const mcpCoreSource = await read("packages/mcp-server/src/core.ts");
+const FAST_URI_3_1_5_INTEGRITY =
+  "sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==";
 
 const requiredOverrides = {
   postcss: "8.5.23",
@@ -21,6 +23,14 @@ const lockHasKey = (key) =>
   lockfile.includes(`${key}:`) ||
   lockfile.includes(`'${key}':`) ||
   lockfile.includes(`"${key}":`);
+
+const packagesSection = lockfile.split("\nsnapshots:")[0];
+if (!packagesSection.includes(`fast-uri@3.1.5:\n    resolution: {integrity: ${FAST_URI_3_1_5_INTEGRITY}}`)) {
+  throw new Error("fast-uri@3.1.5 package metadata is missing its registry integrity; frozen pnpm installs would be invalid");
+}
+if (packagesSection.includes("fast-uri@3.1.5: {}")) {
+  throw new Error("fast-uri@3.1.5 has an empty packages entry; pnpm cannot build a frozen dependency graph from it");
+}
 
 for (const [name, version] of Object.entries(requiredOverrides)) {
   if (packageJson.pnpm?.overrides?.[name] !== version) {
