@@ -34,7 +34,7 @@
     "oracle:refresh-example-feed": "node scripts/oracle/refresh-example-feed.mjs",
     "market-risk:refresh-example-feed": "node scripts/market-risk/refresh-example-feed.mjs",
     "compliance:refresh-example-feed": "node scripts/compliance/refresh-example-feed.mjs",
-    "security:verify": "node scripts/security/verify-security-patch.mjs",
+    "security:verify": "node scripts/security/verify-security-patch.mjs && node scripts/security/verify-dependency-security.mjs",
     "sdk:publish:check": "pnpm --filter @magen3/sdk publish:check",
     "integration:verify": "node scripts/integration/verify-integration-contract.mjs"
   },
@@ -98,8 +98,11 @@
   },
   "pnpm": {
     "overrides": {
-      "postcss": "8.5.18",
-      "fast-uri": "3.1.4"
+      "postcss": "8.5.23",
+      "fast-uri": "3.1.4",
+      "@hono/node-server": "2.0.12",
+      "hono": "4.12.32",
+      "ip-address": "10.3.1"
     }
   }
 }

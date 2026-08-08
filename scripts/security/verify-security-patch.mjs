@@ -5,20 +5,40 @@ const packageJson = JSON.parse(await readFile(new URL("../../package.json", impo
 const lockfile = await readFile(new URL("../../pnpm-lock.yaml", import.meta.url), "utf8");
 
 const expectedOverrides = {
-  postcss: "8.5.18",
+  postcss: "8.5.23",
   "fast-uri": "3.1.4",
+  "@hono/node-server": "2.0.12",
+  hono: "4.12.32",
+  "ip-address": "10.3.1",
 };
+
+const lockHasKey = (key) =>
+  lockfile.includes(`${key}:`) ||
+  lockfile.includes(`'${key}':`) ||
+  lockfile.includes(`"${key}":`);
+const lockHasOverride = (name, version) =>
+  lockfile.includes(`${name}: ${version}`) ||
+  lockfile.includes(`'${name}': ${version}`) ||
+  lockfile.includes(`"${name}": ${version}`);
 
 for (const [name, version] of Object.entries(expectedOverrides)) {
   if (packageJson.pnpm?.overrides?.[name] !== version) {
     throw new Error(`package.json must override ${name} to ${version}`);
   }
-  if (!lockfile.includes(`${name}: ${version}`) || !lockfile.includes(`${name}@${version}:`)) {
+  if (!lockHasOverride(name, version) || !lockHasKey(`${name}@${version}`)) {
     throw new Error(`pnpm-lock.yaml is not pinned to ${name} ${version}`);
   }
 }
 
-for (const vulnerable of ["postcss@8.5.15", "postcss: 8.5.15", "fast-uri@3.1.3", "fast-uri: 3.1.3"]) {
+for (const vulnerable of [
+  "postcss@8.5.15", "postcss: 8.5.15",
+  "postcss@8.5.18", "postcss: 8.5.18",
+  "fast-uri@3.1.3", "fast-uri: 3.1.3",
+  "@hono/node-server@1.19.14",
+  "hono@4.12.30",
+  "ip-address@10.2.0",
+  "@modelcontextprotocol/sdk@1.29.0",
+]) {
   if (lockfile.includes(vulnerable)) {
     throw new Error(`pnpm-lock.yaml still contains vulnerable resolution ${vulnerable}`);
   }
